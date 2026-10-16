@@ -2915,6 +2915,7 @@ components:
       x-source: { kind: computed, file: dashboard/src/mocks/network-probe.json, pointer: "", detail: Recorded development-host network probes and approximate edge location; not model inference latency }
     Page:
       type: object
+      x-source: { kind: computed, file: docs/api/coverage.md, pointer: null, detail: Server cursor and snapshot metadata. }
       additionalProperties: false
       required: [ nextCursor, snapshot ]
       properties:
@@ -3494,6 +3495,7 @@ components:
           x-source: { kind: computed, file: docs/api/coverage.md, pointer: null, detail: "Opaque request correlation identifier, not a trace body." }
     Thresholds:
       type: object
+      x-source: { kind: configuration, file: dashboard/src/lib/thresholds.ts, pointer: null, detail: Project check budgets read by every console page. }
       additionalProperties: false
       required: [ answerMs, joinMs, ttsStartMs ]
       properties:

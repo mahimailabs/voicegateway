@@ -6,6 +6,7 @@ on:
       - 'dashboard/**'
       - 'docs/api/**'
       - 'Makefile'
+      - 'redocly.yaml'
       - '.gitignore'
       - '.github/workflows/dashboard.yml'
 

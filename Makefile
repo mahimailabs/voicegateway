@@ -32,9 +32,9 @@ landing-deploy: landing-check ## Deploy the checked landing to Cloudflare Pages
 	pnpm --dir site/landing exec wrangler pages deploy out
 
 api-lint: ## Validate the pinned OpenAPI contract
-	cd $(DASHBOARD) && npx --no-install redocly lint ../docs/api/openapi.yaml --extends spec
+	cd $(DASHBOARD) && REDOCLY_TELEMETRY=off npx --no-install redocly lint ../docs/api/openapi.yaml --config ../redocly.yaml
 
 api-sources: ## Check source attribution, units and unknown values
-	node $(DASHBOARD)/scripts/check-sources
+	node $(DASHBOARD)/scripts/check-sources.ts
 
 api-check: api-lint api-sources ## Validate the console read contract

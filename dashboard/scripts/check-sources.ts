@@ -1,4 +1,7 @@
-#!/usr/bin/env node
+// Contract rules that need the evidence files or the dashboard code. Redocly checks the rest
+// (redocly.yaml): reads only, typed errors, an x-access policy, camelCase names and x-source on
+// every property. No library resolves our evidence pointers, clock bindings, access scopes or
+// page-to-endpoint coverage, so those are built here.
 import fs from "node:fs"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
@@ -6,9 +9,16 @@ import { parse } from "yaml"
 import ts from "typescript"
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..")
+// The spec and evidence files are plain JSON data; every field is checked before it is trusted.
+type Doc = Record<string, any>
+type Found = { found: true; value: unknown } | { found: false }
+type Reader = { file: string; fixtures: string[]; assets: string[]; browserStorage: boolean }
+type Declared = Reader & { operations?: string[]; exclusion?: string; assetNotes?: Record<string, string> }
+type Surfaces = { routes?: Record<string, string[]>; shell?: string[]; widgets?: string[]; embedReads?: Record<string, string[]> }
+
 const kinds = new Set(["livekit_api", "webhook", "agent_upload", "agent_metrics", "computed", "configuration"])
 
-function pointerValue(value, pointer) {
+function pointerValue(value: unknown, pointer: unknown): Found {
   if (pointer === "") return { found: true, value }
   if (typeof pointer !== "string" || !pointer.startsWith("/")) return { found: false }
   for (const key of pointer
@@ -16,17 +26,17 @@ function pointerValue(value, pointer) {
     .split("/")
     .map((k) => k.replaceAll("~1", "/").replaceAll("~0", "~"))) {
     if (value === null || typeof value !== "object" || !Object.hasOwn(value, key)) return { found: false }
-    value = value[key]
+    value = (value as Doc)[key]
   }
   return { found: true, value }
 }
 
-export function checkSpec(spec, repo = root) {
-  const errors = []
+export function checkSpec(spec: Doc, repo = root) {
+  const errors: string[] = []
   let properties = 0
-  const documents = new Map()
-  const fail = (where, message) => errors.push(`${where}: ${message}`)
-  function attribution(schema, where) {
+  const documents = new Map<string, unknown>()
+  const fail = (where: string, message: string) => errors.push(`${where}: ${message}`)
+  function attribution(schema: Doc, where: string) {
     const source = schema["x-source"]
     if (!source || typeof source !== "object" || Array.isArray(source)) {
       fail(where, "missing structured x-source")
@@ -57,25 +67,24 @@ export function checkSpec(spec, repo = root) {
     }
   }
   // Where each schema is used, so a clock binding can be checked against the records that contain it.
-  const refSites = new Map()
-  ;(function collect(node, where) {
+  const refSites = new Map<string, string[]>()
+  ;(function collect(node: unknown, where: string) {
     if (node === null || typeof node !== "object") return
-    if (typeof node.$ref === "string") refSites.set(node.$ref, [...(refSites.get(node.$ref) ?? []), where])
+    if (typeof (node as Doc).$ref === "string") refSites.set((node as Doc).$ref, [...(refSites.get((node as Doc).$ref) ?? []), where])
     for (const [key, child] of Object.entries(node)) collect(child, `${where}/${key}`)
   })(spec, "#")
-  function walk(node, where) {
+  function walk(node: Doc | null, where: string) {
     if (node === null || typeof node !== "object") return
     if (node.$ref) {
       if (!node.$ref.startsWith("#/")) fail(where, "external references bypass source coverage")
       else if (!pointerValue(spec, node.$ref.slice(1)).found) fail(where, "unresolved schema reference")
     }
-    for (const [key, child] of Object.entries(node.properties ?? {})) {
+    for (const [key, child] of Object.entries<Doc>(node.properties ?? {})) {
       properties++
       const location = `${where}/properties/${key}`
       attribution(child, location)
-      if (!/^[a-z][a-zA-Z0-9]*$/.test(key)) fail(location, "property names are camelCase")
       if (/^unix_/.test(String(child["x-unit"]))) fail(location, "wall-clock instants are RFC 3339 date-time strings, not epoch numbers")
-      const types = Array.isArray(child.type) ? child.type : [child.type]
+      const types: unknown[] = Array.isArray(child.type) ? child.type : [child.type]
       if (types.some((t) => t === "integer" || t === "number")) {
         if (typeof child["x-unit"] !== "string" || !child["x-unit"].trim()) fail(location, "numeric property lacks a unit")
         if (!types.includes("null") && !child["x-configuration"]) fail(location, "measurement must allow null")
@@ -84,11 +93,12 @@ export function checkSpec(spec, repo = root) {
       if (child.default === 0) fail(location, "a missing value cannot default to zero")
       if (String(child["x-unit"]).startsWith("relative_")) {
         const binding = child["x-clock"]
-        const target = typeof binding === "string" && binding.startsWith("#/") && binding.endsWith("/properties/clockId") ? pointerValue(spec, binding.slice(1)) : { found: false }
-        if (!target.found || target.value.type !== "string") fail(location, "relative position lacks a resolvable clock reference")
+        const target: Found = typeof binding === "string" && binding.startsWith("#/") && binding.endsWith("/properties/clockId") ? pointerValue(spec, binding.slice(1)) : { found: false }
+        if (!target.found || (target.value as Doc | null)?.type !== "string") fail(location, "relative position lacks a resolvable clock reference")
         else {
           const ownerPointer = binding.slice(0, binding.lastIndexOf("/properties/"))
-          const owner = pointerValue(spec, ownerPointer.slice(1)).value
+          const ownerFound = pointerValue(spec, ownerPointer.slice(1))
+          const owner = ownerFound.found ? (ownerFound.value as Doc | null) : null
           if (!owner?.required?.includes("clockId")) fail(location, "clock reference must be required on its owner")
           // A position is on its own record's clock, or on the clock of the record that contains it everywhere
           // it is used (a recording segment on its recording). Never on a sibling record's clock.
@@ -106,9 +116,8 @@ export function checkSpec(spec, repo = root) {
   if (!properties) fail("#", "no schema properties checked")
   for (const [name, item] of Object.entries(spec.paths ?? {})) {
     for (const method of ["get", "post", "put", "patch", "delete"]) {
-      const operation = item[method]
+      const operation = (item as Doc)[method]
       if (!operation) continue
-      if (method !== "get") fail(name, "this contract is limited to reads")
       if (operation["x-access"]?.principal !== "organisation_member") fail(name, "missing mandatory authorisation policy")
       const expectedScope = name.includes("{projectId}") ? "project" : name.includes("{orgId}") ? "organisation" : "principal"
       if (operation["x-access"]?.scope !== expectedScope) fail(name, "access scope does not match the resource boundary")
@@ -123,22 +132,19 @@ export function checkSpec(spec, repo = root) {
         if (embed?.originAllowList !== "required") fail(name, "embed access requires an origin allow-list")
         if (embed?.readOnly !== true) fail(name, "embed access must be read-only")
       }
-
-      for (const status of ["400", "401", "403", "404", "500", "503"]) {
-        if (!operation.responses?.[status]) fail(name, `missing ${status} error response`)
-      }
     }
   }
   return { errors, properties }
 }
 
-export function checkCoverage(spec, repo = root, inventory, surfaces) {
-  const errors = []
-  inventory ??= JSON.parse(fs.readFileSync(path.join(repo, "docs/api/readers.json"), "utf8"))
-  surfaces ??= JSON.parse(fs.readFileSync(path.join(repo, "docs/api/surfaces.json"), "utf8"))
-  const operationIds = new Set(Object.values(spec.paths ?? {}).flatMap((p) => (p.get ? [p.get.operationId] : [])))
-  const actual = []
-  function visit(directory) {
+export function checkCoverage(spec: Doc, repo = root, inventory?: Declared[], surfaces?: Surfaces) {
+  const errors: string[] = []
+  inventory ??= JSON.parse(fs.readFileSync(path.join(repo, "docs/api/readers.json"), "utf8")) as Declared[]
+  surfaces ??= JSON.parse(fs.readFileSync(path.join(repo, "docs/api/surfaces.json"), "utf8")) as Surfaces
+  const paths = Object.values((spec.paths ?? {}) as Record<string, Doc>)
+  const operationIds = new Set(paths.flatMap((p) => (p.get ? [p.get.operationId as string] : [])))
+  const actual: Reader[] = []
+  function visit(directory: string) {
     for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
       const full = path.join(directory, entry.name)
       if (entry.isDirectory()) {
@@ -148,9 +154,9 @@ export function checkCoverage(spec, repo = root, inventory, surfaces) {
       if (!/\.tsx?$/.test(entry.name)) continue
       const text = fs.readFileSync(full, "utf8")
       const ast = ts.createSourceFile(full, text, ts.ScriptTarget.Latest, true)
-      const fixtures = [],
-        assets = []
-      function inspect(node) {
+      const fixtures: string[] = []
+      const assets: string[] = []
+      function inspect(node: ts.Node) {
         if (ts.isImportDeclaration(node) && ts.isStringLiteral(node.moduleSpecifier)) {
           const name = node.moduleSpecifier.text
           const target = name.startsWith("@/") ? path.join(repo, "dashboard/src", name.slice(2)) : name.startsWith(".") ? path.resolve(path.dirname(full), name) : null
@@ -174,8 +180,8 @@ export function checkCoverage(spec, repo = root, inventory, surfaces) {
       continue
     }
     const declared = matches[0]
-    for (const key of ["fixtures", "assets", "browserStorage"]) {
-      const normalise = (value) => (Array.isArray(value) ? [...value].sort() : value)
+    for (const key of ["fixtures", "assets", "browserStorage"] as const) {
+      const normalise = (value: unknown) => (Array.isArray(value) ? [...value].sort() : value)
       if (JSON.stringify(normalise(reader[key])) !== JSON.stringify(normalise(declared[key]))) errors.push(`${reader.file}: ${key} inventory drift`)
     }
     if (!declared.operations?.length && !declared.exclusion && !reader.assets.length) errors.push(`${reader.file}: data reader has no endpoint or exclusion`)
@@ -184,8 +190,8 @@ export function checkCoverage(spec, repo = root, inventory, surfaces) {
   }
   for (const declared of inventory) if (!actual.some((reader) => reader.file === declared.file)) errors.push(`${declared.file}: stale reader inventory`)
   const router = ts.createSourceFile("router.tsx", fs.readFileSync(path.join(repo, "dashboard/src/router.tsx"), "utf8"), ts.ScriptTarget.Latest, true)
-  const routes = []
-  function findRoutes(node) {
+  const routes: string[] = []
+  function findRoutes(node: ts.Node) {
     if (ts.isPropertyAssignment(node) && node.name.getText(router) === "path" && ts.isStringLiteral(node.initializer)) routes.push(node.initializer.text)
     ts.forEachChild(node, findRoutes)
   }
@@ -201,10 +207,10 @@ export function checkCoverage(spec, repo = root, inventory, surfaces) {
   if (JSON.stringify([...widgets].sort()) !== JSON.stringify([...(surfaces.widgets ?? [])].sort())) errors.push("widget inventory drift")
   const embedReads = surfaces.embedReads ?? {}
   if (JSON.stringify(Object.keys(embedReads).sort()) !== JSON.stringify([...(surfaces.widgets ?? [])].sort())) errors.push("every widget needs its embed reads")
-  const granted = new Map()
-  for (const item of Object.values(spec.paths ?? {})) {
+  const granted = new Map<string, boolean>()
+  for (const item of paths) {
     if (!item.get) continue
-    for (const widget of item.get["x-embed-access"]?.widgets ?? []) granted.set(`${widget} ${item.get.operationId}`, true)
+    for (const widget of (item.get["x-embed-access"]?.widgets ?? []) as string[]) granted.set(`${widget} ${item.get.operationId}`, true)
   }
   const declared = new Set(Object.entries(embedReads).flatMap(([widget, ids]) => ids.map((id) => `${widget} ${id}`)))
   for (const key of declared) if (!granted.has(key)) errors.push(`embed ${key}: widget read lacks embed access`)
@@ -214,7 +220,7 @@ export function checkCoverage(spec, repo = root, inventory, surfaces) {
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   try {
-    const spec = parse(fs.readFileSync(path.join(root, "docs/api/openapi.yaml"), "utf8"))
+    const spec = parse(fs.readFileSync(path.join(root, "docs/api/openapi.yaml"), "utf8")) as Doc
     const result = checkSpec(spec)
     const coverage = checkCoverage(spec)
     result.errors.push(...coverage.errors)
@@ -223,7 +229,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
       process.exitCode = 1
     } else console.log(`${result.properties}/${result.properties} schema properties have resolvable source attribution (100%); ${coverage.readers} data readers and ${coverage.routes} routes inventoried.`)
   } catch (error) {
-    console.error(error.message)
+    console.error(error instanceof Error ? error.message : String(error))
     process.exitCode = 1
   }
 }

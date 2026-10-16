@@ -1,0 +1,42 @@
+# Contract rules for docs/api/openapi.yaml, run by `make api-lint`. Rules Redocly can express live
+# here; dashboard/scripts/check-sources.ts checks what needs the evidence files or the dashboard code.
+extends:
+  - spec
+rules:
+  rule/reads-only:
+    subject:
+      type: PathItem
+    assertions:
+      disallowed: [post, put, patch, delete]
+    message: This contract is limited to reads.
+  rule/typed-errors:
+    subject:
+      type: Responses
+    assertions:
+      required: ["400", "401", "403", "404", "500", "503"]
+    message: Every read answers 400, 401, 403, 404, 500 and 503 with a typed error.
+  rule/access-policy:
+    subject:
+      type: Operation
+      property: x-access
+    assertions:
+      defined: true
+    message: Every read declares its authorisation policy in x-access.
+  rule/camel-case-properties:
+    subject:
+      type: SchemaProperties
+    assertions:
+      casing: camelCase
+    message: Property names are camelCase.
+  rule/property-source:
+    subject:
+      type: Schema
+      property: x-source
+    where:
+      - subject:
+          type: SchemaProperties
+        assertions:
+          defined: true
+    assertions:
+      defined: true
+    message: Every schema property names its source in x-source.
