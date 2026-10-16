@@ -15,6 +15,8 @@ import (
 )
 
 // go-redis logs dial failures itself, unstructured; preflight and the roles report them instead.
+// SetLogger is global, so this silences go-redis logging for the whole process, every client and
+// role included, not only the preflight check. Errors still reach the caller as returned values.
 func init() { redis.SetLogger(quietRedis{}) }
 
 type quietRedis struct{}

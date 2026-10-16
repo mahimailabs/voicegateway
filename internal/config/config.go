@@ -95,11 +95,27 @@ func Load(getenv func(string) string) (Config, error) {
 	return c, nil
 }
 
-// Redact returns a connection URL without its password, for logs and preflight output.
+// Redact returns a connection URL without its password, for logs and preflight output. Query
+// parameters whose name says password, secret or token are masked too, since some drivers take
+// credentials there (for example ?password= or ?x-amz-security-token=).
 func Redact(raw string) string {
 	u, err := url.Parse(raw)
 	if err != nil {
 		return "(unparseable URL)"
 	}
+	if u.RawQuery != "" {
+		q := u.Query()
+		for name := range q {
+			if sensitiveParam(name) {
+				q[name] = []string{"xxxxx"}
+			}
+		}
+		u.RawQuery = q.Encode()
+	}
 	return u.Redacted()
+}
+
+func sensitiveParam(name string) bool {
+	n := strings.ToLower(name)
+	return strings.Contains(n, "password") || strings.Contains(n, "secret") || strings.Contains(n, "token")
 }

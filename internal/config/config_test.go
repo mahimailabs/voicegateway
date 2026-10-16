@@ -72,8 +72,33 @@ func TestConfigMissingAndRedacted(t *testing.T) {
 }
 
 func TestRedact(t *testing.T) {
-	got := Redact("postgres://vg:pg-secret@postgres:5432/voicegateway")
-	if strings.Contains(got, "pg-secret") || !strings.Contains(got, "postgres:5432") {
-		t.Errorf("Redact() = %q, want host kept and password hidden", got)
+	tests := []struct {
+		name, raw string
+		hidden    []string
+		kept      []string
+	}{
+		{name: "userinfo password", raw: "postgres://vg:pg-secret@postgres:5432/voicegateway", hidden: []string{"pg-secret"}, kept: []string{"postgres:5432", "vg"}},
+		{
+			name:   "credential query parameters",
+			raw:    "clickhouse://clickhouse:9000/voicegateway?username=vg&password=ch-secret&client_secret=cs-secret&X-Amz-Security-Token=tok-secret&dial_timeout=200ms",
+			hidden: []string{"ch-secret", "cs-secret", "tok-secret"},
+			kept:   []string{"clickhouse:9000", "username=vg", "dial_timeout=200ms", "password=xxxxx"},
+		},
+		{name: "no query", raw: "redis://redis:6379/0", kept: []string{"redis://redis:6379/0"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := Redact(tt.raw)
+			for _, s := range tt.hidden {
+				if strings.Contains(got, s) {
+					t.Errorf("Redact() = %q, leaks %q", got, s)
+				}
+			}
+			for _, s := range tt.kept {
+				if !strings.Contains(got, s) {
+					t.Errorf("Redact() = %q, lost %q", got, s)
+				}
+			}
+		})
 	}
 }
