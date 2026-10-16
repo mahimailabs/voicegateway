@@ -5,6 +5,9 @@ import (
 	"compress/gzip"
 	"context"
 	"encoding/json"
+	"errors"
+	"io"
+	"log/slog"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
@@ -15,10 +18,13 @@ import (
 
 	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/livekit"
+	"google.golang.org/genproto/googleapis/rpc/errdetails"
+	"google.golang.org/genproto/googleapis/rpc/status"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"github.com/mahimailabs/voicegateway/internal/event"
+	"github.com/mahimailabs/voicegateway/internal/store"
 	"github.com/mahimailabs/voicegateway/internal/stream"
 )
 
@@ -116,7 +122,8 @@ func TestUploadSessionReport(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	chat := `{"items":[{"type":"message","role":"user","content":["hello"]}]}`
+	// Spaced the way Python's json.dumps writes it, with characters an HTML-escaping encoder rewrites.
+	chat := `{"items": [{"type": "message", "role": "user", "content": ["fish & <chips>"]}]}`
 
 	var body bytes.Buffer
 	mw := multipart.NewWriter(&body)
@@ -158,7 +165,7 @@ func TestUploadSessionReport(t *testing.T) {
 	if err := json.Unmarshal(e.Payload, &got); err != nil {
 		t.Fatal(err)
 	}
-	if !got.AudioDiscarded || string(got.ChatHistory) != chat || !strings.Contains(string(got.Header), `"roomId":"RM_test"`) {
+	if !got.AudioDiscarded || got.ChatHistory != chat || !strings.Contains(string(got.Header), `"roomId":"RM_test"`) {
 		t.Fatalf("report = header %s, chat %s, audio discarded %v", got.Header, got.ChatHistory, got.AudioDiscarded)
 	}
 	if bytes.Contains(e.Payload, []byte{1, 1, 1, 1}) {
@@ -178,4 +185,67 @@ func send(h http.Handler, authz, encoding, ctype string, body []byte) *httptest.
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 	return rec
+}
+
+// failingStream is a stream that cannot take an envelope, as when Redis is down.
+type failingStream struct{}
+
+func (failingStream) Append(context.Context, event.Envelope) (string, error) {
+	return "", errors.New("connection refused")
+}
+
+// With the stream or the project store down the answer is 503 with RetryInfo, the only 5xx LiveKit
+// Agents' session uploader retries; without it the report would be dropped.
+func TestUploadUnavailableRetries(t *testing.T) {
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	cases := []struct {
+		name string
+		u    *Uploads
+	}{
+		{"project lookup down", &Uploads{Projects: brokenProjects{}, Stream: &appendCounter{}, Log: log, Now: time.Now}},
+		{"stream down", &Uploads{Projects: fixedProject{}, Stream: failingStream{}, Log: log, Now: time.Now}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			rec := send(c.u.OTLP(event.KindAgentTraces), bearer(t, testKey, testSecret, true), "", "application/x-protobuf", []byte("\x0a\x00"))
+			if rec.Code != http.StatusServiceUnavailable {
+				t.Fatalf("status = %d, want 503", rec.Code)
+			}
+			var st status.Status
+			if err := proto.Unmarshal(rec.Body.Bytes(), &st); err != nil || len(st.GetDetails()) != 1 {
+				t.Fatalf("body is not a Status with one detail: %v", err)
+			}
+			var ri errdetails.RetryInfo
+			if err := st.GetDetails()[0].UnmarshalTo(&ri); err != nil || ri.GetRetryDelay().AsDuration() <= 0 {
+				t.Fatalf("detail is not a positive RetryInfo: %v", err)
+			}
+		})
+	}
+}
+
+// A refusal never carries the phrases that make LiveKit Agents stop uploading for the rest of the
+// process (traces.py, _UploadGate.is_disabled_response).
+func TestUploadRefusalDoesNotDisableAgent(t *testing.T) {
+	u := &Uploads{Projects: fixedProject{}, Stream: &appendCounter{}, Log: slog.New(slog.NewTextHandler(io.Discard, nil)), Now: time.Now}
+	for _, authz := range []string{"", bearer(t, testKey, "another-secret-that-is-long-enough", true), bearer(t, testKey, testSecret, false)} {
+		rec := send(u.OTLP(event.KindAgentLogs), authz, "", "application/x-protobuf", nil)
+		body := strings.ToLower(rec.Body.String())
+		if rec.Code < 400 || strings.Contains(body, "data recording is disabled") || strings.Contains(body, "disabled by owner") {
+			t.Fatalf("status %d body %q", rec.Code, body)
+		}
+	}
+}
+
+// fixedProject owns testKey with testSecret.
+type fixedProject struct{}
+
+func (fixedProject) ProjectByLiveKitKey(_ context.Context, key string) (store.Project, error) {
+	if key != testKey {
+		return store.Project{}, store.ErrNotFound
+	}
+	return store.Project{OrganisationID: "default", ID: "production"}, nil
+}
+
+func (fixedProject) LiveKitSecret(context.Context, string, string) (string, error) {
+	return testSecret, nil
 }

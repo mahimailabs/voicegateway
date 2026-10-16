@@ -27,8 +27,9 @@ const (
 type SessionReport struct {
 	// Header is the upload's MetricsRecordingHeader as protojson: room, job and start time.
 	Header json.RawMessage `json:"header"`
-	// ChatHistory is chat_history.json exactly as uploaded; absent when the agent sent none.
-	ChatHistory json.RawMessage `json:"chat_history,omitempty"`
+	// ChatHistory is chat_history.json byte for byte as uploaded, carried as a string so encoding
+	// the report does not reformat it; absent when the agent sent none.
+	ChatHistory string `json:"chat_history,omitempty"`
 	// AudioDiscarded is true when the upload carried recording.ogg and it was not kept, because
 	// the project has no recordings bucket (0015). The audio itself never enters the stream.
 	AudioDiscarded bool `json:"audio_discarded"`

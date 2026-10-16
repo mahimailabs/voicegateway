@@ -61,7 +61,8 @@ Slice B (b), the Agents observability uploads, at LiveKit's paths as LiveKit Age
 
 10. Given an OTLP export with a bearer JWT from a project's key, signed with its secret and holding the write grant, when it is posted, then it answers 200 with an empty Export response and one envelope of that signal's kind is on the stream, decompressed, attributed, with no event id (measured by `TestUploadOTLPVerified`).
 11. Given no token, a token without the `Bearer ` scheme, an unknown key or the wrong secret, then 401; a valid token without the write grant, then 403; a body that is not gzip, then 400; one that decompresses past 16 MiB, then 413; in every case nothing is appended (measured by `TestUploadOTLPVerified`, `TestUploadOTLPBadBody`).
-12. Given a session upload with header, chat history and audio, when it is posted, then one envelope identified by the job id holds the header and the chat history unchanged, marks the audio as discarded, and no audio byte reaches the stream (measured by `TestUploadSessionReport`).
+12. Given a session upload with header, chat history and audio, when it is posted, then one envelope identified by the job id holds the header and the chat history byte for byte, marks the audio as discarded, and no audio byte reaches the stream (measured by `TestUploadSessionReport`).
+13. Given the stream or the project store down, when an upload is posted, then it answers 503 with a google.rpc.Status carrying RetryInfo, the only 5xx the Agents session uploader retries, and no refusal carries the phrases that make the agent stop uploading for good (measured by `TestUploadUnavailableRetries`, `TestUploadRefusalDoesNotDisableAgent`).
 
 ## Manual Check
 

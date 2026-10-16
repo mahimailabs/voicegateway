@@ -1,7 +1,6 @@
 package ingest
 
 import (
-	"bytes"
 	"compress/gzip"
 	"encoding/json"
 	"errors"
@@ -15,8 +14,13 @@ import (
 
 	"github.com/livekit/protocol/auth"
 	"github.com/livekit/protocol/livekit"
+	"google.golang.org/genproto/googleapis/rpc/code"
+	"google.golang.org/genproto/googleapis/rpc/errdetails"
+	"google.golang.org/genproto/googleapis/rpc/status"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/anypb"
+	"google.golang.org/protobuf/types/known/durationpb"
 
 	"github.com/mahimailabs/voicegateway/internal/event"
 )
@@ -43,9 +47,8 @@ type Uploads struct {
 // OTLP answers one of the three OTLP over HTTP exports with the given kind.
 func (u *Uploads) OTLP(kind event.Kind) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		keys, status := u.verify(r)
-		if status != http.StatusOK {
-			http.Error(w, http.StatusText(status), status)
+		keys, ok := u.verify(w, r)
+		if !ok {
 			return
 		}
 		body, err := readOTLP(http.MaxBytesReader(w, r.Body, maxOTLPBody), r.Header.Get("Content-Encoding"))
@@ -66,9 +69,8 @@ func (u *Uploads) OTLP(kind event.Kind) http.Handler {
 // SessionReport answers the multipart session upload: the recording header, chat_history.json and
 // recording.ogg. The audio is discarded until a project has a recordings bucket (0015).
 func (u *Uploads) SessionReport(w http.ResponseWriter, r *http.Request) {
-	keys, status := u.verify(r)
-	if status != http.StatusOK {
-		http.Error(w, http.StatusText(status), status)
+	keys, ok := u.verify(w, r)
+	if !ok {
 		return
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, maxSessionUpload)
@@ -84,7 +86,8 @@ func (u *Uploads) SessionReport(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "encode failed", http.StatusInternalServerError)
 		return
 	}
-	// The job id names this report; a retried upload carries the same one.
+	// The job id names this report; a retried upload carries the same one. Without one the id is
+	// unknown and stays empty.
 	if !u.appendEnvelope(w, r, keys, event.Envelope{ID: jobID, Kind: event.KindAgentSessionReport, Payload: payload}) {
 		return
 	}
@@ -92,8 +95,23 @@ func (u *Uploads) SessionReport(w http.ResponseWriter, r *http.Request) {
 }
 
 // verify checks the bearer JWT against the project that owns its key and requires the
-// observability write grant. It returns 200 when the request may proceed.
-func (u *Uploads) verify(r *http.Request) (*projectKeys, int) {
+// observability write grant. It answers the request itself and returns false when it may not
+// proceed. A 401 body must never contain the phrases with which LiveKit Cloud tells the agent to
+// stop uploading for good ("data recording is disabled", "disabled by owner").
+func (u *Uploads) verify(w http.ResponseWriter, r *http.Request) (*projectKeys, bool) {
+	keys, code := u.check(r)
+	switch code {
+	case http.StatusOK:
+		return keys, true
+	case http.StatusServiceUnavailable:
+		unavailable(w)
+	default:
+		http.Error(w, http.StatusText(code), code)
+	}
+	return nil, false
+}
+
+func (u *Uploads) check(r *http.Request) (*projectKeys, int) {
 	raw, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
 	if !ok || raw == "" {
 		u.Log.Warn("upload: not verified", "path", r.URL.Path, "reason", "no bearer token")
@@ -132,10 +150,31 @@ func (u *Uploads) appendEnvelope(w http.ResponseWriter, r *http.Request, keys *p
 	e.OrganisationID, e.ProjectID, e.ReceivedAt = keys.project.OrganisationID, keys.project.ID, u.Now()
 	if _, err := u.Stream.Append(r.Context(), e); err != nil {
 		u.Log.Error("upload: append failed", "kind", e.Kind, "project", keys.project.ID, "err", err)
-		http.Error(w, "stream unavailable", http.StatusServiceUnavailable)
+		unavailable(w)
 		return false
 	}
 	return true
+}
+
+// retryAfter is the delay offered to an agent when the stream or the project store is down.
+const retryAfter = 2 * time.Second
+
+// unavailable answers 503 with a google.rpc.Status carrying RetryInfo. The session uploader in
+// LiveKit Agents 1.8.7 retries a 5xx only when it finds RetryInfo (_parse_retry_delay) and drops
+// the report otherwise; OTLP over HTTP specifies the same body.
+func unavailable(w http.ResponseWriter) {
+	retry, err := anypb.New(&errdetails.RetryInfo{RetryDelay: durationpb.New(retryAfter)})
+	var body []byte
+	if err == nil {
+		body, err = proto.Marshal(&status.Status{Code: int32(code.Code_UNAVAILABLE), Message: "stream unavailable", Details: []*anypb.Any{retry}})
+	}
+	if err != nil {
+		http.Error(w, "stream unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	w.Header().Set("Content-Type", "application/x-protobuf")
+	w.WriteHeader(http.StatusServiceUnavailable)
+	_, _ = w.Write(body)
 }
 
 // errTooLarge marks a body over its limit, answered 413.
@@ -213,7 +252,7 @@ func readSessionReport(r *http.Request) (event.SessionReport, string, error) {
 			if !json.Valid(b) {
 				return report, "", errors.New("chat_history is not JSON")
 			}
-			report.ChatHistory = bytes.Clone(b)
+			report.ChatHistory = string(b)
 		case "audio":
 			if _, err := io.Copy(io.Discard, part); err != nil {
 				return report, "", err
