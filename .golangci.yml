@@ -1,0 +1,20 @@
+# Go lint and format rules (CLAUDE.md Code quality). Run with `make go-lint`.
+version: "2"
+linters:
+  default: standard
+  enable:
+    - gosec
+  exclusions:
+    rules:
+      # Tests use fake connection strings to prove secrets never leak; they are not credentials.
+      - path: _test\.go
+        linters: [gosec]
+        text: G101
+formatters:
+  enable:
+    - gofumpt
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/mahimailabs/voicegateway

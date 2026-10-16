@@ -100,3 +100,9 @@ Prepared a README redesign from the maintainer-selected Langfuse reference: a wi
 ### 2026-10-16: repository social preview
 
 Updated the GitHub social-preview setting with a 1280 × 640 card matching the README wordmark and blue accent. Reloaded Settings to verify the upload persisted. The old cost/quality and multi-framework claims are removed. Both light/dark exports and their shared editable banner source are retained with the README assets; GitHub uses the light export because the setting accepts one fixed image.
+
+### 2026-10-16: runnable foundation (phase02, in progress)
+
+`docs/specs/phase02-foundation.md` starts the Go platform. `cmd/voicegateway` runs `web`, `worker` and `preflight`; `internal/config` reads `VOICEGATEWAY_*` and names every missing variable without echoing a secret; `internal/preflight` checks Postgres, ClickHouse, Redis and the S3 bucket concurrently with a timeout each and reports every failure; `internal/obs` gives JSON logs and `/healthz`; `internal/app` wires the roles. `deploy/compose.yaml` runs the six services from images pinned by tag and digest, and `make up` creates `deploy/.env` with random secrets. MinIO no longer publishes images, so the bundled bucket is SeaweedFS (decision 0026). Lint, format and `go mod tidy` run through tool versions pinned in `go.mod`, in pre-commit and in the new Go workflow, which also starts the stack and runs preflight against it.
+
+Local checks: golangci-lint 0 issues, race tests pass; the container tests (`TestPreflightAllReachable`, `TestPreflightReportsEveryFailure`) and the Compose smoke run only in CI because Docker Desktop does not answer on the dev Mac. Acceptance checks 1 to 3 and 6 are measured there. No tables, migrations or ingest yet.

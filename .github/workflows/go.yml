@@ -1,0 +1,56 @@
+name: Go
+
+# The voicegateway binary: lint, tests against real dependencies (testcontainers), and the
+# six-service stack started from deploy/compose.yaml exactly as a teammate would (phase02 spec).
+
+on:
+  pull_request:
+    paths:
+      - 'cmd/**'
+      - 'internal/**'
+      - 'deploy/**'
+      - 'go.mod'
+      - 'go.sum'
+      - '.golangci.yml'
+      - 'Makefile'
+      - 'tools/scripts/dev-env.sh'
+      - '.github/workflows/go.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'cmd/**'
+      - 'internal/**'
+      - 'deploy/**'
+      - 'go.mod'
+      - 'go.sum'
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: make go-lint
+      - run: make go-test
+
+  compose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - run: make up
+      - run: curl --fail --silent --show-error http://localhost:8080/healthz
+      - run: make preflight
+      - name: Logs on failure
+        if: failure()
+        run: docker compose -f deploy/compose.yaml --env-file deploy/.env logs --no-color
+      - if: always()
+        run: docker compose -f deploy/compose.yaml --env-file deploy/.env down --volumes

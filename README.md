@@ -91,7 +91,7 @@ make test
 make lint
 ```
 
-These run the current dashboard helper regressions, lint and TypeScript checks. The [Phase 1 spec](docs/specs/phase01-console.md) and [progress notes](docs/progress.md) identify the remaining API and UI-test work.
+These run the Go tests (container tests need Docker) and lint, plus the dashboard tests, lint and TypeScript checks. `make up` starts the six-service stack. The [Phase 1 spec](docs/specs/phase01-console.md) and [progress notes](docs/progress.md) identify the remaining API and UI-test work.
 
 ## Community and security
 

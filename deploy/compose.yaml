@@ -1,0 +1,94 @@
+# The whole VoiceGateway stack: six services (decision 0005). Start it with `make up`, which creates
+# deploy/.env with fresh random secrets on first run. Every pulled image is pinned by tag and digest.
+name: voicegateway
+
+x-voicegateway-env: &voicegateway-env
+  VOICEGATEWAY_POSTGRES_URL: postgres://voicegateway:${POSTGRES_PASSWORD:?set it in deploy/.env}@postgres:5432/voicegateway?sslmode=disable
+  VOICEGATEWAY_CLICKHOUSE_URL: clickhouse://voicegateway:${CLICKHOUSE_PASSWORD:?set it in deploy/.env}@clickhouse:9000/voicegateway
+  VOICEGATEWAY_REDIS_URL: redis://:${REDIS_PASSWORD:?set it in deploy/.env}@redis:6379/0
+  VOICEGATEWAY_S3_ENDPOINT: s3:8333
+  VOICEGATEWAY_S3_BUCKET: recordings
+  VOICEGATEWAY_S3_ACCESS_KEY: ${S3_ACCESS_KEY:?set it in deploy/.env}
+  VOICEGATEWAY_S3_SECRET_KEY: ${S3_SECRET_KEY:?set it in deploy/.env}
+  VOICEGATEWAY_LOG_LEVEL: ${VOICEGATEWAY_LOG_LEVEL:-info}
+
+x-voicegateway-depends: &voicegateway-depends
+  postgres: { condition: service_healthy }
+  clickhouse: { condition: service_healthy }
+  redis: { condition: service_healthy }
+  s3: { condition: service_healthy }
+
+services:
+  postgres:
+    image: postgres:16.15-alpine@sha256:721873c34ceb9f8d8fc265984940dc982404c105f19ad51be9fdc5970a6080ea
+    environment:
+      POSTGRES_USER: voicegateway
+      POSTGRES_DB: voicegateway
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set it in deploy/.env}
+    volumes: [postgres:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "voicegateway", "-d", "voicegateway"]
+      interval: 2s
+      retries: 30
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:26.1.12.23-alpine@sha256:369bd68942569e0effdf0aa68b4f844a74d97b73e281cf8012ce90e9865cc411
+    environment:
+      CLICKHOUSE_DB: voicegateway
+      CLICKHOUSE_USER: voicegateway
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:?set it in deploy/.env}
+    volumes: [clickhouse:/var/lib/clickhouse]
+    ulimits:
+      nofile: { soft: 262144, hard: 262144 }
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1:8123/ping"]
+      interval: 2s
+      retries: 30
+
+  redis:
+    image: redis:8.10.2-alpine@sha256:3811787313eba226a2ef38658c6ccb91cd5e110edc89c37767de373120a0e5a0
+    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD:?set it in deploy/.env}"]
+    environment:
+      REDISCLI_AUTH: ${REDIS_PASSWORD:?set it in deploy/.env}
+    volumes: [redis:/data]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      retries: 30
+
+  # Any S3 bucket works (decision 0005). SeaweedFS stands in for MinIO, which no longer publishes
+  # images (decision 0026); `weed mini` creates the bucket and the key pair from its environment.
+  s3:
+    image: chrislusf/seaweedfs:4.48@sha256:4e61d15fd35994cb1e43e1e553dff106794841fd9a99ade2fc8c8bfce4d7872d
+    command: ["mini", "-dir=/data", "-ip.bind=0.0.0.0"]
+    environment:
+      AWS_ACCESS_KEY_ID: ${S3_ACCESS_KEY:?set it in deploy/.env}
+      AWS_SECRET_ACCESS_KEY: ${S3_SECRET_KEY:?set it in deploy/.env}
+      S3_BUCKET: recordings
+    volumes: [s3:/data]
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8333/healthz"]
+      interval: 2s
+      retries: 60
+
+  web:
+    build: { context: .., dockerfile: deploy/Dockerfile }
+    image: voicegateway:dev
+    command: ["web"]
+    environment: *voicegateway-env
+    ports: ["${VOICEGATEWAY_WEB_PORT:-8080}:8080"]
+    depends_on: *voicegateway-depends
+
+  worker:
+    image: voicegateway:dev
+    command: ["worker"]
+    environment: *voicegateway-env
+    depends_on:
+      <<: *voicegateway-depends
+      web: { condition: service_started }
+
+volumes:
+  postgres:
+  clickhouse:
+  redis:
+  s3:
