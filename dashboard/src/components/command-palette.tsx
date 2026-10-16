@@ -95,7 +95,7 @@ export function CommandPalette({ open, onOpenChange, pages, onSettings, onShortc
           <CommandSeparator />
           <CommandGroup heading="Calls">
             {calls.map((c) => (
-              <CommandItem key={c.roomSid} value={`call ${c.room} ${c.startedAt}`} onSelect={() => run(() => navigate({ to: "/calls/$room", params: { room: c.room } }))}>
+              <CommandItem key={c.roomSid} value={`call ${c.room} ${c.startedAt}`} onSelect={() => run(() => navigate({ to: "/calls/$callId", params: { callId: c.id } }))}>
                 <PhoneCall />
                 <span className="truncate font-mono text-[12px]">{c.room}</span>
                 <span className="ml-auto shrink-0 text-[12px] text-muted-foreground tnum">{when(c.startedAt)}</span>

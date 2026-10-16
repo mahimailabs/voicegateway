@@ -3,6 +3,8 @@ import type { ColumnDef, PaginationState, RowData, SortingState } from "@tanstac
 import { useTable } from "@tanstack/react-table"
 import { DataGrid, DataGridContainer, dataGridFeatures, type DataGridFeatures } from "@/components/reui/data-grid/data-grid"
 import { DataGridPagination } from "@/components/reui/data-grid/data-grid-pagination"
+import { Button } from "@/components/ui/button"
+import { Spinner } from "@/components/ui/spinner"
 import { DataGridScrollArea } from "@/components/reui/data-grid/data-grid-scroll-area"
 import { DataGridTable } from "@/components/reui/data-grid/data-grid-table"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -98,6 +100,8 @@ export function DataTable<T extends RowData & object>({
   query: controlled,
   onQueryChange,
   bulk,
+  filtered = false,
+  server,
 }: {
   data: T[]
   columns: Columns<T>
@@ -113,6 +117,11 @@ export function DataTable<T extends RowData & object>({
   onQueryChange?: (q: FilterQuery) => void
   // Row selection: a checkbox column, and these actions on a bar while any row is selected.
   bulk?: (selected: T[], clear: () => void) => React.ReactNode
+  // The data already answers the query (the server filtered it); the chips only edit it.
+  filtered?: boolean
+  // The server sorts and pages: the table shows the rows read so far, sorts nothing itself and offers
+  // the next page. Sort columns map to the server's sort keys.
+  server?: { total: number | null; hasMore: boolean; loading: boolean; loadMore: () => void }
 }) {
   // Filters and sort live in the URL (?q=, ?sort=), so a shared link opens the same rows. Each page has
   // one table, so the keys never collide.
@@ -122,7 +131,7 @@ export function DataTable<T extends RowData & object>({
   const [sorting, setSortingUrl] = useUrlState<SortingState>("sort", sort)
   const setSorting = (u: SortingState | ((old: SortingState) => SortingState)) => setSortingUrl(typeof u === "function" ? u(sorting) : u)
   const [pagination, setPagination] = useState<PaginationState>({ pageIndex: 0, pageSize })
-  const rows = useMemo(() => data.filter((r) => matches(r, query, fields)), [data, query, fields])
+  const rows = useMemo(() => (filtered ? data : data.filter((r) => matches(r, query, fields))), [data, query, fields, filtered])
   const [picked, setPicked] = useState<Set<string>>(new Set())
   // Selection only counts rows still in view (not filtered out, archived or resolved).
   const selected = rows.filter((r) => picked.has(getRowId(r)))
@@ -170,7 +179,11 @@ export function DataTable<T extends RowData & object>({
     data: rows,
     getRowId,
     getRowCanExpand: canExpand ? (row) => canExpand(row.original) : undefined,
-    state: { sorting, pagination },
+    // Server mode shows every row read so far on one page; "Show more" reads the next.
+    state: { sorting, pagination: server ? { pageIndex: 0, pageSize: Math.max(rows.length, 1) } : pagination },
+    manualSorting: Boolean(server),
+    // The server always sorts by something, so a column cannot be un-sorted.
+    enableSortingRemoval: !server,
     onSortingChange: setSorting,
     onPaginationChange: (u) => setPagination(u),
   })
@@ -228,7 +241,17 @@ export function DataTable<T extends RowData & object>({
               <DataGridTable />
             </DataGridScrollArea>
           </DataGridContainer>
-          {rows.length > pagination.pageSize && <DataGridPagination />}
+          {!server && rows.length > pagination.pageSize && <DataGridPagination />}
+          {server && (server.hasMore || server.total !== null) && (
+            <div className="flex items-center justify-between gap-3 text-[12px] text-muted-foreground">
+              <span className="tnum">{server.total === null ? `${rows.length} shown` : `${rows.length} of ${server.total}`}</span>
+              {server.hasMore && (
+                <Button size="sm" variant="outline" disabled={server.loading} onClick={server.loadMore}>
+                  {server.loading ? <Spinner /> : null} Show more
+                </Button>
+              )}
+            </div>
+          )}
         </div>
       </DataGrid>
     </div>

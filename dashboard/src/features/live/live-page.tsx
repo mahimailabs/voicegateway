@@ -99,7 +99,8 @@ export function LivePage() {
     // The ticks sit inside the strip's 16 px padding, so measure against that inner width.
     return Math.min(Math.max((clientX - r.left - 16) / (r.width - 32), 0), 1)
   }
-  const callRooms = useMemo(() => new Set(listCalls().map((c) => c.room)), [])
+  // Rooms that are calls, to their call id. A reused room opens its latest call.
+  const callRooms = useMemo(() => new Map([...listCalls()].sort((a, b) => Date.parse(a.startedAt) - Date.parse(b.startedAt)).map((c) => [c.room, c.id])), [])
 
   // Every repetition of the captured set that overlaps the window.
   const rows: { key: string; room: Room; start: number; end: number }[] = []
@@ -120,7 +121,7 @@ export function LivePage() {
   const step = range ? (windows.find((o) => o.s >= span * 0.9) ?? windows[windows.length - 1]).tick / (span < 300 ? 5 : 1) : w.tick
   for (let s = Math.ceil(from / step) * step; s < now - span * 0.06; s += step) if (s > from + span * 0.06) ticks.push(s)
   const tickLabel = span < 3600 ? hms : hm
-  const open = (r: Room) => (callRooms.has(r.name) ? navigate({ to: "/calls/$room", params: { room: r.name } }) : setOpenRoom(r))
+  const open = (r: Room) => (callRooms.has(r.name) ? navigate({ to: "/calls/$callId", params: { callId: callRooms.get(r.name)! } }) : setOpenRoom(r))
 
   return (
     <div className="mx-auto max-w-[1400px] space-y-3">

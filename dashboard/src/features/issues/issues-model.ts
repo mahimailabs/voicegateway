@@ -11,7 +11,7 @@ import { type SipData, checks as sipChecks, routes } from "../sip/sip-model"
 // Agent workers page or the Phone bridge page runs, so the counts always match those pages.
 
 export type Severity = "high" | "medium" | "low" | "info"
-export type Hit = { at: number | null; where: string; detail: string; room?: string }
+export type Hit = { at: number | null; where: string; detail: string; callId?: string }
 export type Issue = { id: string; title: string; severity: Severity; source: "Calls" | "Agent workers" | "Phone bridge"; to: "/calls" | "/agents" | "/sip"; hits: Hit[] }
 
 // One name per call finding, so "3 of 9 replies were cut off" in two calls becomes one issue.
@@ -37,7 +37,7 @@ export function issues(): Issue[] {
       const kind = f.id.replace(/\d+$/, "")
       const i = byKind.get(kind) ?? { id: kind, title: kinds[kind] ?? f.title, severity: f.severity, source: "Calls" as const, to: "/calls" as const, hits: [] }
       if (rank[f.severity] < rank[i.severity]) i.severity = f.severity
-      i.hits.push({ at: Number.isFinite(at) ? at : null, where: c.room, detail: f.title, room: c.room })
+      i.hits.push({ at: Number.isFinite(at) ? at : null, where: c.room, detail: f.title, callId: c.id })
       byKind.set(kind, i)
     }
   }

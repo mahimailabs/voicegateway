@@ -9,6 +9,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { cn } from "@/lib/utils"
 import raw from "@/mocks/media-server.json"
 import { useEmbedded } from "@/lib/url-state"
+import { listCalls } from "@/lib/api"
 
 // One room, opened from the Media server timeline: how it came together, what the agent was doing,
 // who was in it with which tracks, and the room's own settings. Everything comes from RoomService and
@@ -50,6 +51,13 @@ export type MediaServerData = {
   rooms: RoomData[]
 }
 export const data = raw as unknown as MediaServerData
+
+// The call a room's recording belongs to: the latest call in that room, as the Live page opens it.
+// The recording names a room the captured calls hold, so a call is always found.
+const latestCallIn = (room: string) =>
+  listCalls()
+    .filter((c) => c.room === room)
+    .reduce((a, b) => (Date.parse(b.startedAt) > Date.parse(a.startedAt) ? b : a)).id
 export type Room = RoomData & { n: number }
 
 export const regionCity: Record<string, string> = { oashburn1b: "Ashburn", osanjose1a: "San Jose", otoronto1a: "Toronto" }
@@ -346,7 +354,7 @@ function Recording({ room, requested }: { room: Room; requested: boolean }) {
             ) : rec?.callRoom && embedded ? (
               <span>In Calls</span>
             ) : rec?.callRoom ? (
-              <Link to="/calls/$room" params={{ room: rec.callRoom }} className="flex items-center gap-1 text-primary hover:underline">
+              <Link to="/calls/$callId" params={{ callId: latestCallIn(rec.callRoom) }} className="flex items-center gap-1 text-primary hover:underline">
                 Open call <ArrowRight size={12} />
               </Link>
             ) : (

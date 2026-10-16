@@ -2931,7 +2931,7 @@ components:
     CallPage:
       type: object
       additionalProperties: false
-      required: [ items, page ]
+      required: [ items, page, totals ]
       properties:
         items:
           type: array
@@ -2941,11 +2941,156 @@ components:
         page:
           $ref: "#/components/schemas/Page"
           x-source: { kind: computed, file: docs/api/coverage.md, pointer: null, detail: Server cursor and snapshot metadata. }
+        totals:
+          $ref: "#/components/schemas/CallTotals"
+          x-source: { kind: computed, file: dashboard/src/mocks/summaries.ts, pointer: null, detail: "Figures over every call that matches the range and filters, not just this page, so the Calls page cards follow the filters without totalling pages." }
+    CallTotals:
+      type: object
+      x-source: { kind: computed, file: dashboard/src/mocks/summaries.ts, pointer: null, detail: "Figures over every call matching a listCalls request's range and filters, independent of paging." }
+      additionalProperties: false
+      description: Figures over every call matching a listCalls request's range and filters, independent of paging. Design-preview calls are never counted.
+      required: [ callCount, byChannel, answers, issues, recorded ]
+      properties:
+        callCount:
+          type: [ integer, "null" ]
+          minimum: 0
+          x-unit: count
+          description: "Calls that match."
+          x-null-reason: "Unknown when part of the range is not stored."
+          x-source: { kind: computed, file: dashboard/src/mocks/summaries.ts, pointer: null, detail: "Calls that match." }
+        byChannel:
+          type: object
+          additionalProperties: false
+          required: [ phone, web, console, local, unknown ]
+          x-source: { kind: computed, file: dashboard/src/mocks/summaries.ts, pointer: null, detail: "Matching calls by CallSummary.channel." }
+          properties:
+            phone:
+              type: [ integer, "null" ]
+              minimum: 0
+              x-unit: count
+              description: "Matching calls with channel phone."
+              x-null-reason: "Unknown when part of the range is not stored."
+              x-source: { kind: computed, file: dashboard/src/mocks/summaries.ts, pointer: null, detail: "Matching calls with channel phone." }
+            web:
+              type: [ integer, "null" ]
+              minimum: 0
+              x-unit: count
+              description: "Matching calls with channel web."
+              x-null-reason: "Unknown when part of the range is not stored."
+              x-source: { kind: computed, file: dashboard/src/mocks/summaries.ts, pointer: null, detail: "Matching calls with channel web." }
+            console:
+              type: [ integer, "null" ]
+              minimum: 0
+              x-unit: count
+              description: "Matching calls with channel console."
+              x-null-reason: "Unknown when part of the range is not stored."
+              x-source: { kind: computed, file: dashboard/src/mocks/summaries.ts, pointer: null, detail: "Matching calls with channel console." }
+            local:
+              type: [ integer, "null" ]
+              minimum: 0
+              x-unit: count
+              description: "Matching calls with channel local."
+              x-null-reason: "Unknown when part of the range is not stored."
+              x-source: { kind: computed, file: dashboard/src/mocks/summaries.ts, pointer: null, detail: "Matching calls with channel local." }
+            unknown:
+              type: [ integer, "null" ]
+              minimum: 0
+              x-unit: count
+              description: "Matching calls with channel unknown."
+              x-null-reason: "Unknown when part of the range is not stored."
+              x-source: { kind: computed, file: dashboard/src/mocks/summaries.ts, pointer: null, detail: "Matching calls with channel unknown." }
+        answers:
+          type: object
+          additionalProperties: false
+          required: [ turns, overBudget, budgetMs, p50Ms, valuesMs, valuesTruncated ]
+          x-source: { kind: computed, file: dashboard/src/mocks/summaries.ts, pointer: null, detail: "Answer times of every measured turn in the matching calls." }
+          properties:
+            turns:
+              type: [ integer, "null" ]
+              minimum: 0
+              x-unit: count
+              description: "Turns with a measured answer time."
+              x-null-reason: "Unknown when part of the range is not stored."
+              x-source: { kind: computed, file: dashboard/src/mocks/summaries.ts, pointer: null, detail: "Turns with a measured answer time." }
+            overBudget:
+              type: [ integer, "null" ]
+              minimum: 0
+              x-unit: count
+              description: "Measured turns over budgetMs."
+              x-null-reason: "Unknown when part of the range is not stored."
+              x-source: { kind: computed, file: dashboard/src/mocks/summaries.ts, pointer: null, detail: "Measured turns over budgetMs." }
+            budgetMs:
+              type: integer
+              minimum: 1
+              description: "The project's answer budget the overBudget count used; a setting, not a measurement."
+              x-unit: milliseconds
+              x-configuration: true
+              x-source: { kind: configuration, file: dashboard/src/lib/thresholds.ts, pointer: null, detail: "The project's answer budget the overBudget count used; a setting, not a measurement." }
+            p50Ms:
+              type: [ number, "null" ]
+              minimum: 0
+              description: "Median of the measured answer times."
+              x-unit: milliseconds
+              x-null-reason: "No turn reported an answer time."
+              x-source: { kind: computed, file: dashboard/src/mocks/summaries.ts, pointer: null, detail: "Median of the measured answer times." }
+            valuesMs:
+              type: array
+              description: "The measured answer times, for the distribution strip; at most 1000, oldest calls dropped first."
+              x-source: { kind: computed, file: dashboard/src/mocks/summaries.ts, pointer: null, detail: "The measured answer times, for the distribution strip; at most 1000, oldest calls dropped first." }
+              items:
+                type: number
+                minimum: 0
+            valuesTruncated:
+              type: boolean
+              description: "true when valuesMs holds fewer values than turns."
+              x-source: { kind: computed, file: dashboard/src/mocks/summaries.ts, pointer: null, detail: "true when valuesMs holds fewer values than turns." }
+        issues:
+          type: object
+          additionalProperties: false
+          required: [ high, medium, none, unknown ]
+          description: Matching calls by their highest finding severity, as in CallSummary.issues.
+          x-source: { kind: computed, file: dashboard/src/mocks/summaries.ts, pointer: null, detail: "Matching calls by their highest finding severity, as in CallSummary.issues." }
+          properties:
+            high:
+              type: [ integer, "null" ]
+              minimum: 0
+              x-unit: count
+              description: "Calls with a high finding."
+              x-null-reason: "Unknown when part of the range is not stored."
+              x-source: { kind: computed, file: dashboard/src/mocks/summaries.ts, pointer: null, detail: "Calls with a high finding." }
+            medium:
+              type: [ integer, "null" ]
+              minimum: 0
+              x-unit: count
+              description: "Calls whose highest finding is medium."
+              x-null-reason: "Unknown when part of the range is not stored."
+              x-source: { kind: computed, file: dashboard/src/mocks/summaries.ts, pointer: null, detail: "Calls whose highest finding is medium." }
+            none:
+              type: [ integer, "null" ]
+              minimum: 0
+              x-unit: count
+              description: "Calls checked with no high or medium finding."
+              x-null-reason: "Unknown when part of the range is not stored."
+              x-source: { kind: computed, file: dashboard/src/mocks/summaries.ts, pointer: null, detail: "Calls checked with no high or medium finding." }
+            unknown:
+              type: [ integer, "null" ]
+              minimum: 0
+              x-unit: count
+              description: "Calls with nothing to check."
+              x-null-reason: "Unknown when part of the range is not stored."
+              x-source: { kind: computed, file: dashboard/src/mocks/summaries.ts, pointer: null, detail: "Calls with nothing to check." }
+        recorded:
+          type: [ integer, "null" ]
+          minimum: 0
+          x-unit: count
+          description: "Matching calls with a retained recording."
+          x-null-reason: "Unknown when part of the range is not stored."
+          x-source: { kind: computed, file: dashboard/src/mocks/summaries.ts, pointer: null, detail: "Matching calls with a retained recording." }
     CallSummary:
       type: object
       additionalProperties: false
       description: One row of the Calls list. The same identity as Call, with the per-call figures the list shows, filters and sorts on, computed on the server. No spans, turns or events.
-      required: [ id, room, roomSid, startedAt, endedAt, durationSeconds, participantCount, endState, channel, models, turnCount, answerMs, answerMsMedian, issues, tags, archived, recorded ]
+      required: [ id, room, roomSid, startedAt, endedAt, durationSeconds, participantCount, endState, channel, pipeline, models, turnCount, answerMs, answerMsMedian, issues, tags, archived, recorded ]
       properties:
         id:
           type: string
@@ -2993,7 +3138,12 @@ components:
           type: string
           enum: [ phone, web, console, local, unknown ]
           description: "How the call reached the agent: a SIP participant means phone, a watched room without one means web or app, the agent console and local tests say so from their capture. unknown when no evidence says."
-          x-source: { kind: computed, file: dashboard/src/features/calls/calls-page.tsx, pointer: null, detail: "How the call reached the agent: a SIP participant means phone, a watched room without one means web or app, the agent console and local tests say so from their capture. unknown when no evidence says." }
+          x-source: { kind: computed, file: dashboard/src/mocks/summaries.ts, pointer: null, detail: "How the call reached the agent: a SIP participant means phone, a watched room without one means web or app, the agent console and local tests say so from their capture. unknown when no evidence says." }
+        pipeline:
+          type: string
+          enum: [ cascaded, realtime, text, unknown ]
+          description: "How the agent produced speech: cascaded STT, LLM and TTS, a realtime speech-to-speech model, or text only, from the call's spans and session events. unknown when neither says."
+          x-source: { kind: computed, file: dashboard/src/features/call/call-model.ts, pointer: null, detail: "How the agent produced speech: cascaded STT, LLM and TTS, a realtime speech-to-speech model, or text only, from the call's spans and session events. unknown when neither says." }
         models:
           type: array
           description: "Model names reported by the call's spans, most used first. Empty when spans named none."

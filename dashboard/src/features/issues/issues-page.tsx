@@ -26,8 +26,8 @@ function Hits({ issue }: { issue: Issue }) {
       {issue.hits.map((h, k) => (
         <li key={k} className="grid grid-cols-[120px_minmax(0,220px)_minmax(0,1fr)] items-baseline gap-4 py-2.5 text-[13px]">
           <span className="text-muted-foreground tnum">{h.at === null ? "Now" : day(h.at)}</span>
-          {h.room ? (
-            <Link to="/calls/$room" params={{ room: h.room }} className="truncate font-mono text-[12px] hover:underline">
+          {h.callId ? (
+            <Link to="/calls/$callId" params={{ callId: h.callId }} className="truncate font-mono text-[12px] hover:underline">
               {h.where}
             </Link>
           ) : (
@@ -139,7 +139,7 @@ export function IssuesPage() {
   const shown = withStatus.filter((x) => x.st.status === view).map((x) => x.i)
   const regressed = new Set(withStatus.filter((x) => x.st.regressed).map((x) => x.i.id))
   const open = withStatus.filter((x) => x.st.status === "open").map((x) => x.i)
-  const calls = new Set(open.flatMap((i) => i.hits.map((h) => h.room).filter(Boolean))).size
+  const calls = new Set(open.flatMap((i) => i.hits.map((h) => h.callId).filter(Boolean))).size
   const high = open.filter((i) => i.severity === "high").length
 
   // Every change can be undone from its toast; the store keeps the state from before.

@@ -1,53 +1,91 @@
-import fixtures from "@/mocks/calls.json"
-import captureSession from "@/mocks/capture-session.json"
-import captureCloud from "@/mocks/capture-cloud.json"
-import captureCrash from "@/mocks/capture-crash.json"
-import captureSip from "@/mocks/capture-sip.json"
-import consoleSession from "@/mocks/console-session.json"
-import consoleRealtime from "@/mocks/console-realtime.json"
+import { infiniteQueryOptions } from "@tanstack/react-query"
+import { capturedCalls } from "@/mocks/fixtures"
+import { currentScope } from "@/lib/url-state"
+import type { Call as GeneratedCall, CallPage, CallSummary, CallTotals, EndOfTurnEvent, ItemEvent, OverlapEvent, RecordingSegment, Span, StateEvent, TranscriptEvent, Turn } from "@/lib/api-types"
 
-import type { Call as GeneratedCall, Clock, EndOfTurnEvent, ItemEvent, OverlapEvent, RecordingSegment, Span, StateEvent, TranscriptEvent, Turn } from "@/lib/api-types"
-
-export type { RecordingSegment, Span, Turn }
+export type { CallSummary, CallTotals, RecordingSegment, Span, Turn }
 export type SessionEvent = StateEvent | TranscriptEvent | EndOfTurnEvent | OverlapEvent | ItemEvent
 // preview is a console-only marker for the dev design preview, not part of the API contract.
 export type Recording = NonNullable<GeneratedCall["recording"]> & { preview?: string }
 export type Call = Omit<GeneratedCall, "recording"> & { recording?: Recording | null }
 
-// Capture fixtures predate the contract: they lack the call id, end state, tags, archive flag and clocks.
-type Raw<T> = T extends unknown ? Omit<T, "clockId"> & { clockId?: string } : never
-type RawCall = Omit<Call, "id" | "endState" | "tags" | "archived" | "clocks" | "spans" | "turns" | "events" | "recording"> &
-  Partial<Pick<Call, "id" | "endState" | "tags" | "archived" | "clocks">> & {
-    spans: Raw<Span>[] | null
-    turns: Raw<Turn>[] | null
-    events?: Raw<SessionEvent>[] | null
-    recording?: (Omit<Raw<Recording>, "id"> & { id?: string }) | null
-  }
+// Pages not yet moved to the API read the captured calls directly; #323 removes these as each page
+// moves to fetch.
+export const listCalls = (): Call[] => capturedCalls()
+export const getCall = (room: string): Call | undefined => capturedCalls().find((c) => c.room === room)
 
-const clock = (id: string, origin: Clock["origin"]): Clock => ({ id, origin, originAt: null, offsetToCallStartSeconds: null, alignment: "unknown" })
-
-export function fromCapture(raw: RawCall): Call {
-  const clocks: Clock[] = []
-  if (raw.spans?.length) clocks.push(clock("trace", "trace_start"))
-  if (raw.turns?.length || raw.events?.length) clocks.push(clock("session", "first_event"))
-  if (raw.recording) clocks.push(clock("recording", "recording_start"))
-  return {
-    ...raw,
-    // Preview fixtures have no conversation id yet; #323 replaces this.
-    id: raw.id ?? raw.room,
-    endState: raw.endState ?? "unknown",
-    tags: raw.tags ?? [],
-    archived: raw.archived ?? false,
-    clocks: raw.clocks ?? clocks,
-    spans: raw.spans?.map((s) => ({ ...s, clockId: s.clockId ?? "trace" })) ?? null,
-    turns: raw.turns?.map((t) => ({ ...t, clockId: t.clockId ?? "session" })) ?? null,
-    events: raw.events?.map((e) => ({ ...e, clockId: e.clockId ?? "session" })),
-    // Captured recordings carry no media id; the playback url is the only identifier they have.
-    recording: raw.recording && { ...raw.recording, id: raw.recording.id ?? raw.recording.url, clockId: raw.recording.clockId ?? "recording" },
+// An API answer that is not 2xx. status 0 means no API answered.
+export class ApiError extends Error {
+  readonly status: number
+  readonly code: string
+  constructor(status: number, code: string, message: string) {
+    super(message)
+    this.status = status
+    this.code = code
   }
 }
 
-const calls = [captureSip.call as unknown as RawCall, captureCrash.call as unknown as RawCall, captureCloud.call as unknown as RawCall, captureSession.call as unknown as RawCall, consoleRealtime.call as RawCall, consoleSession.call as RawCall, ...(fixtures.calls as RawCall[])].map(fromCapture)
+// The current project's API root. The console reads only through web's API (CLAUDE.md Boundaries).
+export const projectApi = () => `/api/v1/org/${currentScope().org}/project/${currentScope().project}`
 
-export const listCalls = (): Call[] => calls
-export const getCall = (room: string): Call | undefined => calls.find((c) => c.room === room)
+async function getJSON<T>(url: string): Promise<T> {
+  let res: Response
+  try {
+    res = await fetch(url, { headers: { Accept: "application/json" } })
+  } catch (e) {
+    throw new ApiError(0, "network", e instanceof Error ? e.message : "No answer from the API")
+  }
+  // Anything but JSON came from something other than the API, such as the dev server answering
+  // with the app's own page when no API runs.
+  const noApi = () => new ApiError(0, "no_api", `No VoiceGateway API answered at ${url.split("?")[0]}.`)
+  if (!res.headers.get("Content-Type")?.includes("json")) throw noApi()
+  const body: unknown = await res.json().catch(() => {
+    throw noApi()
+  })
+  if (!res.ok) {
+    const err = body as { code?: string; message?: string } | null
+    if (!err?.code) throw noApi()
+    throw new ApiError(res.status, err.code, err.message ?? res.statusText)
+  }
+  return body as T
+}
+
+// One page of the calls matching the filters, sorted and paged by the server. Later pages carry the
+// cursor and the snapshot of the first, so they never mix two reads; totals cover every match.
+export function fetchCallPage(filters: URLSearchParams, next?: { cursor: string; snapshot: string }, limit = 25): Promise<CallPage> {
+  const q = new URLSearchParams(filters)
+  q.set("limit", String(limit))
+  if (next) {
+    q.set("cursor", next.cursor)
+    q.set("snapshot", next.snapshot)
+  }
+  return getJSON<CallPage>(`${projectApi()}/calls?${q}`)
+}
+
+// Only the totals and the first rows, for counts beside the list (one page of one call).
+export const fetchCallCount = async (filters: URLSearchParams) => {
+  const q = new URLSearchParams(filters)
+  q.set("limit", "1")
+  return (await getJSON<CallPage>(`${projectApi()}/calls?${q}`)).totals.callCount
+}
+
+// The project's most recent call, unfiltered: where the time range ends, and whether there are calls at all.
+export const fetchLatestCall = async () => (await getJSON<CallPage>(`${projectApi()}/calls?limit=1&sort=startedAt&order=desc`)).items[0] ?? null
+
+export const fetchCall = (id: string) => getJSON<Call>(`${projectApi()}/calls/${encodeURIComponent(id)}`)
+
+// A 4xx or no API at all will not change by asking again; anything else is retried once.
+export const shouldRetry = (failures: number, error: unknown) => !(error instanceof ApiError && (error.status === 0 || (error.status >= 400 && error.status < 500))) && failures < 1
+
+// Query keys and functions for TanStack Query, scoped to the project so switching projects never
+// shows another project's cache.
+export const callPagesQuery = (filters: URLSearchParams) =>
+  infiniteQueryOptions({
+    queryKey: ["calls", currentScope(), "pages", filters.toString()],
+    queryFn: ({ pageParam }) => fetchCallPage(filters, pageParam ?? undefined),
+    initialPageParam: null as { cursor: string; snapshot: string } | null,
+    getNextPageParam: (last: CallPage) => (last.page.nextCursor ? { cursor: last.page.nextCursor, snapshot: last.page.snapshot } : undefined),
+  })
+export const latestCallQuery = () => ({ queryKey: ["calls", currentScope(), "latest"], queryFn: fetchLatestCall })
+export const callCountQuery = (filters: URLSearchParams) => ({ queryKey: ["calls", currentScope(), "count", filters.toString()], queryFn: () => fetchCallCount(filters) })
+export const callQuery = (id: string) => ({ queryKey: ["call", currentScope(), id], queryFn: () => fetchCall(id) })

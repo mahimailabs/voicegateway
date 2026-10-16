@@ -134,8 +134,8 @@ function Timeline({ events }: { events: Fired[] }) {
                 <p className="text-[13px] text-muted-foreground">{e.detail}</p>
                 {e.link && (
                   <span className="mt-0.5 inline-flex items-center gap-1 text-[12px]">
-                    {e.link.to === "/calls/$room" ? (
-                      <Link to="/calls/$room" params={{ room: e.link.room }} className="font-mono text-muted-foreground hover:text-foreground hover:underline">
+                    {e.link.to === "/calls/$callId" ? (
+                      <Link to="/calls/$callId" params={{ callId: e.link.callId }} className="font-mono text-muted-foreground hover:text-foreground hover:underline">
                         {e.where}
                       </Link>
                     ) : (

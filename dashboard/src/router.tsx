@@ -32,7 +32,7 @@ const agents = createRoute({ getParentRoute: () => app, path: "/agents", compone
 const egress = createRoute({ getParentRoute: () => app, path: "/egress", component: EgressPage })
 const ingress = createRoute({ getParentRoute: () => app, path: "/ingress", component: IngressPage })
 const calls = createRoute({ getParentRoute: () => app, path: "/calls", component: CallsPage })
-const callRoute = createRoute({ getParentRoute: () => app, path: "/calls/$room", component: CallsPage })
+const callRoute = createRoute({ getParentRoute: () => app, path: "/calls/$callId", component: CallsPage })
 const issues = createRoute({ getParentRoute: () => app, path: "/issues", component: IssuesPage })
 const alerts = createRoute({ getParentRoute: () => app, path: "/alerts", component: AlertsPage })
 const live = createRoute({ getParentRoute: () => app, path: "/live", component: LivePage })

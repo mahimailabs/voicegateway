@@ -54,7 +54,7 @@
       "getProjectSettings",
       "getRecordingMedia"
     ],
-    "/calls/$room": [
+    "/calls/$callId": [
       "listCalls",
       "getCall",
       "getMediaServer",
