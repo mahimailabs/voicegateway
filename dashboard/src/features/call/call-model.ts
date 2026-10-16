@@ -209,7 +209,7 @@ export function buildModel(call: Call): CallModel {
 export const interruptionCount = (m: CallModel) => Math.max(m.moments.filter((x) => x.kind === "interruption").length, m.turns.filter((t) => t.interrupted).length)
 
 // The call's one length on screen: the room's, the same number the Calls list shows.
-export const callLength = (call: Call, model: { duration: number | null }) => call.durationSeconds || model.duration
+export const callLength = (call: Call, model: { duration: number | null }) => call.durationSeconds ?? model.duration
 
 export const pipelineLabel: Record<Pipeline, string> = {
   cascaded: "Cascaded · STT, LLM, TTS",

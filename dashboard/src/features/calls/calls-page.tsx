@@ -286,7 +286,9 @@ export function CallsPage() {
     c
       ? navigate({ to: "/calls/$room", params: { room: c.room }, search: (p: Record<string, unknown>) => p } as never)
       : navigate({ to: "/calls", search: ({ turn: _t, pane: _p, events: _e, ...rest }: Record<string, unknown>) => rest } as never)
-  const now = Math.max(...all.flatMap((r) => (r.call.endedAt !== null ? [Date.parse(r.call.endedAt) / 1000] : [])))
+  // The range ends at the latest end time; a call still open counts from its start.
+  const ends = all.map((r) => (r.call.endedAt !== null ? Date.parse(r.call.endedAt) / 1000 : r.started))
+  const now = ends.length > 0 ? Math.max(...ends) : Date.now() / 1000
   const [range, setRange] = useUrlRange("7d", now)
   const fields = useMemo(() => callFields(tags.all, tags.of), [tags])
   // The stat cards and the table read the same rows, so a filter changes both.
