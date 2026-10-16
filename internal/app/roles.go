@@ -15,6 +15,7 @@ import (
 	"github.com/redis/go-redis/v9"
 
 	"github.com/mahimailabs/voicegateway/internal/config"
+	"github.com/mahimailabs/voicegateway/internal/event"
 	"github.com/mahimailabs/voicegateway/internal/ingest"
 	"github.com/mahimailabs/voicegateway/internal/obs"
 	"github.com/mahimailabs/voicegateway/internal/seal"
@@ -45,14 +46,18 @@ func Web(ctx context.Context, c config.Config, log *slog.Logger) error {
 	rdb := redis.NewClient(opts)
 	defer func() { _ = rdb.Close() }()
 
+	projects := pgstore.NewStore(pool, sealer)
+	producer := stream.NewProducer(rdb, stream.Ingest)
+	uploads := &ingest.Uploads{Projects: projects, Stream: producer, Log: log, Now: time.Now}
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", obs.Health)
-	mux.Handle("POST /livekit/webhook", &ingest.Webhooks{
-		Projects: pgstore.NewStore(pool, sealer),
-		Stream:   stream.NewProducer(rdb, stream.Ingest),
-		Log:      log,
-		Now:      time.Now,
-	})
+	mux.Handle("POST /livekit/webhook", &ingest.Webhooks{Projects: projects, Stream: producer, Log: log, Now: time.Now})
+	// LiveKit Agents' observability paths (decision 0014), under LIVEKIT_OBSERVABILITY_URL.
+	mux.Handle("POST /observability/traces/otlp/v0", uploads.OTLP(event.KindAgentTraces))
+	mux.Handle("POST /observability/logs/otlp/v0", uploads.OTLP(event.KindAgentLogs))
+	mux.Handle("POST /observability/metrics/otlp/v0", uploads.OTLP(event.KindAgentMetrics))
+	mux.HandleFunc("POST /observability/recordings/v0", uploads.SessionReport)
 
 	srv := &http.Server{
 		Addr:              c.WebAddr,

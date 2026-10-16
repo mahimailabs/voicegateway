@@ -1,6 +1,7 @@
 package event
 
 import (
+	"encoding/json"
 	"errors"
 	"time"
 )
@@ -8,8 +9,31 @@ import (
 // Kind names what produced the payload, so the worker knows how to decode it.
 type Kind string
 
-// KindLiveKitWebhook is a LiveKit webhook: the verified request body, protojson WebhookEvent.
-const KindLiveKitWebhook Kind = "livekit.webhook"
+// The kinds web appends, and what each Payload holds.
+const (
+	// KindLiveKitWebhook is a LiveKit webhook: the verified request body, protojson WebhookEvent.
+	KindLiveKitWebhook Kind = "livekit.webhook"
+	// KindAgentTraces, KindAgentLogs and KindAgentMetrics are a LiveKit agent's OTLP export
+	// (decision 0014): the request decompressed, an OTLP Export*ServiceRequest in protobuf.
+	KindAgentTraces  Kind = "livekit.agent.traces"
+	KindAgentLogs    Kind = "livekit.agent.logs"
+	KindAgentMetrics Kind = "livekit.agent.metrics"
+	// KindAgentSessionReport is a LiveKit agent's session upload (decisions 0014, 0015): a
+	// SessionReport encoded as JSON.
+	KindAgentSessionReport Kind = "livekit.agent.session_report"
+)
+
+// SessionReport is the Payload of KindAgentSessionReport.
+type SessionReport struct {
+	// Header is the upload's MetricsRecordingHeader as protojson: room, job and start time.
+	Header json.RawMessage `json:"header"`
+	// ChatHistory is chat_history.json byte for byte as uploaded, carried as a string so encoding
+	// the report does not reformat it; absent when the agent sent none.
+	ChatHistory string `json:"chat_history,omitempty"`
+	// AudioDiscarded is true when the upload carried recording.ogg and it was not kept, because
+	// the project has no recordings bucket (0015). The audio itself never enters the stream.
+	AudioDiscarded bool `json:"audio_discarded"`
+}
 
 // Envelope is one ingested record, attributed to the project whose LiveKit key signed it.
 type Envelope struct {

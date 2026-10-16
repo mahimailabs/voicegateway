@@ -56,6 +56,7 @@ func needDocker(t *testing.T) {
 // fixture is a migrated Postgres holding one project, a Redis, and the handler over both.
 type fixture struct {
 	handler http.Handler
+	uploads *Uploads
 	rdb     *redis.Client
 }
 
@@ -111,14 +112,12 @@ func newFixture(t *testing.T) fixture {
 	rdb := redis.NewClient(opts)
 	t.Cleanup(func() { _ = rdb.Close() })
 
+	producer := stream.NewProducer(rdb, stream.Ingest)
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 	return fixture{
-		handler: &Webhooks{
-			Projects: projects,
-			Stream:   stream.NewProducer(rdb, stream.Ingest),
-			Log:      slog.New(slog.NewTextHandler(io.Discard, nil)),
-			Now:      time.Now,
-		},
-		rdb: rdb,
+		handler: &Webhooks{Projects: projects, Stream: producer, Log: log, Now: time.Now},
+		uploads: &Uploads{Projects: projects, Stream: producer, Log: log, Now: time.Now},
+		rdb:     rdb,
 	}
 }
 
@@ -168,18 +167,7 @@ func TestWebhookVerified(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("signed webhook: status = %d, want 200", rec.Code)
 	}
-	c := stream.NewConsumer(f.rdb, stream.Ingest, "test", "t1")
-	if err := c.Ensure(context.Background()); err != nil {
-		t.Fatal(err)
-	}
-	msgs, err := c.Read(context.Background(), 10, time.Second)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(msgs) != 1 || msgs[0].Err != nil {
-		t.Fatalf("stream holds %+v, want one envelope", msgs)
-	}
-	e := msgs[0].Envelope
+	e := f.only(t)
 	if e.ID != "EV_test1" || e.Kind != event.KindLiveKitWebhook || e.OrganisationID != "default" || e.ProjectID != "production" ||
 		string(e.Payload) != roomStarted {
 		t.Fatalf("envelope = %+v, want EV_test1 for default/production with the body unchanged", e)
@@ -240,4 +228,21 @@ func TestWebhookProjectLookupDown(t *testing.T) {
 	if appended.n != 0 {
 		t.Fatalf("appended %d envelopes, want 0", appended.n)
 	}
+}
+
+// only reads the stream and returns its single envelope.
+func (f fixture) only(t *testing.T) event.Envelope {
+	t.Helper()
+	c := stream.NewConsumer(f.rdb, stream.Ingest, "test", "t1")
+	if err := c.Ensure(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	msgs, err := c.Read(context.Background(), 10, time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(msgs) != 1 || msgs[0].Err != nil {
+		t.Fatalf("stream holds %+v, want one envelope", msgs)
+	}
+	return msgs[0].Envelope
 }

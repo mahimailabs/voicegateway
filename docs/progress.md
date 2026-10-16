@@ -54,7 +54,7 @@ Plan agreed 2026-10-15: a team builds V1 with Cloud (decision 0024) over 30 days
 
 - Cloud billing unit and prices (0024): set in Stripe before launch, never per audio minute.
 
-- Which LiveKit Agents releases we test the observability upload against (0014); the paths carry v0 and can change.
+- Which LiveKit Agents releases we test the observability upload against (0014); the paths carry v0 and can change. Verified against 1.8.7 on 2026-10-16.
 
 - How long an unmatched event waits for its call before it is stored as unmatched (decision 0012 says "briefly").
 - Launch and non-functional targets in PRODUCT.md and ARCHITECTURE.md are proposals and need confirming.
@@ -122,3 +122,9 @@ Slice A acceptance checks 1 to 3 (`TestMigrateTwice`, `TestProjectSecretSealed`,
 `web` serves `POST /livekit/webhook`. livekit/protocol v1.52.1 `webhook.Receive` verifies the JWT against the LiveKit key it names and the body's SHA-256; the key provider looks the project up in Postgres and opens its sealed secret, so each event is attributed to the project that signed it. A verified event becomes an `internal/event` envelope (LiveKit's event id, kind, project, received time, body unchanged) appended to the `voicegateway:ingest` Redis stream through `internal/stream`, which also holds the worker's consumer-group reader. Bad signatures are 401, bodies over 1 MiB 413, a failed project lookup or stream append 503 so LiveKit retries. No body or secret is logged.
 
 Acceptance checks 6 to 9 pass locally against Postgres and Redis containers and run in CI. Manual check: a real `livekit-server --dev` 1.13.3 sent room_started and room_finished for a test room, both appended for project `default/dev`; an unsigned post answered 401 and appended nothing. Next: (b) the Agents observability uploads, (c) the worker into ClickHouse.
+
+### 2026-10-16: first real call, slice B (b) (agent observability uploads)
+
+`web` serves LiveKit's four observability paths (decision 0014) as LiveKit Agents 1.8.7 sends them: OTLP traces, logs and metrics (gzip, protobuf) and the multipart session report. The bearer JWT is verified with livekit/protocol against the project that owns its key and must hold the observability write grant. OTLP bodies are stored decompressed; the session report keeps the recording header (as protojson) and chat_history.json, and is identified by the job id. The audio part is read and discarded, and the report marks it, until a project has a recordings bucket (0015).
+
+A failed lookup or append answers 503 with google.rpc RetryInfo, because the 1.8.7 session uploader retries a 5xx only with it and otherwise drops the report. Acceptance checks 10 to 13 pass locally against Postgres and Redis containers and run in CI. Manual check: a real LiveKit Agents 1.8.7 agent on a LiveKit Cloud test project, with `LIVEKIT_OBSERVABILITY_URL` pointed at a local stack, uploaded traces, logs, metrics and its session report (room, job and start time in the header; audio discarded), all attributed to that project. Next: (c) the worker into ClickHouse.
