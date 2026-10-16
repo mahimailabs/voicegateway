@@ -1,0 +1,14 @@
+// V1 observation boundary. Models are reached by the agent, never by VoiceGateway.
+default node fill: theme-page border: theme-border
+style observer fill: theme-page border: #0071e3
+node phone "Phone / SIP"
+node media "LiveKit / media server" right of phone
+node agent "LiveKit / voice agent" right of media
+node models "Models / STT · LLM · TTS" right of agent
+node gateway "VoiceGateway / One call timeline" below agent gap: wide style: observer
+node aside "Observes the call. / Never in the audio path." (wrap: 32, size: small, color: theme-muted) shape: none below gateway (gap: tight)
+edge phone -> media from: right to: left
+edge media -> agent from: right to: left
+edge agent -> models from: right to: left
+edge media -> gateway "Webhooks · metrics" from: bottom to: left line: (pattern: dashed)
+edge agent -> gateway "Spans · session uploads" from: bottom to: top line: (pattern: dashed)
