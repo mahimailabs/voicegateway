@@ -1,17 +1,19 @@
 import { Bar, BarChart, Cell, LabelList, XAxis, YAxis } from "recharts"
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart"
 import type { Span } from "@/lib/api"
+import { placed } from "./call-model"
 import type { Focus } from "./call-view"
 
 // The agent's OTLP span tree on one clock, indented by depth. Model spans are blue.
 const llmSpans = new Set(["llm_node", "llm_request", "llm_request_run"])
 const fmtMs = (v: number) => (v < 0.1 ? "<0.1 ms" : `${v < 10 ? v.toFixed(1) : Math.round(v)} ms`)
 
-// Depth in the span tree, and which agent turn (by order) each span belongs to.
+// Depth in the span tree, and which agent turn (by order) each span belongs to. Spans without a start or
+// duration have no bar; they still count for depth and turn order.
 function layout(spans: Span[]) {
   const byId = new Map(spans.map((s) => [s.spanId, s]))
   const turnIds = spans.filter((s) => s.name === "agent_turn").map((s) => s.spanId)
-  return spans.map((s, i) => {
+  return spans.filter(placed).map((s, i) => {
     let depth = 0
     let turn: number | null = null
     for (let cur: Span | undefined = s; cur; cur = cur.parentId ? byId.get(cur.parentId) : undefined) {

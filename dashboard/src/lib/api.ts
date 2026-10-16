@@ -6,70 +6,48 @@ import captureSip from "@/mocks/capture-sip.json"
 import consoleSession from "@/mocks/console-session.json"
 import consoleRealtime from "@/mocks/console-realtime.json"
 
-// Round-1 types, written by hand until the OpenAPI contract exists (Phase 1 check 6 replaces them with generated ones).
-export type Span = { name: string; spanId: string; parentId: string | null; startMs: number; durationMs: number; attrs?: Record<string, string> }
-export type Turn = {
-  userText: string | null
-  agentText: string | null
-  model: string | null
-  llmMs: number | null
-  ttftMs: number | null
-  sttMs: number | null
-  ttsMs: number | null
-  endOfTurnMs: number | null
-  inputTokens: number | null
-  outputTokens: number | null
-  audioSeconds: number | null
-  characters: number | null
-  // From LiveKit's per-message metrics (RemoteSession); absent on older captures.
-  transcriptionDelayMs?: number | null
-  e2eMs?: number | null
-  eotProbability?: number | null
-  eotThreshold?: number | null
-  // Seconds from the session start when the user and agent messages were added.
-  userItemAt?: number | null
-  agentItemAt?: number | null
-  // The agent's reply was cut off by the caller (the message's interrupted flag).
-  interrupted?: boolean
+import type { Call as GeneratedCall, Clock, EndOfTurnEvent, ItemEvent, OverlapEvent, RecordingSegment, Span, StateEvent, TranscriptEvent, Turn } from "@/lib/api-types"
+
+export type { RecordingSegment, Span, Turn }
+export type SessionEvent = StateEvent | TranscriptEvent | EndOfTurnEvent | OverlapEvent | ItemEvent
+// preview is a console-only marker for the dev design preview, not part of the API contract.
+export type Recording = NonNullable<GeneratedCall["recording"]> & { preview?: string }
+export type Call = Omit<GeneratedCall, "recording"> & { recording?: Recording | null }
+
+// Capture fixtures predate the contract: they lack the call id, end state, tags, archive flag and clocks.
+type Raw<T> = T extends unknown ? Omit<T, "clockId"> & { clockId?: string } : never
+type RawCall = Omit<Call, "id" | "endState" | "tags" | "archived" | "clocks" | "spans" | "turns" | "events" | "recording"> &
+  Partial<Pick<Call, "id" | "endState" | "tags" | "archived" | "clocks">> & {
+    spans: Raw<Span>[] | null
+    turns: Raw<Turn>[] | null
+    events?: Raw<SessionEvent>[] | null
+    recording?: (Omit<Raw<Recording>, "id"> & { id?: string }) | null
+  }
+
+const clock = (id: string, origin: Clock["origin"]): Clock => ({ id, origin, originAt: null, offsetToCallStartSeconds: null, alignment: "unknown" })
+
+export function fromCapture(raw: RawCall): Call {
+  const clocks: Clock[] = []
+  if (raw.spans?.length) clocks.push(clock("trace", "trace_start"))
+  if (raw.turns?.length || raw.events?.length) clocks.push(clock("session", "first_event"))
+  if (raw.recording) clocks.push(clock("recording", "recording_start"))
+  return {
+    ...raw,
+    // Preview fixtures have no conversation id yet; #323 replaces this.
+    id: raw.id ?? raw.room,
+    endState: raw.endState ?? "unknown",
+    tags: raw.tags ?? [],
+    archived: raw.archived ?? false,
+    clocks: raw.clocks ?? clocks,
+    spans: raw.spans?.map((s) => ({ ...s, clockId: s.clockId ?? "trace" })) ?? null,
+    turns: raw.turns?.map((t) => ({ ...t, clockId: t.clockId ?? "session" })) ?? null,
+    events: raw.events?.map((e) => ({ ...e, clockId: e.clockId ?? "session" })),
+    // Captured recordings carry no media id; the playback url is the only identifier they have.
+    recording: raw.recording && { ...raw.recording, id: raw.recording.id ?? raw.recording.url, clockId: raw.recording.clockId ?? "recording" },
+  }
 }
 
-// Agent session events (LiveKit RemoteSession protocol), seconds from the first event.
-export type SessionEvent =
-  | { t: number; type: "user_state"; from: string; to: string }
-  | { t: number; type: "agent_state"; from: string; to: string }
-  | { t: number; type: "transcript"; final: boolean; text: string }
-  | { t: number; type: "end_of_turn"; probability: number; threshold: number }
-  | { t: number; type: "overlapping_speech"; isInterruption: boolean; overlapStartedAt: number; detectedAt: number; detectionDelay: number }
-  | { t: number; type: "item"; id: string; role: string }
-export type Call = {
-  room: string
-  roomSid: string
-  startedAt: string
-  endedAt: string
-  durationSeconds: number
-  participantCount: number
-  endReason: string | null
-  spans: Span[] | null
-  turns: Turn[] | null
-  // Egress recording of the room when the project opts in (decision 0008). None of the captured calls have one.
-  recording?: Recording | null
-  events?: SessionEvent[] | null
-  // Session totals when the source reported them.
-  usage?: { llmInputTokens: number | null; llmOutputTokens: number | null; ttsCharacters: number | null; sttSeconds: number | null; note?: string } | null
-}
-
-export type RecordingSegment = { speaker: "caller" | "agent"; text: string; start: number; end: number }
-export type Recording = {
-  url: string
-  duration: number
-  segments: RecordingSegment[]
-  // Normalised amplitude per bar, 0 to 1, per speaker track (Egress track recordings).
-  peaks: { caller: number[]; agent: number[] }
-  // Set when the audio is a design preview rather than a captured recording.
-  preview?: string
-}
-
-const calls = [captureSip.call as unknown as Call, captureCrash.call as unknown as Call, captureCloud.call as unknown as Call, captureSession.call as unknown as Call, consoleRealtime.call as Call, consoleSession.call as Call, ...(fixtures.calls as Call[])]
+const calls = [captureSip.call as unknown as RawCall, captureCrash.call as unknown as RawCall, captureCloud.call as unknown as RawCall, captureSession.call as unknown as RawCall, consoleRealtime.call as RawCall, consoleSession.call as RawCall, ...(fixtures.calls as RawCall[])].map(fromCapture)
 
 export const listCalls = (): Call[] => calls
 export const getCall = (room: string): Call | undefined => calls.find((c) => c.room === room)

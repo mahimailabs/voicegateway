@@ -6,7 +6,7 @@ import type { Call } from "@/lib/api"
 import { BUDGET_MS } from "@/lib/thresholds"
 import { cn } from "@/lib/utils"
 import probe from "@/mocks/network-probe.json"
-import { buildModel, fmtMs, median } from "@/features/call/call-model"
+import { buildModel, fmtMs, median, placed } from "@/features/call/call-model"
 import { waterfallRows } from "@/features/profile/ttfa-waterfall"
 import { useUrlState } from "@/lib/url-state"
 
@@ -62,7 +62,8 @@ function samples(calls: Call[]): Sample[] {
   const sfu = probe.endpoints.find((e) => e.role === "sfu")?.tcpMs
   return calls.flatMap((c) => {
     const m = buildModel(c)
-    const spans = c.spans ?? []
+    // Only spans with a start and duration can fall inside a turn's window.
+    const spans = (c.spans ?? []).filter(placed)
     return m.turns
       .filter((t) => t.userText !== null || t.responseMs !== null)
       .map((t) => {

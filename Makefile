@@ -2,7 +2,7 @@
 DASHBOARD := dashboard
 
 .DEFAULT_GOAL := help
-.PHONY: help dev test lint typecheck api-lint api-sources api-check landing-dev landing-check landing-deploy
+.PHONY: help dev test lint typecheck api-lint api-sources api-types api-types-check api-check landing-dev landing-check landing-deploy
 
 help: ## List the targets
 	@grep -E '^[a-z][a-z0-9_-]*:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  make %-15s %s\n", $$1, $$2}'
@@ -37,4 +37,11 @@ api-lint: ## Validate the pinned OpenAPI contract
 api-sources: ## Check source attribution, units and unknown values
 	node $(DASHBOARD)/scripts/check-sources.ts
 
-api-check: api-lint api-sources ## Validate the console read contract
+api-types: ## Regenerate the console API types from the contract
+	npm --prefix $(DASHBOARD) run api:types
+
+api-types-check: api-types ## Fail when the generated API types are out of date
+	git diff --exit-code -- $(DASHBOARD)/src/lib/api-types
+	test -z "$$(git ls-files --others --exclude-standard -- $(DASHBOARD)/src/lib/api-types)"
+
+api-check: api-lint api-sources api-types-check ## Validate the console read contract

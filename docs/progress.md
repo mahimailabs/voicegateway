@@ -100,3 +100,7 @@ Prepared a README redesign from the maintainer-selected Langfuse reference: a wi
 ### 2026-10-16: repository social preview
 
 Updated the GitHub social-preview setting with a 1280 × 640 card matching the README wordmark and blue accent. Reloaded Settings to verify the upload persisted. The old cost/quality and multi-framework claims are removed. Both light/dark exports and their shared editable banner source are retained with the README assets; GitHub uses the light export because the setting accepts one fixed image.
+
+### 2026-10-16: generated API types (#322)
+
+The console now imports its API data types from `dashboard/src/lib/api-types/`, generated from `docs/api/openapi.yaml` by `@hey-api/openapi-ts` 0.99.0 (`openapi-typescript` 7 supports only TypeScript 5). `npm run api:types` or `make api-types` regenerates them, and `make api-check` fails when the committed types are out of date. The only console-side extension is the dev design preview marker on recordings. Capture fixtures predate the contract, so `fromCapture` in `src/lib/api.ts` adds the required id, end state, tags, archive flag and unknown-alignment clocks without inventing values; #323 replaces it with contract-backed mocks. Values the contract marks nullable now show as Unknown or are left out of timelines and findings instead of rendering 0 or NaN.

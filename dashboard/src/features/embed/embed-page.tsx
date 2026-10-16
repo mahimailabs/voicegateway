@@ -48,7 +48,7 @@ function Calls({ open }: { open: (room: string) => void }) {
     [],
   )
   const cols = useMemo(() => columns(noTags), [])
-  return <DataTable<Row> data={rows} columns={cols} getRowId={(r) => r.call.roomSid} onRowClick={(r) => open(r.call.room)} pageSize={10} empty="No calls in this project yet." />
+  return <DataTable<Row> data={rows} columns={cols} getRowId={(r) => r.call.roomSid ?? r.call.id} onRowClick={(r) => open(r.call.room)} pageSize={10} empty="No calls in this project yet." />
 }
 
 function OneCall({ room, back }: { room: string | undefined; back: () => void }) {

@@ -1,4 +1,5 @@
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@/components/ui/empty"
+import { Unknown } from "@/components/unknown"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import type { Call, SessionEvent } from "@/lib/api"
@@ -27,9 +28,9 @@ function describe(e: SessionEvent) {
     case "transcript":
       return { kind: e.final ? "Final transcript" : "Partial transcript", text: `"${e.text}"` }
     case "end_of_turn":
-      return { kind: "End of turn", text: `probability ${e.probability.toFixed(2)}, threshold ${e.threshold.toFixed(2)}` }
+      return { kind: "End of turn", text: `probability ${e.probability?.toFixed(2) ?? "unknown"}, threshold ${e.threshold?.toFixed(2) ?? "unknown"}` }
     case "overlapping_speech":
-      return { kind: "Overlapping speech", text: `${e.isInterruption ? "interruption" : "backchannel"}, detected in ${Math.round(e.detectionDelay * 1000)} ms` }
+      return { kind: "Overlapping speech", text: `${e.isInterruption ? "interruption" : "backchannel"}, detected in ${e.detectionDelay !== null ? `${Math.round(e.detectionDelay * 1000)} ms` : "an unreported time"}` }
     case "item":
       return { kind: "Message added", text: e.role }
   }
@@ -70,10 +71,10 @@ export function EventLog({ call, model, onSelect }: { call: Call; model: CallMod
         <TableBody>
           {shown.map((e, k) => {
             const d = describe(e)
-            const turn = turnAt(e.t)
+            const turn = e.t !== null ? turnAt(e.t) : -1
             return (
               <TableRow key={k} className={cn(turn >= 0 && "cursor-pointer")} onClick={() => turn >= 0 && onSelect(turn)}>
-                <TableCell className="text-muted-foreground tnum">{e.t.toFixed(2)} s</TableCell>
+                <TableCell className="text-muted-foreground tnum">{e.t !== null ? `${e.t.toFixed(2)} s` : <Unknown why="No time reported for this event" />}</TableCell>
                 <TableCell className={cn(e.type === "overlapping_speech" && (e.isInterruption ? "text-destructive" : "font-medium"))}>{d.kind}</TableCell>
                 <TableCell className="max-w-0 truncate text-muted-foreground">{d.text}</TableCell>
               </TableRow>
