@@ -58,9 +58,12 @@ func Slug(name string) string {
 // AddProject creates a project with its LiveKit secret sealed under the configured key.
 func AddProject(ctx context.Context, c config.Config, in ProjectInput) (store.Project, error) {
 	var missing []string
-	for name, v := range map[string]string{"--name": in.Name, "--livekit-url": in.LiveKitURL, "--livekit-api-key": in.LiveKitAPIKey, "LIVEKIT_API_SECRET": in.LiveKitAPISecret} {
-		if strings.TrimSpace(v) == "" {
-			missing = append(missing, name)
+	// In a fixed order, so the message reads the same on every run.
+	for _, f := range []struct{ name, value string }{
+		{"--name", in.Name}, {"--livekit-url", in.LiveKitURL}, {"--livekit-api-key", in.LiveKitAPIKey}, {"LIVEKIT_API_SECRET", in.LiveKitAPISecret},
+	} {
+		if strings.TrimSpace(f.value) == "" {
+			missing = append(missing, f.name)
 		}
 	}
 	if len(missing) > 0 {
