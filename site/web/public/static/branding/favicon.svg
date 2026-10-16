@@ -1,9 +1,0 @@
-<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="VoiceGateway">
-  <rect width="64" height="64" rx="14" fill="#0a0a0a"/>
-  <g transform="translate(1.8 14.4) scale(0.6)" fill="none" stroke-width="10" stroke-linecap="round">
-    <path d="M16 27V39M34 4.5V26.5M52 5V19" stroke="#fafafa"/>
-    <path d="M73.4 20.1A38 38 0 0 1 88 50" stroke="#cba6f7"/>
-    <path d="M50 50L62 29.2" stroke="#fafafa" stroke-width="8"/>
-    <circle cx="50" cy="50" r="9" fill="#fafafa" stroke="none"/>
-  </g>
-</svg>

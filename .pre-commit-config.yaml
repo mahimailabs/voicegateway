@@ -14,14 +14,8 @@ repos:
         # 250 KiB, not the 500 KiB default. The default is why a 404 KiB
         # duplicate screenshot once reached main and stayed there. uv.lock
         # and the dashboard's npm lockfile are tracked files allowed over it.
-        # The README teaser has its own 5 MiB cap below,
-        # path-anchored so a copy under any other name is still caught.
         args: [--maxkb=250]
-        exclude: ^(uv\.lock|dashboard/package-lock\.json|site/landing/pnpm-lock\.yaml|docs/assets/voicegateway-teaser\.gif)$
-    -   id: check-added-large-files
-        name: check README teaser size
-        args: [--maxkb=5120]
-        files: ^docs/assets/voicegateway-teaser\.gif$
+        exclude: ^(uv\.lock|dashboard/package-lock\.json|site/landing/pnpm-lock\.yaml)$
     -   id: check-toml
     -   id: check-yaml
         args:
