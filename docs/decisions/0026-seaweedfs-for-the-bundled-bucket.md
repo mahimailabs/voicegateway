@@ -1,6 +1,6 @@
 # 0026: SeaweedFS for the bundled S3 bucket
 
-- Status: accepted
+- Status: accepted (confirmed by the maintainer on 2026-10-16)
 - Date: 2026-10-16
 
 ## Context
@@ -22,3 +22,4 @@ Option 2. The bundled bucket in `deploy/compose.yaml` is SeaweedFS `weed mini`. 
 - The Compose service is called `s3`, not `minio`; credentials come from `deploy/.env`, created with random values by `make up`.
 - ARCHITECTURE.md and CLAUDE.md name "S3 (SeaweedFS in Compose)" instead of MinIO.
 - Tests run the same pinned SeaweedFS image, so a change of store is one image line.
+- Verified in CI on PR #336: `weed mini` created the `recordings` bucket and key pair from its environment, passed its `/healthz` check in Compose, and answered preflight's BucketExists with the generated credentials.
