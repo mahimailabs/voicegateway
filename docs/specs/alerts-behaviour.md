@@ -27,11 +27,11 @@ Lines marked **Recommended** are proposals for the maintainer to accept or chang
 | --- | --- | --- | --- | --- | --- |
 | `slow-answer` (medium) | A finished call has at least one turn with answer time over `thresholds.answerMs` (default 1500 ms) | Turn latency from agent spans or the session report | project + agent | call id | **Recommended:** no qualifying call in the last 30 minutes of calls, with at least 5 calls seen in that window. Fewer than 5 calls: stay firing, and say so. |
 | `cut-off` (medium) | A finished call has at least one turn the caller interrupted | `interrupted` on turns | project + agent | call id | Same as `slow-answer` |
-| `job-failed` (high) | LiveKit reports an agent job as failed | Agent job state. The open-source LiveKit server sends no job webhooks (0012), so this comes from the agent upload or the dispatch API | agent | job id | **Recommended:** the next job for the same agent succeeds |
-| `slow-join` (medium) | An agent joins more than `thresholds.joinMs` (default 2000 ms) after dispatch | Dispatch time and the agent's `participant_joined` webhook | agent | job id | **Recommended:** 3 jobs in a row join within the threshold |
-| `plain-phone` (medium) | A SIP trunk is configured to carry audio as plain RTP | SIP trunk configuration, read from the LiveKit API (standing condition, not an event) | trunk id | trunk id plus the configuration seen | The trunk no longer allows plain RTP, or is deleted |
+| `job-failed` (high) | LiveKit reports an agent job as `JS_FAILED` | `ListDispatch`, polled for live rooms, on LiveKit Cloud only. On open-source LiveKit 1.13.3 no source carries it: no job webhook, `ListDispatch` stays `JS_RUNNING` until the room closes, a crashed job uploads nothing, and an entrypoint exception ends as `JS_SUCCESS`. There it shows "Not evaluated: no source" | agent | job id | **Recommended:** the next job for the same agent succeeds |
+| `slow-join` (medium) | An agent joins more than `thresholds.joinMs` (default 2000 ms) after dispatch | Dispatch time from `ListDispatch` `state.created_at` (nanoseconds), polled while the room is live; join time from the `participant_joined` webhook for identity `agent-<job id>` | agent | job id | **Recommended:** 3 jobs in a row join within the threshold |
+| `plain-phone` (medium) | A SIP trunk's media encryption is disabled (`SIP_MEDIA_ENCRYPT_DISABLE`, the proto default) | SIP trunk configuration, read from the LiveKit API (standing condition, not an event) | trunk id | trunk id plus the configuration seen | The trunk's encryption is `allow` or `require` (as `sip-model.ts` clears it), or the trunk is deleted |
 | `recording-lost` (high) | An egress ends with status `EGRESS_FAILED` | `egress_ended` webhook | egress id | webhook event id | Never auto-resolves: the recording is gone. **Recommended:** a person marks it resolved, as on the Issues page |
-| `ingress-error` (high) | An ingress enters `ENDPOINT_ERROR` | `ingress_ended` / `ingress_updated` webhooks | ingress id | webhook event id | The same ingress reports a non-error state |
+| `ingress-error` (high) | An ingress ends with `state.status = ENDPOINT_ERROR` | `ingress_ended` webhook (protocol v1.52.1 has only `ingress_started` and `ingress_ended`). Unverified that `ingress_ended` carries `ENDPOINT_ERROR`; check against a real ingress before building | ingress id | webhook event id | The next `ingress_started` for that ingress, or a `ListIngress` read showing a non-error state |
 
 A rule whose source is not connected for a project, such as no agent uploads or no LiveKit API access for SIP, is **not evaluated**. The console shows "Not evaluated: no source". It never shows "0 occurrences" (principle 2).
 
@@ -58,7 +58,8 @@ A rule whose source is not connected for a project, such as no agent uploads or 
 
 ## Delivery
 
-- One delivery per incident change (firing, reminder, resolved) per channel. Each delivery has an idempotency key of incident id, change and channel, so a retry never posts twice. PagerDuty and Opsgenie use it as their dedup key.
+- One delivery per incident change (firing, reminder, resolved) per channel. Each delivery has our own idempotency key of incident id, change and channel, so a retry never posts twice.
+- PagerDuty (`dedup_key`) and Opsgenie (`alias`) get the incident id, the same for every change, so the resolve closes the page the firing opened.
 - **Recommended:** retry with exponential backoff (30 s, 1 min, 2 min, then doubling up to 30 min) for 24 hours. Retry 5xx, timeouts and 429 (honouring `Retry-After`). Do not retry other 4xx, which mark the channel broken.
 - Deliveries are durable: they survive a worker restart, like ingest entries.
 - A channel's secrets (webhook URLs, tokens) are stored server-side and never returned to the browser (`AlertRuleSetup.to` carries kinds only).
@@ -101,3 +102,6 @@ When delivery is built, these become tests:
 - Every **Recommended** line above.
 - Resolve rule for call-level rules when traffic is low: stay firing (recommended), or resolve after a quiet period.
 - Whether a disabled rule should still create incidents (recommended: yes, so history stays whole) or only occurrences.
+- `job-failed` on open-source LiveKit: leave it "Not evaluated" (recommended), or add a separate rule, "the agent's entrypoint raised", from agent spans.
+- `recording-lost`: `EGRESS_FAILED` only, as the console does today, or also `EGRESS_ABORTED` and `EGRESS_LIMIT_REACHED`, which can also leave no full recording.
+- Week-2 channel scope: all seven from 0020, or email and webhook first, then Slack.
