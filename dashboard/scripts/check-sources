@@ -70,6 +70,15 @@ export function checkSpec(spec, repo = root) {
       }
       if (types.includes('null') && !child['x-null-reason'] && !child.description) fail(location, 'nullable property lacks an absence explanation');
       if (child.default === 0) fail(location, 'a missing value cannot default to zero');
+      if (String(child['x-unit']).startsWith('relative_')) {
+        const binding = child['x-clock'];
+        const target = typeof binding === 'string' && binding.startsWith('#/') && binding.endsWith('/properties/clockId') ? pointerValue(spec, binding.slice(1)) : { found: false };
+        if (!target.found || target.value.type !== 'string') fail(location, 'relative position lacks a resolvable clock reference');
+        else {
+          const owner = pointerValue(spec, binding.slice(1, binding.lastIndexOf('/properties/'))).value;
+          if (!owner?.required?.includes('clockId')) fail(location, 'clock reference must be required on its owner');
+        }
+      }
     }
     for (const [key, child] of Object.entries(node)) {
       if (!key.startsWith('x-') && key !== 'examples' && key !== 'example') walk(child, `${where}/${key}`);

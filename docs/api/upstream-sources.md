@@ -56,12 +56,14 @@ The Docs MCP AgentDispatchService table describes `AgentDispatchState.created_at
 
 `PhoneNumber.e164_format` (not `phone_number`) is the native read-model field. Dispatch associations use `sip_dispatch_rule_ids`, with the deprecated singular field only as a compatibility fallback.
 
-## Inventory findings and remaining decision
+## Inventory findings and clock evidence
 
 The full SDK declaration inventory includes native PCM tracks (`pkg/media`), Ogg reading, sample building, RTCP interceptors, frame/data encryption, Cloud-agent deployment/log streaming, and both legacy/new synchronisers. These facilities must be considered before adding equivalents. `pkg/synchronizer/interfaces.go` and `sessiontimeline.go` were read: native `SessionTimeline` maps observed RTP/RTCP sender-report evidence into a shared timeline, and returns errors when the session start, participant or reports are unavailable. Its one-way-delay estimate is inferred evidence, not a way to reconstruct missing capture anchors.
 
 Native ingress commit [`ab27759fa9ee2598f78804101a3050e252d93a2c`](https://github.com/livekit/ingress/tree/ab27759fa9ee2598f78804101a3050e252d93a2c) assigns `IngressState.started_at`/`ended_at` using `time.Now().UnixNano()` in `pkg/params/params.go`; the contract records division by 1e9 for its seconds projection and keeps absent timestamps null.
 
-## Remaining audit before review
+## Contract audit result
 
-The clock-origin/alignment API choice remains pending with the maintainer: preserve explicit source clocks and nullable alignment metadata (recommended), or require offsets relative to call start and leave them null when alignment is unknown. Finalise that model, then repeat the schema/completeness audit and CI on the resulting head before making the PR ready. Source-unit conversions, nullable observation/media, dynamic maps, saved configuration and reader/route bindings have been reviewed. Structural source coverage is evidence for attribution presence and pointer resolution; the native-source notes above supply the semantic review.
+The maintainer selected explicit source clocks with nullable alignment on 2026-10-16. `coverage.md` defines the runtime clock metadata, source-specific origins and comparison rules. No missing source anchors are reconstructed from capture start, upload time or the first zero offset. Native synchronisation estimates remain inferred evidence.
+
+Source-unit conversions, nullable observations/media, dynamic maps, saved configuration, access scope and reader/route bindings have been reviewed against the retained captures and native sources above. Structural source coverage verifies attribution presence and pointer resolution; it does not prove server implementation, capture completeness or runtime authorisation. Contract tests also validate unknown versus observed/inferred alignment using the pinned JSON Schema validator. Go adapters and generated client types remain separate work.

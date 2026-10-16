@@ -108,3 +108,31 @@ test('source checker rejects a project endpoint with an organisation-only access
   assert.match(errors, /project isolation is mandatory/);
   assert.match(errors, /supported organisation role/);
 });
+
+
+test('relative positions require clock bindings while durations remain intervals', async () => {
+  const { checkSpec } = await checker;
+  const spec = load();
+  delete spec.components.schemas.OverlapEvent.properties.detectedAt['x-clock'];
+  spec.components.schemas.Span.required = spec.components.schemas.Span.required.filter((key) => key !== 'clockId');
+  const errors = checkSpec(spec).errors.join('\n');
+  assert.match(errors, /detectedAt.*resolvable clock reference/);
+  assert.match(errors, /startMs.*clock reference must be required/);
+  assert.equal(spec.components.schemas.OverlapEvent.properties.detectionDelay['x-unit'], 'seconds');
+});
+
+test('clock schema preserves unknown anchors and rejects fabricated alignment', () => {
+  const Ajv = require('ajv/dist/2020');
+  const validate = new Ajv({ strict: false, validateFormats: false }).compile(load().components.schemas.Clock);
+  const unknown = { id: 'events', origin: 'first_event', originAt: null, offsetToCallStartSeconds: null, alignment: 'unknown' };
+  assert.equal(validate(unknown), true);
+  assert.equal(validate({ ...unknown, offsetToCallStartSeconds: 0 }), false);
+  assert.equal(validate({ ...unknown, alignment: 'observed' }), false);
+  assert.equal(validate({ ...unknown, alignment: 'inferred' }), false);
+  assert.equal(validate({ ...unknown, alignment: 'observed', offsetToCallStartSeconds: 0 }), true);
+  assert.equal(validate({ ...unknown, alignment: 'inferred', offsetToCallStartSeconds: -0.25 }), true);
+  for (const example of load().components.schemas.Clock.examples) assert.equal(validate(example), true);
+  const incomplete = { ...unknown };
+  delete incomplete.origin;
+  assert.equal(validate(incomplete), false);
+});

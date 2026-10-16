@@ -61,6 +61,21 @@ All console routes below have `/org/<org>/project/<project>` in front of them. R
 
 `/globe/countries.geojson` is static map geometry (`components/network-globe.tsx`). `/preview/recording.json` and its WAV are guarded by `import.meta.env.DEV`, generated locally, ignored and explicitly synthetic (`features/calls/calls-page.tsx`). They are not production calls or API endpoints. `/captures/sip-numbers.json` is optional local PII enrichment; its production replacement must be authenticated and cannot be a public static asset.
 
+## Source clocks and alignment
+
+The maintainer selected preserved source clocks on 2026-10-16. `Call.clocks` names each distinct timeline; each span, turn, event and recording carries a required `clockId` that resolves to exactly one call-local entry. IDs are unique within the call, including when multiple traces or replacement agent sessions are joined. Recording segments inherit their recording's clock. The `x-clock` extension binds each relative position to its clock reference; durations and delays are intervals, not positions.
+
+A clock records what its zero means (`call_start`, `session_start`, `recording_start`, `first_event`, `trace_start` or `unknown`). `originAt` is an observed UTC anchor or null. `offsetToCallStartSeconds` is signed: **call-relative seconds = source-relative seconds + offset**; divide span milliseconds by 1000 first. Its `alignment` is `observed`, `inferred` or `unknown`. Unknown alignment requires a null offset; observed/inferred alignment requires a numeric offset. Even zero requires evidence. Inferred alignment must be labelled and its derivation documented by the adapter; it must never become an observed UTC anchor.
+
+Source-relative positions remain useful for ordering within the same clock when alignment is unknown. Do not overlay them with recordings, spans or other event timelines until a mapping is known. An observed UTC anchor alone does not establish a call-relative mapping if the call-start evidence is uncertain. Implementations must validate clock ID uniqueness/resolution and recording-start origins; JSON Schema cannot express those cross-record relationships.
+
+- `capture-session`, `capture-cloud`, `capture-sip` and `capture-crash` explicitly declare recording-relative times. Preserve that origin, without assuming that `Call.startedAt` equals recording start. The crash capture begins after the replacement agent joins, not at the first failed process.
+- `console-session` and `console-realtime` declare seconds from the first event. Preserve `first_event`; these captures have no recording anchor.
+- `calls.json` retains span offsets without an explicit origin/alignment anchor. Use `unknown` and null alignment rather than inventing trace-start or call-start alignment from a first span at zero.
+- Recording segment positions are recording-relative only when measured alignment exists. Placeholder arrays do not establish either silence or alignment. Absolute room-watch timestamps retain their declared epoch units.
+
+These rules are new API metadata derived from retained evidence; the existing preview fixtures do not already contain the metadata fields. Native LiveKit synchronisation helpers can use observed RTP/RTCP evidence in future adapters; they cannot reconstruct missing offline anchors. The clock examples in OpenAPI illustrate valid shapes, not newly captured measurements.
+
 ## Contract invariants to validate
 
 - A canonical call identifies a project-scoped conversation with a room/time window and optional job/trace joins. A room name or room SID alone is insufficient. Call metadata uses the same identity.
