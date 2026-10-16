@@ -12,7 +12,7 @@ Agree what each of the seven alert rules does once the worker sends them: when a
 - `dashboard/src/features/alerts/alerts-model.ts`: the seven rules as the console evaluates them today. `docs/api/openapi.yaml`: `AlertEvents`, `AlertSetup`, `AlertRuleSetup`.
 - Phase 3 ingest (#338 to #340): webhooks and agent uploads stored as `events` in ClickHouse.
 
-Lines marked **Recommended** are proposals for the maintainer to accept or change. Everything else restates what the console or a decision already does.
+Lines marked **Recommended** were proposals; the maintainer accepted them all on 2026-10-16. Everything else restates what the console or a decision already does.
 
 ## Terms
 
@@ -30,8 +30,10 @@ Lines marked **Recommended** are proposals for the maintainer to accept or chang
 | `job-failed` (high) | LiveKit reports an agent job as `JS_FAILED` | `ListDispatch`, polled for live rooms, on LiveKit Cloud only. On open-source LiveKit 1.13.3 no source carries it: no job webhook, `ListDispatch` stays `JS_RUNNING` until the room closes, a crashed job uploads nothing, and an entrypoint exception ends as `JS_SUCCESS`. There it shows "Not evaluated: no source" | agent | job id | **Recommended:** the next job for the same agent succeeds |
 | `slow-join` (medium) | An agent joins more than `thresholds.joinMs` (default 2000 ms) after dispatch | Dispatch time from `ListDispatch` `state.created_at` (nanoseconds), polled while the room is live; join time from the `participant_joined` webhook for identity `agent-<job id>` | agent | job id | **Recommended:** 3 jobs in a row join within the threshold |
 | `plain-phone` (medium) | A SIP trunk's media encryption is disabled (`SIP_MEDIA_ENCRYPT_DISABLE`, the proto default) | SIP trunk configuration, read from the LiveKit API (standing condition, not an event) | trunk id | trunk id plus the configuration seen | The trunk's encryption is `allow` or `require` (as `sip-model.ts` clears it), or the trunk is deleted |
-| `recording-lost` (high) | An egress ends with status `EGRESS_FAILED` | `egress_ended` webhook | egress id | webhook event id | Never auto-resolves: the recording is gone. **Recommended:** a person marks it resolved, as on the Issues page |
+| `recording-lost` (high) | An egress ends with status `EGRESS_FAILED` or `EGRESS_ABORTED` (no recording), or `EGRESS_LIMIT_REACHED` (recording saved but cut off at the time limit, per LiveKit's quotas docs; the occurrence says "cut short", not "lost"). These are every ending status in protocol v1.52.1 `EgressStatus` other than `EGRESS_COMPLETE` | `egress_ended` webhook | egress id | webhook event id | Never auto-resolves: the recording is gone. **Recommended:** a person marks it resolved, as on the Issues page |
 | `ingress-error` (high) | An ingress ends with `state.status = ENDPOINT_ERROR` | `ingress_ended` webhook (protocol v1.52.1 has only `ingress_started` and `ingress_ended`). Unverified that `ingress_ended` carries `ENDPOINT_ERROR`; check against a real ingress before building | ingress id | webhook event id | The next `ingress_started` for that ingress, or a `ListIngress` read showing a non-error state |
+
+Every webhook named here is one protocol v1.52.1 defines (`webhook/consts.go`). That list also has `agent_job_started` and `agent_job_ended`, which open-source LiveKit 1.13.3 did not send in the pair review's test. If LiveKit Cloud sends them, they are a better `job-failed` source than polling; check before building.
 
 A rule whose source is not connected for a project, such as no agent uploads or no LiveKit API access for SIP, is **not evaluated**. The console shows "Not evaluated: no source". It never shows "0 occurrences" (principle 2).
 
@@ -86,8 +88,8 @@ A rule whose source is not connected for a project, such as no agent uploads or 
 
 For the spec PR: the maintainer accepts or changes each **Recommended** line, and the table is checked against the console's current rules.
 
-1. Given `alerts-model.ts`, when its seven rules are compared with the table, then ids, severities, conditions and thresholds match (measured by review of this PR).
-2. Given each **Recommended** line, then it is accepted or replaced by the maintainer before delivery is built (measured by the PR review thread).
+1. Given `alerts-model.ts`, when its seven rules are compared with the table, then ids, severities, conditions and thresholds match, except `recording-lost`, widened by decision (measured by review of this PR).
+2. Given each **Recommended** line, then it is accepted or replaced by the maintainer before delivery is built (measured by the PR review thread; done 2026-10-16, see Decisions).
 
 When delivery is built, these become tests:
 
@@ -97,11 +99,9 @@ When delivery is built, these become tests:
 6. Given a channel answering 400, then no retry is made, and the channel and rule show the failure.
 7. Given a source that stops reporting, then its open incident stays firing and is marked silent, never resolved.
 
-## Open Questions
+## Decisions (maintainer, 2026-10-16)
 
-- Every **Recommended** line above.
-- Resolve rule for call-level rules when traffic is low: stay firing (recommended), or resolve after a quiet period.
-- Whether a disabled rule should still create incidents (recommended: yes, so history stays whole) or only occurrences.
-- `job-failed` on open-source LiveKit: leave it "Not evaluated" (recommended), or add a separate rule, "the agent's entrypoint raised", from agent spans.
-- `recording-lost`: `EGRESS_FAILED` only, as the console does today, or also `EGRESS_ABORTED` and `EGRESS_LIMIT_REACHED`, which can also leave no full recording.
-- Week-2 channel scope: all seven from 0020, or email and webhook first, then Slack.
+- Every **Recommended** line is accepted, including: low-traffic call-level rules stay firing, and a disabled rule still creates incidents but sends nothing.
+- `job-failed` on open-source LiveKit shows "Not evaluated: no source". No separate "entrypoint raised" rule.
+- `recording-lost` covers `EGRESS_FAILED`, `EGRESS_ABORTED` and `EGRESS_LIMIT_REACHED`. The console's `alerts-model.ts` matches `EGRESS_FAILED` only today and must widen when this is built.
+- Week-2 channels: email and webhook first; Slack, Microsoft Teams, Discord, PagerDuty and Opsgenie follow.
