@@ -61,7 +61,7 @@ Cloud will be self-serve: **sign up → Stripe checkout → automatic workspace 
 
 **[Pick an issue](https://github.com/mahimailabs/voicegateway/issues)** → agree on scope → open a PR against the V1 branch.
 
-Start with the [console guide](dashboard/README.md) and [current spec](docs/specs/phase01-console.md). For console changes, run `npm run build` and `npm run lint` in `dashboard/`. The [contributor guide](CONTRIBUTING.md) still includes the legacy Python workflow; follow the current spec for V1 work.
+Start with the [console guide](dashboard/README.md) and [current spec](docs/specs/phase01-console.md). From the repository root, run `npm --prefix dashboard ci`, then `make dev` to open the console and `make lint` for lint and TypeScript checks. `make test` runs helper regression tests; calls-list and call-detail UI tests remain issue #324. Use `make help` for all console and landing targets. The [contributor guide](CONTRIBUTING.md) still includes the legacy Python workflow; follow the current spec for V1 work.
 
 [Discord](https://discord.gg/ysFaF4uSB) · [Report a bug](https://github.com/mahimailabs/voicegateway/issues/new/choose) · [Security](SECURITY.md)
 

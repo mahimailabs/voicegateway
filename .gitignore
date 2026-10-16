@@ -52,6 +52,7 @@ eggs/
 lib/
 !src/dashboard/frontend/src/lib/
 !web/src/lib/
+!dashboard/src/lib/
 lib64/
 parts/
 sdist/

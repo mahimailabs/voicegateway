@@ -52,6 +52,8 @@ Every task goes through the root Makefile.
 
 ## Git identity
 
+- New branches use `feat/` or `fix/` prefixes, as requested by the maintainer.
+
 - Author and commit as `mahimairaja <mahimairaja3@gmail.com>`. Use the `mahimairaja` account for GitHub comments, pull requests and other writes. Verify the active account before writing; never add a bot or agent co-author.
 
 ## Versions

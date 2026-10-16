@@ -1,0 +1,29 @@
+name: Dashboard
+
+on:
+  pull_request:
+    paths:
+      - 'dashboard/**'
+      - 'Makefile'
+      - '.gitignore'
+      - '.github/workflows/dashboard.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: dashboard/package-lock.json
+      - run: npm --prefix dashboard ci
+      - run: make test
+      - run: make lint
+      - run: npm --prefix dashboard run build
