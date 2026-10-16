@@ -84,7 +84,7 @@ export function useOverview() {
       if (a) agentOf.set(r.sid, a.agentName ?? "unnamed")
     }
     // Otherwise the agent's own trace names it (lk.agent_name on its spans).
-    const agentName = (c: (typeof calls)[number]) => agentOf.get(c.roomSid) ?? (c.spans ?? []).map((sp) => sp.attrs?.["lk.agent_name"]).find((n) => n) ?? null
+    const agentName = (c: (typeof calls)[number]) => (c.roomSid !== null ? agentOf.get(c.roomSid) : undefined) ?? (c.spans ?? []).map((sp) => sp.attrs?.["lk.agent_name"]).find((n) => n) ?? null
     const rowsFor = (key: string | null) => models.filter(({ c }) => agentName(c) === key)
     const stats = (list: typeof models) => {
       const ts = list.flatMap(({ m }) => m.turns)

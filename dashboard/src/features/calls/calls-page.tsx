@@ -14,7 +14,7 @@ import { toast } from "sonner"
 import { setArchived, useArchived } from "./call-archive"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { cn } from "@/lib/utils"
-import { type Call, listCalls } from "@/lib/api"
+import { type Call, fromCapture, listCalls } from "@/lib/api"
 import { CallMeta } from "@/features/call/call-meta"
 import { CallTags, TagChip, useCallTags } from "@/features/call/call-tags"
 import { CallView } from "@/features/call/call-view"
@@ -28,6 +28,8 @@ const median = (xs: number[]) => {
   const s = [...xs].sort((a, b) => a - b)
   return s[Math.floor(s.length / 2)]
 }
+// Archive and row key: the room SID as before; the contract id when the room reported none.
+const keyOf = (c: Call) => c.roomSid ?? c.id
 const agentTurns = (c: Call) => (c.spans ? c.spans.filter((s) => s.name === "agent_turn").length : (c.turns?.length ?? null))
 
 // Dev only: a design preview of the recording view, built from room 10's real trace plus synthetic speech
@@ -41,12 +43,17 @@ function usePreviewCall(): Call | null {
       .then((rec) => {
         const base = listCalls().find((c) => c.room === "spike-room-10")
         if (!rec || !base) return
-        setCall({
-          ...base,
-          room: "design-preview",
-          roomSid: "PREVIEW",
-          recording: { url: "/preview/recording.wav", duration: rec.duration, segments: rec.segments, peaks: rec.peaks, preview: "Design preview: room 10's real trace with synthetic speech made from its transcript. Not a captured call." },
-        })
+        // Re-adapted without the base's id and clocks so the preview gets its own id and a recording clock.
+        setCall(
+          fromCapture({
+            ...base,
+            id: undefined,
+            clocks: undefined,
+            room: "design-preview",
+            roomSid: "PREVIEW",
+            recording: { url: "/preview/recording.wav", duration: rec.duration, segments: rec.segments, peaks: rec.peaks, preview: "Design preview: room 10's real trace with synthetic speech made from its transcript. Not a captured call." },
+          }),
+        )
       })
       .catch(() => setCall(null))
   }, [])
@@ -176,11 +183,12 @@ export function columns(tagsOf: (room: string) => string[]): Columns<Row> {
     },
     {
       id: "length",
-      accessorFn: (r) => r.call.durationSeconds,
+      // Unknown sorts below every known length instead of reading as zero.
+      accessorFn: (r) => r.call.durationSeconds ?? -1,
       header: ({ column }) => <DataGridColumnHeader title="Length" column={column} />,
       size: 90,
       meta: right,
-      cell: ({ row: { original: r } }) => <span className="text-[13px] tnum">{length(r.call.durationSeconds)}</span>,
+      cell: ({ row: { original: r } }) => <span className="text-[13px] tnum">{r.call.durationSeconds !== null ? length(r.call.durationSeconds) : <span className="text-muted-foreground">?</span>}</span>,
     },
     {
       id: "turns",
@@ -278,19 +286,21 @@ export function CallsPage() {
     c
       ? navigate({ to: "/calls/$room", params: { room: c.room }, search: (p: Record<string, unknown>) => p } as never)
       : navigate({ to: "/calls", search: ({ turn: _t, pane: _p, events: _e, ...rest }: Record<string, unknown>) => rest } as never)
-  const now = Math.max(...all.map((r) => Date.parse(r.call.endedAt) / 1000))
+  // The range ends at the latest end time; a call still open counts from its start.
+  const ends = all.map((r) => (r.call.endedAt !== null ? Date.parse(r.call.endedAt) / 1000 : r.started))
+  const now = ends.length > 0 ? Math.max(...ends) : Date.now() / 1000
   const [range, setRange] = useUrlRange("7d", now)
   const fields = useMemo(() => callFields(tags.all, tags.of), [tags])
   // The stat cards and the table read the same rows, so a filter changes both.
   const archived = useArchived()
   const [view, setView] = useUrlState<"active" | "archived">("view", "active")
-  const isArchived = (r: { call: Call }) => archived.includes(r.call.roomSid)
+  const isArchived = (r: { call: Call }) => archived.includes(keyOf(r.call))
   const archivedCount = all.filter(isArchived).length
   // The stat cards and the table read the same rows, so a filter or the archive tab changes both.
   const rows = all.filter((r) => (view === "archived") === isArchived(r) && r.started >= range.from && r.started <= range.to && matches(r, query, fields))
   const archive = (list: Call[], to: boolean, done?: () => void) => {
     const before = archived
-    const ids = list.map((c) => c.roomSid)
+    const ids = list.map(keyOf)
     setArchived(to ? [...new Set([...archived, ...ids])] : archived.filter((x) => !ids.includes(x)))
     done?.()
     const what = list.length === 1 ? list[0].room : `${list.length} calls`
@@ -329,7 +339,7 @@ export function CallsPage() {
           <StatCard icon={WarningCircle} value={`${flagged} of ${counted.length}`} label="Calls with issues" alert={flagged > 0}>
             <div className="flex gap-0.5">
               {counted.map((r) => (
-                <span key={r.call.roomSid} className={cn("h-2 flex-1 rounded-sm", r.issues.high ? "bg-destructive" : r.issues.medium ? "bg-amber-500" : "bg-primary/40")} />
+                <span key={keyOf(r.call)} className={cn("h-2 flex-1 rounded-sm", r.issues.high ? "bg-destructive" : r.issues.medium ? "bg-amber-500" : "bg-primary/40")} />
               ))}
             </div>
             <p className="mt-1.5 text-[11px] text-muted-foreground">one bar per call, red has a high issue</p>
@@ -358,7 +368,7 @@ export function CallsPage() {
           fields={fields}
           query={query}
           onQueryChange={setQuery}
-          getRowId={(r) => r.call.roomSid}
+          getRowId={(r) => keyOf(r.call)}
           onRowClick={(r) => setOpen(r.call)}
           sort={[{ id: "started", desc: true }]}
           empty={view === "archived" ? "No archived calls." : "No calls match these filters."}
@@ -409,14 +419,14 @@ export function CallsPage() {
                 </SheetDescription>
                 <div className="flex items-center gap-2 pt-1.5">
                   <CallTags room={open.room} />
-                  <Button size="sm" variant="ghost" className="ml-auto text-muted-foreground" onClick={() => archive([open], !archived.includes(open.roomSid))}>
-                    {archived.includes(open.roomSid) ? <ArrowCounterClockwise /> : <Archive />}
-                    {archived.includes(open.roomSid) ? "Unarchive" : "Archive"}
+                  <Button size="sm" variant="ghost" className="ml-auto text-muted-foreground" onClick={() => archive([open], !archived.includes(keyOf(open)))}>
+                    {archived.includes(keyOf(open)) ? <ArrowCounterClockwise /> : <Archive />}
+                    {archived.includes(keyOf(open)) ? "Unarchive" : "Archive"}
                   </Button>
                 </div>
               </SheetHeader>
               <div className="min-h-0 flex-1">
-                <CallView key={open.roomSid} call={open} />
+                <CallView key={keyOf(open)} call={open} />
               </div>
             </>
           )}

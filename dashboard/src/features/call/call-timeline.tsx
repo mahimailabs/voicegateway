@@ -5,6 +5,7 @@ import { AudioPlayerButton, AudioPlayerSpeed, AudioPlayerTime, useAudioPlayer, u
 import { Waveform } from "@/components/elevenlabs/waveform"
 import { Button } from "@/components/ui/button"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
+import { Unknown } from "@/components/unknown"
 import type { Call } from "@/lib/api"
 import { cn } from "@/lib/utils"
 import { type CallModel, type Iv, callLength, fmtMs, fmtSec } from "./call-model"
@@ -50,7 +51,8 @@ export function CallTimeline({ call, model, selected, zoom, onSelect }: { call: 
   const embedded = useEmbedded()
   const player = useAudioPlayer()
   const now = useAudioPlayerTime()
-  const whole: Iv = { start: 0, end: Math.max(callLength(call, model), model.duration, 0.5) }
+  const whole: Iv = { start: 0, end: Math.max(...[callLength(call, model), model.duration].filter((x): x is number => x !== null), 0.5) }
+  const length = callLength(call, model)
   const w = zoom !== null && model.turns[zoom] ? model.turns[zoom].window : whole
   const s = scale(w)
   const ticks = Array.from({ length: 7 }, (_, k) => w.start + ((w.end - w.start) * k) / 6)
@@ -100,8 +102,8 @@ export function CallTimeline({ call, model, selected, zoom, onSelect }: { call: 
       <div className="flex flex-wrap items-center gap-3">
         {rec ? (
           <>
-            <AudioPlayerButton item={{ id: call.roomSid, src: rec.url }} variant="default" size="icon-sm" className="rounded-full" />
-            <span className="text-sm tnum"><AudioPlayerTime className="font-medium" /> <span className="text-muted-foreground">/ {clock(callLength(call, model))}</span></span>
+            <AudioPlayerButton item={{ id: call.id, src: rec.url }} variant="default" size="icon-sm" className="rounded-full" />
+            <span className="text-sm tnum"><AudioPlayerTime className="font-medium" /> <span className="text-muted-foreground">/ {length !== null ? clock(length) : <Unknown why="Neither the room nor the call's timeline reported a length" />}</span></span>
             <AudioPlayerSpeed variant="ghost" size="icon-sm" />
           </>
         ) : embedded ? (
@@ -150,8 +152,8 @@ export function CallTimeline({ call, model, selected, zoom, onSelect }: { call: 
                 {m.kind === "tool"
                   ? `${m.name} ran for ${fmtMs((m.at.end - m.at.start) * 1000)}`
                   : m.kind === "interruption"
-                    ? `Interrupted: the caller talked over the agent; it stopped ${fmtSec(m.detectionMs / 1000)} later.${m.inferred ? " Inferred from the reply's interrupted flag." : ""}`
-                    : `Backchannel: the caller spoke while the agent talked; LiveKit kept talking (detected in ${fmtSec(m.detectionMs / 1000)}).`}
+                    ? `Interrupted: the caller talked over the agent; it stopped ${m.detectionMs !== null ? `${fmtSec(m.detectionMs / 1000)} later` : "after an unreported delay"}.${m.inferred ? " Inferred from the reply's interrupted flag." : ""}`
+                    : `Backchannel: the caller spoke while the agent talked; LiveKit kept talking${m.detectionMs !== null ? ` (detected in ${fmtSec(m.detectionMs / 1000)})` : ""}.`}
               </TooltipContent>
             </Tooltip>
           )
@@ -163,8 +165,8 @@ export function CallTimeline({ call, model, selected, zoom, onSelect }: { call: 
         <div className="pointer-events-none absolute inset-x-0 top-1/2 h-px bg-border" />
         {model.caller.map((iv, k) => s.in(iv) && <div key={`c${k}`} className={cn("pointer-events-none absolute top-1 h-[calc(50%-4px)] rounded-md bg-foreground/[0.06]", move)} style={{ left: s.left(iv.start), width: s.width(iv) }} />)}
         {model.speaking.map((iv, k) => s.in(iv) && <div key={`a${k}`} className={cn("pointer-events-none absolute bottom-1 h-[calc(50%-4px)] rounded-md bg-primary/10", move)} style={{ left: s.left(iv.start), width: s.width(iv) }} />)}
-        {rec && <Wave data={rec.peaks.caller} duration={rec.duration} w={w} color={callerColor} />}
-        {rec && <Wave data={rec.peaks.agent} duration={rec.duration} w={w} color={agentColor} flip />}
+        {rec?.peaks && rec.duration !== null && <Wave data={rec.peaks.caller} duration={rec.duration} w={w} color={callerColor} />}
+        {rec?.peaks && rec.duration !== null && <Wave data={rec.peaks.agent} duration={rec.duration} w={w} color={agentColor} flip />}
         {!rec && (
           <>
             {model.caller.map((iv, k) => s.in(iv) && <div key={`cb${k}`} className={cn("pointer-events-none absolute top-[22%] h-[12%] rounded-full bg-muted-foreground/60", move)} style={{ left: s.left(iv.start), width: s.width(iv) }} />)}

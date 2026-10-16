@@ -1,8 +1,8 @@
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
-import type { Call, Span } from "@/lib/api"
+import type { Call } from "@/lib/api"
 import { cn } from "@/lib/utils"
 import probe from "@/mocks/network-probe.json"
-import { type CallModel, type TurnModel, fmtMs } from "@/features/call/call-model"
+import { type CallModel, type Placed, type TurnModel, fmtMs, placed } from "@/features/call/call-model"
 
 // Time to first audio for one turn, stage by stage on one clock, from the moment the caller stopped
 // talking. Every bar is a real span or event of that turn. The hatched part of a model bar is the
@@ -13,13 +13,14 @@ import { type CallModel, type TurnModel, fmtMs } from "@/features/call/call-mode
 type Row = { label: string; sub: string; start: number; end: number; hopMs?: number; kind: "speech" | "model" | "turn" | "hop" | "tool" }
 
 const hop = (role: string) => probe.endpoints.find((e) => e.role === role)?.tcpMs ?? null
-const sec = (s: Span) => s.startMs / 1000
+const sec = (s: Placed) => s.startMs / 1000
 
 export function waterfallRows(call: Call, t: TurnModel): Row[] | null {
-  const spans = call.spans ?? []
+  // Only spans with a start and duration can be drawn.
+  const spans = (call.spans ?? []).filter(placed)
   if (!t.utterance || !spans.length) return null
   const t0 = t.utterance.end
-  const inTurn = (s: Span) => sec(s) >= t.utterance!.start - 0.5 && sec(s) <= (t.speaking?.start ?? t.window.end) + 0.2
+  const inTurn = (s: Placed) => sec(s) >= t.utterance!.start - 0.5 && sec(s) <= (t.speaking?.start ?? t.window.end) + 0.2
   const rows: Row[] = []
   const td = call.turns?.[t.i]?.transcriptionDelayMs
   const stt = spans.find((s) => s.name === "user_turn" && inTurn(s))

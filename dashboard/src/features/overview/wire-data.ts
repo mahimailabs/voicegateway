@@ -25,7 +25,7 @@ export function wireData(rows: Row[], budget: number) {
   const ring = sipRooms.flatMap((r) => r.participants.flatMap((p) => (p.sip?.inviteMs && p.sip.statuses.find((s) => s.status === "active") ? [(p.sip.statuses.find((s) => s.status === "active")!.t - p.sip.inviteMs / 1000) * 1000] : [])))
   const active = rows.filter((r) => r.callList.length)
   const all = active.flatMap((r) => r.callList)
-  const phoneCalls = all.filter((c) => phoneSids.has(c.roomSid)).length
+  const phoneCalls = all.filter((c) => c.roomSid !== null && phoneSids.has(c.roomSid)).length
   const lastRead = Math.max(...rooms.windows.map((w) => w.end))
 
   // Rooms still open at the last read, and which agent was in them: the only calls drawn as live.

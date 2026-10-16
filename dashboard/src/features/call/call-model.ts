@@ -1,4 +1,4 @@
-import type { Call, SessionEvent, Span } from "@/lib/api"
+import type { Call, RecordingSegment, SessionEvent, Span } from "@/lib/api"
 
 // One shape for every call, whatever its source: agent session events (the observability upload or the console),
 // a recording's speaker segments, or OTLP spans. Times are seconds from the call's first event.
@@ -6,8 +6,8 @@ import type { Call, SessionEvent, Span } from "@/lib/api"
 export type Iv = { start: number; end: number }
 
 export type Moment =
-  | { kind: "interruption"; at: Iv; inferred: boolean; detectionMs: number }
-  | { kind: "backchannel"; at: Iv; detectionMs: number }
+  | { kind: "interruption"; at: Iv; inferred: boolean; detectionMs: number | null }
+  | { kind: "backchannel"; at: Iv; detectionMs: number | null }
   | { kind: "false_interruption"; t: number; resumed: boolean }
   | { kind: "tool"; at: Iv; name: string }
 
@@ -17,7 +17,7 @@ export type TurnModel = {
   agentText: string | null
   interrupted: boolean
   utterance: Iv | null
-  eot: { t: number; probability: number; threshold: number } | null
+  eot: { t: number; probability: number | null; threshold: number | null } | null
   wait: Iv | null
   thinking: Iv | null
   speaking: Iv | null
@@ -34,7 +34,7 @@ export type TurnModel = {
 export type Pipeline = "cascaded" | "realtime" | "text" | "unknown"
 
 export type CallModel = {
-  duration: number
+  duration: number | null
   pipeline: Pipeline
   models: string[]
   source: "events" | "recording" | "spans" | "none"
@@ -45,9 +45,16 @@ export type CallModel = {
   moments: Moment[]
 }
 
-export function intervals(events: SessionEvent[], type: "user_state" | "agent_state", state: string): Iv[] {
+// Events without a time, and spans without a start or duration, cannot be placed on a timeline.
+export const timed = <E extends { t: number | null }>(e: E): e is E & { t: number } => e.t !== null
+
+export type Placed = Span & { startMs: number; durationMs: number }
+export const placed = (x: Span): x is Placed => x.startMs !== null && x.durationMs !== null
+
+export function intervals(all: SessionEvent[], type: "user_state" | "agent_state", state: string): Iv[] {
   const out: Iv[] = []
   let open: number | null = null
+  const events = all.filter(timed)
   for (const e of events) {
     if (e.type !== type) continue
     if (e.to === state && open === null) open = e.t
@@ -63,7 +70,7 @@ export function intervals(events: SessionEvent[], type: "user_state" | "agent_st
 const pad = (iv: Iv, before: number, after: number): Iv => ({ start: Math.max(0, iv.start - before), end: iv.end + after })
 
 function fromEvents(call: Call): Omit<CallModel, "pipeline" | "models" | "source"> {
-  const ev = call.events ?? []
+  const ev = (call.events ?? []).filter(timed)
   const caller = intervals(ev, "user_state", "speaking")
   const thinking = intervals(ev, "agent_state", "thinking")
   const speaking = intervals(ev, "agent_state", "speaking")
@@ -82,7 +89,7 @@ function fromEvents(call: Call): Omit<CallModel, "pipeline" | "models" | "source
         while (k > 0 && utterance.start - runs[k - 1].end < 1.5) utterance.start = runs[--k].start
       }
     }
-    const eotEv = ev.filter((e): e is Extract<SessionEvent, { type: "end_of_turn" }> => e.type === "end_of_turn" && userAt !== null && e.t <= userAt + 0.1 && e.t >= prevEnd)
+    const eotEv = ev.filter((e): e is Extract<SessionEvent, { type: "end_of_turn" }> & { t: number } => e.type === "end_of_turn" && userAt !== null && e.t <= userAt + 0.1 && e.t >= prevEnd)
     const eot = eotEv.length ? { t: eotEv[eotEv.length - 1].t, probability: eotEv[eotEv.length - 1].probability, threshold: eotEv[eotEv.length - 1].threshold } : null
     const think = userAt !== null ? (thinking.find((s) => s.start >= userAt - 0.1 && (agentAt === null || s.start <= agentAt)) ?? null) : null
     const from = think?.end ?? userAt ?? prevEnd
@@ -113,9 +120,10 @@ function fromEvents(call: Call): Omit<CallModel, "pipeline" | "models" | "source
   })
   const moments: Moment[] = []
   for (const e of ev) {
-    if (e.type === "overlapping_speech") {
-      const at = { start: e.overlapStartedAt, end: Math.max(e.detectedAt, e.overlapStartedAt + 0.05) }
-      moments.push(e.isInterruption ? { kind: "interruption", at, inferred: false, detectionMs: e.detectionDelay * 1000 } : { kind: "backchannel", at, detectionMs: e.detectionDelay * 1000 })
+    if (e.type === "overlapping_speech" && e.overlapStartedAt !== null) {
+      const at = { start: e.overlapStartedAt, end: Math.max(e.detectedAt ?? e.overlapStartedAt, e.overlapStartedAt + 0.05) }
+      const detectionMs = e.detectionDelay !== null ? e.detectionDelay * 1000 : null
+      moments.push(e.isInterruption ? { kind: "interruption", at, inferred: false, detectionMs } : { kind: "backchannel", at, detectionMs })
     }
   }
   // Realtime models send no overlapping-speech event; a reply flagged interrupted still shows where it was cut.
@@ -130,11 +138,16 @@ function fromEvents(call: Call): Omit<CallModel, "pipeline" | "models" | "source
 
 function fromRecording(call: Call): Omit<CallModel, "pipeline" | "models" | "source"> {
   const rec = call.recording!
-  const caller = rec.segments.filter((s) => s.speaker === "caller").map((s) => ({ start: s.start, end: s.end }))
-  const speaking = rec.segments.filter((s) => s.speaker === "agent").map((s) => ({ start: s.start, end: s.end }))
+  const segs = rec.segments ?? []
+  // Kept per segment (null when unplaced) so the i-th turn still pairs with the i-th segment.
+  const iv = (s: RecordingSegment): Iv | null => (s.start !== null && s.end !== null ? { start: s.start, end: s.end } : null)
+  const callerSegs = segs.filter((s) => s.speaker === "caller").map(iv)
+  const agentSegs = segs.filter((s) => s.speaker === "agent").map(iv)
+  const caller = callerSegs.filter((x): x is Iv => x !== null)
+  const speaking = agentSegs.filter((x): x is Iv => x !== null)
   const turns: TurnModel[] = (call.turns ?? []).map((t, i) => {
-    const utterance = caller[i] ?? null
-    const speak = speaking[i] ?? null
+    const utterance = callerSegs[i] ?? null
+    const speak = agentSegs[i] ?? null
     const derived = utterance && speak ? Math.round((speak.start - utterance.end) * 1000) : null
     const first = utterance?.start ?? speak?.start ?? 0
     return {
@@ -148,21 +161,25 @@ function fromRecording(call: Call): Omit<CallModel, "pipeline" | "models" | "sou
 
 function fromSpans(call: Call): Omit<CallModel, "pipeline" | "models" | "source"> {
   const spans = call.spans ?? []
-  const s = (x: Span): Iv => ({ start: x.startMs / 1000, end: (x.startMs + x.durationMs) / 1000 })
+  const s = (x: Placed): Iv => ({ start: x.startMs / 1000, end: (x.startMs + x.durationMs) / 1000 })
   const agentTurns = spans.filter((x) => x.name === "agent_turn")
-  const speakingSpans = spans.filter((x) => x.name === "agent_speaking")
-  const speaking = speakingSpans.map(s)
-  const thinking = agentTurns.map((t, k) => ({ start: t.startMs / 1000, end: speaking[k]?.start ?? s(t).end }))
-  const tools = spans.filter((x) => x.name === "function_tool")
-  const turns: TurnModel[] = agentTurns.map((at, i) => {
+  // Kept per span (null when unplaced) so the i-th agent turn still pairs with the i-th speaking span and turn.
+  const speakingAt = spans.filter((x) => x.name === "agent_speaking").map((x) => (placed(x) ? s(x) : null))
+  const thinkingAt = agentTurns.map((t, k) => (placed(t) ? { start: t.startMs / 1000, end: speakingAt[k]?.start ?? s(t).end } : null))
+  const speaking = speakingAt.filter((x): x is Iv => x !== null)
+  const thinking = thinkingAt.filter((x): x is Iv => x !== null)
+  const tools = spans.filter(placed).filter((x) => x.name === "function_tool")
+  const turns: TurnModel[] = agentTurns.flatMap((at, i) => {
     const t = call.turns?.[i]
+    if (!placed(at)) return []
     return {
       i, userText: t?.userText ?? null, agentText: t?.agentText ?? null, interrupted: !!t?.interrupted, utterance: null, eot: null, wait: null,
-      thinking: thinking[i] ?? null, speaking: speaking[i] ?? null, ttftMs: t?.ttftMs ?? null, ttsMs: t?.ttsMs ?? null, eotMs: t?.endOfTurnMs ?? null,
+      thinking: thinkingAt[i] ?? null, speaking: speakingAt[i] ?? null, ttftMs: t?.ttftMs ?? null, ttsMs: t?.ttsMs ?? null, eotMs: t?.endOfTurnMs ?? null,
       e2eMs: t?.e2eMs ?? null, responseMs: t?.e2eMs ?? null, responseDerived: false, window: pad(s(at), 0.3, 0.3),
     }
   })
-  const duration = Math.max(0, ...spans.map((x) => (x.startMs + x.durationMs) / 1000))
+  const ends = spans.filter(placed).map((x) => (x.startMs + x.durationMs) / 1000)
+  const duration = ends.length ? Math.max(0, ...ends) : null
   return { duration, caller: [], thinking, speaking, turns, moments: tools.map((x) => ({ kind: "tool" as const, at: s(x), name: x.attrs?.["lk.function_tool.name"] ?? x.name })) }
 }
 
@@ -172,7 +189,7 @@ export function buildModel(call: Call): CallModel {
     source === "events" ? fromEvents(call) : source === "recording" ? fromRecording(call) : source === "spans" ? fromSpans(call) : { duration: call.durationSeconds, caller: [], thinking: [], speaking: [], turns: [], moments: [] }
   // Tool calls come from function_tool spans whatever the main source is.
   if (source !== "spans") {
-    for (const x of (call.spans ?? []).filter((x) => x.name === "function_tool")) {
+    for (const x of (call.spans ?? []).filter(placed).filter((x) => x.name === "function_tool")) {
       base.moments.push({ kind: "tool", at: { start: x.startMs / 1000, end: (x.startMs + x.durationMs) / 1000 }, name: x.attrs?.["lk.function_tool.name"] ?? x.name })
     }
   }
@@ -192,7 +209,7 @@ export function buildModel(call: Call): CallModel {
 export const interruptionCount = (m: CallModel) => Math.max(m.moments.filter((x) => x.kind === "interruption").length, m.turns.filter((t) => t.interrupted).length)
 
 // The call's one length on screen: the room's, the same number the Calls list shows.
-export const callLength = (call: Call, model: { duration: number }) => call.durationSeconds || model.duration
+export const callLength = (call: Call, model: { duration: number | null }) => call.durationSeconds ?? model.duration
 
 export const pipelineLabel: Record<Pipeline, string> = {
   cascaded: "Cascaded · STT, LLM, TTS",

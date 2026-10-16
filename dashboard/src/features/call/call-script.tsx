@@ -15,7 +15,7 @@ import type { Focus } from "./call-view"
 // answer, the tools the agent ran and where it was cut off sit inline, where they happened.
 
 function toolsIn(call: Call, from: number, to: number): Span[] {
-  return (call.spans ?? []).filter((s) => s.name === "function_tool" && s.startMs / 1000 >= from && s.startMs / 1000 <= to)
+  return (call.spans ?? []).filter((s) => s.name === "function_tool" && s.startMs !== null && s.startMs / 1000 >= from && s.startMs / 1000 <= to)
 }
 // A function_tool span as a tool call: arguments parsed when they are JSON, output kept as the agent got it.
 function toolPart(s: Span) {
@@ -35,7 +35,8 @@ function toolPart(s: Span) {
     output: error ? undefined : (a["lk.pii.function_tool.output"] ?? undefined),
     errorText: error ? a["lk.pii.function_tool.output"] : undefined,
     toolCallId: a["lk.function_tool.id"],
-    duration: fmtMs(s.durationMs),
+    // Unreported duration: the tool card shows none rather than a number.
+    duration: s.durationMs !== null ? fmtMs(s.durationMs) : undefined,
   }
 }
 const playedAt = (call: Call, i: number) => (call.spans ?? []).filter((s) => s.name === "agent_turn")[i]?.attrs?.["lk.playout.position"] ?? null

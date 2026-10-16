@@ -1,6 +1,6 @@
 import { BUDGET_MS, TTS_START_MS } from "@/lib/thresholds"
 import type { Call, Span } from "@/lib/api"
-import { type CallModel, type TurnModel, fmtMs, fmtSec } from "./call-model"
+import { type CallModel, type TurnModel, fmtMs, fmtSec, placed } from "./call-model"
 
 // What happened inside one turn, step by step, from whatever the call carries: OTLP span attributes
 // (prompt, reply, tokens, tools) and agent session events (speech, turn detection, overlap).
@@ -20,7 +20,7 @@ export type Step = {
   details: Field[]
 }
 
-const spanSec = (s: Span) => s.startMs / 1000
+const spanSec = (s: Span) => (s.startMs !== null ? s.startMs / 1000 : null)
 const attr = (s: Span | undefined, k: string) => s?.attrs?.[k] ?? null
 
 function turnSpans(call: Call, i: number) {
@@ -63,10 +63,10 @@ const sec = (v: string | null) => (v === null ? null : fmtMs(Number(v) * 1000))
 
 // The caller turn that a given agent turn answers: the last user_turn span ending before it starts.
 function userTurnFor(call: Call, agentTurn: Span | undefined) {
-  if (!agentTurn) return { turn: undefined, children: [] as Span[] }
+  if (!agentTurn || !placed(agentTurn)) return { turn: undefined, children: [] as Span[] }
   const spans = call.spans ?? []
-  const turn = spans.filter((s) => s.name === "user_turn" && s.startMs <= agentTurn.startMs).at(-1)
-  const prev = spans.filter((s) => s.name === "agent_turn" && s.startMs < agentTurn.startMs).at(-1)
+  const turn = spans.filter(placed).filter((s) => s.name === "user_turn" && s.startMs <= agentTurn.startMs).at(-1)
+  const prev = spans.filter(placed).filter((s) => s.name === "agent_turn" && s.startMs < agentTurn.startMs).at(-1)
   if (!turn || (prev && turn.startMs < prev.startMs)) return { turn: undefined, children: [] as Span[] }
   return { turn, children: spans.filter((s) => s.parentId === turn.spanId || spans.some((p) => p.parentId === turn.spanId && s.parentId === p.spanId)) }
 }
@@ -100,8 +100,8 @@ export function stepsFor(call: Call, model: CallModel, t: TurnModel): Step[] {
   }
 
   if (t.eot || t.eotMs !== null || eouDet) {
-    const p = eouDet ? Number(attr(eouDet, "lk.eou.probability")) : t.eot?.probability
-    const th = eouDet ? Number(attr(eouDet, "lk.eou.unlikely_threshold")) : t.eot?.threshold
+    const p = eouDet ? Number(attr(eouDet, "lk.eou.probability")) : (t.eot?.probability ?? undefined)
+    const th = eouDet ? Number(attr(eouDet, "lk.eou.unlikely_threshold")) : (t.eot?.threshold ?? undefined)
     const unsure = p !== undefined && th !== undefined && p < th
     const long = (t.eotMs ?? 0) >= 1500
     const outcome = attr(eouWait, "lk.eou.outcome")
@@ -130,11 +130,11 @@ export function stepsFor(call: Call, model: CallModel, t: TurnModel): Step[] {
         id: `ov${m.at.start}`, kind: "overlap", title: m.kind === "interruption" ? "Caller interrupted" : "Backchannel", at: m.at.start,
         status: m.kind === "interruption" ? "error" : "info",
         summary: m.kind === "interruption"
-          ? `Agent stopped ${fmtMs(m.detectionMs)} after the caller started talking${m.inferred ? " (inferred from the reply's interrupted flag)" : ""}`
-          : `Caller spoke over the agent; classified as a backchannel in ${fmtMs(m.detectionMs)}`,
+          ? `Agent stopped ${m.detectionMs !== null ? `${fmtMs(m.detectionMs)} ` : ""}after the caller started talking${m.inferred ? " (inferred from the reply's interrupted flag)" : ""}`
+          : `Caller spoke over the agent; classified as a backchannel${m.detectionMs !== null ? ` in ${fmtMs(m.detectionMs)}` : ""}`,
         input: [{ label: "Overlap started", value: `${m.at.start.toFixed(2)} s` }],
         output: [{ label: "Classified as", value: m.kind }],
-        details: [{ label: "Detection delay", value: fmtMs(m.detectionMs) }],
+        details: [{ label: "Detection delay", value: m.detectionMs !== null ? fmtMs(m.detectionMs) : null, why: "Not reported" }],
       })
     }
   }
@@ -154,8 +154,8 @@ export function stepsFor(call: Call, model: CallModel, t: TurnModel): Step[] {
         id: `llm${k}`, kind: "llm", title: `Model call${llmNodes.length > 1 ? ` ${k + 1}` : ""}${failed ? " · discarded" : toolCall ? " · tool call" : ""}`, at: spanSec(n),
         status: failed ? "warn" : "ok",
         summary: failed
-          ? `Ended with finish reason "error" after ${fmtMs(n.durationMs)}: a reply started early and was thrown away, ${tokIn ?? "unknown"} tokens reported`
-          : `${attr(n, "gen_ai.request.model") ?? "model"} ${toolCall ? "asked for a tool" : "answered"} in ${fmtMs(n.durationMs)}, first token ${ttft !== null ? sec(ttft) : "unknown"}${tokIn !== null ? `, ${tokIn} in / ${tokOut} out tokens` : ""}`,
+          ? `Ended with finish reason "error"${n.durationMs !== null ? ` after ${fmtMs(n.durationMs)}` : ""}: a reply started early and was thrown away, ${tokIn ?? "unknown"} tokens reported`
+          : `${attr(n, "gen_ai.request.model") ?? "model"} ${toolCall ? "asked for a tool" : "answered"}${n.durationMs !== null ? ` in ${fmtMs(n.durationMs)}` : ""}, first token ${ttft !== null ? sec(ttft) : "unknown"}${tokIn !== null ? `, ${tokIn} in / ${tokOut} out tokens` : ""}`,
         input: [
           { label: "System instructions", value: instructions(attr(req, "gen_ai.system_instructions")), why: "Not sent" },
           { label: "Messages sent", value: messages(attr(req, "gen_ai.input.messages")) ?? attr(n, "lk.chat_ctx") ?? attr(n, "lk.pii.chat_ctx"), mono: true, why: "Not sent" },
@@ -190,7 +190,7 @@ export function stepsFor(call: Call, model: CallModel, t: TurnModel): Step[] {
     const err = (attr(s, "lk.function_tool.is_error") ?? "").toLowerCase() === "true"
     out.push({
       id: s.spanId, kind: "tool", title: `Tool · ${attr(s, "lk.function_tool.name") ?? "unknown"}`, at: spanSec(s), status: err ? "error" : "ok",
-      summary: `${err ? "Failed" : "Returned"} in ${fmtMs(s.durationMs)}: ${attr(s, "lk.pii.function_tool.output") ?? attr(s, "lk.function_tool.output") ?? "no result sent"}`,
+      summary: `${err ? "Failed" : "Returned"}${s.durationMs !== null ? ` in ${fmtMs(s.durationMs)}` : ""}: ${attr(s, "lk.pii.function_tool.output") ?? attr(s, "lk.function_tool.output") ?? "no result sent"}`,
       input: [
         { label: "Arguments", value: attr(s, "lk.pii.function_tool.arguments") ?? attr(s, "lk.function_tool.arguments") ?? attr(s, "gen_ai.tool.call.arguments"), mono: true, why: "Not sent" },
         { label: "Tool description", value: attr(s, "gen_ai.tool.description"), why: "Not sent" },
@@ -236,14 +236,16 @@ export { BUDGET_MS } from "@/lib/thresholds"
 
 export function findingsFor(call: Call, model: CallModel): Finding[] {
   const f: Finding[] = []
-  const waits = model.turns.filter((t) => t.eot && t.eot.probability < t.eot.threshold && (t.eotMs ?? 0) >= 1500)
+  type Scored = TurnModel & { eot: { probability: number; threshold: number } }
+  const scored = (t: TurnModel): t is Scored => t.eot !== null && t.eot.probability !== null && t.eot.threshold !== null
+  const waits = model.turns.filter(scored).filter((t) => t.eot.probability < t.eot.threshold && (t.eotMs ?? 0) >= 1500)
   if (waits.length) {
     const avg = waits.reduce((a, t) => a + (t.eotMs ?? 0), 0) / waits.length
     const share = waits.map((t) => (t.eotMs ?? 0) / (t.e2eMs ?? t.responseMs ?? Infinity)).filter(Number.isFinite)
     f.push({
       id: "eot", severity: "high",
       title: `The agent waited ${fmtMs(avg)} for the end of the turn on ${waits.length} of ${model.turns.filter((t) => t.userText !== null).length} turns`,
-      detail: `The turn detector scored every one of them below its threshold (${waits.map((t) => t.eot!.probability.toFixed(2)).join(", ")} vs ${waits[0].eot!.threshold.toFixed(2)}), so the agent sat out its full delay.${share.length ? ` That wait was ${Math.round((share.reduce((a, b) => a + b, 0) / share.length) * 100)}% of the response time.` : ""} Look at the endpointing delay or the detector threshold.`,
+      detail: `The turn detector scored every one of them below its threshold (${waits.map((t) => t.eot.probability.toFixed(2)).join(", ")} vs ${waits[0].eot.threshold.toFixed(2)}), so the agent sat out its full delay.${share.length ? ` That wait was ${Math.round((share.reduce((a, b) => a + b, 0) / share.length) * 100)}% of the response time.` : ""} Look at the endpointing delay or the detector threshold.`,
       turns: waits.map((t) => t.i),
     })
   }
