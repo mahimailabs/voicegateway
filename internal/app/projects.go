@@ -12,10 +12,11 @@ import (
 	"github.com/mahimailabs/voicegateway/internal/config"
 	"github.com/mahimailabs/voicegateway/internal/seal"
 	"github.com/mahimailabs/voicegateway/internal/store"
+	"github.com/mahimailabs/voicegateway/internal/store/chstore"
 	"github.com/mahimailabs/voicegateway/internal/store/pgstore"
 )
 
-// Migrate applies every pending Postgres migration.
+// Migrate applies every pending Postgres and ClickHouse migration.
 func Migrate(ctx context.Context, c config.Config, log *slog.Logger) error {
 	pool, err := pgxpool.New(ctx, c.PostgresURL)
 	if err != nil {
@@ -27,6 +28,12 @@ func Migrate(ctx context.Context, c config.Config, log *slog.Logger) error {
 		return err
 	}
 	log.Info("postgres migrated", "applied", n)
+
+	n, err = chstore.Migrate(ctx, c.ClickHouseURL)
+	if err != nil {
+		return redactErr(err, c.ClickHouseURL)
+	}
+	log.Info("clickhouse migrated", "applied", n)
 	return nil
 }
 

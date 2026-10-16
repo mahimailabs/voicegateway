@@ -25,3 +25,30 @@ var ErrProjectExists = errors.New("a project with this id already exists")
 
 // ErrNotFound means no record matched.
 var ErrNotFound = errors.New("not found")
+
+// Event is one ingested envelope as the worker stores it, before calls are joined.
+type Event struct {
+	OrganisationID string
+	ProjectID      string
+	Kind           string
+	// DedupeKey is the source's event id when it sent one, else the stream entry id.
+	DedupeKey string
+	// EventID is the source's own id, empty when unknown.
+	EventID    string
+	StreamID   string
+	ReceivedAt time.Time
+	Payload    []byte
+}
+
+// EventKey is what makes an Event unique.
+type EventKey struct {
+	OrganisationID string
+	ProjectID      string
+	Kind           string
+	DedupeKey      string
+}
+
+// Key returns the event's dedupe key.
+func (e Event) Key() EventKey {
+	return EventKey{OrganisationID: e.OrganisationID, ProjectID: e.ProjectID, Kind: e.Kind, DedupeKey: e.DedupeKey}
+}

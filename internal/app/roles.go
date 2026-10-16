@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 	"time"
 
@@ -19,6 +20,8 @@ import (
 	"github.com/mahimailabs/voicegateway/internal/ingest"
 	"github.com/mahimailabs/voicegateway/internal/obs"
 	"github.com/mahimailabs/voicegateway/internal/seal"
+	"github.com/mahimailabs/voicegateway/internal/sink"
+	"github.com/mahimailabs/voicegateway/internal/store/chstore"
 	"github.com/mahimailabs/voicegateway/internal/store/pgstore"
 	"github.com/mahimailabs/voicegateway/internal/stream"
 )
@@ -92,14 +95,43 @@ func Web(ctx context.Context, c config.Config, log *slog.Logger) error {
 	return nil
 }
 
-// Worker runs until ctx is cancelled. Stream consumers, settling and scraping join it in later
-// phases; it never answers HTTP (CLAUDE.md Boundaries).
-func Worker(ctx context.Context, _ config.Config, log *slog.Logger) error {
-	log.Info("worker started")
-	<-ctx.Done()
+// Worker stores what web appends to the stream until ctx is cancelled. Call joining, settling and
+// scraping join it in later phases; it never answers HTTP (CLAUDE.md Boundaries).
+func Worker(ctx context.Context, c config.Config, log *slog.Logger) error {
+	opts, err := redis.ParseURL(c.RedisURL)
+	if err != nil {
+		return fmt.Errorf("parse VOICEGATEWAY_REDIS_URL: %w", redactErr(err, c.RedisURL))
+	}
+	rdb := redis.NewClient(opts)
+	defer func() { _ = rdb.Close() }()
+	events, err := chstore.Open(c.ClickHouseURL)
+	if err != nil {
+		return redactErr(err, c.ClickHouseURL)
+	}
+	defer func() { _ = events.Close() }()
+	// One consumer per worker process; a worker that dies leaves its entries to be claimed.
+	name, err := os.Hostname()
+	if err != nil {
+		return fmt.Errorf("consumer name: %w", err)
+	}
+
+	log.Info("worker started", "consumer", name)
+	err = (&sink.Sink{
+		Stream:    stream.NewConsumer(rdb, stream.Ingest, workerGroup, name),
+		Events:    events,
+		Log:       log,
+		Batch:     1000,
+		Block:     time.Second,
+		ClaimIdle: time.Minute,
+		Backoff:   250 * time.Millisecond, MaxBackoff: 30 * time.Second,
+		Attempts: 5,
+	}).Run(ctx)
 	log.Info("worker stopped")
-	return nil
+	return err
 }
+
+// workerGroup is the consumer group every worker reads the ingest stream in.
+const workerGroup = "worker"
 
 // containsSecret reports whether text repeats the URL or its password.
 func containsSecret(text, raw string) bool {

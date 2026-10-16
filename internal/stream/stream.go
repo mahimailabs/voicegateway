@@ -29,8 +29,8 @@ const (
 	fPayload    = "payload"
 )
 
-// Producer appends envelopes. Nothing trims the stream here: an entry leaves only after the worker
-// has stored it.
+// Producer appends envelopes. Nothing trims the stream here: an entry leaves only when the worker
+// acknowledges it after storing it, or moves it to the dead-letter stream.
 type Producer struct {
 	rdb    *redis.Client
 	stream string
@@ -65,11 +65,12 @@ func (p *Producer) Append(ctx context.Context, e event.Envelope) (string, error)
 }
 
 // Message is one entry read from the stream. Err is set when the entry could not be decoded; it
-// still carries its ID so the reader can dead-letter it instead of losing it.
+// still carries its ID and fields so the reader can dead-letter it instead of losing it.
 type Message struct {
 	ID       string
 	Envelope event.Envelope
 	Err      error
+	fields   map[string]any
 }
 
 // Consumer reads the stream as one member of a consumer group.
@@ -116,23 +117,63 @@ func (c *Consumer) Read(ctx context.Context, count int64, block time.Duration) (
 	}
 	var out []Message
 	for _, s := range res {
-		for _, m := range s.Messages {
-			e, err := decode(m.Values)
-			out = append(out, Message{ID: m.ID, Envelope: e, Err: err})
-		}
+		out = append(out, messages(s.Messages)...)
 	}
 	return out, nil
 }
 
-// Ack marks entries as stored, so the group never delivers them again.
+// Claim takes over up to count entries that another consumer read but has not acknowledged for at
+// least minIdle, as when a worker died between reading and storing. They come back as new reads.
+func (c *Consumer) Claim(ctx context.Context, minIdle time.Duration, count int64) ([]Message, error) {
+	res, _, err := c.rdb.XAutoClaim(ctx, &redis.XAutoClaimArgs{
+		Stream:   c.stream,
+		Group:    c.group,
+		Consumer: c.name,
+		MinIdle:  minIdle,
+		Start:    "0-0",
+		Count:    count,
+	}).Result()
+	if err != nil {
+		return nil, fmt.Errorf("claim on %s: %w", c.stream, err)
+	}
+	return messages(res), nil
+}
+
+// Ack marks entries as stored and deletes them, so the group never delivers them again and the
+// stream does not grow. XACKDEL ACKED (Redis 8.2) keeps an entry another group still needs.
 func (c *Consumer) Ack(ctx context.Context, ids ...string) error {
 	if len(ids) == 0 {
 		return nil
 	}
-	if err := c.rdb.XAck(ctx, c.stream, c.group, ids...).Err(); err != nil {
+	if err := c.rdb.XAckDel(ctx, c.stream, c.group, "ACKED", ids...).Err(); err != nil {
 		return fmt.Errorf("ack on %s: %w", c.stream, err)
 	}
 	return nil
+}
+
+// DeadLetter moves an entry the reader cannot store to the stream's dead-letter stream, with the
+// reason, then acknowledges it. Its fields are kept as they were, so nothing is lost.
+func (c *Consumer) DeadLetter(ctx context.Context, m Message, reason string) error {
+	values := []any{"dead_from", m.ID, "dead_reason", reason}
+	for k, v := range m.fields {
+		values = append(values, k, v)
+	}
+	if err := c.rdb.XAdd(ctx, &redis.XAddArgs{Stream: DeadLetters(c.stream), Values: values}).Err(); err != nil {
+		return fmt.Errorf("dead-letter %s: %w", m.ID, err)
+	}
+	return c.Ack(ctx, m.ID)
+}
+
+// DeadLetters names the dead-letter stream of a stream.
+func DeadLetters(stream string) string { return stream + ":dead" }
+
+func messages(in []redis.XMessage) []Message {
+	out := make([]Message, 0, len(in))
+	for _, m := range in {
+		e, err := decode(m.Values)
+		out = append(out, Message{ID: m.ID, Envelope: e, Err: err, fields: m.Values})
+	}
+	return out
 }
 
 func decode(v map[string]any) (event.Envelope, error) {

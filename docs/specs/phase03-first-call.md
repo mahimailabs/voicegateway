@@ -48,7 +48,7 @@ Slice A:
 4. Given a sealed secret and a different `VOICEGATEWAY_SECRET_KEY`, when it is opened, then a named error is returned, never a panic or the wrong plaintext (measured by `TestOpenWithWrongKey`).
 5. Given `make up`, when the stack starts, then `migrate` finishes before web and worker start (measured by the CI compose job).
 
-Slice B is built in three PRs: (a) webhooks to the stream, (b) the Agents observability uploads, (c) the worker into ClickHouse. Checks for (c) are written with it.
+Slice B is built in three PRs: (a) webhooks to the stream, (b) the Agents observability uploads, (c) the worker into ClickHouse. All three are specified below.
 
 Slice B (a), webhooks to the stream. LiveKit posts to `POST /livekit/webhook`; the `Authorization` JWT is checked with livekit/protocol `webhook.Receive` (v1.52.1), which finds the secret by the token's issuer (the LiveKit API key) and compares the body's SHA-256 with the token's claim. The stream entry layout is version 1 of `internal/stream`.
 
@@ -64,6 +64,16 @@ Slice B (b), the Agents observability uploads, at LiveKit's paths as LiveKit Age
 12. Given a session upload with header, chat history and audio, when it is posted, then one envelope identified by the job id holds the header and the chat history byte for byte, marks the audio as discarded, and no audio byte reaches the stream (measured by `TestUploadSessionReport`).
 13. Given the stream or the project store down, when an upload is posted, then it answers 503 with a google.rpc.Status carrying RetryInfo, the only 5xx the Agents session uploader retries, and no refusal carries the phrases that make the agent stop uploading for good (measured by `TestUploadUnavailableRetries`, `TestUploadRefusalDoesNotDisableAgent`).
 
+Slice B (c), the worker into ClickHouse. `voicegateway migrate` also applies `migrations/clickhouse` (goose, ClickHouse dialect). `worker` reads `voicegateway:ingest` in group `worker` as a consumer named by its host, claims entries another consumer left unacknowledged for a minute, and stores each batch in `events`. The dedupe key is the source's event id, else `entry:` plus the stream entry id; keys already stored are skipped, and ReplacingMergeTree folds any duplicate two racing workers write. Acknowledging deletes the entry (XACKDEL ACKED). LiveKit's `room.turnPassword` is removed from webhook bodies before they are stored (maintainer decision, 2026-10-16).
+
+14. Given webhooks and agent uploads on the stream, when the worker runs, then each is one row attributed to its project, an unknown event id stays empty, and the stream and the group's pending list are empty (measured by `TestSinkStoresAndAcks`).
+15. Given the same webhook delivered twice in one batch and again after a restart, then one row holds it (measured by `TestSinkSkipsStoredWebhook`).
+16. Given a webhook whose room carries a TURN password, when it is stored, then the stored body has no `turnPassword` and keeps the rest (measured by `TestSinkStripsTURNPassword`).
+17. Given entries a worker read and never acknowledged, when another worker runs, then it claims and stores them once (measured by `TestSinkClaimsFromDeadWorker`, `TestClaimFromDeadConsumer`).
+18. Given an entry that cannot be decoded, then it moves to `voicegateway:ingest:dead` with its fields and the reason, and the entries after it are stored (measured by `TestSinkDeadLettersUndecodable`, `TestReadUnknownLayout`).
+19. Given ClickHouse unreachable, then nothing is acknowledged or dead-lettered, and once it answers every entry is stored (measured by `TestSinkAcksOnlyAfterInsert`).
+20. Given acknowledged entries, then they are deleted from the stream, so it does not grow (measured by `TestAppendReadAck`).
+
 ## Manual Check
 
 `make up`, then `voicegateway project add` with a real LiveKit Cloud project, then `psql` shows the project with a sealed secret and no plaintext.
@@ -71,3 +81,5 @@ Slice B (b), the Agents observability uploads, at LiveKit's paths as LiveKit Age
 Slice B (a): add a project for `livekit-server --dev` (key `devkey`), run the server with `webhook.urls` set to `http://localhost:8080/livekit/webhook`, create and delete a room with `lk`, then `XRANGE voicegateway:ingest - +` shows the room_started and room_finished envelopes for that project.
 
 Slice B (b): add a project for a LiveKit Cloud test project, run a LiveKit Agents 1.8.7 agent with `LIVEKIT_OBSERVABILITY_URL=http://localhost:8080` and `record=True` in a test room until it shuts down, then the stream holds `livekit.agent.traces`, `.logs`, `.metrics` and one `livekit.agent.session_report` for that project.
+
+Slice B (c): with the worker stopped, create and delete a room on `livekit-server --dev`; the stream holds two entries. Start the worker: the stream empties and `events` gains two rows for the project. `make down` then `make up`: the row count is unchanged and `count()` equals `count() FINAL`.
