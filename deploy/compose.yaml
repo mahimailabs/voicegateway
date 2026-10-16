@@ -1,4 +1,4 @@
-# The whole VoiceGateway stack: six services (decision 0005). Start it with `make up`, which creates
+# The whole VoiceGateway stack: six services (decision 0005), plus a one-shot migrate. Start it with `make up`, which creates
 # deploy/.env with fresh random secrets on first run. Every pulled image is pinned by tag and digest.
 name: voicegateway
 
@@ -10,6 +10,7 @@ x-voicegateway-env: &voicegateway-env
   VOICEGATEWAY_S3_BUCKET: recordings
   VOICEGATEWAY_S3_ACCESS_KEY: ${S3_ACCESS_KEY:?set it in deploy/.env}
   VOICEGATEWAY_S3_SECRET_KEY: ${S3_SECRET_KEY:?set it in deploy/.env}
+  VOICEGATEWAY_SECRET_KEY: ${VOICEGATEWAY_SECRET_KEY:?set it in deploy/.env}
   VOICEGATEWAY_LOG_LEVEL: ${VOICEGATEWAY_LOG_LEVEL:-info}
 
 x-voicegateway-depends: &voicegateway-depends
@@ -71,13 +72,23 @@ services:
       interval: 2s
       retries: 60
 
-  web:
+  # Applies pending migrations once, then exits; web and worker wait for it to succeed.
+  migrate:
     build: { context: .., dockerfile: deploy/Dockerfile }
+    image: voicegateway:dev
+    command: ["migrate"]
+    environment: *voicegateway-env
+    restart: "no"
+    depends_on: *voicegateway-depends
+
+  web:
     image: voicegateway:dev
     command: ["web"]
     environment: *voicegateway-env
     ports: ["${VOICEGATEWAY_WEB_PORT:-8080}:8080"]
-    depends_on: *voicegateway-depends
+    depends_on:
+      <<: *voicegateway-depends
+      migrate: { condition: service_completed_successfully }
 
   worker:
     image: voicegateway:dev
@@ -85,7 +96,7 @@ services:
     environment: *voicegateway-env
     depends_on:
       <<: *voicegateway-depends
-      web: { condition: service_started }
+      migrate: { condition: service_completed_successfully }
 
 volumes:
   postgres:

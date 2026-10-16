@@ -1,0 +1,15 @@
+# sqlc generates the typed queries in this package from migrations/postgres and queries.sql.
+# Regenerate with `make sqlc`.
+version: "2"
+sql:
+  - engine: postgresql
+    schema: ../../../migrations/postgres
+    queries: queries.sql
+    gen:
+      go:
+        package: pgstore
+        out: .
+        sql_package: pgx/v5
+        output_db_file_name: db.gen.go
+        output_models_file_name: models.gen.go
+        output_files_suffix: .gen
