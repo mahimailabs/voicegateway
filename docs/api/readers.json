@@ -1,0 +1,300 @@
+[
+  {
+    "file": "dashboard/src/components/network-globe.tsx",
+    "fixtures": [],
+    "assets": [
+      "/globe/countries.geojson"
+    ],
+    "browserStorage": false,
+    "operations": [],
+    "assetNotes": {
+      "/globe/countries.geojson": "Static map geometry, not telemetry."
+    }
+  },
+  {
+    "file": "dashboard/src/components/theme.tsx",
+    "fixtures": [],
+    "assets": [],
+    "browserStorage": true,
+    "operations": [],
+    "assetNotes": {},
+    "exclusion": "Browser-only appearance preference, not server data."
+  },
+  {
+    "file": "dashboard/src/features/agents/agents-model.ts",
+    "fixtures": [
+      "agents.json"
+    ],
+    "assets": [],
+    "browserStorage": false,
+    "operations": [
+      "getCloudAgents"
+    ],
+    "assetNotes": {}
+  },
+  {
+    "file": "dashboard/src/features/agents/capacity.tsx",
+    "fixtures": [
+      "capacity.json"
+    ],
+    "assets": [],
+    "browserStorage": false,
+    "operations": [
+      "getCapacity"
+    ],
+    "assetNotes": {}
+  },
+  {
+    "file": "dashboard/src/features/alerts/alerts-model.ts",
+    "fixtures": [
+      "egress.json",
+      "ingress.json",
+      "sip.json"
+    ],
+    "assets": [],
+    "browserStorage": true,
+    "operations": [
+      "getAlertSetup",
+      "getEgress",
+      "getIngress",
+      "getSip",
+      "listAlertEvents"
+    ],
+    "assetNotes": {}
+  },
+  {
+    "file": "dashboard/src/features/call/call-tags.tsx",
+    "fixtures": [],
+    "assets": [],
+    "browserStorage": true,
+    "operations": [
+      "getCall",
+      "listCalls"
+    ],
+    "assetNotes": {}
+  },
+  {
+    "file": "dashboard/src/features/calls/call-archive.ts",
+    "fixtures": [],
+    "assets": [],
+    "browserStorage": true,
+    "operations": [
+      "getCall",
+      "listCalls"
+    ],
+    "assetNotes": {}
+  },
+  {
+    "file": "dashboard/src/features/calls/calls-page.tsx",
+    "fixtures": [],
+    "assets": [
+      "/preview/recording.json"
+    ],
+    "browserStorage": false,
+    "operations": [],
+    "assetNotes": {
+      "/preview/recording.json": "DEV-only synthetic recording preview, excluded from production calls."
+    }
+  },
+  {
+    "file": "dashboard/src/features/egress/egress-page.tsx",
+    "fixtures": [
+      "egress.json"
+    ],
+    "assets": [],
+    "browserStorage": false,
+    "operations": [
+      "getEgress"
+    ],
+    "assetNotes": {}
+  },
+  {
+    "file": "dashboard/src/features/ingress/ingress-page.tsx",
+    "fixtures": [
+      "ingress.json"
+    ],
+    "assets": [],
+    "browserStorage": false,
+    "operations": [
+      "getIngress"
+    ],
+    "assetNotes": {}
+  },
+  {
+    "file": "dashboard/src/features/issues/issue-state.ts",
+    "fixtures": [],
+    "assets": [],
+    "browserStorage": true,
+    "operations": [
+      "getIssueDispositions"
+    ],
+    "assetNotes": {}
+  },
+  {
+    "file": "dashboard/src/features/issues/issues-model.ts",
+    "fixtures": [
+      "sip.json"
+    ],
+    "assets": [],
+    "browserStorage": false,
+    "operations": [
+      "getSip",
+      "listIssues"
+    ],
+    "assetNotes": {}
+  },
+  {
+    "file": "dashboard/src/features/media-server/room-drawer.tsx",
+    "fixtures": [
+      "media-server.json"
+    ],
+    "assets": [],
+    "browserStorage": false,
+    "operations": [
+      "getMediaServer"
+    ],
+    "assetNotes": {}
+  },
+  {
+    "file": "dashboard/src/features/overview/latency-chain.tsx",
+    "fixtures": [
+      "network-probe.json"
+    ],
+    "assets": [],
+    "browserStorage": false,
+    "operations": [
+      "getProviderProbes"
+    ],
+    "assetNotes": {}
+  },
+  {
+    "file": "dashboard/src/features/overview/overview.tsx",
+    "fixtures": [
+      "egress.json",
+      "ingress.json",
+      "network-probe.json",
+      "sip.json",
+      "workers.json"
+    ],
+    "assets": [],
+    "browserStorage": false,
+    "operations": [
+      "getEgress",
+      "getIngress",
+      "getProviderProbes",
+      "getSip",
+      "getWorkers",
+      "getCallStats"
+    ],
+    "assetNotes": {}
+  },
+  {
+    "file": "dashboard/src/features/overview/wire-data.ts",
+    "fixtures": [
+      "network-probe.json",
+      "sip.json"
+    ],
+    "assets": [],
+    "browserStorage": false,
+    "operations": [
+      "getProviderProbes",
+      "getSip"
+    ],
+    "assetNotes": {}
+  },
+  {
+    "file": "dashboard/src/features/profile/provider-globe.tsx",
+    "fixtures": [
+      "network-probe.json"
+    ],
+    "assets": [],
+    "browserStorage": false,
+    "operations": [
+      "getProviderProbes"
+    ],
+    "assetNotes": {}
+  },
+  {
+    "file": "dashboard/src/features/profile/ttfa-waterfall.tsx",
+    "fixtures": [
+      "network-probe.json"
+    ],
+    "assets": [],
+    "browserStorage": false,
+    "operations": [
+      "getProviderProbes"
+    ],
+    "assetNotes": {}
+  },
+  {
+    "file": "dashboard/src/features/project/project-page.tsx",
+    "fixtures": [
+      "project-snapshot.json"
+    ],
+    "assets": [],
+    "browserStorage": false,
+    "operations": [
+      "getProjectSnapshot"
+    ],
+    "assetNotes": {}
+  },
+  {
+    "file": "dashboard/src/features/settings/settings-dialog.tsx",
+    "fixtures": [],
+    "assets": [],
+    "browserStorage": true,
+    "operations": [
+      "getInvitations",
+      "getProjectSettings",
+      "getWorkspaces"
+    ],
+    "assetNotes": {}
+  },
+  {
+    "file": "dashboard/src/features/sip/sip-page.tsx",
+    "fixtures": [
+      "sip.json",
+      "sip-test.json"
+    ],
+    "assets": [
+      "/captures/sip-numbers.json"
+    ],
+    "browserStorage": false,
+    "operations": [
+      "getSip"
+    ],
+    "assetNotes": {
+      "/captures/sip-numbers.json": "Ignored local PII enrichment; use the authenticated getSip projection in production, never a static public file."
+    },
+    "syntheticFixtureNote": "sip-test.json is hand-written layout data. It exercises Sip shape but does not establish native source provenance or production records."
+  },
+  {
+    "file": "dashboard/src/lib/api.ts",
+    "fixtures": [
+      "calls.json",
+      "capture-session.json",
+      "capture-cloud.json",
+      "capture-crash.json",
+      "capture-sip.json",
+      "console-session.json",
+      "console-realtime.json"
+    ],
+    "assets": [],
+    "browserStorage": false,
+    "operations": [
+      "getCall",
+      "listCalls"
+    ],
+    "assetNotes": {}
+  },
+  {
+    "file": "dashboard/src/lib/thresholds.ts",
+    "fixtures": [],
+    "assets": [],
+    "browserStorage": true,
+    "operations": [
+      "getProjectSettings"
+    ],
+    "assetNotes": {}
+  }
+]

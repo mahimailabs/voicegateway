@@ -56,7 +56,6 @@ Plan agreed 2026-10-15: a team builds V1 with Cloud (decision 0024) over 30 days
 
 - Which LiveKit Agents releases we test the observability upload against (0014); the paths carry v0 and can change.
 
-- The Phase 1 API contract format (OpenAPI is the working assumption).
 - How long an unmatched event waits for its call before it is stored as unmatched (decision 0012 says "briefly").
 - Launch and non-functional targets in PRODUCT.md and ARCHITECTURE.md are proposals and need confirming.
 - Phase 2 candidate: inferred call labels (triage, disposition) from a self-hosted decision model such as Jev or Kev, opt-in and marked as inferred. Evaluate once V1 traces exist.
@@ -79,6 +78,20 @@ PR #329 adds the root console commands from issue #326. Reconcile them with the 
 ### 2026-10-15: contributor layout and Connect execution plan
 
 PR #329 is merged with restored helpers, root commands, five threshold regressions and passing clean-checkout Dashboard CI. This completes the contributor-baseline milestone, not Phase 1 or the eight broad Connect outcomes. Detailed contributor guides and the optional legacy MCP example now live under `docs/contributing/`; root CONTRIBUTING separates current V1 setup from published Python maintenance. The Connect plan in `docs/specs/v1-connect-plan.md` records the root-file audit, ownership, dependencies, PR slices and goal-mode acceptance gates. Active legacy packaging, migrations, Compose and public installer paths are retained until replacement-release proof exists.
+
+### 2026-10-16: source-attributed console read contract (#321)
+
+PR #332 on `feat/dashboard-api-contract` defines the GET operations for every current console data-reading surface (17 at submission, 20 after review): calls, retained recording bytes, LiveKit layer observations, capacity/probes, workspaces and saved configuration. Reader and route inventories cover 23 readers and 15 routes, with static/synthetic assets and local-state boundaries explained. This is the read contract; the console still uses captures until #322/#323 supply generated types and contract-backed mocks.
+
+The maintainer selected explicit source clocks with nullable alignment metadata. Calls retain distinct clocks for spans, turns, events and recordings, with required clock references, observed UTC anchors when available, and observed/inferred/unknown call-start alignment. No missing anchor or alignment becomes a guessed zero. Browser session transport remains unselected by agreement; `x-access` defines required membership, role and resource scope separately from project keys and embed credentials.
+
+Pinned Redocly and JSON Schema validation, source/unit/nullability checks and reader/route coverage run through root commands and Dashboard CI. Local validation passes for 467 attributed schema properties, all 17 tests, lint/TypeScript and the production build. Existing lint/build warnings remain. PR checks provide the CI result for the submitted head; merging requires those checks to pass.
+
+`docs/api/upstream-sources.md` records official LiveKit Docs MCP research, exported declaration inventory across all 151 Go SDK files, direct review of relevant native clients/helpers, and pinned protocol/server/ingress/Agents evidence. It documents native timestamp units and the dispatch/job discrepancy with the docs. Native-first research is now repository guidance and shared MCP configuration.
+
+Review changes (16 Oct): `listCalls` now returns `CallSummary` rows with server-side filters and sort for every column the Calls list filters or sorts on, unknown values sorting last; `getCallStats`, `listIssues` and `listAlertEvents` move the Overview, Issues and Alerts totals to the server over a required range, so the console never totals pages. The clock check now rejects a position bound to a sibling record's clock. Wall-clock instants are RFC 3339 strings throughout (34 epoch fields converted, with `At` names), property names are camelCase, and the checker enforces both. The checker and its tests follow the dashboard code style. 20 operations, 552 attributed properties, 22 tests.
+
+No Go API, authentication implementation, generated TypeScript, MSW, Cloud billing or notification delivery is included. Phase 1 and the broader Connect milestone remain incomplete. Next dependencies are #322 (generated types) and #323 (contract-backed mocks), followed by the scoped backend/console work in `docs/specs/v1-connect-plan.md`.
 
 ### 2026-10-16: README product presentation
 

@@ -1,0 +1,169 @@
+{
+  "routes": {
+    "/": [
+      "listCalls",
+      "getMediaServer",
+      "getCloudAgents",
+      "getWorkers",
+      "getSip",
+      "getEgress",
+      "getIngress",
+      "getProviderProbes",
+      "getProjectSettings",
+      "getCallStats",
+      "listIssues"
+    ],
+    "/overview": [
+      "listCalls",
+      "getMediaServer",
+      "getCloudAgents",
+      "getWorkers",
+      "getSip",
+      "getEgress",
+      "getIngress",
+      "getProviderProbes",
+      "getProjectSettings",
+      "getCallStats",
+      "listIssues"
+    ],
+    "/settings": [
+      "listCalls",
+      "getMediaServer",
+      "getCloudAgents",
+      "getWorkers",
+      "getSip",
+      "getEgress",
+      "getIngress",
+      "getProviderProbes",
+      "getProjectSettings",
+      "getInvitations",
+      "getWorkspaces",
+      "getAlertSetup",
+      "getIssueDispositions",
+      "getCall",
+      "getCallStats",
+      "listIssues"
+    ],
+    "/project": [
+      "getProjectSnapshot"
+    ],
+    "/calls": [
+      "listCalls",
+      "getCall",
+      "getMediaServer",
+      "getProjectSettings",
+      "getRecordingMedia"
+    ],
+    "/calls/$room": [
+      "listCalls",
+      "getCall",
+      "getMediaServer",
+      "getProjectSettings",
+      "getRecordingMedia"
+    ],
+    "/agents": [
+      "getCloudAgents",
+      "getMediaServer",
+      "getCapacity",
+      "listCalls",
+      "getCall",
+      "getProjectSettings",
+      "getRecordingMedia"
+    ],
+    "/sfu": [
+      "getMediaServer",
+      "getRecordingMedia"
+    ],
+    "/sip": [
+      "getSip",
+      "getMediaServer"
+    ],
+    "/egress": [
+      "getEgress",
+      "getRecordingMedia"
+    ],
+    "/ingress": [
+      "getIngress"
+    ],
+    "/issues": [
+      "getMediaServer",
+      "getCloudAgents",
+      "getSip",
+      "getProjectSettings",
+      "getIssueDispositions",
+      "listIssues"
+    ],
+    "/alerts": [
+      "getMediaServer",
+      "getCloudAgents",
+      "getSip",
+      "getProjectSettings",
+      "getIssueDispositions",
+      "getEgress",
+      "getIngress",
+      "getAlertSetup",
+      "listAlertEvents"
+    ],
+    "/live": [
+      "getMediaServer",
+      "listCalls",
+      "getCall",
+      "getRecordingMedia"
+    ],
+    "/embed/$widget": [
+      "getCall",
+      "getCloudAgents",
+      "getEgress",
+      "getIngress",
+      "getIssueDispositions",
+      "getMediaServer",
+      "getProjectSettings",
+      "getProviderProbes",
+      "getSip",
+      "getWorkers",
+      "listCalls",
+      "getRecordingMedia",
+      "getCallStats",
+      "listIssues"
+    ]
+  },
+  "shell": [
+    "getWorkspaces",
+    "listCalls",
+    "getCall",
+    "getCloudAgents",
+    "getMediaServer",
+    "getSip",
+    "getProjectSettings",
+    "getInvitations",
+    "getAlertSetup",
+    "getIssueDispositions",
+    "getCallStats",
+    "listIssues"
+  ],
+  "widgets": [
+    "answer-time",
+    "turn-anatomy",
+    "calls",
+    "call",
+    "issues"
+  ],
+  "embedReads": {
+    "answer-time": [
+      "getCallStats"
+    ],
+    "turn-anatomy": [
+      "getCallStats"
+    ],
+    "calls": [
+      "listCalls"
+    ],
+    "call": [
+      "getCall",
+      "getRecordingMedia"
+    ],
+    "issues": [
+      "listIssues"
+    ]
+  }
+}
