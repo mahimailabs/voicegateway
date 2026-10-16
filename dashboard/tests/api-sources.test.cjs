@@ -95,3 +95,16 @@ test('source checker rejects directories and contradictory captured discriminato
   assert.match(errors, /source evidence does not exist: docs\/api/);
   assert.match(errors, /constant contradicts its captured evidence/);
 });
+
+test('source checker rejects a project endpoint with an organisation-only access rule', async () => {
+  const { checkSpec } = await checker;
+  const spec = load();
+  const access = spec.paths['/api/v1/org/{orgId}/project/{projectId}/calls'].get['x-access'];
+  access.scope = 'organisation';
+  delete access.projectIsolation;
+  access.minimumRole = 'unrestricted';
+  const errors = checkSpec(spec).errors.join('\n');
+  assert.match(errors, /scope does not match/);
+  assert.match(errors, /project isolation is mandatory/);
+  assert.match(errors, /supported organisation role/);
+});

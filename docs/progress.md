@@ -56,7 +56,6 @@ Plan agreed 2026-10-15: a team builds V1 with Cloud (decision 0024) over 30 days
 
 - Which LiveKit Agents releases we test the observability upload against (0014); the paths carry v0 and can change.
 
-- The Phase 1 API contract format (OpenAPI is the working assumption).
 - How long an unmatched event waits for its call before it is stored as unmatched (decision 0012 says "briefly").
 - Launch and non-functional targets in PRODUCT.md and ARCHITECTURE.md are proposals and need confirming.
 - Phase 2 candidate: inferred call labels (triage, disposition) from a self-hosted decision model such as Jev or Kev, opt-in and marked as inferred. Evaluate once V1 traces exist.
@@ -87,3 +86,5 @@ Work is isolated on `feat/dashboard-api-contract` from main after #331. The draf
 The maintainer confirmed that browser login/session transport stays undecided in this contract; mandatory organisation membership and project isolation are documented separately from project keys and embed tokens. LiveKit Docs MCP and native Go SDK/protocol research are now explicit repository guidance and shared MCP configuration. The source audit is in `docs/api/upstream-sources.md`; no Go implementation, generated TypeScript, MSW or broader Connect completion is claimed.
 
 Draft PR #332 is open from this branch, committed as the maintainer. Its first commit passed all executable CI checks. Follow-up audit work corrects unavailable opt-in/RTC observations, per-agent capacity selection, ingress creation-time attribution and retained recording byte reads. The source checker additionally rejects directory placeholders and discriminators that contradict the cited event. Current local contract validation covers 450 properties; 14 tests pass. The PR stays draft while the clock-origin decision and final source/completeness audit remain open.
+
+Access-scope audit distinguishes project reads from organisation invitations and principal-scoped workspace choices. The checker rejects a project read without isolation or a supported organisation role; 15 local tests now pass. Browser transport remains undecided, and this policy contract does not implement authentication.

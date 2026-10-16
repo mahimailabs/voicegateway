@@ -83,6 +83,11 @@ export function checkSpec(spec, repo = root) {
       if (!operation) continue;
       if (method !== 'get') fail(name, 'this contract is limited to reads');
       if (operation['x-access']?.principal !== 'organisation_member') fail(name, 'missing mandatory authorisation policy');
+      const expectedScope = name.includes('{projectId}') ? 'project' : name.includes('{orgId}') ? 'organisation' : 'principal';
+      if (operation['x-access']?.scope !== expectedScope) fail(name, 'access scope does not match the resource boundary');
+      if (!['Viewer', 'Member', 'Admin'].includes(operation['x-access']?.minimumRole)) fail(name, 'missing supported organisation role');
+      if (expectedScope === 'project' && operation['x-access']?.projectIsolation !== 'required') fail(name, 'project isolation is mandatory');
+
       for (const status of ['400', '401', '403', '404', '500', '503']) {
         if (!operation.responses?.[status]) fail(name, `missing ${status} error response`);
       }
