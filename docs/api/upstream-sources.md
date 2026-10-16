@@ -40,7 +40,7 @@ The SDK's remaining RTC/media, RPC, stream, encryption and synchronisation facil
 - `TimedVersion` carries `unix_micro` and `ticks`; native `utils.TimedVersionFromProto(...).Time()` converts it. Guard absent/zero versions before exposing a millisecond timestamp. Do not hand-roll the packed version arithmetic.
 - ServerInfo reports edition, version, protocol, region and node id. `joinMs` is measured by the observer, not a ServerInfo field.
 - AgentDeployment CPU and memory are string resource quantities. Keep Kubernetes-style units rather than assuming strings are percentages or bytes.
-- A sampled status timestamp is the observer's read time, not necessarily the source's transition time. A sampled room's `lastSeen` is not proof of its end.
+- A sampled status timestamp is the observer's read time, not necessarily the source's transition time. A sampled room's `lastSeenAt` is not proof of its end.
 - Raw protobuf scalar defaults do not prove that a source reported a measurement. In particular, an absent timestamp must not become Unix epoch and an unreported latency must not become zero.
 - The captured `llm_node` attribute `lk.response.ttft` and `tts_node` attribute `lk.response.ttfb` are seconds; the console turn projections multiply them by 1000 for `ttftMs` and `ttsMs`. `lk.e2e_latency`, `lk.end_of_turn_delay` and `lk.transcription_delay` likewise require explicit second-to-millisecond conversion. Per-request `lk.llm_metrics`/`lk.tts_metrics` are distinct measurements and must not silently replace per-node timings.
 

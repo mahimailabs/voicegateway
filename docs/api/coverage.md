@@ -79,7 +79,7 @@ These rules are new API metadata derived from retained evidence; the existing pr
 ## Contract invariants to validate
 
 - A canonical call identifies a project-scoped conversation with a room/time window and optional job/trace joins. A room name or room SID alone is insufficient. Call metadata uses the same identity.
-- Wall-clock times have a stated UTC epoch or RFC 3339 representation. Relative event, span, message and recording clocks have a stated origin; offsets from different clocks cannot be blindly added.
+- Wall-clock instants are RFC 3339 UTC strings (`format: date-time`), named with an `At` suffix or as a range bound; the evidence note names the native unit they were converted from. Epoch numbers are never returned. Relative event, span, message and recording clocks have a stated origin; offsets from different clocks cannot be blindly added.
 - Every property names evidence and origin through `x-source`; each numeric telemetry field declares its unit and missing-value meaning. Observed zero is valid; missing never becomes zero.
 - Null collections mean not observed/unavailable; empty collections mean an observed empty result, subject to the accompanying coverage window. Sampling gaps and stale reads stay visible.
 - Paging is applied consistently. The console never totals, sorts or filters across pages itself. `listCalls` returns `CallSummary` rows filtered and sorted on the server (channel, highest finding, answer time, length, turns, unknown values, tags, recorded, archived), with unknown values sorting last and never matching a numeric bound. Full spans, turns and events come only from `getCall`.

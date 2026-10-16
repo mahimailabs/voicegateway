@@ -1501,19 +1501,19 @@ components:
               name:
                 type: string
                 x-source: { kind: livekit_api, file: dashboard/src/mocks/media-server.json, pointer: /rooms/0/name, detail: "RoomService/AgentDispatchService reads and ServerInfo; sampled watch, normalised captured response" }
-              createdMs:
-                type: [ integer, "null" ]
-                x-unit: unix_milliseconds
+              createdAt:
+                type: [ string, "null" ]
+                format: date-time
                 x-null-reason: The capture or source did not report this value. Preserve null rather than a protobuf default or guessed zero.
                 x-source: { kind: livekit_api, file: dashboard/src/mocks/media-server.json, pointer: /rooms/0/createdMs, detail: "RoomService/AgentDispatchService reads and ServerInfo; sampled watch, normalised captured response" }
-              firstSeen:
-                type: [ number, "null" ]
-                x-unit: unix_seconds
+              firstSeenAt:
+                type: [ string, "null" ]
+                format: date-time
                 x-null-reason: The capture or source did not report this value. Preserve null rather than a protobuf default or guessed zero.
                 x-source: { kind: computed, file: dashboard/src/mocks/media-server.json, pointer: /rooms/0/firstSeen, detail: Observer polling boundary in Unix seconds; not a native creation/end event. }
-              lastSeen:
-                type: [ number, "null" ]
-                x-unit: unix_seconds
+              lastSeenAt:
+                type: [ string, "null" ]
+                format: date-time
                 x-null-reason: The capture or source did not report this value. Preserve null rather than a protobuf default or guessed zero.
                 x-source: { kind: computed, file: dashboard/src/mocks/media-server.json, pointer: /rooms/0/lastSeen, detail: Observer polling boundary in Unix seconds; not a native creation/end event. }
               settings:
@@ -1562,9 +1562,9 @@ components:
                       type: [ string, "null" ]
                       x-null-reason: The capture or source did not report this value. Preserve null rather than a protobuf default or guessed zero.
                       x-source: { kind: livekit_api, file: dashboard/src/mocks/media-server.json, pointer: /rooms/11/dispatches/1/agentName, detail: "RoomService/AgentDispatchService reads and ServerInfo; sampled watch, normalised captured response" }
-                    createdAtMs:
-                      type: [ integer, "null" ]
-                      x-unit: unix_milliseconds
+                    createdAt:
+                      type: [ string, "null" ]
+                      format: date-time
                       x-null-reason: The capture or source did not report this value. Preserve null rather than a protobuf default or guessed zero.
                       x-source: { kind: livekit_api, file: dashboard/src/mocks/media-server.json, pointer: /rooms/11/dispatches/0/createdAtMs, detail: "AgentDispatch.state.created_at is written by the native server using time.Now().UnixNano(); divide by 1e6 for this captured millisecond projection. The current docs table says seconds, conflicting with implementation; see upstream-sources.md." }
                     jobs:
@@ -1585,20 +1585,20 @@ components:
                               type: object
                               additionalProperties: false
                               properties:
-                                t:
-                                  type: [ number, "null" ]
-                                  x-unit: unix_seconds
+                                at:
+                                  type: [ string, "null" ]
+                                  format: date-time
                                   x-null-reason: The capture or source did not report this value. Preserve null rather than a protobuf default or guessed zero.
                                   x-source: { kind: computed, file: dashboard/src/mocks/media-server.json, pointer: /rooms/11/dispatches/1/jobs/0/statuses/0/t, detail: UTC observer sampling time in seconds; does not claim exact transition time. }
                                 status:
                                   type: string
                                   x-source: { kind: livekit_api, file: dashboard/src/mocks/media-server.json, pointer: /rooms/11/dispatches/1/jobs/0/statuses/0/status, detail: "RoomService/AgentDispatchService reads and ServerInfo; sampled watch, normalised captured response" }
-                              required: [ t, status ]
+                              required: [ at, status ]
                               x-source: { kind: livekit_api, file: dashboard/src/mocks/media-server.json, pointer: /rooms/11/dispatches/1/jobs/0/statuses/0, detail: "RoomService/AgentDispatchService reads and ServerInfo; sampled watch, normalised captured response" }
                             x-source: { kind: livekit_api, file: dashboard/src/mocks/media-server.json, pointer: /rooms/11/dispatches/1/jobs/0/statuses, detail: "RoomService/AgentDispatchService reads and ServerInfo; sampled watch, normalised captured response" }
-                          startedAtMs:
-                            type: [ integer, "null" ]
-                            x-unit: unix_milliseconds
+                          startedAt:
+                            type: [ string, "null" ]
+                            format: date-time
                             x-null-reason: The capture or source did not report this value. Preserve null rather than a protobuf default or guessed zero.
                             x-source: { kind: livekit_api, file: dashboard/src/mocks/media-server.json, pointer: /rooms/11/dispatches/1/jobs/0/startedAtMs, detail: "JobState.started_at, assigned from now.UnixNano() in native pkg/agent/worker.go; divide by 1e6. Guard missing/zero source timestamps before conversion." }
                           workerId:
@@ -1613,10 +1613,10 @@ components:
                             type: [ boolean, "null" ]
                             x-null-reason: The capture or source did not report this value. Preserve null rather than a protobuf default or guessed zero.
                             x-source: { kind: livekit_api, file: dashboard/src/mocks/media-server.json, pointer: /rooms/11/dispatches/1/jobs/0/recording, detail: "RoomService/AgentDispatchService reads and ServerInfo; sampled watch, normalised captured response" }
-                        required: [ id, status, statuses, startedAtMs, workerId, agentId, recording ]
+                        required: [ id, status, statuses, startedAt, workerId, agentId, recording ]
                         x-source: { kind: livekit_api, file: dashboard/src/mocks/media-server.json, pointer: /rooms/11/dispatches/1/jobs/0, detail: "RoomService/AgentDispatchService reads and ServerInfo; sampled watch, normalised captured response" }
                       x-source: { kind: livekit_api, file: dashboard/src/mocks/media-server.json, pointer: /rooms/11/dispatches/0/jobs, detail: "RoomService/AgentDispatchService reads and ServerInfo; sampled watch, normalised captured response" }
-                  required: [ id, agentName, createdAtMs, jobs ]
+                  required: [ id, agentName, createdAt, jobs ]
                   x-source: { kind: livekit_api, file: dashboard/src/mocks/media-server.json, pointer: /rooms/11/dispatches/0, detail: "RoomService/AgentDispatchService reads and ServerInfo; sampled watch, normalised captured response" }
                 x-null-reason: The capture or source did not report this value. Preserve null rather than a protobuf default or guessed zero.
                 x-source: { kind: livekit_api, file: dashboard/src/mocks/media-server.json, pointer: /rooms/11/dispatches, detail: "RoomService/AgentDispatchService reads and ServerInfo; sampled watch, normalised captured response" }
@@ -1636,23 +1636,23 @@ components:
                       type: [ string, "null" ]
                       x-source: { kind: livekit_api, file: dashboard/src/mocks/media-server.json, pointer: /rooms/0/participants/0/region, detail: "RoomService/AgentDispatchService reads and ServerInfo; sampled watch, normalised captured response" }
                       x-null-reason: ParticipantInfo did not report this attribute or the watch did not retain it.
-                    joinedAtMs:
-                      type: [ integer, "null" ]
-                      x-unit: unix_milliseconds
+                    joinedAt:
+                      type: [ string, "null" ]
+                      format: date-time
                       x-null-reason: The capture or source did not report this value. Preserve null rather than a protobuf default or guessed zero.
                       x-source: { kind: livekit_api, file: dashboard/src/mocks/media-server.json, pointer: /rooms/0/participants/0/joinedAtMs, detail: "RoomService/AgentDispatchService reads and ServerInfo; sampled watch, normalised captured response" }
                     agentName:
                       type: [ string, "null" ]
                       x-null-reason: The capture or source did not report this value. Preserve null rather than a protobuf default or guessed zero.
                       x-source: { kind: computed, file: dashboard/src/mocks/media-server.json, pointer: /rooms/0/participants/1/agentName, detail: Captured agent label joined from agent-dispatch/job context; ParticipantInfo has no native agent_name field. Null when no name can be attributed. }
-                    firstSeen:
-                      type: [ number, "null" ]
-                      x-unit: unix_seconds
+                    firstSeenAt:
+                      type: [ string, "null" ]
+                      format: date-time
                       x-null-reason: The capture or source did not report this value. Preserve null rather than a protobuf default or guessed zero.
                       x-source: { kind: computed, file: dashboard/src/mocks/media-server.json, pointer: /rooms/0/participants/0/firstSeen, detail: Observer polling boundary in Unix seconds; not a native creation/end event. }
-                    lastSeen:
-                      type: [ number, "null" ]
-                      x-unit: unix_seconds
+                    lastSeenAt:
+                      type: [ string, "null" ]
+                      format: date-time
                       x-null-reason: The capture or source did not report this value. Preserve null rather than a protobuf default or guessed zero.
                       x-source: { kind: computed, file: dashboard/src/mocks/media-server.json, pointer: /rooms/0/participants/0/lastSeen, detail: Observer polling boundary in Unix seconds; not a native creation/end event. }
                     states:
@@ -1661,15 +1661,15 @@ components:
                         type: object
                         additionalProperties: false
                         properties:
-                          t:
-                            type: [ number, "null" ]
-                            x-unit: unix_seconds
+                          at:
+                            type: [ string, "null" ]
+                            format: date-time
                             x-null-reason: The capture or source did not report this value. Preserve null rather than a protobuf default or guessed zero.
                             x-source: { kind: computed, file: dashboard/src/mocks/media-server.json, pointer: /rooms/0/participants/1/states/0/t, detail: UTC observer sampling time in seconds; does not claim exact transition time. }
                           state:
                             type: string
                             x-source: { kind: livekit_api, file: dashboard/src/mocks/media-server.json, pointer: /rooms/0/participants/1/states/0/state, detail: "RoomService/AgentDispatchService reads and ServerInfo; sampled watch, normalised captured response" }
-                        required: [ t, state ]
+                        required: [ at, state ]
                         x-source: { kind: livekit_api, file: dashboard/src/mocks/media-server.json, pointer: /rooms/0/participants/1/states/0, detail: "RoomService/AgentDispatchService reads and ServerInfo; sampled watch, normalised captured response" }
                       x-source: { kind: livekit_api, file: dashboard/src/mocks/media-server.json, pointer: /rooms/0/participants/0/states, detail: "RoomService/AgentDispatchService reads and ServerInfo; sampled watch, normalised captured response" }
                     permission:
@@ -1721,9 +1721,9 @@ components:
                             type: [ string, "null" ]
                             x-source: { kind: livekit_api, file: dashboard/src/mocks/media-server.json, pointer: /rooms/11/participants/0/tracks/0/mime, detail: "RoomService/AgentDispatchService reads and ServerInfo; sampled watch, normalised captured response" }
                             x-null-reason: TrackInfo.mime_type unavailable in this observation.
-                          versionMs:
-                            type: [ integer, "null" ]
-                            x-unit: unix_milliseconds
+                          versionAt:
+                            type: [ string, "null" ]
+                            format: date-time
                             x-null-reason: The capture or source did not report this value. Preserve null rather than a protobuf default or guessed zero.
                             x-source: { kind: livekit_api, file: dashboard/src/mocks/media-server.json, pointer: /rooms/11/participants/0/tracks/0/versionMs, detail: "TrackInfo.version is TimedVersion(unix_micro,ticks). Use native protocol utils.TimedVersionFromProto(...).Time().UnixMilli(), guarding absent/zero version first; never treat unix_micro or packed version as milliseconds." }
                           muted:
@@ -1750,7 +1750,7 @@ components:
                             items:
                               type: string
                             x-source: { kind: livekit_api, file: dashboard/src/mocks/media-server.json, pointer: /rooms/11/participants/0/tracks/0/features, detail: "RoomService/AgentDispatchService reads and ServerInfo; sampled watch, normalised captured response" }
-                        required: [ sid, name, type, source, mime, versionMs, muted, stereo, dtx, red, encryption, features ]
+                        required: [ sid, name, type, source, mime, versionAt, muted, stereo, dtx, red, encryption, features ]
                         x-source: { kind: livekit_api, file: dashboard/src/mocks/media-server.json, pointer: /rooms/11/participants/0/tracks/0, detail: "RoomService/AgentDispatchService reads and ServerInfo; sampled watch, normalised captured response" }
                       x-null-reason: The capture or source did not report this value. Preserve null rather than a protobuf default or guessed zero.
                       x-source: { kind: livekit_api, file: dashboard/src/mocks/media-server.json, pointer: /rooms/11/participants/0/tracks, detail: "RoomService/AgentDispatchService reads and ServerInfo; sampled watch, normalised captured response" }
@@ -1769,9 +1769,9 @@ components:
                         ruleId:
                           type: string
                           x-source: { kind: livekit_api, file: dashboard/src/mocks/media-server.json, pointer: /rooms/14/participants/0/sip/ruleId, detail: "RoomService/AgentDispatchService reads and ServerInfo; sampled watch, normalised captured response" }
-                        inviteMs:
-                          type: [ integer, "null" ]
-                          x-unit: unix_milliseconds
+                        invitedAt:
+                          type: [ string, "null" ]
+                          format: date-time
                           x-null-reason: The capture or source did not report this value. Preserve null rather than a protobuf default or guessed zero.
                           x-source: { kind: livekit_api, file: dashboard/src/mocks/media-server.json, pointer: /rooms/14/participants/0/sip/inviteMs, detail: "RoomService/AgentDispatchService reads and ServerInfo; sampled watch, normalised captured response" }
                         trunkNumber:
@@ -1787,20 +1787,20 @@ components:
                             type: object
                             additionalProperties: false
                             properties:
-                              t:
-                                type: [ number, "null" ]
-                                x-unit: unix_seconds
+                              at:
+                                type: [ string, "null" ]
+                                format: date-time
                                 x-null-reason: The capture or source did not report this value. Preserve null rather than a protobuf default or guessed zero.
                                 x-source: { kind: computed, file: dashboard/src/mocks/media-server.json, pointer: /rooms/14/participants/0/sip/statuses/0/t, detail: UTC observer sampling time in seconds; does not claim exact transition time. }
                               status:
                                 type: string
                                 x-source: { kind: livekit_api, file: dashboard/src/mocks/media-server.json, pointer: /rooms/14/participants/0/sip/statuses/0/status, detail: "RoomService/AgentDispatchService reads and ServerInfo; sampled watch, normalised captured response" }
-                            required: [ t, status ]
+                            required: [ at, status ]
                             x-source: { kind: livekit_api, file: dashboard/src/mocks/media-server.json, pointer: /rooms/14/participants/0/sip/statuses/0, detail: "RoomService/AgentDispatchService reads and ServerInfo; sampled watch, normalised captured response" }
                           x-source: { kind: livekit_api, file: dashboard/src/mocks/media-server.json, pointer: /rooms/14/participants/0/sip/statuses, detail: "RoomService/AgentDispatchService reads and ServerInfo; sampled watch, normalised captured response" }
-                      required: [ trunkId, ruleId, inviteMs, trunkNumber, twilio, statuses ]
+                      required: [ trunkId, ruleId, invitedAt, trunkNumber, twilio, statuses ]
                       x-source: { kind: livekit_api, file: dashboard/src/mocks/media-server.json, pointer: /rooms/14/participants/0/sip, detail: "RoomService/AgentDispatchService reads and ServerInfo; sampled watch, normalised captured response" }
-                  required: [ sid, kind, region, joinedAtMs, agentName, firstSeen, lastSeen, states, permission, tracks, audioTracks ]
+                  required: [ sid, kind, region, joinedAt, agentName, firstSeenAt, lastSeenAt, states, permission, tracks, audioTracks ]
                   x-source: { kind: livekit_api, file: dashboard/src/mocks/media-server.json, pointer: /rooms/0/participants/0, detail: "RoomService/AgentDispatchService reads and ServerInfo; sampled watch, normalised captured response" }
                 x-source: { kind: livekit_api, file: dashboard/src/mocks/media-server.json, pointer: /rooms/0/participants, detail: "RoomService/AgentDispatchService reads and ServerInfo; sampled watch, normalised captured response" }
               recording:
@@ -1831,7 +1831,7 @@ components:
                 required: [ callRoom, url, durationS, startedAt, id ]
                 x-null-reason: The capture or source did not report this value. Preserve null rather than a protobuf default or guessed zero.
                 x-source: { kind: livekit_api, file: dashboard/src/mocks/media-server.json, pointer: /rooms/12/recording, detail: "RoomService/AgentDispatchService reads and ServerInfo; sampled watch, normalised captured response" }
-            required: [ sid, name, createdMs, firstSeen, lastSeen, settings, dispatches, participants, recording ]
+            required: [ sid, name, createdAt, firstSeenAt, lastSeenAt, settings, dispatches, participants, recording ]
             x-source: { kind: livekit_api, file: dashboard/src/mocks/media-server.json, pointer: /rooms/0, detail: "RoomService/AgentDispatchService reads and ServerInfo; sampled watch, normalised captured response" }
           x-source: { kind: livekit_api, file: dashboard/src/mocks/media-server.json, pointer: /rooms, detail: "RoomService/AgentDispatchService reads and ServerInfo; sampled watch, normalised captured response" }
         windows:
@@ -1841,13 +1841,13 @@ components:
             additionalProperties: false
             properties:
               start:
-                type: [ number, "null" ]
-                x-unit: unix_seconds
+                type: [ string, "null" ]
+                format: date-time
                 x-null-reason: The capture or source did not report this value. Preserve null rather than a protobuf default or guessed zero.
                 x-source: { kind: computed, file: dashboard/src/mocks/media-server.json, pointer: /windows/0/start, detail: "RoomService/AgentDispatchService reads and ServerInfo; sampled watch, normalised captured response" }
               end:
-                type: [ number, "null" ]
-                x-unit: unix_seconds
+                type: [ string, "null" ]
+                format: date-time
                 x-null-reason: The capture or source did not report this value. Preserve null rather than a protobuf default or guessed zero.
                 x-source: { kind: computed, file: dashboard/src/mocks/media-server.json, pointer: /windows/0/end, detail: "RoomService/AgentDispatchService reads and ServerInfo; sampled watch, normalised captured response" }
               everySeconds:
@@ -2122,13 +2122,13 @@ components:
                 type: string
                 x-source: { kind: livekit_api, file: dashboard/src/mocks/egress.json, pointer: /egress/0/status, detail: Egress ListEgress sampled response or captured rejection; request credentials excluded }
               startedAt:
-                type: [ number, "null" ]
-                x-unit: unix_seconds
+                type: [ string, "null" ]
+                format: date-time
                 x-null-reason: The capture or source did not report this value. Preserve null rather than a protobuf default or guessed zero.
                 x-source: { kind: livekit_api, file: dashboard/src/mocks/egress.json, pointer: /egress/0/startedAt, detail: "Normalised EgressInfo.started_at Unix nanoseconds divided by 1e9 for seconds. A missing/zero native timestamp is null, never the Unix epoch." }
               endedAt:
-                type: [ number, "null" ]
-                x-unit: unix_seconds
+                type: [ string, "null" ]
+                format: date-time
                 x-null-reason: The capture or source did not report this value. Preserve null rather than a protobuf default or guessed zero.
                 x-source: { kind: livekit_api, file: dashboard/src/mocks/egress.json, pointer: /egress/0/endedAt, detail: "Normalised EgressInfo.ended_at Unix nanoseconds divided by 1e9 for seconds. A missing/zero native timestamp is null, never the Unix epoch." }
               error:
@@ -2198,15 +2198,15 @@ components:
                   type: object
                   additionalProperties: false
                   properties:
-                    t:
-                      type: [ number, "null" ]
-                      x-unit: unix_seconds
+                    at:
+                      type: [ string, "null" ]
+                      format: date-time
                       x-null-reason: The capture or source did not report this value. Preserve null rather than a protobuf default or guessed zero.
                       x-source: { kind: computed, file: dashboard/src/mocks/egress.json, pointer: /egress/0/history/0/t, detail: UTC observer sampling time in seconds; does not claim exact transition time. }
                     status:
                       type: string
                       x-source: { kind: livekit_api, file: dashboard/src/mocks/egress.json, pointer: /egress/0/history/0/status, detail: Egress ListEgress sampled response or captured rejection; request credentials excluded }
-                  required: [ t, status ]
+                  required: [ at, status ]
                   x-source: { kind: livekit_api, file: dashboard/src/mocks/egress.json, pointer: /egress/0/history/0, detail: Egress ListEgress sampled response or captured rejection; request credentials excluded }
                 x-source: { kind: livekit_api, file: dashboard/src/mocks/egress.json, pointer: /egress/0/history, detail: Egress ListEgress sampled response or captured rejection; request credentials excluded }
               sampled:
@@ -2222,9 +2222,9 @@ components:
             type: object
             additionalProperties: false
             properties:
-              t:
-                type: [ number, "null" ]
-                x-unit: unix_seconds
+              at:
+                type: [ string, "null" ]
+                format: date-time
                 x-null-reason: The capture or source did not report this value. Preserve null rather than a protobuf default or guessed zero.
                 x-source: { kind: livekit_api, file: dashboard/src/mocks/egress.json, pointer: /rejected/0/t, detail: Egress ListEgress sampled response or captured rejection; request credentials excluded }
               case:
@@ -2233,7 +2233,7 @@ components:
               error:
                 type: string
                 x-source: { kind: livekit_api, file: dashboard/src/mocks/egress.json, pointer: /rejected/0/error, detail: Egress ListEgress sampled response or captured rejection; request credentials excluded }
-            required: [ t, case, error ]
+            required: [ at, case, error ]
             x-source: { kind: livekit_api, file: dashboard/src/mocks/egress.json, pointer: /rejected/0, detail: Egress ListEgress sampled response or captured rejection; request credentials excluded }
           x-source: { kind: livekit_api, file: dashboard/src/mocks/egress.json, pointer: /rejected, detail: Egress ListEgress sampled response or captured rejection; request credentials excluded }
       required: [ source, egress, rejected ]
@@ -2290,13 +2290,13 @@ components:
                 x-null-reason: The capture or source did not report this value. Preserve null rather than a protobuf default or guessed zero.
                 x-source: { kind: livekit_api, file: dashboard/src/mocks/ingress.json, pointer: /ingress/1/error, detail: Ingress ListIngress sampled response; stream credentials excluded }
               startedAt:
-                type: [ number, "null" ]
-                x-unit: unix_seconds
+                type: [ string, "null" ]
+                format: date-time
                 x-null-reason: The capture or source did not report this value. Preserve null rather than a protobuf default or guessed zero.
                 x-source: { kind: livekit_api, file: dashboard/src/mocks/ingress.json, pointer: /ingress/0/startedAt, detail: IngressState.started_at is assigned using time.Now().UnixNano() in native ingress pkg/params/params.go; divide by 1e9 for this seconds projection. Missing/zero source timestamps remain null. See pinned source audit. }
               endedAt:
-                type: [ number, "null" ]
-                x-unit: unix_seconds
+                type: [ string, "null" ]
+                format: date-time
                 x-null-reason: The capture or source did not report this value. Preserve null rather than a protobuf default or guessed zero.
                 x-source: { kind: livekit_api, file: dashboard/src/mocks/ingress.json, pointer: /ingress/0/endedAt, detail: IngressState.ended_at is assigned using time.Now().UnixNano() in native ingress pkg/params/params.go; divide by 1e9 for this seconds projection. Missing/zero source timestamps remain null. See pinned source audit. }
               audioIn:
@@ -2360,8 +2360,8 @@ components:
                 x-source: { kind: computed, file: docs/api/upstream-sources.md, pointer: null, detail: "Native protocol InputVideoState from ListIngress; all committed captures have videoIn=null, not a string." }
                 x-null-reason: No input video state was received.
               createdAt:
-                type: [ number, "null" ]
-                x-unit: unix_seconds
+                type: [ string, "null" ]
+                format: date-time
                 x-null-reason: The capture or source did not report this value. Preserve null rather than a protobuf default or guessed zero.
                 x-source: { kind: computed, file: dashboard/src/mocks/ingress.json, pointer: /ingress/0/createdAt, detail: Collector-retained endpoint creation observation from the labelled test. Native IngressInfo has no created_at field. Null for endpoints whose creation time was not observed; never substitute the last session start. }
                 description: Collector-retained endpoint creation observation from the labelled test. Native IngressInfo has no created_at field. Null for endpoints whose creation time was not observed; never substitute the last session start.
@@ -2389,15 +2389,15 @@ components:
                   type: object
                   additionalProperties: false
                   properties:
-                    t:
-                      type: [ number, "null" ]
-                      x-unit: unix_seconds
+                    at:
+                      type: [ string, "null" ]
+                      format: date-time
                       x-null-reason: The capture or source did not report this value. Preserve null rather than a protobuf default or guessed zero.
                       x-source: { kind: computed, file: dashboard/src/mocks/ingress.json, pointer: /ingress/0/history/0/t, detail: UTC observer sampling time in seconds; does not claim exact transition time. }
                     status:
                       type: string
                       x-source: { kind: livekit_api, file: dashboard/src/mocks/ingress.json, pointer: /ingress/0/history/0/status, detail: Ingress ListIngress sampled response; stream credentials excluded }
-                  required: [ t, status ]
+                  required: [ at, status ]
                   x-source: { kind: livekit_api, file: dashboard/src/mocks/ingress.json, pointer: /ingress/0/history/0, detail: Ingress ListIngress sampled response; stream credentials excluded }
                 x-source: { kind: livekit_api, file: dashboard/src/mocks/ingress.json, pointer: /ingress/0/history, detail: Ingress ListIngress sampled response; stream credentials excluded }
             required: [ id, name, inputType, url, room, participant, transcoding, reusable, enabled, status, error, startedAt, endedAt, audioIn, videoIn, createdAt, published, history ]
@@ -2429,8 +2429,8 @@ components:
                 type: string
                 x-source: { kind: livekit_api, file: dashboard/src/mocks/project-snapshot.json, pointer: /rooms/0/sid, detail: RoomService/SIP/Egress/Ingress snapshot; observed subtree is an opt-in RemoteSession read }
               createdAt:
-                type: [ integer, "null" ]
-                x-unit: unix_seconds
+                type: [ string, "null" ]
+                format: date-time
                 x-null-reason: The capture or source did not report this value. Preserve null rather than a protobuf default or guessed zero.
                 x-source: { kind: livekit_api, file: dashboard/src/mocks/project-snapshot.json, pointer: /rooms/0/createdAt, detail: RoomService/SIP/Egress/Ingress snapshot; observed subtree is an opt-in RemoteSession read }
               participants:
@@ -2449,8 +2449,8 @@ components:
                       type: string
                       x-source: { kind: livekit_api, file: dashboard/src/mocks/project-snapshot.json, pointer: /rooms/0/participants/0/region, detail: RoomService/SIP/Egress/Ingress snapshot; observed subtree is an opt-in RemoteSession read }
                     joinedAt:
-                      type: [ integer, "null" ]
-                      x-unit: unix_seconds
+                      type: [ string, "null" ]
+                      format: date-time
                       x-null-reason: The capture or source did not report this value. Preserve null rather than a protobuf default or guessed zero.
                       x-source: { kind: livekit_api, file: dashboard/src/mocks/project-snapshot.json, pointer: /rooms/0/participants/0/joinedAt, detail: RoomService/SIP/Egress/Ingress snapshot; observed subtree is an opt-in RemoteSession read }
                     agentName:
@@ -2659,19 +2659,19 @@ components:
                 interruption:
                   type: string
                   x-source: { kind: livekit_api, file: dashboard/src/mocks/project-snapshot.json, pointer: /observed/options/interruption, detail: RoomService/SIP/Egress/Ingress snapshot; observed subtree is an opt-in RemoteSession read }
-                preemptive_generation:
+                preemptiveGeneration:
                   type: string
                   x-source: { kind: livekit_api, file: dashboard/src/mocks/project-snapshot.json, pointer: /observed/options/preemptive_generation, detail: RoomService/SIP/Egress/Ingress snapshot; observed subtree is an opt-in RemoteSession read }
-                max_tool_steps:
+                maxToolSteps:
                   type: string
                   x-source: { kind: livekit_api, file: dashboard/src/mocks/project-snapshot.json, pointer: /observed/options/max_tool_steps, detail: RoomService/SIP/Egress/Ingress snapshot; observed subtree is an opt-in RemoteSession read }
-                user_away_timeout:
+                userAwayTimeout:
                   type: string
                   x-source: { kind: livekit_api, file: dashboard/src/mocks/project-snapshot.json, pointer: /observed/options/user_away_timeout, detail: RoomService/SIP/Egress/Ingress snapshot; observed subtree is an opt-in RemoteSession read }
-                ivr_detection:
+                ivrDetection:
                   type: string
                   x-source: { kind: livekit_api, file: dashboard/src/mocks/project-snapshot.json, pointer: /observed/options/ivr_detection, detail: RoomService/SIP/Egress/Ingress snapshot; observed subtree is an opt-in RemoteSession read }
-              required: [ endpointing, interruption, preemptive_generation, max_tool_steps, user_away_timeout, ivr_detection ]
+              required: [ endpointing, interruption, preemptiveGeneration, maxToolSteps, userAwayTimeout, ivrDetection ]
               x-source: { kind: livekit_api, file: dashboard/src/mocks/project-snapshot.json, pointer: /observed/options, detail: RoomService/SIP/Egress/Ingress snapshot; observed subtree is an opt-in RemoteSession read }
             models:
               type: array
@@ -2787,7 +2787,7 @@ components:
                 x-unit: count
                 x-null-reason: The capture or source did not report this value. Preserve null rather than a protobuf default or guessed zero.
                 x-source: { kind: computed, file: dashboard/src/mocks/capacity.json, pointer: /steps/0/joined, detail: VoiceGateway synthetic capacity feasibility run and its test-host observations }
-              join_s:
+              joinSeconds:
                 type: array
                 items:
                   type: [ number, "null" ]
@@ -2795,7 +2795,7 @@ components:
                   x-null-reason: The capture or source did not report this value. Preserve null rather than a protobuf default or guessed zero.
                   x-source: { kind: computed, file: dashboard/src/mocks/capacity.json, pointer: /steps/0/join_s/0, detail: VoiceGateway synthetic capacity feasibility run and its test-host observations }
                 x-source: { kind: computed, file: dashboard/src/mocks/capacity.json, pointer: /steps/0/join_s, detail: VoiceGateway synthetic capacity feasibility run and its test-host observations }
-              answer_s:
+              answerSeconds:
                 type: array
                 items:
                   type: [ number, "null" ]
@@ -2803,7 +2803,7 @@ components:
                   x-null-reason: The capture or source did not report this value. Preserve null rather than a protobuf default or guessed zero.
                   x-source: { kind: computed, file: dashboard/src/mocks/capacity.json, pointer: /steps/0/answer_s/0, detail: VoiceGateway synthetic capacity feasibility run and its test-host observations }
                 x-source: { kind: computed, file: dashboard/src/mocks/capacity.json, pointer: /steps/0/answer_s, detail: VoiceGateway synthetic capacity feasibility run and its test-host observations }
-              host_load_1m:
+              hostLoad1m:
                 type: array
                 items:
                   type: [ number, "null" ]
@@ -2811,7 +2811,7 @@ components:
                   x-null-reason: The capture or source did not report this value. Preserve null rather than a protobuf default or guessed zero.
                   x-source: { kind: computed, file: dashboard/src/mocks/capacity.json, pointer: /steps/0/host_load_1m/0, detail: VoiceGateway synthetic capacity feasibility run and its test-host observations }
                 x-source: { kind: computed, file: dashboard/src/mocks/capacity.json, pointer: /steps/0/host_load_1m, detail: VoiceGateway synthetic capacity feasibility run and its test-host observations }
-              host_cores:
+              hostCores:
                 type: [ integer, "null" ]
                 x-unit: cores
                 x-null-reason: The capture or source did not report this value. Preserve null rather than a protobuf default or guessed zero.
@@ -2821,7 +2821,7 @@ components:
                 x-unit: count
                 x-null-reason: The capture or source did not report this value. Preserve null rather than a protobuf default or guessed zero.
                 x-source: { kind: computed, file: dashboard/src/mocks/capacity.json, pointer: /steps/0/pending, detail: VoiceGateway synthetic capacity feasibility run and its test-host observations }
-            required: [ step, joined, join_s, answer_s, host_load_1m, host_cores, pending ]
+            required: [ step, joined, joinSeconds, answerSeconds, hostLoad1m, hostCores, pending ]
             x-source: { kind: computed, file: dashboard/src/mocks/capacity.json, pointer: /steps/0, detail: VoiceGateway synthetic capacity feasibility run and its test-host observations }
           x-source: { kind: computed, file: dashboard/src/mocks/capacity.json, pointer: /steps, detail: VoiceGateway synthetic capacity feasibility run and its test-host observations }
       required: [ source, agent, ranAt, limitedBy, workerLog, steps ]
@@ -3536,10 +3536,10 @@ components:
           x-source: { kind: configuration, file: dashboard/src/features/issues/issue-state.ts, pointer: null, detail: "Explicit user disposition. No disposition means open, not resolved." }
           enum: [ resolved, ignored ]
         at:
-          type: number
-          description: User decision time, Unix milliseconds. Compare with latest known issue hit to compute regression.
-          x-source: { kind: configuration, file: dashboard/src/features/issues/issue-state.ts, pointer: null, detail: "User decision time, Unix milliseconds. Compare with latest known issue hit to compute regression." }
-          x-unit: unix_milliseconds
+          type: string
+          format: date-time
+          description: User decision time, UTC. Compare with the issue's lastSeenAt to mark it regressed.
+          x-source: { kind: configuration, file: dashboard/src/features/issues/issue-state.ts, pointer: null, detail: "User decision time, UTC. Compare with the issue's lastSeenAt to mark it regressed." }
           x-configuration: true
     IssueDispositions:
       type: object
