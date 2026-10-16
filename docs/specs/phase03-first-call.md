@@ -48,7 +48,7 @@ Slice A:
 4. Given a sealed secret and a different `VOICEGATEWAY_SECRET_KEY`, when it is opened, then a named error is returned, never a panic or the wrong plaintext (measured by `TestOpenWithWrongKey`).
 5. Given `make up`, when the stack starts, then `migrate` finishes before web and worker start (measured by the CI compose job).
 
-Slice B is built in three PRs: (a) webhooks to the stream, (b) the Agents observability uploads, (c) the worker into ClickHouse. Checks for (b) and (c) are written with them.
+Slice B is built in three PRs: (a) webhooks to the stream, (b) the Agents observability uploads, (c) the worker into ClickHouse. Checks for (c) are written with it.
 
 Slice B (a), webhooks to the stream. LiveKit posts to `POST /livekit/webhook`; the `Authorization` JWT is checked with livekit/protocol `webhook.Receive` (v1.52.1), which finds the secret by the token's issuer (the LiveKit API key) and compares the body's SHA-256 with the token's claim. The stream entry layout is version 1 of `internal/stream`.
 
@@ -57,8 +57,16 @@ Slice B (a), webhooks to the stream. LiveKit posts to `POST /livekit/webhook`; t
 8. Given Redis or the project lookup down, when a signed webhook is posted, then it answers 503 so LiveKit retries, never 200 or 401, and nothing is appended (measured by `TestWebhookStreamDown`, `TestWebhookProjectLookupDown`).
 9. Given envelopes appended before the worker's group exists, when the group is created and read, then they are delivered unchanged, stay pending until acknowledged, and an entry in an unknown layout is returned with its id and an error instead of being dropped (measured by `TestAppendReadAck`, `TestReadUnknownLayout`).
 
+Slice B (b), the Agents observability uploads, at LiveKit's paths as LiveKit Agents 1.8.7 sends them (`livekit/agents/telemetry/traces.py`): OTLP over HTTP, gzip, to `/observability/{traces,logs,metrics}/otlp/v0`, and a multipart session report (`header` MetricsRecordingHeader, `chat_history` JSON, `audio` recording.ogg) to `/observability/recordings/v0`. Each carries `Authorization: Bearer` with a JWT from the agent's LiveKit key and secret holding the observability write grant, and no body hash. Until a project has a recordings bucket (0015), the audio part is read and discarded and the report says so.
+
+10. Given an OTLP export with a bearer JWT from a project's key, signed with its secret and holding the write grant, when it is posted, then it answers 200 with an empty Export response and one envelope of that signal's kind is on the stream, decompressed, attributed, with no event id (measured by `TestUploadOTLPVerified`).
+11. Given no token, a token without the `Bearer ` scheme, an unknown key or the wrong secret, then 401; a valid token without the write grant, then 403; a body that is not gzip, then 400; one that decompresses past 16 MiB, then 413; in every case nothing is appended (measured by `TestUploadOTLPVerified`, `TestUploadOTLPBadBody`).
+12. Given a session upload with header, chat history and audio, when it is posted, then one envelope identified by the job id holds the header and the chat history unchanged, marks the audio as discarded, and no audio byte reaches the stream (measured by `TestUploadSessionReport`).
+
 ## Manual Check
 
 `make up`, then `voicegateway project add` with a real LiveKit Cloud project, then `psql` shows the project with a sealed secret and no plaintext.
 
 Slice B (a): add a project for `livekit-server --dev` (key `devkey`), run the server with `webhook.urls` set to `http://localhost:8080/livekit/webhook`, create and delete a room with `lk`, then `XRANGE voicegateway:ingest - +` shows the room_started and room_finished envelopes for that project.
+
+Slice B (b): add a project for a LiveKit Cloud test project, run a LiveKit Agents 1.8.7 agent with `LIVEKIT_OBSERVABILITY_URL=http://localhost:8080` and `record=True` in a test room until it shuts down, then the stream holds `livekit.agent.traces`, `.logs`, `.metrics` and one `livekit.agent.session_report` for that project.
