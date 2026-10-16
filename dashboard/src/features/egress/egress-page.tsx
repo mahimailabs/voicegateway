@@ -229,7 +229,7 @@ function Detail({ e }: { e: Egress }) {
         )}
       </div>
       <div className="space-y-2">
-        <p className="text-[12px] text-muted-foreground">{e.sampled ? "Status changes, read every 2 s" : "Final status only, read once after it ended"}</p>
+        <p className="text-[12px] text-muted-foreground">{e.sampled === null ? "How often the status was read is unknown" : e.sampled ? "Status changes, read every 2 s" : "Final status only, read once after it ended"}</p>
         <ol className="space-y-1.5 text-[13px]">
           {e.history.map((h) => {
             const t = sec(h.at)
@@ -256,8 +256,9 @@ export function EgressPage() {
   const by = (s: string) => list.filter((e) => e.status === s).length
   const stored = audio(list.filter(kept))
   const gone = audio(list.filter(lost))
-  // A length nobody reported is not counted as zero: the figure says it is a floor.
-  const atLeast = stored.partial || gone.partial ? "at least " : ""
+  // A stored file whose length nobody reported is not counted as zero: the figures say they are a
+  // floor. (A lost file always has a length; that is how it is known to be lost.)
+  const atLeast = stored.partial ? "at least " : ""
   const keptS = stored.s
   const lostS = gone.s
   const sev = (s: Check["severity"]) => list2.filter((c) => c.severity === s).length
@@ -282,7 +283,7 @@ export function EgressPage() {
             <CategoryBar values={[by("EGRESS_COMPLETE"), by("EGRESS_FAILED"), by("EGRESS_ABORTED")]} colors={["accent", "alert", "amber"]} showLabels={false} />
             <p className="mt-1.5 text-[11px] text-muted-foreground">{`${by("EGRESS_COMPLETE")} complete · ${by("EGRESS_FAILED")} failed · ${by("EGRESS_ABORTED")} aborted`}</p>
           </StatCard>
-          <StatCard icon={Waveform} value={secs(keptS + lostS)} label="Audio recorded" alert={lostS > 0}>
+          <StatCard icon={Waveform} value={`${atLeast}${secs(keptS + lostS)}`} label="Audio recorded" alert={lostS > 0}>
             <CategoryBar values={[keptS, lostS]} colors={["accent", "alert"]} showLabels={false} />
             <p className="mt-1.5 text-[11px] text-muted-foreground">{`${atLeast}${secs(keptS)} stored · ${secs(lostS)} lost on upload`}</p>
           </StatCard>

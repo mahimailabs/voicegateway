@@ -187,9 +187,13 @@ function Detail({ e }: { e: Ingress }) {
             {e.audioIn?.averageBitrate ? `, ${Math.round(e.audioIn.averageBitrate / 1000)} kbps average` : ""}
           </dd>
           <dt className="text-muted-foreground">Into the room</dt>
-          <dd>{out.length ? `${out.join(", ")}${e.transcoding ? ", transcoded" : ""}` : "nothing published"}</dd>
+          <dd>{out.length ? `${out.join(", ")}${e.transcoding ? ", transcoded" : e.transcoding === null ? ", transcoding unknown" : ""}` : "nothing published"}</dd>
           <dt className="text-muted-foreground">Endpoint</dt>
-          <dd>{[e.reusable ? "reusable" : "single use", e.enabled ? "enabled" : "disabled", e.transcoding ? "transcoding on" : "transcoding off"].join(", ")}</dd>
+          <dd>{[
+            e.reusable === null ? "reuse unknown" : e.reusable ? "reusable" : "single use",
+            e.enabled === null ? "enabled unknown" : e.enabled ? "enabled" : "disabled",
+            e.transcoding === null ? "transcoding unknown" : e.transcoding ? "transcoding on" : "transcoding off",
+          ].join(", ")}</dd>
         </dl>
         {e.audioIn?.averageBitrate && <p className="text-[12px] text-muted-foreground">The average bitrate appeared only after the session ended; while publishing, ListIngress reported none.</p>}
       </div>
