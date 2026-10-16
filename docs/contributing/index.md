@@ -1,3 +1,5 @@
+> These detailed guides describe the published Python release. For the V1 console and Go transition, start with [CONTRIBUTING.md](../../CONTRIBUTING.md) and the [Connect plan](../specs/v1-connect-plan.md).
+
 # Contributing to VoiceGateway
 
 ## Code of Conduct

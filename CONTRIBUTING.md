@@ -1,170 +1,41 @@
 # Contributing to VoiceGateway
 
-Thank you for your interest in contributing. This file is the one-page
-quick reference. Detailed guides live in
-[`contributing/`](contributing/).
+Start with [PRODUCT.md](PRODUCT.md), [ARCHITECTURE.md](ARCHITECTURE.md), the [current console spec](docs/specs/phase01-console.md) and [progress](docs/progress.md). Agent rules live in [CLAUDE.md](CLAUDE.md); AGENTS.md points to it.
 
-## Code of Conduct
+## V1 console
 
-We follow the [Contributor Covenant](CODE_OF_CONDUCT.md). Be respectful,
-be constructive, assume good intent.
+Run these commands from the repository root with Node 24:
 
-## Ways to contribute
-
-- **Pick up a good first issue.** Issues labelled
-  [good first issue](https://github.com/mahimailabs/voicegateway/issues?q=is%3Aopen+label%3A%22good+first+issue%22)
-  name the files, the change and the test. Comment `.take` to claim one
-  (first comment wins), then open a PR with `Closes #<issue>`.
-- **Report a bug.** Open an issue using the **Bug Report** template.
-  Include VoiceGateway version (`voicegw --version`), Python version,
-  OS, and a minimal reproducible example. Redact API keys in any log
-  excerpts.
-- **Suggest a feature.** Open an issue using the **Feature Request**
-  template. Describe the use case, not just the solution.
-- **Submit a pull request.** Fork, branch (`feat/<desc>`,
-  `fix/<desc>` or `chore/<desc>`), commit, and open the PR
-  against `main` with a clear description of what and why. We aim to
-  review within 48 hours.
-- **Report a security issue.** Do NOT open a public issue. See
-  [SECURITY.md](SECURITY.md) for the disclosure policy.
-
-## Licensing
-
-Contributions outside `ee/` directories are released under the MIT license
-in [LICENSE](LICENSE). Code under any `ee/` directory is covered by the
-Enterprise Edition license in [ee/LICENSE](ee/LICENSE). Keep new open-source
-features out of `ee/`, and do not import `ee/` code from MIT code paths.
-
-## Working with a coding agent
-
-The repo is set up for Claude Code, Codex, Cursor and similar tools.
-[CLAUDE.md](CLAUDE.md) holds the rules (AGENTS.md points to it), and it
-points to the facts: [PRODUCT.md](PRODUCT.md), [ARCHITECTURE.md](ARCHITECTURE.md),
-[DESIGN.md](DESIGN.md), decision records in [docs/decisions/](docs/decisions/)
-and [docs/progress.md](docs/progress.md).
-
-For larger work, plan in phases with the commands in `.claude/commands/`:
-`/new-spec` drafts a spec in `docs/specs/` with numeric acceptance checks,
-`/start-phase` builds it, and `/close-phase` records it and opens the PR.
-UI work can use the bundled [impeccable](https://github.com/pbakaus/impeccable)
-design skill in `.claude/skills/impeccable/` (Apache-2.0, see its LICENSE).
-Copy `.mcp.json.example` to `.mcp.json` to give your agent the VoiceGateway
-and LiveKit docs MCP servers.
-
-## PR checklist
-
-Before opening your PR, verify locally:
-
-- [ ] `pytest` -- full suite green
-- [ ] `ruff check .` -- linting clean
-- [ ] `mypy` -- type checking clean
-- [ ] New public APIs have Google-style docstrings
-- [ ] Commit messages follow Conventional Commits
-- [ ] Documentation updated if behavior changed
-- [ ] No secrets or API keys in the diff
-
-## Deeper guides
-
-| Topic | Doc |
-|---|---|
-| Local environment, virtualenv, pre-commit | [development-setup](contributing/development-setup.md) |
-| Running, writing, and debugging tests | [testing](contributing/testing.md) |
-| Code style, ruff, mypy, naming, public-API contract | [code-style](contributing/code-style.md) |
-| Adding a new provider | [adding-a-provider](contributing/adding-a-provider.md) |
-| Refreshing STT and TTS pricing catalogs | [refreshing-pricing](contributing/refreshing-pricing.md) |
-
-## Documentation
-
-The docs site at <https://docs.voicegateway.dev> is a [Fumadocs](https://fumadocs.dev)
-app in `site/docs/`, statically exported and served from Cloudflare
-(`site/docs/wrangler.jsonc`). Pages are MDX in `site/docs/content/docs/`,
-ordered by `meta.json`; brand assets live in `site/docs/public/assets/`, and the
-shared palette in `site/theme.css`. Docs version with the
-code: change them in the same PR as any behaviour or API change.
-
-The site is deliberately small while the project is early. Add a page only when
-an existing one cannot hold the answer.
-
-```bash
-cd site/docs && npm ci
-npm run dev     # http://localhost:3000/docs
-npm run build   # the static export in site/docs/out, the same command CI runs
+```sh
+npm --prefix dashboard ci
+make dev
+make test
+make lint
+npm --prefix dashboard run build
+make help
 ```
 
-`.github/workflows/site.yml` builds the site and fails on any em dash in the
-pages; the voice is short sentences, colons and commas.
+The current tests cover threshold helpers. Calls-list, call-detail and unknown-value UI tests remain [#324](https://github.com/mahimailabs/voicegateway/issues/324). The API contract, generated types and contract-backed mocks remain #321, #322 and #323. Do not treat captured console data as an operational backend.
 
-The landing page at <https://voicegateway.dev> lives here too, in `site/web/`
-(Astro on Cloudflare Workers); see `site/web/README.md`. Both sites share the
-palette in `site/theme.css`, and `.github/workflows/site.yml` builds both.
-This repository has no Vercel connection.
+The [Connect execution plan](docs/specs/v1-connect-plan.md) explains dependencies, proposed PR slices, repository ownership and the legacy retirement boundary. The Go core and Python SDK paths described there are targets; create them as working code arrives.
 
-## Project layout (quick orientation)
+## Choose and submit work
 
-```
-src/
-  voicegateway/        # Python package (subpackages only at top level)
-    accounting/        # wire contracts and the store-and-forward outbox
-    analytics/         # read-side analytics helpers
-    billing/           # rate card, rating, margin reconciliation
-    cli/               # voicegw CLI commands and Textual TUI
-    clickhouse/        # optional ClickHouse sink and reads
-    core/              # shared-state Gateway, config, auth, wiring
-    data/              # bundled resource files (voicegw.example.yaml)
-    fleet/             # fleet collector mode
-    inference/         # attach()/guard(), metric capture, pricing
-    livekit_diag/      # LiveKit diagnostics and run reports
-    middleware/        # cost tracking, rate limiting, budgets, replay
-    models/            # SQLModel tables
-    repository/        # async data access
-    schemas/           # config, MCP and wire schemas
-    server/            # FastAPI HTTP API, dashboard API, MCP server
-    services/          # storage facade and sinks
-    utils/             # CLI rendering helpers
-    tests/             # pytest suite mirroring the subpackages above;
-                       # excluded from the wheel via pyproject hatch config.
-                       # Hosts tests/fixtures/streaming/record_streaming_fixtures.py,
-                       # the dev-only fixture recorder.
-    Dockerfile         # gateway runtime image (build context: repo root)
-    README.dockerhub.md # DockerHub-only description, published on release
-  dashboard/
-    frontend/          # React/TypeScript/Vite dashboard SPA, served by the
-                       # combined server at /
+Pick an [open issue](https://github.com/mahimailabs/voicegateway/issues), agree the scope, and use `.take` where the issue invites it. Branches use `feat/` or `fix/`. Open a focused PR against `main`, describing the observable change and validation. Keep generated files reproducible, preserve unknown values and include meaningful behaviour/failure tests.
 
-alembic/               # migration environment and versions. Root, not under
-alembic.ini            # src/: pyproject force-includes it into the wheel.
-site/docs/             # the Fumadocs site (docs.voicegateway.dev): MDX pages in
-                       # content/docs/, brand assets in public/assets/
-site/web/              # the landing page (voicegateway.dev), Astro on Workers
-site/theme.css         # the palette both sites share
-contributing/          # contributor guides: setup, tests, style, providers
-docs/                  # agent and maintainer docs, not published:
-  decisions/           # one record per lasting choice (never edited once accepted)
-  specs/               # design specs and phase specs
-  progress.md          # what is done, what is next
-.claude/               # shared Claude Code commands, skills and agents
-examples/              # runnable files that docs/examples/*.md link to by
-                       # blob URL; moving them breaks published links
-deploy/
-  prober/              # Fly.io deploy target (Dockerfile + fly.toml),
-                       # documented in docs/deployment/distributed-sfu.md
-tools/                 # developer tooling, none of it shipped in the wheel
-  scripts/             # build_wheel.sh (run by the publish workflow) and
-                       # gen_authorization_matrix.py
-  benchmarks/          # decision-record perf scripts, run by hand, not in CI
+Follow [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md). Report vulnerabilities privately through [SECURITY.md](SECURITY.md). Do not commit credentials, real customer data or unredacted captures.
 
-install.sh             # one-line installer (curl|bash), repo root by convention
-collector.sh           # fleet collector installer (curl|bash)
-docker-compose.yml     # single-container API + dashboard
-docker-compose.collector.yml    # Postgres-backed fleet collector stack
-docker-compose.autoupdate.yml   # opt-in overlay, layered with -f on the above.
-                       # These three stay at the root: docs hand users raw
-                       # githubusercontent URLs pointing at them.
-pyproject.toml
-```
+Contributions outside `ee/` follow [LICENSE](LICENSE); Enterprise code follows [ee/LICENSE](ee/LICENSE). Keep those boundaries intact. Attribute adapted components and preserve their licences.
 
-## First time?
+## Sites and project tools
 
-Start with [contributing/development-setup.md](contributing/development-setup.md)
-to get your environment ready, then look for issues tagged
-`good first issue` on GitHub.
+- `site/landing/`: the Cloudflare Pages frontend; run `make landing-check`.
+- `site/docs/`: the Fumadocs application and its own build commands.
+- `site/web/`: the existing D1/API Worker, privately reached by the landing. Do not remove its database or restore its old apex-domain claim.
+- `.mcp.json`: the shared V1 project tooling. The [legacy MCP example](docs/contributing/mcp-legacy.example.json) is optional reference for the published Python CLI; merge any needed entries rather than overwriting the V1 tool configuration.
+
+## Published Python release
+
+The Python runtime in `src/` and its original frontend remain supported while V1 is built. Changes to that release must use the [legacy development guide](docs/contributing/development-setup.md), [testing guide](docs/contributing/testing.md) and [code style guide](docs/contributing/code-style.md). Provider and pricing work is documented in the [guide index](docs/contributing/index.md).
+
+Keep root packaging, Alembic, Compose, public installer paths and their CI intact until a deliberate replacement release retires them. Moving or deleting them as cosmetic cleanup can break existing installations and package builds.
