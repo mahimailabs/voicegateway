@@ -53,6 +53,13 @@ export function checkSpec(spec, repo = root) {
       fail(where, 'captured sources must identify a concrete JSON evidence pointer');
     }
   }
+  // Where each schema is used, so a clock binding can be checked against the records that contain it.
+  const refSites = new Map();
+  (function collect(node, where) {
+    if (node === null || typeof node !== 'object') return;
+    if (typeof node.$ref === 'string') refSites.set(node.$ref, [...(refSites.get(node.$ref) ?? []), where]);
+    for (const [key, child] of Object.entries(node)) collect(child, `${where}/${key}`);
+  })(spec, '#');
   function walk(node, where) {
     if (node === null || typeof node !== 'object') return;
     if (node.$ref) {
@@ -75,8 +82,14 @@ export function checkSpec(spec, repo = root) {
         const target = typeof binding === 'string' && binding.startsWith('#/') && binding.endsWith('/properties/clockId') ? pointerValue(spec, binding.slice(1)) : { found: false };
         if (!target.found || target.value.type !== 'string') fail(location, 'relative position lacks a resolvable clock reference');
         else {
-          const owner = pointerValue(spec, binding.slice(1, binding.lastIndexOf('/properties/'))).value;
+          const ownerPointer = binding.slice(0, binding.lastIndexOf('/properties/'));
+          const owner = pointerValue(spec, ownerPointer.slice(1)).value;
           if (!owner?.required?.includes('clockId')) fail(location, 'clock reference must be required on its owner');
+          // A position is on its own record's clock, or on the clock of the record that contains it everywhere
+          // it is used (a recording segment on its recording). Never on a sibling record's clock.
+          const sites = refSites.get(where) ?? [];
+          const contained = sites.length > 0 && sites.every((site) => site.startsWith(`${ownerPointer}/`));
+          if (ownerPointer !== where && !contained) fail(location, "clock reference must name its own record's clockId");
         }
       }
     }

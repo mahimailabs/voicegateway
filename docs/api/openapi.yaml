@@ -16,7 +16,7 @@ paths:
   /api/v1/org/{orgId}/project/{projectId}/calls:
     get:
       operationId: listCalls
-      summary: List captured conversations in a project
+      summary: List call summaries in a project, filtered and sorted on the server
       tags:
         - Console reads
       x-access:
@@ -64,6 +64,106 @@ paths:
           description: Exact room-name filter; may return multiple conversations.
           schema:
             type: string
+        - name: channel
+          in: query
+          description: How the call reached the agent. Repeat to match any listed channel.
+          style: form
+          explode: true
+          schema:
+            type: array
+            items:
+              type: string
+              enum: [ phone, web, console, local, unknown ]
+        - name: issues
+          in: query
+          description: "Highest finding severity on the call: high, medium, or none for calls with neither. Repeat to match any."
+          style: form
+          explode: true
+          schema:
+            type: array
+            items:
+              type: string
+              enum: [ high, medium, none ]
+        - name: answerMsMin
+          in: query
+          description: Inclusive lower bound on the call's median answer time in milliseconds. Calls with an unknown answer time never match a bound.
+          schema:
+            type: number
+            minimum: 0
+        - name: answerMsMax
+          in: query
+          description: Inclusive upper bound on the call's median answer time in milliseconds. Calls with an unknown answer time never match a bound.
+          schema:
+            type: number
+            minimum: 0
+        - name: durationSecondsMin
+          in: query
+          description: Inclusive lower bound on call length in seconds. Unknown lengths never match a bound.
+          schema:
+            type: number
+            minimum: 0
+        - name: durationSecondsMax
+          in: query
+          description: Inclusive upper bound on call length in seconds. Unknown lengths never match a bound.
+          schema:
+            type: number
+            minimum: 0
+        - name: turnsMin
+          in: query
+          description: Inclusive lower bound on agent turns. Unknown counts never match a bound.
+          schema:
+            type: integer
+            minimum: 0
+        - name: turnsMax
+          in: query
+          description: Inclusive upper bound on agent turns. Unknown counts never match a bound.
+          schema:
+            type: integer
+            minimum: 0
+        - name: unknown
+          in: query
+          description: Only calls where every listed value is unknown. This is how the console's "is empty" filter reaches the server; an unknown value is never matched as zero.
+          style: form
+          explode: true
+          schema:
+            type: array
+            items:
+              type: string
+              enum: [ answerMs, durationSeconds, turnCount ]
+        - name: tag
+          in: query
+          description: User tag. Repeat to match calls carrying any listed tag.
+          style: form
+          explode: true
+          schema:
+            type: array
+            items:
+              type: string
+              minLength: 1
+        - name: recorded
+          in: query
+          description: true for calls with a retained recording, false for calls without one. Omitted means both.
+          schema:
+            type: boolean
+        - name: archived
+          in: query
+          description: true for archived calls only, false for unarchived only. Omitted means both.
+          schema:
+            type: boolean
+        - name: sort
+          in: query
+          description: "Sort key, applied on the server before paging. Unknown values sort after known values in both orders; ties break by id. A cursor is bound to the filters, sort and order it was issued for: changing any of them with a cursor is invalid_request."
+          schema:
+            type: string
+            enum: [ startedAt, durationSeconds, turnCount, answerMs, issues ]
+            default: startedAt
+        - name: order
+          in: query
+          description: Sort direction.
+          schema:
+            type: string
+            enum: [ asc, desc ]
+            default: desc
       responses:
         "200":
           description: Authorised read result. Null means unreported, never zero. Source-specific coverage limits remain visible.
@@ -113,6 +213,153 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Call"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/SourceUnavailable"
+  /api/v1/org/{orgId}/project/{projectId}/call-stats:
+    get:
+      operationId: getCallStats
+      summary: Totals, answer times and stage timings over calls in a range
+      tags:
+        - Console reads
+      x-access:
+        principal: organisation_member
+        minimumRole: Viewer
+        projectIsolation: required
+        browserSessionTransport: not_selected
+        scope: project
+      description: "Overview figures, the agent rows, Turn anatomy and the answer-time and turn-anatomy widgets. Requires authenticated organisation membership and permission to read the named project. Credential absence is 401, denied membership is 403. Computed on the server over every stored record in the range; the console never totals pages of listCalls itself."
+      parameters:
+        - $ref: "#/components/parameters/OrganisationId"
+        - $ref: "#/components/parameters/ProjectId"
+        - name: from
+          in: query
+          required: true
+          description: Inclusive UTC start of the range.
+          schema:
+            type: string
+            format: date-time
+        - name: to
+          in: query
+          required: true
+          description: Exclusive UTC end of the range.
+          schema:
+            type: string
+            format: date-time
+      responses:
+        "200":
+          description: Authorised read result. Null means unreported or incomplete, never zero.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CallStats"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/SourceUnavailable"
+  /api/v1/org/{orgId}/project/{projectId}/issues:
+    get:
+      operationId: listIssues
+      summary: Issues grouped across calls, agents and the phone bridge in a range
+      tags:
+        - Console reads
+      x-access:
+        principal: organisation_member
+        minimumRole: Viewer
+        projectIsolation: required
+        browserSessionTransport: not_selected
+        scope: project
+      description: "The Issues page, the issues widget, issue counts and the command palette. Dispositions stay in getIssueDispositions. Requires authenticated organisation membership and permission to read the named project. Credential absence is 401, denied membership is 403. Computed on the server over every stored record in the range; the console never totals pages of listCalls itself."
+      parameters:
+        - $ref: "#/components/parameters/OrganisationId"
+        - $ref: "#/components/parameters/ProjectId"
+        - name: from
+          in: query
+          required: true
+          description: Inclusive UTC start of the range.
+          schema:
+            type: string
+            format: date-time
+        - name: to
+          in: query
+          required: true
+          description: Exclusive UTC end of the range.
+          schema:
+            type: string
+            format: date-time
+      responses:
+        "200":
+          description: Authorised read result. Null means unreported or incomplete, never zero.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IssueList"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/SourceUnavailable"
+  /api/v1/org/{orgId}/project/{projectId}/alert-events:
+    get:
+      operationId: listAlertEvents
+      summary: What each alert rule would have fired on in a range
+      tags:
+        - Console reads
+      x-access:
+        principal: organisation_member
+        minimumRole: Viewer
+        projectIsolation: required
+        browserSessionTransport: not_selected
+        scope: project
+      description: "The Alerts page chart, rule counts and history. This is rule evaluation, not delivery history. Requires authenticated organisation membership and permission to read the named project. Credential absence is 401, denied membership is 403. Computed on the server over every stored record in the range; the console never totals pages of listCalls itself."
+      parameters:
+        - $ref: "#/components/parameters/OrganisationId"
+        - $ref: "#/components/parameters/ProjectId"
+        - name: from
+          in: query
+          required: true
+          description: Inclusive UTC start of the range.
+          schema:
+            type: string
+            format: date-time
+        - name: to
+          in: query
+          required: true
+          description: Exclusive UTC end of the range.
+          schema:
+            type: string
+            format: date-time
+      responses:
+        "200":
+          description: Authorised read result. Null means unreported or incomplete, never zero.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AlertEvents"
         "400":
           $ref: "#/components/responses/BadRequest"
         "401":
@@ -2652,11 +2899,545 @@ components:
         items:
           type: array
           items:
-            $ref: "#/components/schemas/Call"
-          x-source: { kind: computed, file: docs/api/coverage.md, pointer: null, detail: Project-scoped conversation records in descending startedAt then id order; apply range before paging. }
+            $ref: "#/components/schemas/CallSummary"
+          x-source: { kind: computed, file: docs/api/coverage.md, pointer: null, detail: "Project-scoped call summaries after the range, filters and sort are applied, then paged. Full spans, turns and events come from getCall only." }
         page:
           $ref: "#/components/schemas/Page"
           x-source: { kind: computed, file: docs/api/coverage.md, pointer: null, detail: Server cursor and snapshot metadata. }
+    CallSummary:
+      type: object
+      additionalProperties: false
+      description: One row of the Calls list. The same identity as Call, with the per-call figures the list shows, filters and sorts on, computed on the server. No spans, turns or events.
+      required: [ id, room, roomSid, startedAt, endedAt, durationSeconds, participantCount, endState, channel, models, turnCount, answerMs, answerMsMedian, issues, tags, archived, recorded ]
+      properties:
+        id:
+          type: string
+          description: "Canonical conversation id, the same value getCall takes."
+          x-source: { kind: computed, file: docs/api/coverage.md, pointer: null, detail: "Canonical conversation id, the same value getCall takes." }
+          minLength: 1
+        room:
+          type: string
+          description: "Room name. Not an identity on its own."
+          x-source: { kind: webhook, file: dashboard/src/mocks/calls.json, pointer: /calls/0/room, detail: "Room name. Not an identity on its own." }
+        roomSid:
+          type: [ string, "null" ]
+          description: "LiveKit Room SID."
+          x-null-reason: "No real LiveKit Room SID was received."
+          x-source: { kind: webhook, file: dashboard/src/mocks/calls.json, pointer: /calls/0/roomSid, detail: "LiveKit Room SID." }
+        startedAt:
+          type: string
+          format: date-time
+          description: "Call start, UTC."
+          x-source: { kind: webhook, file: dashboard/src/mocks/calls.json, pointer: /calls/0/startedAt, detail: "Call start, UTC." }
+        endedAt:
+          type: [ string, "null" ]
+          format: date-time
+          description: "Call end, UTC."
+          x-null-reason: "Null while open or while the end is not known."
+          x-source: { kind: webhook, file: dashboard/src/mocks/calls.json, pointer: /calls/0/endedAt, detail: "Call end, UTC." }
+        durationSeconds:
+          type: [ number, "null" ]
+          description: "Call length."
+          x-unit: seconds
+          x-null-reason: "Not enough timing evidence for a length."
+          x-source: { kind: computed, file: dashboard/src/mocks/calls.json, pointer: /calls/0/durationSeconds, detail: "Call length." }
+        participantCount:
+          type: [ integer, "null" ]
+          description: "Participants seen in the room."
+          x-unit: count
+          x-null-reason: "The source did not report participants."
+          x-source: { kind: webhook, file: dashboard/src/mocks/calls.json, pointer: /calls/0/participantCount, detail: "Participants seen in the room." }
+        endState:
+          type: string
+          enum: [ observed, inferred, open, unknown ]
+          description: "Whether closure was observed, inferred by the worker, not closed, or unresolved."
+          x-source: { kind: computed, file: docs/api/coverage.md, pointer: null, detail: "Whether closure was observed, inferred by the worker, not closed, or unresolved." }
+        channel:
+          type: string
+          enum: [ phone, web, console, local, unknown ]
+          description: "How the call reached the agent: a SIP participant means phone, a watched room without one means web or app, the agent console and local tests say so from their capture. unknown when no evidence says."
+          x-source: { kind: computed, file: dashboard/src/features/calls/calls-page.tsx, pointer: null, detail: "How the call reached the agent: a SIP participant means phone, a watched room without one means web or app, the agent console and local tests say so from their capture. unknown when no evidence says." }
+        models:
+          type: array
+          description: "Model names reported by the call's spans, most used first. Empty when spans named none."
+          x-source: { kind: computed, file: dashboard/src/features/call/call-model.ts, pointer: null, detail: "Model names reported by the call's spans, most used first. Empty when spans named none." }
+          items:
+            type: string
+        turnCount:
+          type: [ integer, "null" ]
+          description: "Agent turns: agent_turn spans when present, else reported turns."
+          x-unit: count
+          x-null-reason: "Neither spans nor turns were reported."
+          x-source: { kind: computed, file: dashboard/src/features/calls/calls-page.tsx, pointer: null, detail: "Agent turns: agent_turn spans when present, else reported turns." }
+        answerMs:
+          type: [ array, "null" ]
+          description: "Every measured answer time in the call, in turn order: caller stops to agent audio. Turns without a measurement are left out, not zero."
+          x-unit: milliseconds
+          x-null-reason: "No turn reported an answer time."
+          x-source: { kind: computed, file: dashboard/src/features/call/call-model.ts, pointer: null, detail: "Every measured answer time in the call, in turn order: caller stops to agent audio. Turns without a measurement are left out, not zero." }
+          items:
+            type: number
+            minimum: 0
+        answerMsMedian:
+          type: [ number, "null" ]
+          description: "Median of answerMs."
+          x-unit: milliseconds
+          x-null-reason: "No turn in scope reported this value. Unknown, not zero."
+          x-source: { kind: computed, file: dashboard/src/features/calls/calls-page.tsx, pointer: null, detail: "Median of answerMs." }
+        issues:
+          type: object
+          additionalProperties: false
+          required: [ high, medium, titles ]
+          description: "Findings on this call by severity, from the same checks as the call drawer."
+          x-source: { kind: computed, file: dashboard/src/features/call/call-steps.ts, pointer: null, detail: "Findings on this call by severity, from the same checks as the call drawer." }
+          properties:
+            high:
+              type: [ integer, "null" ]
+              description: "High-severity findings."
+              x-unit: count
+              x-null-reason: "The call had no turn or span data to check."
+              x-source: { kind: computed, file: docs/api/coverage.md, pointer: null, detail: "High-severity findings." }
+              minimum: 0
+            medium:
+              type: [ integer, "null" ]
+              description: "Medium-severity findings."
+              x-unit: count
+              x-null-reason: "The call had no turn or span data to check."
+              x-source: { kind: computed, file: docs/api/coverage.md, pointer: null, detail: "Medium-severity findings." }
+              minimum: 0
+            titles:
+              type: array
+              description: "Titles of the high, medium and low findings, for the row tooltip."
+              x-source: { kind: computed, file: dashboard/src/features/call/call-steps.ts, pointer: null, detail: "Titles of the high, medium and low findings, for the row tooltip." }
+              items:
+                type: string
+        tags:
+          type: array
+          description: "User-assigned labels. Empty means none."
+          x-source: { kind: configuration, file: dashboard/src/features/call/call-tags.tsx, pointer: null, detail: "User-assigned labels. Empty means none." }
+          items:
+            type: string
+        archived:
+          type: boolean
+          description: "User archive disposition. Archived calls stay readable."
+          x-source: { kind: configuration, file: dashboard/src/features/calls/call-archive.ts, pointer: null, detail: "User archive disposition. Archived calls stay readable." }
+        recorded:
+          type: boolean
+          description: "A retained recording exists for this call."
+          x-source: { kind: computed, file: docs/api/coverage.md, pointer: null, detail: "A retained recording exists for this call." }
+    CallStats:
+      type: object
+      additionalProperties: false
+      description: Aggregates over every stored call in the range, computed on the server so no client totals pages. Test and design-preview calls are counted separately and left out of the answer and stage figures.
+      required: [ from, to, complete, callCount, byChannel, byDay, answers, issueCounts, stages, agents ]
+      properties:
+        from:
+          type: string
+          format: date-time
+          description: "Inclusive range start, UTC."
+          x-source: { kind: computed, file: docs/api/coverage.md, pointer: null, detail: "Inclusive range start, UTC." }
+        to:
+          type: string
+          format: date-time
+          description: "Exclusive range end, UTC."
+          x-source: { kind: computed, file: docs/api/coverage.md, pointer: null, detail: "Exclusive range end, UTC." }
+        complete:
+          type: boolean
+          description: "false when retention, an ingest gap or a source outage leaves part of the range unstored. Totals are then null rather than an undercount."
+          x-source: { kind: computed, file: docs/api/coverage.md, pointer: null, detail: "false when retention, an ingest gap or a source outage leaves part of the range unstored. Totals are then null rather than an undercount." }
+        callCount:
+          type: [ integer, "null" ]
+          description: "Calls started in the range."
+          x-unit: count
+          x-null-reason: "Null when the stored range is incomplete (retention, ingest gap or a source outage), so a total would undercount. Never zero for missing data."
+          x-source: { kind: computed, file: docs/api/coverage.md, pointer: null, detail: "Calls started in the range." }
+          minimum: 0
+        byChannel:
+          type: object
+          additionalProperties: false
+          required: [ phone, web, console, local, unknown ]
+          description: "Calls in the range by channel, classified as in CallSummary.channel."
+          x-source: { kind: computed, file: dashboard/src/features/calls/calls-page.tsx, pointer: null, detail: "Calls in the range by channel, classified as in CallSummary.channel." }
+          properties:
+            phone:
+              type: [ integer, "null" ]
+              description: "Phone calls."
+              x-unit: count
+              x-null-reason: "Null when the stored range is incomplete (retention, ingest gap or a source outage), so a total would undercount. Never zero for missing data."
+              x-source: { kind: computed, file: docs/api/coverage.md, pointer: null, detail: "Phone calls." }
+              minimum: 0
+            web:
+              type: [ integer, "null" ]
+              description: "Web or app calls."
+              x-unit: count
+              x-null-reason: "Null when the stored range is incomplete (retention, ingest gap or a source outage), so a total would undercount. Never zero for missing data."
+              x-source: { kind: computed, file: docs/api/coverage.md, pointer: null, detail: "Web or app calls." }
+              minimum: 0
+            console:
+              type: [ integer, "null" ]
+              description: "Agent console sessions."
+              x-unit: count
+              x-null-reason: "Null when the stored range is incomplete (retention, ingest gap or a source outage), so a total would undercount. Never zero for missing data."
+              x-source: { kind: computed, file: docs/api/coverage.md, pointer: null, detail: "Agent console sessions." }
+              minimum: 0
+            local:
+              type: [ integer, "null" ]
+              description: "Local test sessions."
+              x-unit: count
+              x-null-reason: "Null when the stored range is incomplete (retention, ingest gap or a source outage), so a total would undercount. Never zero for missing data."
+              x-source: { kind: computed, file: docs/api/coverage.md, pointer: null, detail: "Local test sessions." }
+              minimum: 0
+            unknown:
+              type: [ integer, "null" ]
+              description: "Calls with no channel evidence."
+              x-unit: count
+              x-null-reason: "Null when the stored range is incomplete (retention, ingest gap or a source outage), so a total would undercount. Never zero for missing data."
+              x-source: { kind: computed, file: docs/api/coverage.md, pointer: null, detail: "Calls with no channel evidence." }
+              minimum: 0
+        byDay:
+          type: array
+          description: "Calls per UTC day in the range, oldest first, one entry per day including days with none."
+          x-source: { kind: computed, file: docs/api/coverage.md, pointer: null, detail: "Calls per UTC day in the range, oldest first, one entry per day including days with none." }
+          items:
+            type: object
+            additionalProperties: false
+            required: [ date, callCount ]
+            properties:
+              date:
+                type: string
+                format: date
+                description: "UTC calendar day."
+                x-source: { kind: computed, file: docs/api/coverage.md, pointer: null, detail: "UTC calendar day." }
+              callCount:
+                type: [ integer, "null" ]
+                description: "Calls started that day."
+                x-unit: count
+                x-null-reason: "Null when the stored range is incomplete (retention, ingest gap or a source outage), so a total would undercount. Never zero for missing data."
+                x-source: { kind: computed, file: docs/api/coverage.md, pointer: null, detail: "Calls started that day." }
+                minimum: 0
+        answers:
+          type: object
+          additionalProperties: false
+          required: [ turns, overBudget, budgetMs, p50Ms, p90Ms, valuesMs, valuesTruncated ]
+          description: "Answer time (caller stops to agent audio) over every measured turn in the range."
+          x-source: { kind: computed, file: dashboard/src/features/call/call-model.ts, pointer: null, detail: "Answer time over every measured turn in the range." }
+          properties:
+            turns:
+              type: [ integer, "null" ]
+              description: "Turns with a measured answer time."
+              x-unit: count
+              x-null-reason: "Null when the stored range is incomplete (retention, ingest gap or a source outage), so a total would undercount. Never zero for missing data."
+              x-source: { kind: computed, file: docs/api/coverage.md, pointer: null, detail: "Turns with a measured answer time." }
+              minimum: 0
+            overBudget:
+              type: [ integer, "null" ]
+              description: "Measured turns slower than budgetMs."
+              x-unit: count
+              x-null-reason: "Null when the stored range is incomplete (retention, ingest gap or a source outage), so a total would undercount. Never zero for missing data."
+              x-source: { kind: computed, file: docs/api/coverage.md, pointer: null, detail: "Measured turns slower than budgetMs." }
+              minimum: 0
+            budgetMs:
+              type: number
+              description: "The project's answer budget used for overBudget; configuration, not a measurement."
+              x-unit: milliseconds
+              x-source: { kind: configuration, file: dashboard/src/lib/thresholds.ts, pointer: null, detail: "The project's answer budget used for overBudget; configuration, not a measurement." }
+              x-configuration: true
+              exclusiveMinimum: 0
+            p50Ms:
+              type: [ number, "null" ]
+              description: "Median answer time."
+              x-unit: milliseconds
+              x-null-reason: "No turn in scope reported this value. Unknown, not zero."
+              x-source: { kind: computed, file: docs/api/coverage.md, pointer: null, detail: "Median answer time." }
+            p90Ms:
+              type: [ number, "null" ]
+              description: "90th percentile answer time."
+              x-unit: milliseconds
+              x-null-reason: "No turn in scope reported this value. Unknown, not zero."
+              x-source: { kind: computed, file: docs/api/coverage.md, pointer: null, detail: "90th percentile answer time." }
+            valuesMs:
+              type: array
+              description: "Measured answer times, most recent first, for the turn strip. At most 5,000; see valuesTruncated."
+              x-unit: milliseconds
+              x-source: { kind: computed, file: dashboard/src/features/overview/visuals.tsx, pointer: null, detail: "Measured answer times, most recent first, for the turn strip. At most 5,000; see valuesTruncated." }
+              maxItems: 5000
+              items:
+                type: number
+                minimum: 0
+            valuesTruncated:
+              type: boolean
+              description: "true when valuesMs holds only the most recent 5,000 of more measured turns. The counts and percentiles always use every turn."
+              x-source: { kind: computed, file: docs/api/coverage.md, pointer: null, detail: "true when valuesMs holds only the most recent 5,000 of more measured turns. The counts and percentiles always use every turn." }
+        issueCounts:
+          type: object
+          additionalProperties: false
+          required: [ high, medium, low ]
+          description: "Issues in the range by severity, the same groups listIssues returns."
+          x-source: { kind: computed, file: dashboard/src/features/issues/issues-model.ts, pointer: null, detail: "Issues in the range by severity, the same groups listIssues returns." }
+          properties:
+            high:
+              type: [ integer, "null" ]
+              description: "High-severity issues."
+              x-unit: count
+              x-null-reason: "Null when the stored range is incomplete (retention, ingest gap or a source outage), so a total would undercount. Never zero for missing data."
+              x-source: { kind: computed, file: docs/api/coverage.md, pointer: null, detail: "High-severity issues." }
+              minimum: 0
+            medium:
+              type: [ integer, "null" ]
+              description: "Medium-severity issues."
+              x-unit: count
+              x-null-reason: "Null when the stored range is incomplete (retention, ingest gap or a source outage), so a total would undercount. Never zero for missing data."
+              x-source: { kind: computed, file: docs/api/coverage.md, pointer: null, detail: "Medium-severity issues." }
+              minimum: 0
+            low:
+              type: [ integer, "null" ]
+              description: "Low-severity issues."
+              x-unit: count
+              x-null-reason: "Null when the stored range is incomplete (retention, ingest gap or a source outage), so a total would undercount. Never zero for missing data."
+              x-source: { kind: computed, file: docs/api/coverage.md, pointer: null, detail: "Low-severity issues." }
+              minimum: 0
+        stages:
+          type: array
+          description: "Turn anatomy for all agents: one entry per stage that any turn reported. Stages nothing reports are absent, not zero."
+          x-source: { kind: computed, file: dashboard/src/features/overview/visuals.tsx, pointer: null, detail: "Turn anatomy for all agents: one entry per stage that any turn reported. Stages nothing reports are absent, not zero." }
+          items:
+            $ref: "#/components/schemas/StageTiming"
+        agents:
+          type: array
+          description: "One row per agent that took calls in the range, plus one with key null for calls no agent is identified on."
+          x-source: { kind: computed, file: dashboard/src/features/overview/overview.tsx, pointer: null, detail: "One row per agent that took calls in the range, plus one with key null for calls no agent is identified on." }
+          items:
+            type: object
+            additionalProperties: false
+            required: [ key, name, callCount, answerP50Ms, issues, models, stages ]
+            properties:
+              key:
+                type: [ string, "null" ]
+                description: "Agent key, or null for calls with no identified agent."
+                x-null-reason: "No agent was identified on these calls."
+                x-source: { kind: computed, file: docs/api/coverage.md, pointer: null, detail: "Agent key, or null for calls with no identified agent." }
+              name:
+                type: [ string, "null" ]
+                description: "Agent name as registered with LiveKit."
+                x-null-reason: "The agent registered without a name."
+                x-source: { kind: computed, file: dashboard/src/features/agents/agents-model.ts, pointer: null, detail: "Agent name as registered with LiveKit." }
+              callCount:
+                type: [ integer, "null" ]
+                description: "Calls this agent took in the range."
+                x-unit: count
+                x-null-reason: "Null when the stored range is incomplete (retention, ingest gap or a source outage), so a total would undercount. Never zero for missing data."
+                x-source: { kind: computed, file: docs/api/coverage.md, pointer: null, detail: "Calls this agent took in the range." }
+                minimum: 0
+              answerP50Ms:
+                type: [ number, "null" ]
+                description: "Median answer time over this agent's measured turns."
+                x-unit: milliseconds
+                x-null-reason: "No turn in scope reported this value. Unknown, not zero."
+                x-source: { kind: computed, file: docs/api/coverage.md, pointer: null, detail: "Median answer time over this agent's measured turns." }
+              issues:
+                type: [ integer, "null" ]
+                description: "High and medium findings on this agent's calls."
+                x-unit: count
+                x-null-reason: "Null when the stored range is incomplete (retention, ingest gap or a source outage), so a total would undercount. Never zero for missing data."
+                x-source: { kind: computed, file: docs/api/coverage.md, pointer: null, detail: "High and medium findings on this agent's calls." }
+                minimum: 0
+              models:
+                type: array
+                description: "Model names this agent's calls reported."
+                x-source: { kind: computed, file: dashboard/src/features/call/call-model.ts, pointer: null, detail: "Model names this agent's calls reported." }
+                items:
+                  type: string
+              stages:
+                type: array
+                description: "Turn anatomy for this agent only."
+                x-source: { kind: computed, file: dashboard/src/features/overview/visuals.tsx, pointer: null, detail: "Turn anatomy for this agent only." }
+                items:
+                  $ref: "#/components/schemas/StageTiming"
+    StageTiming:
+      type: object
+      additionalProperties: false
+      description: One Turn anatomy stage, timed from the moment the caller stops speaking.
+      required: [ stage, field, startMs, medianMs, p90Ms, turns ]
+      properties:
+        stage:
+          type: string
+          description: "Stage name as Turn anatomy shows it, for example STT, Turn detector, LLM, call 1 or TTS."
+          x-source: { kind: computed, file: dashboard/src/features/overview/visuals.tsx, pointer: null, detail: "Stage name as Turn anatomy shows it, for example STT, Turn detector, LLM, call 1 or TTS." }
+        field:
+          type: string
+          description: "The LiveKit field or span this stage is read from."
+          x-source: { kind: computed, file: dashboard/src/features/overview/visuals.tsx, pointer: null, detail: "The LiveKit field or span this stage is read from." }
+        startMs:
+          type: [ number, "null" ]
+          description: "Median start of the stage after the caller stops speaking."
+          x-unit: milliseconds
+          x-null-reason: "No turn in scope reported this value. Unknown, not zero."
+          x-source: { kind: computed, file: docs/api/coverage.md, pointer: null, detail: "Median start of the stage after the caller stops speaking." }
+        medianMs:
+          type: [ number, "null" ]
+          description: "Median end of the stage after the caller stops speaking."
+          x-unit: milliseconds
+          x-null-reason: "No turn in scope reported this value. Unknown, not zero."
+          x-source: { kind: computed, file: docs/api/coverage.md, pointer: null, detail: "Median end of the stage after the caller stops speaking." }
+        p90Ms:
+          type: [ number, "null" ]
+          description: "90th percentile end of the stage after the caller stops speaking."
+          x-unit: milliseconds
+          x-null-reason: "No turn in scope reported this value. Unknown, not zero."
+          x-source: { kind: computed, file: docs/api/coverage.md, pointer: null, detail: "90th percentile end of the stage after the caller stops speaking." }
+        turns:
+          type: [ integer, "null" ]
+          description: "Turns that reported this stage."
+          x-unit: count
+          x-null-reason: "Null when the stored range is incomplete (retention, ingest gap or a source outage), so a total would undercount. Never zero for missing data."
+          x-source: { kind: computed, file: docs/api/coverage.md, pointer: null, detail: "Turns that reported this stage." }
+          minimum: 0
+    IssueList:
+      type: object
+      additionalProperties: false
+      required: [ from, to, complete, items ]
+      properties:
+        from:
+          type: string
+          format: date-time
+          description: "Inclusive range start, UTC."
+          x-source: { kind: computed, file: docs/api/coverage.md, pointer: null, detail: "Inclusive range start, UTC." }
+        to:
+          type: string
+          format: date-time
+          description: "Exclusive range end, UTC."
+          x-source: { kind: computed, file: docs/api/coverage.md, pointer: null, detail: "Exclusive range end, UTC." }
+        complete:
+          type: boolean
+          description: "false when part of the range is not stored, so an issue may have more hits than listed."
+          x-source: { kind: computed, file: docs/api/coverage.md, pointer: null, detail: "false when part of the range is not stored, so an issue may have more hits than listed." }
+        items:
+          type: array
+          description: "Issues in the range, high severity first, then by hits. Grouping, titles and severities are the ones in issues-model.ts."
+          x-source: { kind: computed, file: dashboard/src/features/issues/issues-model.ts, pointer: null, detail: "Issues in the range, high severity first, then by hits. Grouping, titles and severities are the ones in issues-model.ts." }
+          items:
+            type: object
+            additionalProperties: false
+            required: [ id, title, severity, source, lastSeenAt, hits ]
+            properties:
+              id:
+                type: string
+                description: "Stable grouping key; the issueId dispositions refer to."
+                x-source: { kind: computed, file: dashboard/src/features/issues/issues-model.ts, pointer: null, detail: "Stable grouping key; the issueId dispositions refer to." }
+              title:
+                type: string
+                description: "Issue title."
+                x-source: { kind: computed, file: dashboard/src/features/issues/issues-model.ts, pointer: null, detail: "Issue title." }
+              severity:
+                type: string
+                enum: [ high, medium, low, info ]
+                description: "Severity of the underlying check."
+                x-source: { kind: computed, file: dashboard/src/features/issues/issues-model.ts, pointer: null, detail: "Severity of the underlying check." }
+              source:
+                type: string
+                enum: [ calls, agent_workers, phone_bridge ]
+                description: "The component the check runs on."
+                x-source: { kind: computed, file: dashboard/src/features/issues/issues-model.ts, pointer: null, detail: "The component the check runs on." }
+              lastSeenAt:
+                type: [ string, "null" ]
+                format: date-time
+                description: "Most recent hit, UTC. Compared with a disposition's time to mark a resolved issue as regressed."
+                x-null-reason: "No hit carries a time, for example a configuration check."
+                x-source: { kind: computed, file: dashboard/src/features/issues/issues-model.ts, pointer: null, detail: "Most recent hit, UTC. Compared with a disposition's time to mark a resolved issue as regressed." }
+              hits:
+                type: array
+                description: "Where the issue was found, most recent first."
+                x-source: { kind: computed, file: dashboard/src/features/issues/issues-model.ts, pointer: null, detail: "Where the issue was found, most recent first." }
+                items:
+                  type: object
+                  additionalProperties: false
+                  required: [ at, where, detail, callId ]
+                  properties:
+                    at:
+                      type: [ string, "null" ]
+                      format: date-time
+                      description: "When the hit happened, UTC."
+                      x-null-reason: "The check has no event time, for example a trunk setting."
+                      x-source: { kind: computed, file: dashboard/src/features/issues/issues-model.ts, pointer: null, detail: "When the hit happened, UTC." }
+                    where:
+                      type: string
+                      description: "The call, agent job or trunk the hit is on, as a label."
+                      x-source: { kind: computed, file: dashboard/src/features/issues/issues-model.ts, pointer: null, detail: "The call, agent job or trunk the hit is on, as a label." }
+                    detail:
+                      type: string
+                      description: "What the check found there."
+                      x-source: { kind: computed, file: dashboard/src/features/issues/issues-model.ts, pointer: null, detail: "What the check found there." }
+                    callId:
+                      type: [ string, "null" ]
+                      description: "Canonical id of the call the hit is on."
+                      x-null-reason: "The hit is not on a call."
+                      x-source: { kind: computed, file: dashboard/src/features/issues/issues-model.ts, pointer: null, detail: "Canonical id of the call the hit is on." }
+    AlertEvents:
+      type: object
+      additionalProperties: false
+      required: [ from, to, complete, rules ]
+      properties:
+        from:
+          type: string
+          format: date-time
+          description: "Inclusive range start, UTC."
+          x-source: { kind: computed, file: docs/api/coverage.md, pointer: null, detail: "Inclusive range start, UTC." }
+        to:
+          type: string
+          format: date-time
+          description: "Exclusive range end, UTC."
+          x-source: { kind: computed, file: docs/api/coverage.md, pointer: null, detail: "Exclusive range end, UTC." }
+        complete:
+          type: boolean
+          description: "false when part of the range is not stored, so a rule may have fired more often than listed."
+          x-source: { kind: computed, file: docs/api/coverage.md, pointer: null, detail: "false when part of the range is not stored, so a rule may have fired more often than listed." }
+        rules:
+          type: array
+          description: "One entry per console rule, in the alerts-model.ts order."
+          x-source: { kind: computed, file: dashboard/src/features/alerts/alerts-model.ts, pointer: null, detail: "One entry per console rule, in the alerts-model.ts order." }
+          items:
+            type: object
+            additionalProperties: false
+            required: [ ruleId, state, events ]
+            properties:
+              ruleId:
+                type: string
+                enum: [ slow-answer, cut-off, job-failed, slow-join, plain-phone, recording-lost, ingress-error ]
+                description: "The rule, as in AlertRuleSetup.ruleId."
+                x-source: { kind: configuration, file: dashboard/src/features/alerts/alerts-model.ts, pointer: null, detail: "The rule, as in AlertRuleSetup.ruleId." }
+              state:
+                type: [ string, "null" ]
+                description: "A standing condition true now, such as two plain-RTP trunks, for rules that watch configuration rather than events."
+                x-null-reason: "The rule watches events, or nothing is standing now."
+                x-source: { kind: computed, file: dashboard/src/features/alerts/alerts-model.ts, pointer: null, detail: "A standing condition true now, such as two plain-RTP trunks, for rules that watch configuration rather than events." }
+              events:
+                type: array
+                description: "What the rule would have fired on in the range, most recent first."
+                x-source: { kind: computed, file: dashboard/src/features/alerts/alerts-model.ts, pointer: null, detail: "What the rule would have fired on in the range, most recent first." }
+                items:
+                  type: object
+                  additionalProperties: false
+                  required: [ at, where, detail, callId ]
+                  properties:
+                    at:
+                      type: [ string, "null" ]
+                      format: date-time
+                      description: "When the event happened, UTC."
+                      x-null-reason: "The source reported no time for this event."
+                      x-source: { kind: computed, file: dashboard/src/features/alerts/alerts-model.ts, pointer: null, detail: "When the event happened, UTC." }
+                    where:
+                      type: string
+                      description: "The call, agent job, egress or ingress the event is on, as a label."
+                      x-source: { kind: computed, file: dashboard/src/features/alerts/alerts-model.ts, pointer: null, detail: "The call, agent job, egress or ingress the event is on, as a label." }
+                    detail:
+                      type: string
+                      description: "What happened."
+                      x-source: { kind: computed, file: dashboard/src/features/alerts/alerts-model.ts, pointer: null, detail: "What happened." }
+                    callId:
+                      type: [ string, "null" ]
+                      description: "Canonical id of the call, when the event is on one."
+                      x-null-reason: "The event is not on a call."
+                      x-source: { kind: computed, file: dashboard/src/features/alerts/alerts-model.ts, pointer: null, detail: "Canonical id of the call, when the event is on one." }
     Error:
       type: object
       additionalProperties: false

@@ -136,3 +136,39 @@ test('clock schema preserves unknown anchors and rejects fabricated alignment', 
   delete incomplete.origin;
   assert.equal(validate(incomplete), false);
 });
+
+test('a position bound to another record\'s clock is rejected', async () => {
+  const { checkSpec } = await checker;
+  const spec = load();
+  spec.components.schemas.Span.properties.startMs['x-clock'] = '#/components/schemas/Turn/properties/clockId';
+  assert.match(checkSpec(spec).errors.join('\n'), /Span\/properties\/startMs: clock reference must name its own record's clockId/);
+  assert.deepEqual(checkSpec(load()).errors, [], 'a recording segment on its recording clock stays valid');
+});
+
+test('the calls list returns summaries filtered and sorted on the server', () => {
+  const spec = load();
+  const list = spec.paths['/api/v1/org/{orgId}/project/{projectId}/calls'].get;
+  const page = spec.components.schemas.CallPage.properties.items.items.$ref;
+  assert.equal(page, '#/components/schemas/CallSummary');
+  for (const heavy of ['spans', 'turns', 'events', 'clocks']) assert.equal(spec.components.schemas.CallSummary.properties[heavy], undefined, heavy);
+  const params = new Set(list.parameters.map((p) => p.name).filter(Boolean));
+  for (const name of ['channel', 'issues', 'answerMsMin', 'answerMsMax', 'durationSecondsMin', 'durationSecondsMax', 'turnsMin', 'turnsMax', 'unknown', 'tag', 'recorded', 'archived', 'sort', 'order']) assert.ok(params.has(name), name);
+  const sort = list.parameters.find((p) => p.name === 'sort').schema.enum;
+  assert.deepEqual(sort, ['startedAt', 'durationSeconds', 'turnCount', 'answerMs', 'issues']);
+  assert.ok(list.parameters.find((p) => p.name === 'unknown').schema.items.enum.includes('answerMs'), 'unknown stays filterable without matching zero');
+});
+
+test('page aggregates are server reads over a required range', () => {
+  const spec = load();
+  const root = path.resolve(__dirname, '../..');
+  const surfaces = JSON.parse(fs.readFileSync(path.join(root, 'docs/api/surfaces.json'), 'utf8'));
+  const reads = { getCallStats: '/overview', listIssues: '/issues', listAlertEvents: '/alerts' };
+  for (const [id, route] of Object.entries(reads)) {
+    const op = Object.values(spec.paths).map((p) => p.get).find((g) => g?.operationId === id);
+    assert.ok(op, id);
+    for (const bound of ['from', 'to']) assert.equal(op.parameters.find((p) => p.name === bound)?.required, true, `${id} ${bound}`);
+    assert.ok(surfaces.routes[route].includes(id), `${route} reads ${id}`);
+  }
+  assert.ok(!surfaces.routes['/issues'].includes('listCalls'), 'Issues no longer totals call pages');
+  assert.ok(!surfaces.routes['/alerts'].includes('listCalls'), 'Alerts no longer totals call pages');
+});

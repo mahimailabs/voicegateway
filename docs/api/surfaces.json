@@ -9,7 +9,9 @@
       "getEgress",
       "getIngress",
       "getProviderProbes",
-      "getProjectSettings"
+      "getProjectSettings",
+      "getCallStats",
+      "listIssues"
     ],
     "/overview": [
       "listCalls",
@@ -20,7 +22,9 @@
       "getEgress",
       "getIngress",
       "getProviderProbes",
-      "getProjectSettings"
+      "getProjectSettings",
+      "getCallStats",
+      "listIssues"
     ],
     "/settings": [
       "listCalls",
@@ -36,7 +40,9 @@
       "getWorkspaces",
       "getAlertSetup",
       "getIssueDispositions",
-      "getCall"
+      "getCall",
+      "getCallStats",
+      "listIssues"
     ],
     "/project": [
       "getProjectSnapshot"
@@ -80,15 +86,14 @@
       "getIngress"
     ],
     "/issues": [
-      "listCalls",
       "getMediaServer",
       "getCloudAgents",
       "getSip",
       "getProjectSettings",
-      "getIssueDispositions"
+      "getIssueDispositions",
+      "listIssues"
     ],
     "/alerts": [
-      "listCalls",
       "getMediaServer",
       "getCloudAgents",
       "getSip",
@@ -96,7 +101,8 @@
       "getIssueDispositions",
       "getEgress",
       "getIngress",
-      "getAlertSetup"
+      "getAlertSetup",
+      "listAlertEvents"
     ],
     "/live": [
       "getMediaServer",
@@ -116,7 +122,9 @@
       "getSip",
       "getWorkers",
       "listCalls",
-      "getRecordingMedia"
+      "getRecordingMedia",
+      "getCallStats",
+      "listIssues"
     ]
   },
   "shell": [
@@ -129,7 +137,9 @@
     "getProjectSettings",
     "getInvitations",
     "getAlertSetup",
-    "getIssueDispositions"
+    "getIssueDispositions",
+    "getCallStats",
+    "listIssues"
   ],
   "widgets": [
     "answer-time",

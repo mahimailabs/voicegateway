@@ -57,7 +57,8 @@
       "getAlertSetup",
       "getEgress",
       "getIngress",
-      "getSip"
+      "getSip",
+      "listAlertEvents"
     ],
     "assetNotes": {}
   },
@@ -137,7 +138,8 @@
     "assets": [],
     "browserStorage": false,
     "operations": [
-      "getSip"
+      "getSip",
+      "listIssues"
     ],
     "assetNotes": {}
   },
@@ -181,7 +183,8 @@
       "getIngress",
       "getProviderProbes",
       "getSip",
-      "getWorkers"
+      "getWorkers",
+      "getCallStats"
     ],
     "assetNotes": {}
   },
