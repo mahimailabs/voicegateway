@@ -36,3 +36,9 @@ npx --yes reladraw@0.16.0 docs/assets/readme/call-path.reladraw --theme dark -o 
 ```
 
 The maintainer also referenced [local-livekit](https://github.com/mahimairaja/local-livekit). Its current pipeline asset is rendered from HTML/Rough.js; this diagram uses reladraw, with explicit light/dark output and the VoiceGateway blue border.
+
+## GitHub social preview
+
+`social-light.jpg` and `social-dark.jpg` are 1280 × 640 JPEG exports from the same banner source with `?format=social&theme=light` or `?format=social&theme=dark`. The social format uses legible typography instead of a small UI capture. Both exports stay below 45 KB and the repository file cap.
+
+GitHub stores one fixed social image, not theme-adaptive alternatives. The light export was uploaded to `mahimailabs/voicegateway` on 2026-10-16 and verified in Settings after reload. The dark export is retained for manual reuse. This repository setting is independent of merging the artwork PR. The card states V1 is in development and makes no cost, scoring or non-LiveKit framework claims.

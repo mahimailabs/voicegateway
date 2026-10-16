@@ -83,3 +83,7 @@ PR #329 is merged with restored helpers, root commands, five threshold regressio
 ### 2026-10-16: README product presentation
 
 Prepared a README redesign from the maintainer-selected Langfuse reference: a wide original banner, primary/secondary navigation, a small factual badge row, captured console evidence, a quickstart and an actual turn inspection example. Header, Overview, call inspector and reladraw observation-boundary diagram have separate light/dark assets selected with `picture`. The asset notes preserve the reference mapping, capture provenance and pinned diagram render commands. The Features section lists seven current preview capabilities point by point, with backend-dependent behaviour explicitly planned. Both preview themes load the intended assets without horizontal overflow; local links and the 250 KiB per-file limit pass. Preview and planned V1 capabilities remain explicitly separated. No product code or broader Connect completion changed.
+
+### 2026-10-16: repository social preview
+
+Updated the GitHub social-preview setting with a 1280 × 640 card matching the README wordmark and blue accent. Reloaded Settings to verify the upload persisted. The old cost/quality and multi-framework claims are removed. Both light/dark exports and their shared editable banner source are retained with the README assets; GitHub uses the light export because the setting accepts one fixed image.
