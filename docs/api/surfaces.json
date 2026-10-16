@@ -147,5 +147,23 @@
     "calls",
     "call",
     "issues"
-  ]
+  ],
+  "embedReads": {
+    "answer-time": [
+      "getCallStats"
+    ],
+    "turn-anatomy": [
+      "getCallStats"
+    ],
+    "calls": [
+      "listCalls"
+    ],
+    "call": [
+      "getCall",
+      "getRecordingMedia"
+    ],
+    "issues": [
+      "listIssues"
+    ]
+  }
 }

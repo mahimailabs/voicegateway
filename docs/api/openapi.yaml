@@ -25,6 +25,13 @@ paths:
         projectIsolation: required
         browserSessionTransport: not_selected
         scope: project
+      x-embed-access:
+        credential: embed_token
+        widgets:
+          - calls
+        projectIsolation: required
+        originAllowList: required
+        readOnly: true
       description: "Requires authenticated organisation membership and permission to read the named project. Browser session transport is intentionally not selected by #321. Credential absence is 401, denied membership is 403, cross-project resource ids are not_found. Server-side LiveKit credentials must never reach the browser."
       parameters:
         - $ref: "#/components/parameters/OrganisationId"
@@ -195,6 +202,13 @@ paths:
         projectIsolation: required
         browserSessionTransport: not_selected
         scope: project
+      x-embed-access:
+        credential: embed_token
+        widgets:
+          - call
+        projectIsolation: required
+        originAllowList: required
+        readOnly: true
       description: "Requires authenticated organisation membership and permission to read the named project. Browser session transport is intentionally not selected by #321. Credential absence is 401, denied membership is 403, cross-project resource ids are not_found. Server-side LiveKit credentials must never reach the browser."
       parameters:
         - $ref: "#/components/parameters/OrganisationId"
@@ -237,6 +251,14 @@ paths:
         projectIsolation: required
         browserSessionTransport: not_selected
         scope: project
+      x-embed-access:
+        credential: embed_token
+        widgets:
+          - answer-time
+          - turn-anatomy
+        projectIsolation: required
+        originAllowList: required
+        readOnly: true
       description: "Overview figures, the agent rows, Turn anatomy and the answer-time and turn-anatomy widgets. Requires authenticated organisation membership and permission to read the named project. Credential absence is 401, denied membership is 403. Computed on the server over every stored record in the range; the console never totals pages of listCalls itself."
       parameters:
         - $ref: "#/components/parameters/OrganisationId"
@@ -286,6 +308,13 @@ paths:
         projectIsolation: required
         browserSessionTransport: not_selected
         scope: project
+      x-embed-access:
+        credential: embed_token
+        widgets:
+          - issues
+        projectIsolation: required
+        originAllowList: required
+        readOnly: true
       description: "The Issues page, the issues widget, issue counts and the command palette. Dispositions stay in getIssueDispositions. Requires authenticated organisation membership and permission to read the named project. Credential absence is 401, denied membership is 403. Computed on the server over every stored record in the range; the console never totals pages of listCalls itself."
       parameters:
         - $ref: "#/components/parameters/OrganisationId"
@@ -878,6 +907,13 @@ paths:
         projectIsolation: required
         browserSessionTransport: not_selected
         scope: project
+      x-embed-access:
+        credential: embed_token
+        widgets:
+          - call
+        projectIsolation: required
+        originAllowList: required
+        readOnly: true
       description: "Requires authenticated organisation membership and permission to read the named project. Browser session transport is intentionally not selected by #321. Credential absence is 401, denied membership is 403, cross-project resource ids are not_found. Server-side LiveKit credentials must never reach the browser. Resolve the recording id server-side only after project authorisation. Do not fetch an arbitrary request URL. Enforce retention and recording opt-in; never synthesise media for a call without an observed recording."
       parameters:
         - $ref: "#/components/parameters/OrganisationId"

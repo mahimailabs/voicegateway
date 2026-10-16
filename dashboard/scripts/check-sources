@@ -109,6 +109,15 @@ export function checkSpec(spec, repo = root) {
       if (operation['x-access']?.scope !== expectedScope) fail(name, 'access scope does not match the resource boundary');
       if (!['Viewer', 'Member', 'Admin'].includes(operation['x-access']?.minimumRole)) fail(name, 'missing supported organisation role');
       if (expectedScope === 'project' && operation['x-access']?.projectIsolation !== 'required') fail(name, 'project isolation is mandatory');
+      const embed = operation['x-embed-access'];
+      if (embed !== undefined) {
+        if (expectedScope !== 'project') fail(name, 'embed access is limited to one project');
+        if (embed?.credential !== 'embed_token') fail(name, 'embed access must use an embed token');
+        if (!Array.isArray(embed?.widgets) || !embed.widgets.length) fail(name, 'embed access must name its widgets');
+        if (embed?.projectIsolation !== 'required') fail(name, 'embed access requires project isolation');
+        if (embed?.originAllowList !== 'required') fail(name, 'embed access requires an origin allow-list');
+        if (embed?.readOnly !== true) fail(name, 'embed access must be read-only');
+      }
 
       for (const status of ['400', '401', '403', '404', '500', '503']) {
         if (!operation.responses?.[status]) fail(name, `missing ${status} error response`);
@@ -178,6 +187,16 @@ export function checkCoverage(spec, repo = root, inventory, surfaces) {
   const widgetText = fs.readFileSync(path.join(repo, 'dashboard/src/features/embed/widgets.ts'), 'utf8');
   const widgets = [...widgetText.matchAll(/\bid:\s*["']([^"']+)["']/g)].map((m) => m[1]);
   if (JSON.stringify([...widgets].sort()) !== JSON.stringify([...(surfaces.widgets ?? [])].sort())) errors.push('widget inventory drift');
+  const embedReads = surfaces.embedReads ?? {};
+  if (JSON.stringify(Object.keys(embedReads).sort()) !== JSON.stringify([...(surfaces.widgets ?? [])].sort())) errors.push('every widget needs its embed reads');
+  const granted = new Map();
+  for (const item of Object.values(spec.paths ?? {})) {
+    if (!item.get) continue;
+    for (const widget of item.get['x-embed-access']?.widgets ?? []) granted.set(`${widget} ${item.get.operationId}`, true);
+  }
+  const declared = new Set(Object.entries(embedReads).flatMap(([widget, ids]) => ids.map((id) => `${widget} ${id}`)));
+  for (const key of declared) if (!granted.has(key)) errors.push(`embed ${key}: widget read lacks embed access`);
+  for (const key of granted.keys()) if (!declared.has(key)) errors.push(`embed ${key}: embed access beyond the widget's reads`);
   return { errors, readers: actual.length, routes: routes.length };
 }
 

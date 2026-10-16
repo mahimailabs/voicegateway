@@ -172,3 +172,20 @@ test('page aggregates are server reads over a required range', () => {
   assert.ok(!surfaces.routes['/issues'].includes('listCalls'), 'Issues no longer totals call pages');
   assert.ok(!surfaces.routes['/alerts'].includes('listCalls'), 'Alerts no longer totals call pages');
 });
+
+test('embed tokens reach only the reads their widgets need', async () => {
+  const { checkSpec, checkCoverage } = await checker;
+  const spec = load();
+  const settings = spec.paths['/api/v1/org/{orgId}/project/{projectId}/settings'].get;
+  settings['x-embed-access'] = { ...spec.paths['/api/v1/org/{orgId}/project/{projectId}/calls'].get['x-embed-access'] };
+  assert.match(checkCoverage(spec).errors.join('\n'), /calls getProjectSettings: embed access beyond/);
+  const calls = spec.paths['/api/v1/org/{orgId}/project/{projectId}/calls'].get;
+  delete calls['x-embed-access'];
+  assert.match(checkCoverage(spec).errors.join('\n'), /calls listCalls: widget read lacks embed access/);
+  const call = spec.paths['/api/v1/org/{orgId}/project/{projectId}/calls/{callId}'].get['x-embed-access'];
+  delete call.originAllowList;
+  call.credential = 'project_key';
+  const errors = checkSpec(spec).errors.join('\n');
+  assert.match(errors, /origin allow-list/);
+  assert.match(errors, /must use an embed token/);
+});
