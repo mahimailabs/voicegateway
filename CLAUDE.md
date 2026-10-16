@@ -44,6 +44,7 @@ Every task goes through the root Makefile.
 ## Before writing code
 
 - Use the framework's own way first. LiveKit tokens, webhooks, egress and SIP types: livekit skills and the livekit-docs MCP. ClickHouse and Redis: their skills. Go libraries: Context7. Our own code: gopls MCP.
+- For LiveKit work, consult the official Docs MCP (`https://docs.livekit.io/mcp`) and inspect the Go SDK/protocol source for the version in use before designing an adapter or schema. Inventory native clients, messages and helpers first; reuse them instead of recreating LiveKit behaviour. Record the upstream version and field/conversion evidence when defining API provenance. If the MCP is unavailable, say so and read the same official docs/source directly.
 - UI: compose screens from pre-built components (shadcn/ui, Magic UI and other shadcn registries, via the shadcn and magicui MCPs). No hand-written component markup, CSS or SVG when a library component exists.
 - Lists and their filters use `src/components/data-table.tsx` (TanStack Table through ReUI's data grid, ReUI filter chips). A filter field's `get` returns null for unknown, which matches only "is empty". Files under `src/components/reui/` are vendored; keep local edits minimal.
 - Page state someone would want to share (tabs, ranges, filters, the open drawer, the selected item) goes in the URL with `useUrlState` or `useUrlPick` from `src/lib/url-state.ts`, never in `useState`. Links stay scope-free (`/calls`); the router adds `/org/<id>/project/<id>`.

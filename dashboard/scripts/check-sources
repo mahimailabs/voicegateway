@@ -1,0 +1,169 @@
+#!/usr/bin/env node
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { parse } from 'yaml';
+import ts from 'typescript';
+
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
+const kinds = new Set(['livekit_api', 'webhook', 'agent_upload', 'agent_metrics', 'computed', 'configuration']);
+
+function pointerValue(value, pointer) {
+  if (pointer === '') return { found: true, value };
+  if (typeof pointer !== 'string' || !pointer.startsWith('/')) return { found: false };
+  for (const key of pointer.slice(1).split('/').map((k) => k.replaceAll('~1', '/').replaceAll('~0', '~'))) {
+    if (value === null || typeof value !== 'object' || !Object.hasOwn(value, key)) return { found: false };
+    value = value[key];
+  }
+  return { found: true, value };
+}
+
+export function checkSpec(spec, repo = root) {
+  const errors = [];
+  let properties = 0;
+  const documents = new Map();
+  const fail = (where, message) => errors.push(`${where}: ${message}`);
+  function attribution(schema, where) {
+    const source = schema['x-source'];
+    if (!source || typeof source !== 'object' || Array.isArray(source)) {
+      fail(where, 'missing structured x-source');
+      return;
+    }
+    if (!kinds.has(source.kind)) fail(where, 'unknown x-source kind');
+    if (typeof source.detail !== 'string' || !source.detail.trim()) fail(where, 'missing source explanation');
+    if (typeof source.file !== 'string' || path.isAbsolute(source.file) || source.file.split('/').includes('..')) {
+      fail(where, 'source.file must name a repository file');
+      return;
+    }
+    const file = path.join(repo, source.file);
+    if (!fs.existsSync(file)) {
+      fail(where, `source evidence does not exist: ${source.file}`);
+      return;
+    }
+    if (source.pointer !== null) {
+      if (!source.file.endsWith('.json')) {
+        fail(where, 'JSON pointer must refer to a JSON evidence file');
+        return;
+      }
+      if (!documents.has(file)) documents.set(file, JSON.parse(fs.readFileSync(file, 'utf8')));
+      if (!pointerValue(documents.get(file), source.pointer).found) fail(where, 'source JSON pointer does not resolve');
+    } else if (!['computed', 'configuration'].includes(source.kind)) {
+      fail(where, 'captured sources must identify a concrete JSON evidence pointer');
+    }
+  }
+  function walk(node, where) {
+    if (node === null || typeof node !== 'object') return;
+    if (node.$ref) {
+      if (!node.$ref.startsWith('#/')) fail(where, 'external references bypass source coverage');
+      else if (!pointerValue(spec, node.$ref.slice(1)).found) fail(where, 'unresolved schema reference');
+    }
+    for (const [key, child] of Object.entries(node.properties ?? {})) {
+      properties++;
+      const location = `${where}/properties/${key}`;
+      attribution(child, location);
+      const types = Array.isArray(child.type) ? child.type : [child.type];
+      if (types.some((t) => t === 'integer' || t === 'number')) {
+        if (typeof child['x-unit'] !== 'string' || !child['x-unit'].trim()) fail(location, 'numeric property lacks a unit');
+        if (!types.includes('null') && !child['x-configuration']) fail(location, 'measurement must allow null');
+      }
+      if (types.includes('null') && !child['x-null-reason'] && !child.description) fail(location, 'nullable property lacks an absence explanation');
+      if (child.default === 0) fail(location, 'a missing value cannot default to zero');
+    }
+    for (const [key, child] of Object.entries(node)) {
+      if (!key.startsWith('x-') && key !== 'examples' && key !== 'example') walk(child, `${where}/${key}`);
+    }
+  }
+  walk(spec, '#');
+  if (!properties) fail('#', 'no schema properties checked');
+  for (const [name, item] of Object.entries(spec.paths ?? {})) {
+    for (const method of ['get', 'post', 'put', 'patch', 'delete']) {
+      const operation = item[method];
+      if (!operation) continue;
+      if (method !== 'get') fail(name, 'this contract is limited to reads');
+      if (operation['x-access']?.principal !== 'organisation_member') fail(name, 'missing mandatory authorisation policy');
+      for (const status of ['400', '401', '403', '404', '500', '503']) {
+        if (!operation.responses?.[status]) fail(name, `missing ${status} error response`);
+      }
+    }
+  }
+  return { errors, properties };
+}
+
+export function checkCoverage(spec, repo = root, inventory, surfaces) {
+  const errors = [];
+  inventory ??= JSON.parse(fs.readFileSync(path.join(repo, 'docs/api/readers.json'), 'utf8'));
+  surfaces ??= JSON.parse(fs.readFileSync(path.join(repo, 'docs/api/surfaces.json'), 'utf8'));
+  const operationIds = new Set(Object.values(spec.paths ?? {}).flatMap((p) => p.get ? [p.get.operationId] : []));
+  const actual = [];
+  function visit(directory) {
+    for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+      const full = path.join(directory, entry.name);
+      if (entry.isDirectory()) { visit(full); continue; }
+      if (!/\.tsx?$/.test(entry.name)) continue;
+      const text = fs.readFileSync(full, 'utf8');
+      const ast = ts.createSourceFile(full, text, ts.ScriptTarget.Latest, true);
+      const fixtures = [], assets = [];
+      function inspect(node) {
+        if (ts.isImportDeclaration(node) && ts.isStringLiteral(node.moduleSpecifier)) {
+          const name = node.moduleSpecifier.text;
+          const target = name.startsWith('@/') ? path.join(repo, 'dashboard/src', name.slice(2)) : name.startsWith('.') ? path.resolve(path.dirname(full), name) : null;
+          if (target?.startsWith(path.join(repo, 'dashboard/src/mocks/'))) fixtures.push(path.basename(target));
+        }
+        if (ts.isCallExpression(node) && (node.expression.getText(ast) === 'fetch' || ts.isPropertyAccessExpression(node.expression) && node.expression.name.text === 'fetch')) {
+          assets.push(node.arguments[0] && ts.isStringLiteralLike(node.arguments[0]) ? node.arguments[0].text : '<dynamic>');
+        }
+        ts.forEachChild(node, inspect);
+      }
+      inspect(ast);
+      const browserStorage = /\blocalStorage\s*[.[]/.test(text);
+      if (fixtures.length || assets.length || browserStorage) actual.push({ file: path.relative(repo, full), fixtures, assets, browserStorage });
+    }
+  }
+  visit(path.join(repo, 'dashboard/src'));
+  for (const reader of actual) {
+    const matches = inventory.filter((entry) => entry.file === reader.file);
+    if (matches.length !== 1) { errors.push(`${reader.file}: requires exactly one read inventory entry`); continue; }
+    const declared = matches[0];
+    for (const key of ['fixtures', 'assets', 'browserStorage']) {
+      const normalise = (value) => Array.isArray(value) ? [...value].sort() : value;
+      if (JSON.stringify(normalise(reader[key])) !== JSON.stringify(normalise(declared[key]))) errors.push(`${reader.file}: ${key} inventory drift`);
+    }
+    if (!declared.operations?.length && !declared.exclusion && !reader.assets.length) errors.push(`${reader.file}: data reader has no endpoint or exclusion`);
+    for (const asset of reader.assets) if (!declared.assetNotes?.[asset]?.trim()) errors.push(`${reader.file}: unexplained fetch ${asset}`);
+    for (const id of declared.operations ?? []) if (!operationIds.has(id)) errors.push(`${reader.file}: unknown operation ${id}`);
+  }
+  for (const declared of inventory) if (!actual.some((reader) => reader.file === declared.file)) errors.push(`${declared.file}: stale reader inventory`);
+  const router = ts.createSourceFile('router.tsx', fs.readFileSync(path.join(repo, 'dashboard/src/router.tsx'), 'utf8'), ts.ScriptTarget.Latest, true);
+  const routes = [];
+  function findRoutes(node) {
+    if (ts.isPropertyAssignment(node) && node.name.getText(router) === 'path' && ts.isStringLiteral(node.initializer)) routes.push(node.initializer.text);
+    ts.forEachChild(node, findRoutes);
+  }
+  findRoutes(router);
+  for (const route of routes) {
+    if (!surfaces.routes?.[route]?.length) errors.push(`${route}: missing page-to-endpoint coverage`);
+    for (const id of surfaces.routes?.[route] ?? []) if (!operationIds.has(id)) errors.push(`${route}: unknown operation ${id}`);
+  }
+  for (const route of Object.keys(surfaces.routes ?? {})) if (!routes.includes(route)) errors.push(`${route}: stale route coverage`);
+  for (const id of surfaces.shell ?? []) if (!operationIds.has(id)) errors.push(`shell: unknown operation ${id}`);
+  const widgetText = fs.readFileSync(path.join(repo, 'dashboard/src/features/embed/widgets.ts'), 'utf8');
+  const widgets = [...widgetText.matchAll(/\bid:\s*["']([^"']+)["']/g)].map((m) => m[1]);
+  if (JSON.stringify([...widgets].sort()) !== JSON.stringify([...(surfaces.widgets ?? [])].sort())) errors.push('widget inventory drift');
+  return { errors, readers: actual.length, routes: routes.length };
+}
+
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  try {
+    const spec = parse(fs.readFileSync(path.join(root, 'docs/api/openapi.yaml'), 'utf8'));
+    const result = checkSpec(spec);
+    const coverage = checkCoverage(spec);
+    result.errors.push(...coverage.errors);
+    if (result.errors.length) {
+      console.error(result.errors.join('\n'));
+      process.exitCode = 1;
+    } else console.log(`${result.properties}/${result.properties} schema properties have resolvable source attribution (100%); ${coverage.readers} data readers and ${coverage.routes} routes inventoried.`);
+  } catch (error) {
+    console.error(error.message);
+    process.exitCode = 1;
+  }
+}

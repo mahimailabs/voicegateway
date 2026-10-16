@@ -2,7 +2,7 @@
 DASHBOARD := dashboard
 
 .DEFAULT_GOAL := help
-.PHONY: help dev test lint typecheck landing-dev landing-check landing-deploy
+.PHONY: help dev test lint typecheck api-lint api-sources api-check landing-dev landing-check landing-deploy
 
 help: ## List the targets
 	@grep -E '^[a-z][a-z0-9_-]*:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  make %-15s %s\n", $$1, $$2}'
@@ -30,3 +30,11 @@ landing-check: ## Test, build and type-check the landing
 
 landing-deploy: landing-check ## Deploy the checked landing to Cloudflare Pages
 	pnpm --dir site/landing exec wrangler pages deploy out
+
+api-lint: ## Validate the pinned OpenAPI contract
+	cd $(DASHBOARD) && npx --no-install redocly lint ../docs/api/openapi.yaml --extends spec
+
+api-sources: ## Check source attribution, units and unknown values
+	node $(DASHBOARD)/scripts/check-sources
+
+api-check: api-lint api-sources ## Validate the console read contract
