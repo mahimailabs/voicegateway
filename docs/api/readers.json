@@ -86,15 +86,17 @@
   },
   {
     "file": "dashboard/src/features/calls/calls-page.tsx",
-    "fixtures": [],
-    "assets": [
-      "/preview/recording.json"
+    "fixtures": [
+      "preview"
     ],
+    "assets": [],
     "browserStorage": false,
-    "operations": [],
-    "assetNotes": {
-      "/preview/recording.json": "DEV-only synthetic recording preview, excluded from production calls."
-    }
+    "operations": [
+      "listCalls",
+      "getCall"
+    ],
+    "assetNotes": {},
+    "exclusion": "Reads calls only through the API; preview.ts is the dev-only design preview."
   },
   {
     "file": "dashboard/src/features/egress/egress-page.tsx",
@@ -271,6 +273,44 @@
   {
     "file": "dashboard/src/lib/api.ts",
     "fixtures": [
+      "fixtures"
+    ],
+    "assets": [
+      "<dynamic>"
+    ],
+    "browserStorage": false,
+    "operations": [
+      "getCall",
+      "listCalls"
+    ],
+    "assetNotes": {
+      "<dynamic>": "getJSON: the console's reads through web's API. listCalls and getCall over fixtures.ts remain for pages not yet moved (#323)."
+    }
+  },
+  {
+    "file": "dashboard/src/lib/thresholds.ts",
+    "fixtures": [],
+    "assets": [],
+    "browserStorage": true,
+    "operations": [
+      "getProjectSettings"
+    ],
+    "assetNotes": {}
+  },
+  {
+    "file": "dashboard/src/mocks/browser.ts",
+    "fixtures": [
+      "handlers"
+    ],
+    "assets": [],
+    "browserStorage": false,
+    "operations": [],
+    "assetNotes": {},
+    "exclusion": "Starts the mock API service worker; not a page."
+  },
+  {
+    "file": "dashboard/src/mocks/fixtures.ts",
+    "fixtures": [
       "calls.json",
       "capture-session.json",
       "capture-cloud.json",
@@ -285,16 +325,53 @@
       "getCall",
       "listCalls"
     ],
-    "assetNotes": {}
+    "assetNotes": {},
+    "exclusion": "The mock API's adapter from captured fixtures to contract shape."
   },
   {
-    "file": "dashboard/src/lib/thresholds.ts",
-    "fixtures": [],
-    "assets": [],
-    "browserStorage": true,
-    "operations": [
-      "getProjectSettings"
+    "file": "dashboard/src/mocks/handlers.ts",
+    "fixtures": [
+      "fixtures",
+      "summaries"
     ],
-    "assetNotes": {}
+    "assets": [],
+    "browserStorage": false,
+    "operations": [
+      "listCalls",
+      "getCall"
+    ],
+    "assetNotes": {},
+    "exclusion": "The mock API itself, answering the contract's paths."
+  },
+  {
+    "file": "dashboard/src/mocks/summaries.ts",
+    "fixtures": [
+      "media-server.json"
+    ],
+    "assets": [],
+    "browserStorage": false,
+    "operations": [
+      "listCalls"
+    ],
+    "assetNotes": {},
+    "exclusion": "Server-side CallSummary computation inside the mock API."
+  },
+  {
+    "file": "dashboard/src/mocks/preview.ts",
+    "fixtures": [
+      "fixtures",
+      "summaries"
+    ],
+    "assets": [
+      "/preview/recording.json"
+    ],
+    "browserStorage": false,
+    "operations": [
+      "getCall"
+    ],
+    "assetNotes": {
+      "/preview/recording.json": "DEV-only synthetic recording preview, excluded from production calls."
+    },
+    "exclusion": "Dev-only design preview of the recording view."
   }
 ]

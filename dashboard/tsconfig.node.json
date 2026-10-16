@@ -19,5 +19,7 @@
     "erasableSyntaxOnly": true,
     "noFallthroughCasesInSwitch": true
   },
-  "include": ["vite.config.ts", "vitest.config.ts", "openapi-ts.config.ts", "scripts/**/*.ts", "tests/**/*.ts"]
+  "include": ["vite.config.ts", "vitest.config.ts", "openapi-ts.config.ts", "scripts/**/*.ts", "tests/**/*.ts"],
+  // Tests that import the app compile with the app's settings (tsconfig.test.json).
+  "exclude": ["tests/mock-api.test.ts"]
 }

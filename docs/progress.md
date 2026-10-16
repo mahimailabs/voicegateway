@@ -145,3 +145,7 @@ A clean clone of main (8fcd22d8) in a scratch directory, under its own Compose p
 - After `make down` and `make up` the 8 rows remained, migrations applied nothing, the logs held no secret and no ERROR line.
 
 Two rough edges were fixed: the "missing" message now lists fields in a fixed order (it followed Go map order), and `make project-add` without `NAME` says how to set it instead of naming the `--name` flag. "Repeatable installs" on the plan stays unticked until a teammate repeats this on their own machine.
+
+### 2026-10-16: mock API, part 1 of 3 (#323)
+
+The console starts reading through the API. MSW 2.15.0 serves the contract's paths from the captured fixtures (`src/mocks/handlers.ts`), and TanStack Query 5.104.0 holds the reads. The handlers act as the server: `listCalls` pages `CallSummary` rows computed with the call drawer's own checks (`src/mocks/summaries.ts`); `getCall` returns one call, and 404 in the contract's error shape for an unknown id or project. The Calls page, the call drawer and the calls and call widgets now fetch. Each has a loading state, an error state that says when no API answered, and a not-found state. `VITE_MOCK_API=off` turns the mock off. `tests/mock-api.test.ts` checks every response against `docs/api/openapi.yaml` itself. One visible change: a row's second line shows the models only, because `CallSummary` carries no pipeline. The other pages still read the fixtures directly; parts 2 and 3 move them.

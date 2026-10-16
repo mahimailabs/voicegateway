@@ -3,7 +3,8 @@ import { useNavigate, useParams, useSearch } from "@tanstack/react-router"
 import { ArrowLeft } from "@phosphor-icons/react"
 import mark from "@/assets/brand/mark.svg"
 import { DataTable } from "@/components/data-table"
-import { getCall, listCalls } from "@/lib/api"
+import { useQuery } from "@tanstack/react-query"
+import { callQuery, callsQuery } from "@/lib/api"
 import { BUDGET_MS } from "@/lib/thresholds"
 import { cn } from "@/lib/utils"
 import { CallView } from "@/features/call/call-view"
@@ -38,22 +39,26 @@ function Anatomy() {
   return <TurnAnatomy lanes={shape.lanes} e2e={shape.e2e} turns={shape.turns} budget={BUDGET_MS} />
 }
 
+const Note = ({ children }: { children: React.ReactNode }) => <p className="py-10 text-center text-[13px] text-muted-foreground">{children}</p>
+
 function Calls({ open }: { open: (room: string) => void }) {
-  const rows = useMemo(
-    () =>
-      listCalls()
-        .filter((c) => !c.recording?.preview)
-        .map(rowOf)
-        .sort((a, b) => b.started - a.started),
-    [],
-  )
+  const list = useQuery(callsQuery())
+  const rows = useMemo(() => (list.data ?? []).map((s) => rowOf(s)).sort((a, b) => b.started - a.started), [list.data])
   const cols = useMemo(() => columns(noTags), [])
-  return <DataTable<Row> data={rows} columns={cols} getRowId={(r) => r.call.roomSid ?? r.call.id} onRowClick={(r) => open(r.call.room)} pageSize={10} empty="No calls in this project yet." />
+  if (list.isPending) return <Note>Loading calls.</Note>
+  if (list.isError) return <Note>Calls could not be loaded.</Note>
+  return <DataTable<Row> data={rows} columns={cols} getRowId={(r) => r.summary.roomSid ?? r.summary.id} onRowClick={(r) => open(r.summary.room)} pageSize={10} empty="No calls in this project yet." />
 }
 
 function OneCall({ room, back }: { room: string | undefined; back: () => void }) {
-  const call = room ? getCall(room) : undefined
-  if (!call) return <p className="py-10 text-center text-[13px] text-muted-foreground">{room ? `No call named ${room} in this project.` : "Pass ?room=<room name> to show a call."}</p>
+  const list = useQuery(callsQuery())
+  const summary = room ? list.data?.find((s) => s.room === room) : undefined
+  const read = useQuery({ ...callQuery(summary?.id ?? ""), enabled: summary !== undefined })
+  const call = read.data
+  if (!room) return <Note>Pass ?room=&lt;room name&gt; to show a call.</Note>
+  if (list.isError || read.isError) return <Note>The call could not be loaded.</Note>
+  if (list.isSuccess && !summary) return <Note>{`No call named ${room} in this project.`}</Note>
+  if (!call) return <Note>{`Loading ${room}.`}</Note>
   return (
     <div className="flex h-[calc(100svh-6.5rem)] min-h-[520px] flex-col">
       <button type="button" onClick={back} className="mb-2 flex w-fit items-center gap-1 text-[12px] text-muted-foreground hover:text-foreground">
