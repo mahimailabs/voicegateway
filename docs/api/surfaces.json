@@ -45,13 +45,15 @@
       "listCalls",
       "getCall",
       "getMediaServer",
-      "getProjectSettings"
+      "getProjectSettings",
+      "getRecordingMedia"
     ],
     "/calls/$room": [
       "listCalls",
       "getCall",
       "getMediaServer",
-      "getProjectSettings"
+      "getProjectSettings",
+      "getRecordingMedia"
     ],
     "/agents": [
       "getCloudAgents",
@@ -59,17 +61,20 @@
       "getCapacity",
       "listCalls",
       "getCall",
-      "getProjectSettings"
+      "getProjectSettings",
+      "getRecordingMedia"
     ],
     "/sfu": [
-      "getMediaServer"
+      "getMediaServer",
+      "getRecordingMedia"
     ],
     "/sip": [
       "getSip",
       "getMediaServer"
     ],
     "/egress": [
-      "getEgress"
+      "getEgress",
+      "getRecordingMedia"
     ],
     "/ingress": [
       "getIngress"
@@ -96,7 +101,8 @@
     "/live": [
       "getMediaServer",
       "listCalls",
-      "getCall"
+      "getCall",
+      "getRecordingMedia"
     ],
     "/embed/$widget": [
       "getCall",
@@ -109,7 +115,8 @@
       "getProviderProbes",
       "getSip",
       "getWorkers",
-      "listCalls"
+      "listCalls",
+      "getRecordingMedia"
     ]
   },
   "shell": [

@@ -26,20 +26,8 @@ paths:
         browserSessionTransport: not_selected
       description: "Requires authenticated organisation membership and permission to read the named project. Browser session transport is intentionally not selected by #321. Credential absence is 401, denied membership is 403, cross-project resource ids are not_found. Server-side LiveKit credentials must never reach the browser."
       parameters:
-        - name: orgId
-          in: path
-          required: true
-          description: Authorised orgId; the server must verify organisation/project ownership before any read.
-          schema:
-            type: string
-            minLength: 1
-        - name: projectId
-          in: path
-          required: true
-          description: Authorised projectId; the server must verify organisation/project ownership before any read.
-          schema:
-            type: string
-            minLength: 1
+        - $ref: "#/components/parameters/OrganisationId"
+        - $ref: "#/components/parameters/ProjectId"
         - name: limit
           in: query
           description: Page size, 1 to 100; omitted means 25.
@@ -107,20 +95,8 @@ paths:
         browserSessionTransport: not_selected
       description: "Requires authenticated organisation membership and permission to read the named project. Browser session transport is intentionally not selected by #321. Credential absence is 401, denied membership is 403, cross-project resource ids are not_found. Server-side LiveKit credentials must never reach the browser."
       parameters:
-        - name: orgId
-          in: path
-          required: true
-          description: Authorised orgId; the server must verify organisation/project ownership before any read.
-          schema:
-            type: string
-            minLength: 1
-        - name: projectId
-          in: path
-          required: true
-          description: Authorised projectId; the server must verify organisation/project ownership before any read.
-          schema:
-            type: string
-            minLength: 1
+        - $ref: "#/components/parameters/OrganisationId"
+        - $ref: "#/components/parameters/ProjectId"
         - name: callId
           in: path
           required: true
@@ -160,20 +136,8 @@ paths:
         browserSessionTransport: not_selected
       description: "Requires authenticated organisation membership and permission to read the named project. Browser session transport is intentionally not selected by #321. Credential absence is 401, denied membership is 403, cross-project resource ids are not_found. Server-side LiveKit credentials must never reach the browser."
       parameters:
-        - name: orgId
-          in: path
-          required: true
-          description: Authorised orgId; the server must verify organisation/project ownership before any read.
-          schema:
-            type: string
-            minLength: 1
-        - name: projectId
-          in: path
-          required: true
-          description: Authorised projectId; the server must verify organisation/project ownership before any read.
-          schema:
-            type: string
-            minLength: 1
+        - $ref: "#/components/parameters/OrganisationId"
+        - $ref: "#/components/parameters/ProjectId"
       responses:
         "200":
           description: Authorised read result. Null means unreported, never zero. Source-specific coverage limits remain visible.
@@ -206,20 +170,8 @@ paths:
         browserSessionTransport: not_selected
       description: "Requires authenticated organisation membership and permission to read the named project. Browser session transport is intentionally not selected by #321. Credential absence is 401, denied membership is 403, cross-project resource ids are not_found. Server-side LiveKit credentials must never reach the browser."
       parameters:
-        - name: orgId
-          in: path
-          required: true
-          description: Authorised orgId; the server must verify organisation/project ownership before any read.
-          schema:
-            type: string
-            minLength: 1
-        - name: projectId
-          in: path
-          required: true
-          description: Authorised projectId; the server must verify organisation/project ownership before any read.
-          schema:
-            type: string
-            minLength: 1
+        - $ref: "#/components/parameters/OrganisationId"
+        - $ref: "#/components/parameters/ProjectId"
       responses:
         "200":
           description: Authorised read result. Null means unreported, never zero. Source-specific coverage limits remain visible.
@@ -252,20 +204,8 @@ paths:
         browserSessionTransport: not_selected
       description: "Requires authenticated organisation membership and permission to read the named project. Browser session transport is intentionally not selected by #321. Credential absence is 401, denied membership is 403, cross-project resource ids are not_found. Server-side LiveKit credentials must never reach the browser."
       parameters:
-        - name: orgId
-          in: path
-          required: true
-          description: Authorised orgId; the server must verify organisation/project ownership before any read.
-          schema:
-            type: string
-            minLength: 1
-        - name: projectId
-          in: path
-          required: true
-          description: Authorised projectId; the server must verify organisation/project ownership before any read.
-          schema:
-            type: string
-            minLength: 1
+        - $ref: "#/components/parameters/OrganisationId"
+        - $ref: "#/components/parameters/ProjectId"
       responses:
         "200":
           description: Authorised read result. Null means unreported, never zero. Source-specific coverage limits remain visible.
@@ -298,20 +238,8 @@ paths:
         browserSessionTransport: not_selected
       description: "Requires authenticated organisation membership and permission to read the named project. Browser session transport is intentionally not selected by #321. Credential absence is 401, denied membership is 403, cross-project resource ids are not_found. Server-side LiveKit credentials must never reach the browser."
       parameters:
-        - name: orgId
-          in: path
-          required: true
-          description: Authorised orgId; the server must verify organisation/project ownership before any read.
-          schema:
-            type: string
-            minLength: 1
-        - name: projectId
-          in: path
-          required: true
-          description: Authorised projectId; the server must verify organisation/project ownership before any read.
-          schema:
-            type: string
-            minLength: 1
+        - $ref: "#/components/parameters/OrganisationId"
+        - $ref: "#/components/parameters/ProjectId"
       responses:
         "200":
           description: Authorised read result. Null means unreported, never zero. Source-specific coverage limits remain visible.
@@ -344,20 +272,8 @@ paths:
         browserSessionTransport: not_selected
       description: "Requires authenticated organisation membership and permission to read the named project. Browser session transport is intentionally not selected by #321. Credential absence is 401, denied membership is 403, cross-project resource ids are not_found. Server-side LiveKit credentials must never reach the browser."
       parameters:
-        - name: orgId
-          in: path
-          required: true
-          description: Authorised orgId; the server must verify organisation/project ownership before any read.
-          schema:
-            type: string
-            minLength: 1
-        - name: projectId
-          in: path
-          required: true
-          description: Authorised projectId; the server must verify organisation/project ownership before any read.
-          schema:
-            type: string
-            minLength: 1
+        - $ref: "#/components/parameters/OrganisationId"
+        - $ref: "#/components/parameters/ProjectId"
       responses:
         "200":
           description: Authorised read result. Null means unreported, never zero. Source-specific coverage limits remain visible.
@@ -390,20 +306,8 @@ paths:
         browserSessionTransport: not_selected
       description: "Requires authenticated organisation membership and permission to read the named project. Browser session transport is intentionally not selected by #321. Credential absence is 401, denied membership is 403, cross-project resource ids are not_found. Server-side LiveKit credentials must never reach the browser."
       parameters:
-        - name: orgId
-          in: path
-          required: true
-          description: Authorised orgId; the server must verify organisation/project ownership before any read.
-          schema:
-            type: string
-            minLength: 1
-        - name: projectId
-          in: path
-          required: true
-          description: Authorised projectId; the server must verify organisation/project ownership before any read.
-          schema:
-            type: string
-            minLength: 1
+        - $ref: "#/components/parameters/OrganisationId"
+        - $ref: "#/components/parameters/ProjectId"
       responses:
         "200":
           description: Authorised read result. Null means unreported, never zero. Source-specific coverage limits remain visible.
@@ -436,20 +340,8 @@ paths:
         browserSessionTransport: not_selected
       description: "Requires authenticated organisation membership and permission to read the named project. Browser session transport is intentionally not selected by #321. Credential absence is 401, denied membership is 403, cross-project resource ids are not_found. Server-side LiveKit credentials must never reach the browser."
       parameters:
-        - name: orgId
-          in: path
-          required: true
-          description: Authorised orgId; the server must verify organisation/project ownership before any read.
-          schema:
-            type: string
-            minLength: 1
-        - name: projectId
-          in: path
-          required: true
-          description: Authorised projectId; the server must verify organisation/project ownership before any read.
-          schema:
-            type: string
-            minLength: 1
+        - $ref: "#/components/parameters/OrganisationId"
+        - $ref: "#/components/parameters/ProjectId"
       responses:
         "200":
           description: Authorised read result. Null means unreported, never zero. Source-specific coverage limits remain visible.
@@ -482,27 +374,24 @@ paths:
         browserSessionTransport: not_selected
       description: "Requires authenticated organisation membership and permission to read the named project. Browser session transport is intentionally not selected by #321. Credential absence is 401, denied membership is 403, cross-project resource ids are not_found. Server-side LiveKit credentials must never reach the browser."
       parameters:
-        - name: orgId
-          in: path
+        - $ref: "#/components/parameters/OrganisationId"
+        - $ref: "#/components/parameters/ProjectId"
+        - name: agent
+          in: query
           required: true
-          description: Authorised orgId; the server must verify organisation/project ownership before any read.
-          schema:
-            type: string
-            minLength: 1
-        - name: projectId
-          in: path
-          required: true
-          description: Authorised projectId; the server must verify organisation/project ownership before any read.
+          description: Exact agent key from the console agent model (CloudAgent name, else id, or observed self-hosted agent name). Selects that agent's latest retained capacity run; never reuse another agent's run.
           schema:
             type: string
             minLength: 1
       responses:
         "200":
-          description: Authorised read result. Null means unreported, never zero. Source-specific coverage limits remain visible.
+          description: Latest retained capacity result for this agent, or null if no run was recorded. A missing run is not zero capacity. Source unavailability still uses 503.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/CapacityRun"
+                oneOf:
+                  - $ref: "#/components/schemas/CapacityRun"
+                  - type: "null"
         "400":
           $ref: "#/components/responses/BadRequest"
         "401":
@@ -528,20 +417,8 @@ paths:
         browserSessionTransport: not_selected
       description: "Requires authenticated organisation membership and permission to read the named project. Browser session transport is intentionally not selected by #321. Credential absence is 401, denied membership is 403, cross-project resource ids are not_found. Server-side LiveKit credentials must never reach the browser."
       parameters:
-        - name: orgId
-          in: path
-          required: true
-          description: Authorised orgId; the server must verify organisation/project ownership before any read.
-          schema:
-            type: string
-            minLength: 1
-        - name: projectId
-          in: path
-          required: true
-          description: Authorised projectId; the server must verify organisation/project ownership before any read.
-          schema:
-            type: string
-            minLength: 1
+        - $ref: "#/components/parameters/OrganisationId"
+        - $ref: "#/components/parameters/ProjectId"
       responses:
         "200":
           description: Authorised read result. Null means unreported, never zero. Source-specific coverage limits remain visible.
@@ -574,20 +451,8 @@ paths:
         browserSessionTransport: not_selected
       description: "Requires authenticated organisation membership and permission to read the named project. Browser session transport is intentionally not selected by #321. Credential absence is 401, denied membership is 403, cross-project resource ids are not_found. Server-side LiveKit credentials must never reach the browser."
       parameters:
-        - name: orgId
-          in: path
-          required: true
-          description: Authorised orgId; the server must verify organisation/project ownership before any read.
-          schema:
-            type: string
-            minLength: 1
-        - name: projectId
-          in: path
-          required: true
-          description: Authorised projectId; the server must verify organisation/project ownership before any read.
-          schema:
-            type: string
-            minLength: 1
+        - $ref: "#/components/parameters/OrganisationId"
+        - $ref: "#/components/parameters/ProjectId"
       responses:
         "200":
           description: Authorised read result. Null means unreported, never zero. Source-specific coverage limits remain visible.
@@ -620,20 +485,8 @@ paths:
         browserSessionTransport: not_selected
       description: "Requires authenticated organisation membership and permission to read the named project. Browser session transport is intentionally not selected by #321. Credential absence is 401, denied membership is 403, cross-project resource ids are not_found. Server-side LiveKit credentials must never reach the browser."
       parameters:
-        - name: orgId
-          in: path
-          required: true
-          description: Authorised orgId; the server must verify organisation/project ownership before any read.
-          schema:
-            type: string
-            minLength: 1
-        - name: projectId
-          in: path
-          required: true
-          description: Authorised projectId; the server must verify organisation/project ownership before any read.
-          schema:
-            type: string
-            minLength: 1
+        - $ref: "#/components/parameters/OrganisationId"
+        - $ref: "#/components/parameters/ProjectId"
       responses:
         "200":
           description: Authorised read result. Null means unreported, never zero. Source-specific coverage limits remain visible.
@@ -666,20 +519,8 @@ paths:
         browserSessionTransport: not_selected
       description: "Requires authenticated organisation membership and permission to read the named project. Browser session transport is intentionally not selected by #321. Credential absence is 401, denied membership is 403, cross-project resource ids are not_found. Server-side LiveKit credentials must never reach the browser."
       parameters:
-        - name: orgId
-          in: path
-          required: true
-          description: Authorised orgId; the server must verify organisation/project ownership before any read.
-          schema:
-            type: string
-            minLength: 1
-        - name: projectId
-          in: path
-          required: true
-          description: Authorised projectId; the server must verify organisation/project ownership before any read.
-          schema:
-            type: string
-            minLength: 1
+        - $ref: "#/components/parameters/OrganisationId"
+        - $ref: "#/components/parameters/ProjectId"
       responses:
         "200":
           description: Authorised read result. Null means unreported, never zero. Source-specific coverage limits remain visible.
@@ -712,13 +553,7 @@ paths:
         browserSessionTransport: not_selected
       description: "Requires authenticated organisation membership and permission to read the named project. Browser session transport is intentionally not selected by #321. Credential absence is 401, denied membership is 403, cross-project resource ids are not_found. Server-side LiveKit credentials must never reach the browser."
       parameters:
-        - name: orgId
-          in: path
-          required: true
-          description: Authorised orgId; the server must verify organisation/project ownership before any read.
-          schema:
-            type: string
-            minLength: 1
+        - $ref: "#/components/parameters/OrganisationId"
       responses:
         "200":
           description: Authorised read result. Null means unreported, never zero. Source-specific coverage limits remain visible.
@@ -766,6 +601,82 @@ paths:
           $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/SourceUnavailable"
+  /api/v1/org/{orgId}/project/{projectId}/recordings/{recordingId}:
+    get:
+      operationId: getRecordingMedia
+      summary: Read retained opt-in recording audio
+      tags:
+        - Console reads
+      x-access:
+        principal: organisation_member
+        minimumRole: Viewer
+        projectIsolation: required
+        browserSessionTransport: not_selected
+      description: "Requires authenticated organisation membership and permission to read the named project. Browser session transport is intentionally not selected by #321. Credential absence is 401, denied membership is 403, cross-project resource ids are not_found. Server-side LiveKit credentials must never reach the browser. Resolve the recording id server-side only after project authorisation. Do not fetch an arbitrary request URL. Enforce retention and recording opt-in; never synthesise media for a call without an observed recording."
+      parameters:
+        - $ref: "#/components/parameters/OrganisationId"
+        - $ref: "#/components/parameters/ProjectId"
+        - name: recordingId
+          in: path
+          required: true
+          description: Opaque recording identifier from authorised call or room metadata, within the selected project.
+          schema:
+            type: string
+            minLength: 1
+        - name: Range
+          in: header
+          description: Optional HTTP byte range used by the browser audio player. Standard byte-range and conditional HTTP semantics apply.
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Authorised recording bytes, with private cache policy. No retained recording returns 404; upstream storage failure returns 503.
+          headers:
+            Accept-Ranges: &a2
+              description: Byte range support.
+              schema:
+                type: string
+                const: bytes
+            Cache-Control: &a3
+              description: Private response; do not cache recordings in shared caches.
+              schema:
+                type: string
+          content:
+            audio/ogg: &a1
+              schema:
+                type: string
+                format: binary
+            audio/wav: *a1
+            application/octet-stream: *a1
+        "206":
+          description: Requested byte range, using standard HTTP partial content.
+          headers:
+            Accept-Ranges: *a2
+            Cache-Control: *a3
+            Content-Range:
+              description: Returned byte interval and complete object size.
+              schema:
+                type: string
+          content:
+            application/octet-stream: *a1
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "416":
+          description: Requested byte range cannot be served.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "500":
           $ref: "#/components/responses/InternalError"
         "503":
@@ -866,18 +777,20 @@ components:
             url:
               type: string
               x-source: { kind: agent_upload, file: dashboard/src/mocks/capture-session.json, pointer: /call/recording/url, detail: Normalised captured call data; consult fixture source note and upstream-source inventory for conversions }
+              description: Authorised playback resource URL for this recording, normally the same-origin /api/v1/org/{orgId}/project/{projectId}/recordings/{recordingId}. Captured local audio paths are fixture evidence only. Never return storage credentials or accept a caller-supplied storage URL.
             duration:
               type: [ number, "null" ]
               x-unit: seconds
               x-null-reason: The capture or source did not report this value. Preserve null rather than a protobuf default or guessed zero.
               x-source: { kind: agent_upload, file: dashboard/src/mocks/capture-session.json, pointer: /call/recording/duration, detail: Normalised captured call data; consult fixture source note and upstream-source inventory for conversions }
             segments:
-              type: array
+              type: [ array, "null" ]
               items:
                 $ref: "#/components/schemas/RecordingSegment"
               x-source: { kind: agent_upload, file: dashboard/src/mocks/capture-session.json, pointer: /call/recording/segments, detail: Normalised captured call data; consult fixture source note and upstream-source inventory for conversions }
+              x-null-reason: No recording-aligned speaker segments were retained. Captured placeholder arrays are not evidence of observed silence.
             peaks:
-              type: object
+              type: [ object, "null" ]
               additionalProperties: false
               properties:
                 caller:
@@ -901,7 +814,12 @@ components:
               required: [ caller, agent ]
               x-source: { kind: agent_upload, file: dashboard/src/mocks/capture-session.json, pointer: /call/recording/peaks, detail: Normalised captured call data; consult fixture source note and upstream-source inventory for conversions }
               description: Normalised amplitude bars for each attributed speaker track, not text-derived estimates. Empty bars in captures do not establish silence.
-          required: [ url, duration, segments, peaks ]
+              x-null-reason: No waveform extraction/speaker attribution was retained. Missing amplitude is not zero amplitude.
+            id:
+              type: string
+              description: Opaque project-scoped identifier for the retained recording media. A recording id does not grant access.
+              x-source: &a4 { kind: computed, file: docs/api/coverage.md, pointer: null, detail: "Server read-resource identifier for retained opt-in recording media. Captures store local URLs, not production recording ids; no id is guessed from audio or room name." }
+          required: [ url, duration, segments, peaks, id ]
           x-source: { kind: agent_upload, file: dashboard/src/mocks/capture-session.json, pointer: /call/recording, detail: Normalised captured call data; consult fixture source note and upstream-source inventory for conversions }
           x-null-reason: Null when this source did not provide recording. An empty collection is an observed empty result, not missing data.
         id:
@@ -1087,12 +1005,14 @@ components:
                 x-null-reason: The capture or source did not report this value. Preserve null rather than a protobuf default or guessed zero.
                 x-source: { kind: livekit_api, file: dashboard/src/mocks/agents.json, pointer: /agents/0/name, detail: LiveKit CloudAgent ListAgents/ListAgentVersions; normalised captured response }
               version:
-                type: string
+                type: [ string, "null" ]
                 x-source: { kind: livekit_api, file: dashboard/src/mocks/agents.json, pointer: /agents/0/version, detail: LiveKit CloudAgent ListAgents/ListAgentVersions; normalised captured response }
+                x-null-reason: CloudAgent did not report version. An API placeholder such as --- must normalise to null.
               deployedAt:
-                type: string
+                type: [ string, "null" ]
                 format: date-time
                 x-source: { kind: livekit_api, file: dashboard/src/mocks/agents.json, pointer: /agents/0/deployedAt, detail: LiveKit CloudAgent ListAgents/ListAgentVersions; normalised captured response }
+                x-null-reason: CloudAgent did not report deployedAt. An API placeholder such as --- must normalise to null.
               deployments:
                 type: array
                 items:
@@ -1216,7 +1136,7 @@ components:
           type: string
           x-source: { kind: computed, file: dashboard/src/mocks/media-server.json, pointer: /source, detail: Capture annotation describing the recorded source and its limits; not a LiveKit API response field. }
         server:
-          type: object
+          type: [ object, "null" ]
           additionalProperties: false
           properties:
             edition:
@@ -1227,7 +1147,7 @@ components:
               x-source: { kind: livekit_api, file: dashboard/src/mocks/media-server.json, pointer: /server/version, detail: "RoomService/AgentDispatchService reads and ServerInfo; sampled watch, normalised captured response" }
             protocol:
               type: [ integer, "null" ]
-              x-unit: count
+              x-unit: protocol_version
               x-null-reason: The capture or source did not report this value. Preserve null rather than a protobuf default or guessed zero.
               x-source: { kind: livekit_api, file: dashboard/src/mocks/media-server.json, pointer: /server/protocol, detail: "RoomService/AgentDispatchService reads and ServerInfo; sampled watch, normalised captured response" }
             region:
@@ -1246,6 +1166,7 @@ components:
               x-source: { kind: livekit_api, file: dashboard/src/mocks/media-server.json, pointer: /server/url, detail: "RoomService/AgentDispatchService reads and ServerInfo; sampled watch, normalised captured response" }
           required: [ edition, version, protocol, region, nodeId, joinMs, url ]
           x-source: { kind: livekit_api, file: dashboard/src/mocks/media-server.json, pointer: /server, detail: "RoomService/AgentDispatchService reads and ServerInfo; sampled watch, normalised captured response" }
+          x-null-reason: No RTC ServerInfo observation is available. Room/participant API reads may still be present; do not join a live room without the project opt-in merely to fill this object.
         rooms:
           type: array
           items:
@@ -1571,6 +1492,7 @@ components:
                   url:
                     type: string
                     x-source: { kind: livekit_api, file: dashboard/src/mocks/media-server.json, pointer: /rooms/12/recording/url, detail: "RoomService/AgentDispatchService reads and ServerInfo; sampled watch, normalised captured response" }
+                    description: Authorised playback resource URL for this recording, normally the same-origin /api/v1/org/{orgId}/project/{projectId}/recordings/{recordingId}. Captured local audio paths are fixture evidence only. Never return storage credentials or accept a caller-supplied storage URL.
                   durationS:
                     type: [ number, "null" ]
                     x-unit: seconds
@@ -1580,7 +1502,11 @@ components:
                     type: string
                     format: date-time
                     x-source: { kind: livekit_api, file: dashboard/src/mocks/media-server.json, pointer: /rooms/12/recording/startedAt, detail: "RoomService/AgentDispatchService reads and ServerInfo; sampled watch, normalised captured response" }
-                required: [ callRoom, url, durationS, startedAt ]
+                  id:
+                    type: string
+                    description: Opaque project-scoped identifier for the retained recording media. A recording id does not grant access.
+                    x-source: *a4
+                required: [ callRoom, url, durationS, startedAt, id ]
                 x-null-reason: The capture or source did not report this value. Preserve null rather than a protobuf default or guessed zero.
                 x-source: { kind: livekit_api, file: dashboard/src/mocks/media-server.json, pointer: /rooms/12/recording, detail: "RoomService/AgentDispatchService reads and ServerInfo; sampled watch, normalised captured response" }
             required: [ sid, name, createdMs, firstSeen, lastSeen, settings, dispatches, participants, recording ]
@@ -1877,12 +1803,12 @@ components:
                 type: [ number, "null" ]
                 x-unit: unix_seconds
                 x-null-reason: The capture or source did not report this value. Preserve null rather than a protobuf default or guessed zero.
-                x-source: { kind: livekit_api, file: dashboard/src/mocks/egress.json, pointer: /egress/0/startedAt, detail: Egress ListEgress sampled response or captured rejection; request credentials excluded }
+                x-source: { kind: livekit_api, file: dashboard/src/mocks/egress.json, pointer: /egress/0/startedAt, detail: "Normalised EgressInfo.started_at Unix nanoseconds divided by 1e9 for seconds. A missing/zero native timestamp is null, never the Unix epoch." }
               endedAt:
                 type: [ number, "null" ]
                 x-unit: unix_seconds
                 x-null-reason: The capture or source did not report this value. Preserve null rather than a protobuf default or guessed zero.
-                x-source: { kind: livekit_api, file: dashboard/src/mocks/egress.json, pointer: /egress/0/endedAt, detail: Egress ListEgress sampled response or captured rejection; request credentials excluded }
+                x-source: { kind: livekit_api, file: dashboard/src/mocks/egress.json, pointer: /egress/0/endedAt, detail: "Normalised EgressInfo.ended_at Unix nanoseconds divided by 1e9 for seconds. A missing/zero native timestamp is null, never the Unix epoch." }
               error:
                 type: [ string, "null" ]
                 x-null-reason: The capture or source did not report this value. Preserve null rather than a protobuf default or guessed zero.
@@ -1931,7 +1857,7 @@ components:
                     type: [ number, "null" ]
                     x-unit: seconds
                     x-null-reason: The capture or source did not report this value. Preserve null rather than a protobuf default or guessed zero.
-                    x-source: { kind: livekit_api, file: dashboard/src/mocks/egress.json, pointer: /egress/0/file/durationS, detail: Egress ListEgress sampled response or captured rejection; request credentials excluded }
+                    x-source: { kind: livekit_api, file: dashboard/src/mocks/egress.json, pointer: /egress/0/file/durationS, detail: Reported FileInfo.duration nanoseconds divided by 1e9; not derived from uploaded byte size. Null when no duration was reported. }
                   bucketHost:
                     type: [ string, "null" ]
                     x-null-reason: The capture or source did not report this value. Preserve null rather than a protobuf default or guessed zero.
@@ -1939,7 +1865,8 @@ components:
                   playable:
                     type: [ string, "null" ]
                     x-null-reason: The capture or source did not report this value. Preserve null rather than a protobuf default or guessed zero.
-                    x-source: { kind: livekit_api, file: dashboard/src/mocks/egress.json, pointer: /egress/3/file/playable, detail: Egress ListEgress sampled response or captured rejection; request credentials excluded }
+                    x-source: { kind: computed, file: dashboard/src/mocks/egress.json, pointer: /egress/3/file/playable, detail: Egress ListEgress sampled response or captured rejection; request credentials excluded }
+                    description: Authorised getRecordingMedia resource URL only when retained media exists and is registered. Null for lost, unavailable or unregistered media; do not guess a public URL from file name or bucket.
                 required: [ name, sizeBytes, durationS, bucketHost, playable ]
                 x-null-reason: The capture or source did not report this value. Preserve null rather than a protobuf default or guessed zero.
                 x-source: { kind: livekit_api, file: dashboard/src/mocks/egress.json, pointer: /egress/0/file, detail: Egress ListEgress sampled response or captured rejection; request credentials excluded }
@@ -2014,6 +1941,7 @@ components:
               url:
                 type: string
                 x-source: { kind: livekit_api, file: dashboard/src/mocks/ingress.json, pointer: /ingress/0/url, detail: Ingress ListIngress sampled response; stream credentials excluded }
+                description: Safe projection of native IngressInfo.url. Remove embedded credentials and sensitive query values; never append stream_key. The returned URL is display metadata, not permission to publish.
               room:
                 type: string
                 x-source: { kind: livekit_api, file: dashboard/src/mocks/ingress.json, pointer: /ingress/0/room, detail: Ingress ListIngress sampled response; stream credentials excluded }
@@ -2113,7 +2041,8 @@ components:
                 type: [ number, "null" ]
                 x-unit: unix_seconds
                 x-null-reason: The capture or source did not report this value. Preserve null rather than a protobuf default or guessed zero.
-                x-source: { kind: livekit_api, file: dashboard/src/mocks/ingress.json, pointer: /ingress/0/createdAt, detail: Ingress ListIngress sampled response; stream credentials excluded }
+                x-source: { kind: computed, file: dashboard/src/mocks/ingress.json, pointer: /ingress/0/createdAt, detail: Collector-retained endpoint creation observation from the labelled test. Native IngressInfo has no created_at field. Null for endpoints whose creation time was not observed; never substitute the last session start. }
+                description: Collector-retained endpoint creation observation from the labelled test. Native IngressInfo has no created_at field. Null for endpoints whose creation time was not observed; never substitute the last session start.
               published:
                 type: array
                 items:
@@ -2368,7 +2297,7 @@ components:
           type: string
           x-source: { kind: computed, file: dashboard/src/mocks/project-snapshot.json, pointer: /source, detail: Capture annotation describing the recorded source and its limits; not a LiveKit API response field. }
         observed:
-          type: object
+          type: [ object, "null" ]
           additionalProperties: false
           properties:
             agentName:
@@ -2442,6 +2371,7 @@ components:
               x-source: { kind: livekit_api, file: dashboard/src/mocks/project-snapshot.json, pointer: /observed/models, detail: RoomService/SIP/Egress/Ingress snapshot; observed subtree is an opt-in RemoteSession read }
           required: [ agentName, note, framework, agentId, tools, options, models ]
           x-source: { kind: livekit_api, file: dashboard/src/mocks/project-snapshot.json, pointer: /observed, detail: RoomService/SIP/Egress/Ingress snapshot; observed subtree is an opt-in RemoteSession read }
+          x-null-reason: Observation is off by default. Null when not opted in, no agent session was observed, or RemoteSession data was unavailable; never fabricate a framework, tools or model list.
       required: [ readAt, url, rooms, sip, egress, ingress, source, observed ]
       x-source: { kind: livekit_api, file: dashboard/src/mocks/project-snapshot.json, pointer: "", detail: RoomService/SIP/Egress/Ingress snapshot; observed subtree is an opt-in RemoteSession read }
     Workers:
@@ -2697,7 +2627,7 @@ components:
           type: string
           description: Stable error category.
           x-source: { kind: computed, file: docs/api/coverage.md, pointer: null, detail: Stable error category. }
-          enum: [ invalid_request, unauthenticated, forbidden, not_found, source_unavailable, internal_error ]
+          enum: [ invalid_request, unauthenticated, forbidden, not_found, source_unavailable, internal_error, range_not_satisfiable ]
         message:
           type: string
           description: Safe human-readable explanation, excluding upstream credentials and request bodies.
@@ -3117,3 +3047,20 @@ components:
         application/json:
           schema:
             $ref: "#/components/schemas/Error"
+  parameters:
+    OrganisationId:
+      name: orgId
+      in: path
+      required: true
+      description: Authorised orgId; the server must verify organisation/project ownership before any read.
+      schema:
+        type: string
+        minLength: 1
+    ProjectId:
+      name: projectId
+      in: path
+      required: true
+      description: Authorised projectId; the server must verify organisation/project ownership before any read.
+      schema:
+        type: string
+        minLength: 1

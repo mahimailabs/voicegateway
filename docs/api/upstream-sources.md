@@ -46,6 +46,10 @@ The SDK's remaining RTC/media, RPC, stream, encryption and synchronisation facil
 
 - Native metrics have explicit unknown/unavailable sentinels: `STTMetrics.audio_duration == 0.0` can mean unknown; streaming `STTMetrics.duration == 0.0` is not a measured STT processing latency. `EOUMetrics.end_of_utterance_delay` and `transcription_delay` are 0.0 when speech end was not detected. `LLMMetrics.ttft` and `RealtimeModelMetrics.ttft` use -1 when no token/audio token was generated. Normalise these unavailable cases to null when context establishes the sentinel; retain a genuinely observed zero. Providers also default several usage subcounts to zero, so do not claim a provider reported them without presence evidence.
 
+Native transport and stream files also read: `connection_manager.go`, `regionurlprovider.go`, `failover.go`, `streams.go`. The SDK already owns RTC reconnect planning, Cloud region discovery, API failover and byte/text stream chunking/readers. Its API failover can reset long deadlines per attempt; later adapters must test their overall request budget and cancellation instead of layering an unconditional retry loop. Native byte streams provide the transport primitive for RemoteSession observation; no custom chunking protocol is needed.
+
+`IngressInfo` has no native creation timestamp. The captured ingress `createdAt` is collector-retained test creation evidence and must be null when that evidence is absent.
+
 ## Documentation/source discrepancy
 
 The Docs MCP AgentDispatchService table describes `AgentDispatchState.created_at` and `JobState.started_at` as Unix seconds. Native server commit [`3d45aa2e87a73ee0af799f744b5cca4a6e53f1f4`](https://github.com/livekit/livekit/tree/3d45aa2e87a73ee0af799f744b5cca4a6e53f1f4) writes dispatch `created_at` using `time.Now().UnixNano()` in `pkg/rtc/room.go` and job `started_at` using `now.UnixNano()` in `pkg/agent/worker.go`. The contract exposes the captured millisecond projections and records the nanosecond-to-millisecond conversion. Adapter tests must use native payload values and must not implement the conflicting documentation unit.

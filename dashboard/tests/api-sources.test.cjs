@@ -56,7 +56,6 @@ test('source checker rejects a public read and missing upstream-failure response
   assert.match(errors, /missing 503/);
 });
 
-
 test('read inventory covers actual sources, routes and widget ids', async () => {
   const { checkCoverage } = await checker;
   assert.deepEqual(checkCoverage(load()).errors, []);
@@ -85,4 +84,14 @@ test('route coverage rejects new or stale page and widget entries', async () => 
   assert.match(errors, /calls: missing page-to-endpoint/);
   assert.match(errors, /retired-page: stale route/);
   assert.match(errors, /widget inventory drift/);
+});
+
+test('source checker rejects directories and contradictory captured discriminators', async () => {
+  const { checkSpec } = await checker;
+  const spec = load();
+  spec.components.schemas.Call.properties.id['x-source'].file = 'docs/api';
+  spec.components.schemas.TranscriptEvent.properties.type.const = 'invented_event';
+  const errors = checkSpec(spec).errors.join('\n');
+  assert.match(errors, /source evidence does not exist: docs\/api/);
+  assert.match(errors, /constant contradicts its captured evidence/);
 });

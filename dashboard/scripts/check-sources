@@ -31,12 +31,12 @@ export function checkSpec(spec, repo = root) {
     }
     if (!kinds.has(source.kind)) fail(where, 'unknown x-source kind');
     if (typeof source.detail !== 'string' || !source.detail.trim()) fail(where, 'missing source explanation');
-    if (typeof source.file !== 'string' || path.isAbsolute(source.file) || source.file.split('/').includes('..')) {
+    if (typeof source.file !== 'string' || !source.file.trim() || path.isAbsolute(source.file) || source.file.split('/').includes('..')) {
       fail(where, 'source.file must name a repository file');
       return;
     }
     const file = path.join(repo, source.file);
-    if (!fs.existsSync(file)) {
+    if (!fs.existsSync(file) || !fs.statSync(file).isFile()) {
       fail(where, `source evidence does not exist: ${source.file}`);
       return;
     }
@@ -46,7 +46,9 @@ export function checkSpec(spec, repo = root) {
         return;
       }
       if (!documents.has(file)) documents.set(file, JSON.parse(fs.readFileSync(file, 'utf8')));
-      if (!pointerValue(documents.get(file), source.pointer).found) fail(where, 'source JSON pointer does not resolve');
+      const evidence = pointerValue(documents.get(file), source.pointer);
+      if (!evidence.found) fail(where, 'source JSON pointer does not resolve');
+      else if (schema.const !== undefined && evidence.value !== schema.const) fail(where, 'schema constant contradicts its captured evidence');
     } else if (!['computed', 'configuration'].includes(source.kind)) {
       fail(where, 'captured sources must identify a concrete JSON evidence pointer');
     }
