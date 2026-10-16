@@ -9,6 +9,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { cn } from "@/lib/utils"
 import raw from "@/mocks/media-server.json"
 import { useEmbedded } from "@/lib/url-state"
+import { listCalls } from "@/lib/api"
 
 // One room, opened from the Media server timeline: how it came together, what the agent was doing,
 // who was in it with which tracks, and the room's own settings. Everything comes from RoomService and
@@ -346,7 +347,7 @@ function Recording({ room, requested }: { room: Room; requested: boolean }) {
             ) : rec?.callRoom && embedded ? (
               <span>In Calls</span>
             ) : rec?.callRoom ? (
-              <Link to="/calls/$room" params={{ room: rec.callRoom }} className="flex items-center gap-1 text-primary hover:underline">
+              <Link to="/calls/$callId" params={{ callId: listCalls().find((c) => c.room === rec.callRoom)?.id ?? rec.callRoom }} className="flex items-center gap-1 text-primary hover:underline">
                 Open call <ArrowRight size={12} />
               </Link>
             ) : (

@@ -35,3 +35,15 @@ test("or, and not, are named and not applied", () => {
   expect(negated.dropped).toEqual([`"not" on Answer time (ms)`])
   expect(negated.params.get("answerMsMin")).toBeNull()
 })
+
+test("a second tag chip is named, not merged into the first", () => {
+  const { params, dropped } = toServerParams(q([rule("tag", "has_any_of", ["refund"]), rule("tag", "has_any_of", ["demo"])]), { tag: "Tag" })
+  expect(params.getAll("tag")).toEqual(["refund"])
+  expect(dropped).toEqual(["a second Tag filter"])
+})
+
+test("chips that rule each other out say no call can match, without inventing a parameter", () => {
+  const f = toServerParams(q([rule("channel", "is", "phone"), rule("channel", "is", "web")]), labels)
+  expect(f.nothing).toBe(true)
+  expect([...f.params.keys()]).toEqual([])
+})

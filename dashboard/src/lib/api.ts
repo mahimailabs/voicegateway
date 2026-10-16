@@ -1,3 +1,4 @@
+import { infiniteQueryOptions } from "@tanstack/react-query"
 import { capturedCalls } from "@/mocks/fixtures"
 import { currentScope } from "@/lib/url-state"
 import type { Call as GeneratedCall, CallPage, CallSummary, CallTotals, EndOfTurnEvent, ItemEvent, OverlapEvent, RecordingSegment, Span, StateEvent, TranscriptEvent, Turn } from "@/lib/api-types"
@@ -49,27 +50,16 @@ async function getJSON<T>(url: string): Promise<T> {
   return body as T
 }
 
-// Every call matching the filters, with the server's totals for them. The pages are read with the
-// snapshot of the first, so they never mix two reads; the totals cover every match, not a page.
-export async function fetchCalls(filters = new URLSearchParams()): Promise<{ items: CallSummary[]; totals: CallTotals }> {
-  const items: CallSummary[] = []
-  let cursor: string | null = null
-  let snapshot: string | null = null
-  let totals: CallTotals | null = null
-  do {
-    const q = new URLSearchParams(filters)
-    q.set("limit", "100")
-    if (cursor && snapshot) {
-      q.set("cursor", cursor)
-      q.set("snapshot", snapshot)
-    }
-    const page: CallPage = await getJSON<CallPage>(`${projectApi()}/calls?${q}`)
-    items.push(...page.items)
-    totals ??= page.totals
-    cursor = page.page.nextCursor
-    snapshot = page.page.snapshot
-  } while (cursor)
-  return { items, totals: totals! }
+// One page of the calls matching the filters, sorted and paged by the server. Later pages carry the
+// cursor and the snapshot of the first, so they never mix two reads; totals cover every match.
+export function fetchCallPage(filters: URLSearchParams, next?: { cursor: string; snapshot: string }, limit = 25): Promise<CallPage> {
+  const q = new URLSearchParams(filters)
+  q.set("limit", String(limit))
+  if (next) {
+    q.set("cursor", next.cursor)
+    q.set("snapshot", next.snapshot)
+  }
+  return getJSON<CallPage>(`${projectApi()}/calls?${q}`)
 }
 
 // Only the totals and the first rows, for counts beside the list (one page of one call).
@@ -89,7 +79,13 @@ export const shouldRetry = (failures: number, error: unknown) => !(error instanc
 
 // Query keys and functions for TanStack Query, scoped to the project so switching projects never
 // shows another project's cache.
-export const callsQuery = (filters = new URLSearchParams()) => ({ queryKey: ["calls", currentScope(), filters.toString()], queryFn: () => fetchCalls(filters) })
+export const callPagesQuery = (filters: URLSearchParams) =>
+  infiniteQueryOptions({
+    queryKey: ["calls", currentScope(), "pages", filters.toString()],
+    queryFn: ({ pageParam }) => fetchCallPage(filters, pageParam ?? undefined),
+    initialPageParam: null as { cursor: string; snapshot: string } | null,
+    getNextPageParam: (last: CallPage) => (last.page.nextCursor ? { cursor: last.page.nextCursor, snapshot: last.page.snapshot } : undefined),
+  })
 export const latestCallQuery = () => ({ queryKey: ["calls", currentScope(), "latest"], queryFn: fetchLatestCall })
 export const callCountQuery = (filters: URLSearchParams) => ({ queryKey: ["calls", currentScope(), "count", filters.toString()], queryFn: () => fetchCallCount(filters) })
 export const callQuery = (id: string) => ({ queryKey: ["call", currentScope(), id], queryFn: () => fetchCall(id) })

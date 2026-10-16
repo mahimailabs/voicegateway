@@ -554,10 +554,10 @@ function Embeds() {
   const [pick, setPick] = useUrlState<WidgetId>("widget", "answer-time")
   const [theme, setTheme] = useState<"light" | "dark">("light")
   const w = widgets.find((x) => x.id === pick) ?? widgets[0]
-  const room = listCalls().find((c) => c.turns?.length)?.room
+  const callId = listCalls().find((c) => c.turns?.length)?.id
   const src = `${window.location.origin}${scopePrefix()}/embed/${w.id}`
-  const preview = `${src}?theme=${theme}${w.id === "call" && room ? `&room=${encodeURIComponent(room)}` : ""}`
-  const snippet = `<iframe\n  src="${src}?token=EMBED_TOKEN&theme=${theme}${w.id === "call" ? "&room=ROOM_NAME" : ""}"\n  width="100%"\n  height="${w.height}"\n  style="border: 0"\n  title="${w.title}, VoiceGateway"\n></iframe>`
+  const preview = `${src}?theme=${theme}${w.id === "call" && callId ? `&call=${encodeURIComponent(callId)}` : ""}`
+  const snippet = `<iframe\n  src="${src}?token=EMBED_TOKEN&theme=${theme}${w.id === "call" ? "&call=CALL_ID" : ""}"\n  width="100%"\n  height="${w.height}"\n  style="border: 0"\n  title="${w.title}, VoiceGateway"\n></iframe>`
   return (
     <>
       <Header title="Embeds" description="Put this project's views in your own product. Each widget is a frame behind a short-lived, read-only token, so your API key never reaches the page." />

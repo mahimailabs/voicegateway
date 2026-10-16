@@ -14,7 +14,7 @@ import { type SipData, checks as sipChecks, routes } from "../sip/sip-model"
 // evaluated against the captured data to show what it would have fired on. Nothing is sent in
 // Phase 1: sending runs in the Phase 2 worker.
 
-export type Event = { at: number; where: string; detail: string; link?: { to: "/calls/$room"; room: string } | { to: "/sip" | "/egress" | "/ingress" | "/agents" } }
+export type Event = { at: number; where: string; detail: string; link?: { to: "/calls/$callId"; callId: string } | { to: "/sip" | "/egress" | "/ingress" | "/agents" } }
 export type Rule = { id: string; title: string; condition: string; source: "Calls" | "Agents" | "Phone bridge" | "Egress" | "Ingress"; severity: "high" | "medium"; events: Event[]; state?: string }
 
 export function rules(): Rule[] {
@@ -22,11 +22,11 @@ export function rules(): Rule[] {
   const slow: Event[] = calls.flatMap((c) => {
     const m = buildModel(c)
     const over = m.turns.filter((t) => t.responseMs !== null && t.responseMs > BUDGET_MS)
-    return over.length ? [{ at: Date.parse(c.startedAt) / 1000, where: c.room, detail: `${over.length} of ${m.turns.length} turns over ${BUDGET_MS / 1000} s`, link: { to: "/calls/$room" as const, room: c.room } }] : []
+    return over.length ? [{ at: Date.parse(c.startedAt) / 1000, where: c.room, detail: `${over.length} of ${m.turns.length} turns over ${BUDGET_MS / 1000} s`, link: { to: "/calls/$callId" as const, callId: c.id } }] : []
   })
   const cutOff: Event[] = calls.flatMap((c) => {
     const n = (c.turns ?? []).filter((t) => t.interrupted).length
-    return n ? [{ at: Date.parse(c.startedAt) / 1000, where: c.room, detail: `${n} ${n === 1 ? "reply" : "replies"} cut off by the caller`, link: { to: "/calls/$room" as const, room: c.room } }] : []
+    return n ? [{ at: Date.parse(c.startedAt) / 1000, where: c.room, detail: `${n} ${n === 1 ? "reply" : "replies"} cut off by the caller`, link: { to: "/calls/$callId" as const, callId: c.id } }] : []
   })
   const all = agents()
   const failed: Event[] = all.flatMap((a) =>

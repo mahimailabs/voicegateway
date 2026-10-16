@@ -1,6 +1,7 @@
 import { useEffect, useMemo } from "react"
 import { useNavigate, useParams } from "@tanstack/react-router"
-import { useQuery, useQueryClient } from "@tanstack/react-query"
+import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query"
+import type { SortingState } from "@tanstack/react-table"
 import { Archive, ArrowCounterClockwise, CaretRight, ChatsCircle, Clock, Desktop, Flask, Globe, Hash, Phone, PhoneCall, Question, Tag, Timer, Waveform, WarningCircle } from "@phosphor-icons/react"
 import type { Icon } from "@phosphor-icons/react"
 import { TimeRangePicker, useUrlRange } from "@/components/time-range-picker"
@@ -15,7 +16,7 @@ import { toast } from "sonner"
 import { setArchived, useArchived } from "./call-archive"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { cn } from "@/lib/utils"
-import { ApiError, type Call, type CallSummary, callCountQuery, callQuery, callsQuery, latestCallQuery } from "@/lib/api"
+import { ApiError, type Call, type CallSummary, type CallTotals, callCountQuery, callPagesQuery, callQuery, latestCallQuery } from "@/lib/api"
 import { serverOperators, toServerParams } from "./call-filters"
 import { usePreviewCall } from "@/mocks/preview"
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty"
@@ -42,6 +43,16 @@ const channelInfo: Record<Channel, { icon: Icon; label: string }> = {
 
 // A row is the server's summary of a call. preview marks the dev-only design preview, which is
 // built in the browser and never counted.
+const DEFAULT_SORT: SortingState = [{ id: "started", desc: true }]
+// The cards when the filters rule each other out: no call matches, which is known, not unknown.
+const NO_CALLS: CallTotals = {
+  callCount: 0,
+  byChannel: { phone: 0, web: 0, console: 0, local: 0, unknown: 0 },
+  answers: { turns: 0, overBudget: 0, budgetMs: BUDGET_MS, p50Ms: null, valuesMs: [], valuesTruncated: false },
+  issues: { high: 0, medium: 0, none: 0, unknown: 0 },
+  recorded: 0,
+}
+
 export type Row = { summary: CallSummary; preview?: Call; started: number; label: string }
 
 export function rowOf(summary: CallSummary, preview?: Call): Row {
@@ -92,10 +103,14 @@ const fmt = fmtMs
 const length = (s: number) => (s >= 60 ? `${Math.floor(s / 60)}m ${String(s % 60).padStart(2, "0")}s` : `${s} s`)
 const right = { headerClassName: "[&>div]:w-full [&>div]:justify-end", cellClassName: "text-right" }
 
+// The columns the server can sort, by their listCalls sort key. The others do not sort.
+export const serverSort: Record<string, string> = { started: "startedAt", length: "durationSeconds", turns: "turnCount", answer: "answerMs", issues: "issues" }
+
 export function columns(tagsOf: (room: string) => string[]): Columns<Row> {
   return [
     {
       id: "room",
+      enableSorting: false,
       accessorFn: (r) => r.summary.room,
       header: ({ column }) => <DataGridColumnHeader title="Call" column={column} />,
       size: 300,
@@ -119,6 +134,7 @@ export function columns(tagsOf: (room: string) => string[]): Columns<Row> {
     },
     {
       id: "channel",
+      enableSorting: false,
       accessorFn: (r) => channelInfo[r.summary.channel].label,
       header: ({ column }) => <DataGridColumnHeader title="Channel" column={column} />,
       size: 140,
@@ -239,8 +255,8 @@ function callFields(allTags: string[], tagsOf: (room: string) => string[]): Fiel
 
 export function CallsPage() {
   const preview = usePreviewCall()
-  // The open call lives in the URL, /calls/<room>, so a call has a link to share.
-  const { room } = useParams({ strict: false }) as { room?: string }
+  // The open call lives in the URL, /calls/<call id>, so a call has a link to share.
+  const { callId } = useParams({ strict: false }) as { callId?: string }
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const [query, setQuery] = useUrlState<FilterQuery>(
@@ -272,23 +288,37 @@ export function CallsPage() {
     f.params.set("to", new Date(range.to * 1000 + 1).toISOString())
     return f
   }, [query, labels, range.from, range.to])
-  const withView = (archivedView: boolean) => {
+  // The table's sort (in the URL, ?sort=) is the server's: started newest first unless a column says.
+  const [sorting] = useUrlState<SortingState>("sort", DEFAULT_SORT)
+  const sortKey = sorting[0] && serverSort[sorting[0].id] ? sorting[0] : DEFAULT_SORT[0]
+  const withView = (archivedView: boolean, sorted = false) => {
     const p = new URLSearchParams(server.params)
     p.set("archived", String(archivedView))
+    if (sorted) {
+      p.set("sort", serverSort[sortKey.id])
+      p.set("order", sortKey.desc ? "desc" : "asc")
+    }
     return p
   }
-  const list = useQuery(callsQuery(withView(view === "archived")))
-  const otherCount = useQuery(callCountQuery(withView(view !== "archived")))
-  const counts = view === "archived" ? { archived: list.data?.totals.callCount, active: otherCount.data } : { active: list.data?.totals.callCount, archived: otherCount.data }
+  const list = useInfiniteQuery({ ...callPagesQuery(withView(view === "archived", true)), enabled: !server.nothing })
+  const otherCount = useQuery({ ...callCountQuery(withView(view !== "archived")), enabled: !server.nothing })
+  const first = list.data?.pages[0]
+  const total = server.nothing ? 0 : first?.totals.callCount
+  const other = server.nothing ? 0 : otherCount.data
+  const counts = view === "archived" ? { archived: total, active: other } : { active: total, archived: other }
   const rows = useMemo(
-    // The design preview is built in the browser, not filtered by the server, so it shows only unfiltered.
-    () => [...(preview && view === "active" && !query.rules.length ? [rowOf(preview.summary, preview.call)] : []), ...(list.data?.items ?? []).map((s) => rowOf(s))].sort((a, b) => b.started - a.started),
-    [preview, view, query, list.data],
+    // The design preview is built in the browser, not filtered or sorted by the server, so it shows only
+    // on the unfiltered view, on top.
+    () => [
+      ...(preview && view === "active" && !query.rules.length ? [rowOf(preview.summary, preview.call)] : []),
+      ...(server.nothing ? [] : (list.data?.pages ?? []).flatMap((p) => p.items).map((s) => rowOf(s))),
+    ],
+    [preview, view, query, list.data, server.nothing],
   )
   // Opening or closing a call keeps the list's filters and range; closing drops the drawer's own state.
-  const setOpen = (r: { room: string } | null) =>
+  const setOpen = (r: { id: string } | null) =>
     r
-      ? navigate({ to: "/calls/$room", params: { room: r.room }, search: (p: Record<string, unknown>) => p } as never)
+      ? navigate({ to: "/calls/$callId", params: { callId: r.id }, search: (p: Record<string, unknown>) => p } as never)
       : navigate({ to: "/calls", search: ({ turn: _t, pane: _p, events: _e, ...rest }: Record<string, unknown>) => rest } as never)
   const archive = (calls: { roomSid: string | null; id: string; room: string }[], to: boolean, done?: () => void) => {
     const before = archived
@@ -298,7 +328,7 @@ export function CallsPage() {
     const what = calls.length === 1 ? calls[0].room : `${calls.length} calls`
     toast(to ? `Archived ${what}` : `Moved ${what} back to calls`, { action: { label: "Undo", onClick: () => setArchived(before) } })
   }
-  const t = list.data?.totals
+  const t = server.nothing ? NO_CALLS : first?.totals
   const answers = t?.answers
   const channels = (Object.keys(channelInfo) as Channel[]).filter((c) => (t?.byChannel[c] ?? 0) > 0)
   const known = (n: number | null | undefined) => (n === null || n === undefined ? "?" : String(n))
@@ -360,12 +390,14 @@ export function CallsPage() {
         {server.dropped.length > 0 && (
           <p className="text-[12px] text-amber-700 dark:text-amber-400">{`Not applied, the server cannot filter on: ${server.dropped.join(", ")}.`}</p>
         )}
-        {list.isError && <PageState title="Calls could not be loaded" detail={errorText(list.error)} retry={() => void list.refetch()} />}
-        {list.isPending && <PageState loading title="Loading calls" />}
-        {list.isSuccess && (
+        {server.nothing && <p className="text-[12px] text-muted-foreground">These filters rule each other out, so no call can match.</p>}
+        {!server.nothing && list.isError && <PageState title="Calls could not be loaded" detail={errorText(list.error)} retry={() => void list.refetch()} />}
+        {!server.nothing && list.isPending && <PageState loading title="Loading calls" />}
+        {(server.nothing || list.isSuccess) && (
         <DataTable
           key={view}
           filtered
+          server={{ total: total ?? null, hasMore: Boolean(list.hasNextPage), loading: list.isFetchingNextPage, loadMore: () => void list.fetchNextPage() }}
           data={rows}
           columns={columns(tags.of)}
           fields={fields}
@@ -373,7 +405,7 @@ export function CallsPage() {
           onQueryChange={setQuery}
           getRowId={(r) => keyOf(r.summary)}
           onRowClick={(r) => setOpen(r.summary)}
-          sort={[{ id: "started", desc: true }]}
+          sort={DEFAULT_SORT}
           empty={view === "archived" ? "No archived calls." : "No calls match these filters."}
           bulk={(sel, clear) =>
             view === "active" ? (
@@ -410,9 +442,9 @@ export function CallsPage() {
         )}
         <p className="text-[12px] text-muted-foreground">{`Answer time: caller stops talking to agent audio, per turn. The line marks the ${BUDGET_MS / 1000} s budget, a setting, not a measurement.`}</p>
       </section>
-      <Sheet open={room !== undefined} onOpenChange={(o) => !o && setOpen(null)}>
+      <Sheet open={callId !== undefined} onOpenChange={(o) => !o && setOpen(null)}>
         <SheetContent side="right" onOpenAutoFocus={(e) => e.preventDefault()} onPointerDownOutside={keepOpenOnInsidePress} className="gap-0 p-0 data-[side=right]:w-[80vw] data-[side=right]:sm:max-w-none">
-          {room !== undefined && <CallDrawer room={room} preview={preview?.call.room === room ? preview.call : undefined} archived={archived} archive={archive} />}
+          {callId !== undefined && <CallDrawer callId={callId} preview={preview?.call.id === callId ? preview.call : undefined} archived={archived} archive={archive} />}
         </SheetContent>
       </Sheet>
     </div>
@@ -441,19 +473,15 @@ function PageState({ loading, title, detail, retry }: { loading?: boolean; title
   )
 }
 
-// One call. The URL names the room; it is looked up without the list's filters, so a shared link opens
-// whatever the filters are, then read by its id. The dev design preview is built in the browser.
-function CallDrawer({ room, preview, archived, archive }: { room: string; preview?: Call; archived: string[]; archive: (calls: { roomSid: string | null; id: string; room: string }[], to: boolean) => void }) {
-  const lookup = useQuery({ ...callsQuery(new URLSearchParams({ room })), enabled: !preview })
-  // A reused room name can hold several calls; the link opens the latest.
-  const summary = lookup.data?.items.reduce<CallSummary | undefined>((a, b) => (!a || Date.parse(b.startedAt) > Date.parse(a.startedAt) ? b : a), undefined)
-  const read = useQuery({ ...callQuery(summary?.id ?? ""), enabled: summary !== undefined })
+// One call, read by the id in the URL, whatever the list's filters are. The dev design preview is built
+// in the browser.
+function CallDrawer({ callId, preview, archived, archive }: { callId: string; preview?: Call; archived: string[]; archive: (calls: { roomSid: string | null; id: string; room: string }[], to: boolean) => void }) {
+  const read = useQuery({ ...callQuery(callId), enabled: !preview })
   const call = preview ?? read.data
-  if (lookup.isError) return <DrawerState title="The call could not be loaded" detail={errorText(lookup.error)} />
-  if (lookup.isSuccess && !summary) return <DrawerState title="Call not found" detail={`No call in this project has the room ${room}.`} />
   if (!call) {
-    if (read.isError) return <DrawerState title={read.error instanceof ApiError && read.error.status === 404 ? "Call not found" : "The call could not be loaded"} detail={errorText(read.error)} />
-    return <DrawerState loading title={`Loading ${room}`} />
+    if (read.error instanceof ApiError && read.error.status === 404) return <DrawerState title="Call not found" detail={`No call ${callId} in this project.`} />
+    if (read.isError) return <DrawerState title="The call could not be loaded" detail={errorText(read.error)} />
+    return <DrawerState loading title="Loading the call" />
   }
   const isArchived = archived.includes(keyOf(call))
   return (

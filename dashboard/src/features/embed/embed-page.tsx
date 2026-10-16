@@ -3,12 +3,14 @@ import { useNavigate, useParams, useSearch } from "@tanstack/react-router"
 import { ArrowLeft } from "@phosphor-icons/react"
 import mark from "@/assets/brand/mark.svg"
 import { DataTable } from "@/components/data-table"
-import { useQuery } from "@tanstack/react-query"
-import { callQuery, callsQuery } from "@/lib/api"
+import { useInfiniteQuery, useQuery } from "@tanstack/react-query"
+import { ApiError, callQuery, callPagesQuery } from "@/lib/api"
 import { BUDGET_MS } from "@/lib/thresholds"
 import { cn } from "@/lib/utils"
 import { CallView } from "@/features/call/call-view"
-import { columns, rowOf, type Row } from "@/features/calls/calls-page"
+import { columns, rowOf, serverSort, type Row } from "@/features/calls/calls-page"
+import type { SortingState } from "@tanstack/react-table"
+import { useUrlState } from "@/lib/url-state"
 import { issues, type Severity } from "@/features/issues/issues-model"
 import { fmtS, useOverview } from "@/features/overview/overview"
 import { AnswerGauge, TurnAnatomy, anatomy } from "@/features/overview/visuals"
@@ -41,24 +43,35 @@ function Anatomy() {
 
 const Note = ({ children }: { children: React.ReactNode }) => <p className="py-10 text-center text-[13px] text-muted-foreground">{children}</p>
 
-function Calls({ open }: { open: (room: string) => void }) {
-  const list = useQuery(callsQuery())
-  const rows = useMemo(() => (list.data?.items ?? []).map((s) => rowOf(s)).sort((a, b) => b.started - a.started), [list.data])
+function Calls({ open }: { open: (callId: string) => void }) {
+  // The table's sort is the server's, read a page at a time; newest first by default.
+  const [sorting] = useUrlState<SortingState>("sort", [{ id: "started", desc: true }])
+  const key = sorting[0] && serverSort[sorting[0].id] ? sorting[0] : { id: "started", desc: true }
+  const list = useInfiniteQuery(callPagesQuery(new URLSearchParams({ archived: "false", sort: serverSort[key.id], order: key.desc ? "desc" : "asc" })))
+  const rows = useMemo(() => (list.data?.pages ?? []).flatMap((p) => p.items).map((s) => rowOf(s)), [list.data])
   const cols = useMemo(() => columns(noTags), [])
   if (list.isPending) return <Note>Loading calls.</Note>
   if (list.isError) return <Note>Calls could not be loaded.</Note>
-  return <DataTable<Row> data={rows} columns={cols} getRowId={(r) => r.summary.roomSid ?? r.summary.id} onRowClick={(r) => open(r.summary.room)} pageSize={10} empty="No calls in this project yet." />
+  return (
+    <DataTable<Row>
+      data={rows}
+      columns={cols}
+      filtered
+      server={{ total: list.data?.pages[0]?.totals.callCount ?? null, hasMore: Boolean(list.hasNextPage), loading: list.isFetchingNextPage, loadMore: () => void list.fetchNextPage() }}
+      getRowId={(r) => r.summary.roomSid ?? r.summary.id}
+      onRowClick={(r) => open(r.summary.id)}
+      empty="No calls in this project yet."
+    />
+  )
 }
 
-function OneCall({ room, back }: { room: string | undefined; back: () => void }) {
-  const list = useQuery(callsQuery())
-  const summary = room ? list.data?.items.find((s) => s.room === room) : undefined
-  const read = useQuery({ ...callQuery(summary?.id ?? ""), enabled: summary !== undefined })
+function OneCall({ callId, back }: { callId: string | undefined; back: () => void }) {
+  const read = useQuery({ ...callQuery(callId ?? ""), enabled: callId !== undefined })
   const call = read.data
-  if (!room) return <Note>Pass ?room=&lt;room name&gt; to show a call.</Note>
-  if (list.isError || read.isError) return <Note>The call could not be loaded.</Note>
-  if (list.isSuccess && !summary) return <Note>{`No call named ${room} in this project.`}</Note>
-  if (!call) return <Note>{`Loading ${room}.`}</Note>
+  if (!callId) return <Note>Pass ?call=&lt;call id&gt; to show a call.</Note>
+  if (read.error instanceof ApiError && read.error.status === 404) return <Note>{`No call ${callId} in this project.`}</Note>
+  if (read.isError) return <Note>The call could not be loaded.</Note>
+  if (!call) return <Note>Loading the call.</Note>
   return (
     <div className="flex h-[calc(100svh-6.5rem)] min-h-[520px] flex-col">
       <button type="button" onClick={back} className="mb-2 flex w-fit items-center gap-1 text-[12px] text-muted-foreground hover:text-foreground">
@@ -92,18 +105,18 @@ function Issues() {
 
 export function EmbedPage() {
   const { widget } = useParams({ strict: false }) as { widget?: string }
-  const search = useSearch({ strict: false }) as { room?: string; theme?: string }
+  const search = useSearch({ strict: false }) as { call?: string; theme?: string }
   const navigate = useNavigate()
   const meta = widgets.find((w) => w.id === widget)
-  const go = (to: string, room?: string) => navigate({ to: "/embed/$widget", params: { widget: to }, search: { theme: search.theme, room } } as never)
+  const go = (to: string, call?: string) => navigate({ to: "/embed/$widget", params: { widget: to }, search: { theme: search.theme, call } } as never)
 
   return (
     <div className="flex min-h-svh flex-col bg-background text-foreground">
       <main className="flex-1 p-4">
         {widget === "answer-time" && <AnswerTime />}
         {widget === "turn-anatomy" && <Anatomy />}
-        {widget === "calls" && <Calls open={(room) => go("call", room)} />}
-        {widget === "call" && <OneCall room={search.room} back={() => go("calls")} />}
+        {widget === "calls" && <Calls open={(id) => go("call", id)} />}
+        {widget === "call" && <OneCall callId={search.call} back={() => go("calls")} />}
         {widget === "issues" && <Issues />}
         {!meta && (
           <div className="py-10 text-center text-[13px] text-muted-foreground">

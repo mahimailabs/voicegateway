@@ -24,7 +24,8 @@ const bounds: Record<string, { min: string; max: string; unknown: string }> = {
   turns: { min: "turnsMin", max: "turnsMax", unknown: "turnCount" },
 }
 
-export type ServerFilter = { params: URLSearchParams; dropped: string[] }
+// nothing: the filters rule each other out (two chips with no value in common), so no call can match.
+export type ServerFilter = { params: URLSearchParams; dropped: string[]; nothing: boolean }
 
 export function toServerParams(query: FilterQuery, labels: Record<string, string>): ServerFilter {
   const params = new URLSearchParams()
@@ -33,9 +34,10 @@ export function toServerParams(query: FilterQuery, labels: Record<string, string
   if (query.rules.some((r) => r.type === "group")) dropped.push("grouped filters")
   if (query.combinator === "or" && conditions.length > 1) {
     dropped.push(`"or" between filters (the server matches every filter)`)
-    return { params, dropped }
+    return { params, dropped, nothing: false }
   }
   const lists = new Map<string, Set<string>>()
+  // Two chips on a one-of field must both hold, so the call's value is in both lists.
   const narrow = (key: string, values: string[]) => {
     const prev = lists.get(key)
     lists.set(key, new Set(prev ? values.filter((v) => prev.has(v)) : values))
@@ -55,22 +57,34 @@ export function toServerParams(query: FilterQuery, labels: Record<string, string
     else if (c.field in bounds) {
       const b = bounds[c.field]
       const n = vs.map(Number)
+      // Several bounds on one field keep the tightest.
+      const atLeast = (v: number) => min.set(b.min, Math.max(min.get(b.min) ?? v, v))
+      const atMost = (v: number) => max.set(b.max, Math.min(max.get(b.max) ?? v, v))
       if (c.operator === "empty") params.append("unknown", b.unknown)
-      else if (c.operator === "eq") (min.set(b.min, Math.max(min.get(b.min) ?? n[0], n[0])), max.set(b.max, Math.min(max.get(b.max) ?? n[0], n[0])))
-      else if (c.operator === "gte") min.set(b.min, Math.max(min.get(b.min) ?? n[0], n[0]))
-      else if (c.operator === "lte") max.set(b.max, Math.min(max.get(b.max) ?? n[0], n[0]))
-      else if (c.operator === "between") (min.set(b.min, Math.max(min.get(b.min) ?? n[0], n[0])), max.set(b.max, Math.min(max.get(b.max) ?? n[1], n[1])))
-      else dropped.push(`${name} ${c.operator}`)
+      else if (c.operator === "eq") {
+        atLeast(n[0])
+        atMost(n[0])
+      } else if (c.operator === "gte") atLeast(n[0])
+      else if (c.operator === "lte") atMost(n[0])
+      else if (c.operator === "between") {
+        atLeast(n[0])
+        atMost(n[1])
+      } else dropped.push(`${name} ${c.operator}`)
     } else if (c.field === "recorded" && c.operator === "is") params.set("recorded", String(vs[0] === "true"))
-    else if (c.field === "tag" && c.operator === "has_any_of") narrow("tag", vs)
+    // A call holds many tags, so two tag chips mean "one of these and one of those", which the one
+    // tag list cannot say; the first chip is sent and any further one is named.
+    else if (c.field === "tag" && c.operator === "has_any_of") {
+      if (lists.has("tag")) dropped.push(`a second ${name} filter`)
+      else lists.set("tag", new Set(vs))
+    }
     else dropped.push(`${name} ${c.operator}`)
   }
+  let nothing = false
   for (const [key, values] of lists) {
-    // Values that rule each other out match nothing; the server is told so rather than shown nothing.
-    if (!values.size) params.append("room", "")
-    for (const v of values) params.append(key === "tag" ? "tag" : key, v)
+    if (!values.size) nothing = true
+    for (const v of values) params.append(key, v)
   }
   for (const [k, v] of min) params.set(k, String(v))
   for (const [k, v] of max) params.set(k, String(v))
-  return { params, dropped }
+  return { params, dropped, nothing }
 }
