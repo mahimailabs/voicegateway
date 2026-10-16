@@ -4,7 +4,9 @@ on:
   pull_request:
     paths:
       - 'dashboard/**'
+      - 'docs/api/**'
       - 'Makefile'
+      - 'redocly.yaml'
       - '.gitignore'
       - '.github/workflows/dashboard.yml'
 
@@ -24,6 +26,7 @@ jobs:
           cache: npm
           cache-dependency-path: dashboard/package-lock.json
       - run: npm --prefix dashboard ci
+      - run: make api-check
       - run: make test
       - run: make lint
       - run: npm --prefix dashboard run build

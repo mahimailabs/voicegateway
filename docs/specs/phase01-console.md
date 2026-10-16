@@ -48,7 +48,7 @@ A developer opens the VoiceGateway console, sees every page of the product, and 
 2. Given the fixture set of N captured calls, when the Calls list loads, then it shows N rows, and each row's room, start, duration and participant count equal the fixture values (measured by the Vitest test `calls-list.test`, N of N rows).
 3. Given a captured call, when its detail page opens, then every turn, latency and usage value on screen equals the fixture (measured by the Vitest test `call-detail.test`, 100% of rendered values matched).
 4. Given a fixture turn with no reported TTS usage, when it renders, then the cell reads "Unknown" and never 0 (measured by the Vitest test `unknown-not-zero.test`, 1 of 1).
-5. Given `docs/api/openapi.yaml`, when it is linted, then it has 0 errors, and 100% of schema properties carry an `x-source` (measured by `redocly lint` plus `dashboard/scripts/check-sources`).
+5. Given `docs/api/openapi.yaml`, when it is linted, then it has 0 errors, and 100% of schema properties carry an `x-source` (measured by `redocly lint` plus `dashboard/scripts/check-sources.ts`).
 6. Given the generated types, when `tsc --noEmit` runs, then it passes with 0 errors, and no file under `dashboard/src/features/` declares its own API data type (measured by `make lint`).
 7. Given the built pages, when axe runs on the Calls list and Call detail in light and dark, then there are 0 serious or critical violations (measured by Playwright with axe, 4 of 4 runs).
 8. Given `dashboard/src/features/`, when it is searched for an `<svg` element or a `.css` file, then there are 0 hand-written ones (measured by `rg`, 0 matches).
