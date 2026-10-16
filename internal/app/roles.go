@@ -11,18 +11,48 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/redis/go-redis/v9"
+
 	"github.com/mahimailabs/voicegateway/internal/config"
+	"github.com/mahimailabs/voicegateway/internal/ingest"
 	"github.com/mahimailabs/voicegateway/internal/obs"
+	"github.com/mahimailabs/voicegateway/internal/seal"
+	"github.com/mahimailabs/voicegateway/internal/store/pgstore"
+	"github.com/mahimailabs/voicegateway/internal/stream"
 )
 
 // shutdownGrace is how long in-flight requests get to finish once the role is told to stop.
 const shutdownGrace = 10 * time.Second
 
-// Web serves HTTP until ctx is cancelled. Ingest, the dashboard API and MCP mount here in later
-// phases; today it answers /healthz.
+// Web serves HTTP until ctx is cancelled: /healthz and LiveKit webhooks today; the dashboard API
+// and MCP mount here in later phases. Connections open lazily, so web starts while a dependency is
+// still coming up and answers 503 for what needs it.
 func Web(ctx context.Context, c config.Config, log *slog.Logger) error {
+	sealer, err := seal.New(c.SecretKey)
+	if err != nil {
+		return err
+	}
+	pool, err := pgxpool.New(ctx, c.PostgresURL)
+	if err != nil {
+		return fmt.Errorf("postgres: %w", redactErr(err, c.PostgresURL))
+	}
+	defer pool.Close()
+	opts, err := redis.ParseURL(c.RedisURL)
+	if err != nil {
+		return fmt.Errorf("parse VOICEGATEWAY_REDIS_URL: %w", redactErr(err, c.RedisURL))
+	}
+	rdb := redis.NewClient(opts)
+	defer func() { _ = rdb.Close() }()
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", obs.Health)
+	mux.Handle("POST /livekit/webhook", &ingest.Webhooks{
+		Projects: pgstore.NewStore(pool, sealer),
+		Stream:   stream.NewProducer(rdb, stream.Ingest),
+		Log:      log,
+		Now:      time.Now,
+	})
 
 	srv := &http.Server{
 		Addr:              c.WebAddr,
