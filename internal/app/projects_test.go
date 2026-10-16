@@ -2,7 +2,6 @@ package app
 
 import (
 	"context"
-	"strings"
 	"testing"
 
 	"github.com/mahimailabs/voicegateway/internal/config"
@@ -26,9 +25,7 @@ func TestAddProjectNamesWhatIsMissing(t *testing.T) {
 	if err == nil {
 		t.Fatal("AddProject() accepted a project without its LiveKit details")
 	}
-	for _, want := range []string{"--livekit-url", "--livekit-api-key", "LIVEKIT_API_SECRET"} {
-		if !strings.Contains(err.Error(), want) {
-			t.Errorf("error %q does not name %s", err, want)
-		}
+	if want := "missing --livekit-url, --livekit-api-key, LIVEKIT_API_SECRET"; err.Error() != want {
+		t.Errorf("error = %q, want %q in that order", err, want)
 	}
 }

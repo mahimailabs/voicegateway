@@ -48,6 +48,7 @@ sqlc: ## Regenerate the typed Postgres queries in internal/store/pgstore
 	cd internal/store/pgstore && go tool sqlc generate
 
 project-add: ## Add a LiveKit project to the running stack: make project-add NAME="Production" (uses LIVEKIT_URL, LIVEKIT_API_KEY, LIVEKIT_API_SECRET)
+	@test -n "$(NAME)" || { echo 'NAME is required, for example: make project-add NAME="Production"'; exit 1; }
 	$(COMPOSE) --env-file deploy/.env run --rm --no-deps -e LIVEKIT_API_SECRET web project add --name "$(NAME)" --livekit-url "$(LIVEKIT_URL)" --livekit-api-key "$(LIVEKIT_API_KEY)"
 
 landing-dev: ## Start the landing dev server
