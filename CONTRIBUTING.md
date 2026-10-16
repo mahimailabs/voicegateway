@@ -27,11 +27,12 @@ With Go 1.26 and Docker, from the repository root:
 make up         # the six-service stack; creates deploy/.env with random secrets on first run
 make preflight  # checks Postgres, ClickHouse, Redis and the S3 bucket answer
 make go-test    # Go tests with the race detector; container tests need Docker
-make go-lint    # golangci-lint, gofumpt/goimports and go mod tidy
+make go-lint    # golangci-lint, gofumpt/goimports, go mod tidy and sqlc output
+LIVEKIT_URL=wss://… LIVEKIT_API_KEY=… LIVEKIT_API_SECRET=… make project-add NAME="My project"
 make down
 ```
 
-`make test` and `make lint` run the Go and dashboard checks together. The current phase is [phase02-foundation](docs/specs/phase02-foundation.md).
+`make test` and `make lint` run the Go and dashboard checks together. `make up` also applies database migrations. The current phase is [phase03-first-call](docs/specs/phase03-first-call.md).
 
 ## Choose and submit work
 

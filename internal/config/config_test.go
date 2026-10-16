@@ -15,13 +15,14 @@ func env(overrides map[string]string) func(string) string {
 		"VOICEGATEWAY_S3_BUCKET":      "recordings",
 		"VOICEGATEWAY_S3_ACCESS_KEY":  "vg",
 		"VOICEGATEWAY_S3_SECRET_KEY":  "s3-secret",
+		"VOICEGATEWAY_SECRET_KEY":     "c2VhbC1rZXktZm9yLXRlc3RzLW9ubHktMzItYnl0ZXM=",
 	}
 	maps.Copy(base, overrides)
 	return func(k string) string { return base[k] }
 }
 
 func TestConfigMissingAndRedacted(t *testing.T) {
-	secrets := []string{"pg-secret", "ch-secret", "redis-secret", "s3-secret"}
+	secrets := []string{"pg-secret", "ch-secret", "redis-secret", "s3-secret", "c2hvcnQta2V5"}
 	tests := []struct {
 		name    string
 		env     map[string]string
@@ -38,6 +39,11 @@ func TestConfigMissingAndRedacted(t *testing.T) {
 			name:    "invalid URL is named without its secret",
 			env:     map[string]string{"VOICEGATEWAY_CLICKHOUSE_URL": "ch-secret-without-scheme"},
 			wantErr: []string{"VOICEGATEWAY_CLICKHOUSE_URL is not a valid URL"},
+		},
+		{
+			name:    "secret key must be 32 bytes and is never echoed",
+			env:     map[string]string{"VOICEGATEWAY_SECRET_KEY": "c2hvcnQta2V5"},
+			wantErr: []string{"VOICEGATEWAY_SECRET_KEY must be 32 bytes"},
 		},
 		{name: "bad flag", env: map[string]string{"VOICEGATEWAY_S3_USE_SSL": "maybe"}, wantErr: []string{"VOICEGATEWAY_S3_USE_SSL must be true or false"}},
 		{name: "bad level", env: map[string]string{"VOICEGATEWAY_LOG_LEVEL": "loud"}, wantErr: []string{"VOICEGATEWAY_LOG_LEVEL must be"}},

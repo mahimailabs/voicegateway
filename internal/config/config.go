@@ -1,6 +1,7 @@
 package config
 
 import (
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -21,6 +22,9 @@ type Config struct {
 	RedisURL string
 	// S3 is the bucket recordings are stored in.
 	S3 S3
+	// SecretKey seals the secrets VoiceGateway must read back, such as each project's LiveKit API
+	// secret (decision 0016). 32 bytes, given base64-encoded.
+	SecretKey []byte
 	// LogLevel is debug, info, warn or error.
 	LogLevel slog.Level
 }
@@ -63,6 +67,14 @@ func Load(getenv func(string) string) (Config, error) {
 			AccessKey: required("VOICEGATEWAY_S3_ACCESS_KEY"),
 			SecretKey: required("VOICEGATEWAY_S3_SECRET_KEY"),
 		},
+	}
+
+	if raw := required("VOICEGATEWAY_SECRET_KEY"); raw != "" {
+		key, err := base64.StdEncoding.DecodeString(raw)
+		if err != nil || len(key) != 32 {
+			errs = append(errs, errors.New("VOICEGATEWAY_SECRET_KEY must be 32 bytes, base64-encoded (openssl rand -base64 32)"))
+		}
+		c.SecretKey = key
 	}
 
 	ssl, err := strconv.ParseBool(optional("VOICEGATEWAY_S3_USE_SSL", "false"))

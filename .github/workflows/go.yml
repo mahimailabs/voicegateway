@@ -14,6 +14,7 @@ on:
       - '.golangci.yml'
       - 'Makefile'
       - 'tools/scripts/dev-env.sh'
+      - 'migrations/**'
       - '.github/workflows/go.yml'
   push:
     branches: [main]
@@ -21,6 +22,7 @@ on:
       - 'cmd/**'
       - 'internal/**'
       - 'deploy/**'
+      - 'migrations/**'
       - 'go.mod'
       - 'go.sum'
 
@@ -49,6 +51,17 @@ jobs:
       - run: make up
       - run: curl --fail --silent --show-error http://localhost:8080/healthz
       - run: make preflight
+      - name: Add a project, then refuse its LiveKit key a second time
+        env:
+          LIVEKIT_URL: wss://ci.example.livekit.cloud
+          LIVEKIT_API_KEY: APIci
+          LIVEKIT_API_SECRET: ci-only-secret
+        run: |
+          make project-add NAME="CI project" | tee add.log
+          grep -q "added project default/ci-project" add.log
+          if make project-add NAME="CI copy" > dup.log 2>&1; then echo "duplicate LiveKit key was accepted"; exit 1; fi
+          grep -q "already used by another project" dup.log
+          ! grep -q "ci-only-secret" add.log dup.log
       - name: Logs on failure
         if: failure()
         run: docker compose -f deploy/compose.yaml --env-file deploy/.env logs --no-color

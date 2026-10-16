@@ -3,7 +3,7 @@ DASHBOARD := dashboard
 COMPOSE := docker compose -f deploy/compose.yaml
 
 .DEFAULT_GOAL := help
-.PHONY: help dev test lint dashboard-test dashboard-lint typecheck up down preflight go-test go-lint api-lint api-sources api-types api-types-check api-check landing-dev landing-check landing-deploy
+.PHONY: help dev test lint dashboard-test dashboard-lint typecheck up down preflight project-add go-test go-lint sqlc api-lint api-sources api-types api-types-check api-check landing-dev landing-check landing-deploy
 
 help: ## List the targets
 	@grep -E '^[a-z][a-z0-9_-]*:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  make %-15s %s\n", $$1, $$2}'
@@ -38,10 +38,17 @@ preflight: ## Check that every dependency of the running stack answers
 go-test: ## Run the Go tests with the race detector; container tests need Docker
 	go test -race ./...
 
-go-lint: ## Lint and format-check the Go code, and check go.mod is tidy
+go-lint: ## Lint and format-check the Go code, and check go.mod and sqlc output are current
 	go tool golangci-lint run ./...
 	go tool golangci-lint fmt --diff ./...
 	go mod tidy -diff
+	cd internal/store/pgstore && go tool sqlc diff
+
+sqlc: ## Regenerate the typed Postgres queries in internal/store/pgstore
+	cd internal/store/pgstore && go tool sqlc generate
+
+project-add: ## Add a LiveKit project to the running stack: make project-add NAME="Production" (uses LIVEKIT_URL, LIVEKIT_API_KEY, LIVEKIT_API_SECRET)
+	$(COMPOSE) --env-file deploy/.env run --rm --no-deps -e LIVEKIT_API_SECRET web project add --name "$(NAME)" --livekit-url "$(LIVEKIT_URL)" --livekit-api-key "$(LIVEKIT_API_KEY)"
 
 landing-dev: ## Start the landing dev server
 	pnpm --dir site/landing dev
