@@ -128,8 +128,11 @@ func (s *Sink) store(ctx context.Context, msgs []stream.Message) {
 	if skipped := len(rows) - len(fresh); skipped > 0 {
 		s.Log.Info("sink: skipped events already stored", "count", skipped)
 	}
-	if err := s.insert(ctx, fresh, byID(msgs)); err != nil {
-		return
+	msgsByID := byID(msgs)
+	for _, chunk := range chunks(fresh, maxBatchBytes) {
+		if err := s.insert(ctx, chunk, msgsByID); err != nil {
+			return
+		}
 	}
 	if err := s.retry(ctx, "acknowledge", func(ctx context.Context) error { return s.Stream.Ack(ctx, ids...) }); err != nil {
 		return
@@ -137,15 +140,43 @@ func (s *Sink) store(ctx context.Context, msgs []stream.Message) {
 	s.Log.Debug("sink: stored batch", "entries", len(msgs), "inserted", len(fresh))
 }
 
+// maxBatchBytes caps the payload sent in one insert, so a burst of large uploads does not make a
+// batch ClickHouse cannot take in one call.
+const maxBatchBytes = 32 << 20
+
+// splitAfter is how many transient failures in a row a batch of several rows takes before it is
+// halved, in case its size is what fails (a memory limit, the call timeout).
+const splitAfter = 3
+
+// chunks splits rows into runs of at most limit payload bytes; a row larger than limit is a run of
+// its own.
+func chunks(rows []store.Event, limit int) [][]store.Event {
+	var out [][]store.Event
+	start, size := 0, 0
+	for i, r := range rows {
+		if i > start && size+len(r.Payload) > limit {
+			out = append(out, rows[start:i])
+			start, size = i, 0
+		}
+		size += len(r.Payload)
+	}
+	if start < len(rows) {
+		out = append(out, rows[start:])
+	}
+	return out
+}
+
 // insert stores rows. A transient failure, such as ClickHouse down, busy or slow, is retried
-// without end and nothing is acknowledged meanwhile. When ClickHouse refuses the rows themselves,
-// the batch is split in halves until the refused rows are found; only those are dead-lettered.
+// without end and nothing is acknowledged meanwhile; after splitAfter of them in a row the batch is
+// halved, since its size may be the cause, and the halves are retried the same way. When
+// ClickHouse refuses the rows themselves, the batch is halved until the refused rows are found;
+// only those are dead-lettered.
 func (s *Sink) insert(ctx context.Context, rows []store.Event, msgs map[string]stream.Message) error {
 	if len(rows) == 0 {
 		return nil
 	}
 	wait := s.Backoff
-	for {
+	for failures := 1; ; failures++ {
 		cctx, cancel := context.WithTimeout(ctx, s.Timeout)
 		err := s.Events.Insert(cctx, rows)
 		cancel()
@@ -157,7 +188,10 @@ func (s *Sink) insert(ctx context.Context, rows []store.Event, msgs map[string]s
 		case errors.Is(err, store.ErrBadRow) && len(rows) == 1:
 			s.deadLetter(ctx, msgs[rows[0].StreamID], "insert: "+err.Error())
 			return ctx.Err()
-		case errors.Is(err, store.ErrBadRow):
+		case errors.Is(err, store.ErrBadRow), failures >= splitAfter && len(rows) > 1:
+			if !errors.Is(err, store.ErrBadRow) {
+				s.Log.Error("sink: insert keeps failing, halving the batch", "rows", len(rows), "err", err)
+			}
 			half := len(rows) / 2
 			if err := s.insert(ctx, rows[:half], msgs); err != nil {
 				return err

@@ -332,3 +332,45 @@ func TestDeadLetterBlanksTURNPassword(t *testing.T) {
 		t.Fatalf("dead-lettered body = %s", body)
 	}
 }
+
+// tooBig fails, transiently, any insert of more than one row, as a memory limit would.
+type tooBig struct {
+	Events
+	calls atomic.Int32
+}
+
+func (b *tooBig) Insert(ctx context.Context, rows []store.Event) error {
+	b.calls.Add(1)
+	if len(rows) > 1 {
+		return errors.New("code: 241, MEMORY_LIMIT_EXCEEDED")
+	}
+	return b.Events.Insert(ctx, rows)
+}
+
+// A batch that keeps failing for a reason other than its data is halved until it goes in; nothing
+// is dead-lettered.
+func TestSinkHalvesBatchThatKeepsFailing(t *testing.T) {
+	f := newFixture(t)
+	for _, p := range []string{"a", "b", "c", "d"} {
+		f.append(t, event.KindAgentLogs, "", p)
+	}
+	run(t, f.sink("w1", &tooBig{Events: f.events}), func() bool { return f.streamLen() == 0 })
+	if n := f.rows(t); n != 4 {
+		t.Fatalf("rows = %d, want 4", n)
+	}
+	if n := f.rdb.XLen(context.Background(), stream.DeadLetters(stream.Ingest)).Val(); n != 0 {
+		t.Fatalf("dead letters = %d, want 0", n)
+	}
+}
+
+func TestChunksByBytes(t *testing.T) {
+	row := func(n int) store.Event { return store.Event{Payload: make([]byte, n)} }
+	got := chunks([]store.Event{row(4), row(4), row(4), row(20), row(1)}, 10)
+	var sizes []int
+	for _, c := range got {
+		sizes = append(sizes, len(c))
+	}
+	if fmt.Sprint(sizes) != "[2 1 1 1]" {
+		t.Fatalf("chunk sizes = %v, want [2 1 1 1]", sizes)
+	}
+}
