@@ -1986,12 +1986,12 @@ components:
                 type: [ number, "null" ]
                 x-unit: unix_seconds
                 x-null-reason: The capture or source did not report this value. Preserve null rather than a protobuf default or guessed zero.
-                x-source: { kind: livekit_api, file: dashboard/src/mocks/ingress.json, pointer: /ingress/0/startedAt, detail: Ingress ListIngress sampled response; stream credentials excluded }
+                x-source: { kind: livekit_api, file: dashboard/src/mocks/ingress.json, pointer: /ingress/0/startedAt, detail: IngressState.started_at is assigned using time.Now().UnixNano() in native ingress pkg/params/params.go; divide by 1e9 for this seconds projection. Missing/zero source timestamps remain null. See pinned source audit. }
               endedAt:
                 type: [ number, "null" ]
                 x-unit: unix_seconds
                 x-null-reason: The capture or source did not report this value. Preserve null rather than a protobuf default or guessed zero.
-                x-source: { kind: livekit_api, file: dashboard/src/mocks/ingress.json, pointer: /ingress/0/endedAt, detail: Ingress ListIngress sampled response; stream credentials excluded }
+                x-source: { kind: livekit_api, file: dashboard/src/mocks/ingress.json, pointer: /ingress/0/endedAt, detail: IngressState.ended_at is assigned using time.Now().UnixNano() in native ingress pkg/params/params.go; divide by 1e9 for this seconds projection. Missing/zero source timestamps remain null. See pinned source audit. }
               audioIn:
                 type: [ object, "null" ]
                 additionalProperties: false
