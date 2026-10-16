@@ -8,3 +8,8 @@ import "embed"
 //
 //go:embed postgres/*.sql
 var Postgres embed.FS
+
+// ClickHouse holds the goose migrations for ClickHouse, under clickhouse/.
+//
+//go:embed clickhouse/*.sql
+var ClickHouse embed.FS

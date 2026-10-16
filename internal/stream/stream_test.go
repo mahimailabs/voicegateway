@@ -88,6 +88,35 @@ func TestAppendReadAck(t *testing.T) {
 	if n := rdb.XPending(ctx, Ingest, "worker").Val().Count; n != 0 {
 		t.Fatalf("pending after ack = %d, want 0", n)
 	}
+	if n := rdb.XLen(ctx, Ingest).Val(); n != 0 {
+		t.Fatalf("stream length after ack = %d, want 0: acked entries must be deleted", n)
+	}
+}
+
+// An entry read by a consumer that died before acknowledging it is claimed by another once idle.
+func TestClaimFromDeadConsumer(t *testing.T) {
+	rdb := startRedis(t)
+	ctx := context.Background()
+	in := event.Envelope{Kind: event.KindAgentTraces, OrganisationID: "default", ProjectID: "production", ReceivedAt: time.Now(), Payload: []byte("x")}
+	if _, err := NewProducer(rdb, Ingest).Append(ctx, in); err != nil {
+		t.Fatal(err)
+	}
+	dead := NewConsumer(rdb, Ingest, "worker", "dead")
+	if err := dead.Ensure(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if msgs, err := dead.Read(ctx, 10, time.Second); err != nil || len(msgs) != 1 {
+		t.Fatalf("dead consumer read %v, %v", msgs, err)
+	}
+	live := NewConsumer(rdb, Ingest, "worker", "live")
+	if msgs, err := live.Claim(ctx, time.Hour, 10); err != nil || len(msgs) != 0 {
+		t.Fatalf("claimed %d entries before they were idle, err %v", len(msgs), err)
+	}
+	time.Sleep(50 * time.Millisecond)
+	msgs, err := live.Claim(ctx, 10*time.Millisecond, 10)
+	if err != nil || len(msgs) != 1 || msgs[0].Envelope.ProjectID != "production" {
+		t.Fatalf("claim = %+v, %v; want the dead consumer's entry", msgs, err)
+	}
 }
 
 // An entry in a layout the reader does not know is returned with an error and its id, not dropped.
@@ -105,6 +134,18 @@ func TestReadUnknownLayout(t *testing.T) {
 	}
 	if len(msgs) != 1 || msgs[0].ID != id || msgs[0].Err == nil {
 		t.Fatalf("read %+v, want entry %s with a decode error", msgs, id)
+	}
+
+	// Dead-lettering keeps its fields and the reason, and removes it from the stream.
+	if err := c.DeadLetter(ctx, msgs[0], msgs[0].Err.Error(), nil); err != nil {
+		t.Fatal(err)
+	}
+	if n := rdb.XLen(ctx, Ingest).Val(); n != 0 {
+		t.Fatalf("stream length = %d, want 0", n)
+	}
+	dead := rdb.XRange(ctx, DeadLetters(Ingest), "-", "+").Val()
+	if len(dead) != 1 || dead[0].Values["dead_from"] != id || dead[0].Values["payload"] != "x" || dead[0].Values["dead_reason"] == "" {
+		t.Fatalf("dead letters = %+v", dead)
 	}
 }
 
