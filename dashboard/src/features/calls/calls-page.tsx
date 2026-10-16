@@ -1,6 +1,6 @@
 import { useEffect, useMemo } from "react"
 import { useNavigate, useParams } from "@tanstack/react-router"
-import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query"
+import { keepPreviousData, useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query"
 import type { SortingState } from "@tanstack/react-table"
 import { Archive, ArrowCounterClockwise, CaretRight, ChatsCircle, Clock, Desktop, Flask, Globe, Hash, Phone, PhoneCall, Question, Tag, Timer, Waveform, WarningCircle } from "@phosphor-icons/react"
 import type { Icon } from "@phosphor-icons/react"
@@ -300,7 +300,8 @@ export function CallsPage() {
     }
     return p
   }
-  const list = useInfiniteQuery({ ...callPagesQuery(withView(view === "archived", true)), enabled: !server.nothing })
+  // The previous answer stays on screen while a new sort or filter is read, so the table never blanks.
+  const list = useInfiniteQuery({ ...callPagesQuery(withView(view === "archived", true)), enabled: !server.nothing, placeholderData: keepPreviousData })
   const otherCount = useQuery({ ...callCountQuery(withView(view !== "archived")), enabled: !server.nothing })
   const first = list.data?.pages[0]
   const total = server.nothing ? 0 : first?.totals.callCount

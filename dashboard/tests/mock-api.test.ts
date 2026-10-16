@@ -32,9 +32,9 @@ describe("listCalls", () => {
     do {
       const q: URLSearchParams = new URLSearchParams({ limit: "3" })
       if (cursor) {
-        q.set("cursor", cursor)
-        q.set("snapshot", snapshot)
-      }
+      q.set("cursor", cursor)
+      q.set("snapshot", snapshot)
+    }
       const res = await fetch(`${base}/calls?${q}`)
       expect(res.status).toBe(200)
       const page = await res.json()
@@ -85,9 +85,9 @@ async function all(query: string) {
     const q = new URLSearchParams(query)
     q.set("limit", "2")
     if (cursor) {
-        q.set("cursor", cursor)
-        q.set("snapshot", snapshot)
-      }
+      q.set("cursor", cursor)
+      q.set("snapshot", snapshot)
+    }
     const res = await fetch(`${base}/calls?${q}`)
     expect(res.status).toBe(200)
     const page = await res.json()

@@ -182,6 +182,8 @@ export function DataTable<T extends RowData & object>({
     // Server mode shows every row read so far on one page; "Show more" reads the next.
     state: { sorting, pagination: server ? { pageIndex: 0, pageSize: Math.max(rows.length, 1) } : pagination },
     manualSorting: Boolean(server),
+    // The server always sorts by something, so a column cannot be un-sorted.
+    enableSortingRemoval: !server,
     onSortingChange: setSorting,
     onPaginationChange: (u) => setPagination(u),
   })

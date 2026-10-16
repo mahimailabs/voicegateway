@@ -51,6 +51,13 @@ export type MediaServerData = {
   rooms: RoomData[]
 }
 export const data = raw as unknown as MediaServerData
+
+// The call a room's recording belongs to: the latest call in that room, as the Live page opens it.
+// The recording names a room the captured calls hold, so a call is always found.
+const latestCallIn = (room: string) =>
+  listCalls()
+    .filter((c) => c.room === room)
+    .reduce((a, b) => (Date.parse(b.startedAt) > Date.parse(a.startedAt) ? b : a)).id
 export type Room = RoomData & { n: number }
 
 export const regionCity: Record<string, string> = { oashburn1b: "Ashburn", osanjose1a: "San Jose", otoronto1a: "Toronto" }
@@ -347,7 +354,7 @@ function Recording({ room, requested }: { room: Room; requested: boolean }) {
             ) : rec?.callRoom && embedded ? (
               <span>In Calls</span>
             ) : rec?.callRoom ? (
-              <Link to="/calls/$callId" params={{ callId: listCalls().find((c) => c.room === rec.callRoom)?.id ?? rec.callRoom }} className="flex items-center gap-1 text-primary hover:underline">
+              <Link to="/calls/$callId" params={{ callId: latestCallIn(rec.callRoom) }} className="flex items-center gap-1 text-primary hover:underline">
                 Open call <ArrowRight size={12} />
               </Link>
             ) : (

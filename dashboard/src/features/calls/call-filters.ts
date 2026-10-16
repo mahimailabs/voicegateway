@@ -42,6 +42,7 @@ export function toServerParams(query: FilterQuery, labels: Record<string, string
     const prev = lists.get(key)
     lists.set(key, new Set(prev ? values.filter((v) => prev.has(v)) : values))
   }
+  let roomConflict = false
   const min = new Map<string, number>()
   const max = new Map<string, number>()
   for (const c of conditions) {
@@ -51,7 +52,11 @@ export function toServerParams(query: FilterQuery, labels: Record<string, string
       dropped.push(`"not" on ${name}`)
       continue
     }
-    if (c.field === "room" && c.operator === "is") params.append("room", vs[0])
+    // One room per request: two different rooms cannot both match.
+    if (c.field === "room" && c.operator === "is") {
+      if (params.has("room") && params.get("room") !== vs[0]) roomConflict = true
+      params.set("room", vs[0])
+    }
     else if ((c.field === "channel" || c.field === "issues") && ["is", "is_any_of"].includes(c.operator)) narrow(c.field, vs)
     else if (c.field === "channel" && ["is_not", "is_none_of"].includes(c.operator)) narrow("channel", CHANNELS.filter((x) => !vs.includes(x)))
     else if (c.field in bounds) {
@@ -79,7 +84,14 @@ export function toServerParams(query: FilterQuery, labels: Record<string, string
     }
     else dropped.push(`${name} ${c.operator}`)
   }
-  let nothing = false
+  let nothing = roomConflict
+  for (const b of Object.values(bounds)) {
+    // A floor above the ceiling, or a bound on a value asked to be unknown, matches nothing.
+    const lo = min.get(b.min)
+    const hi = max.get(b.max)
+    if (lo !== undefined && hi !== undefined && lo > hi) nothing = true
+    if ((lo !== undefined || hi !== undefined) && params.getAll("unknown").includes(b.unknown)) nothing = true
+  }
   for (const [key, values] of lists) {
     if (!values.size) nothing = true
     for (const v of values) params.append(key, v)

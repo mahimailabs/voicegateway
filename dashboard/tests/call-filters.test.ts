@@ -47,3 +47,11 @@ test("chips that rule each other out say no call can match, without inventing a 
   expect(f.nothing).toBe(true)
   expect([...f.params.keys()]).toEqual([])
 })
+
+test.each([
+  ["a floor above the ceiling", [rule("turns", "gte", 10), rule("turns", "lte", 5)]],
+  ["a bound on a value asked to be unknown", [rule("answer", "gte", 100), rule("answer", "empty", undefined)]],
+  ["two different rooms", [rule("room", "is", "a"), rule("room", "is", "b")]],
+])("%s matches nothing", (_name, rules) => {
+  expect(toServerParams(q(rules), labels).nothing).toBe(true)
+})
