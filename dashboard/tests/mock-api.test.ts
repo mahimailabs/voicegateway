@@ -190,3 +190,23 @@ describe("getCall", () => {
     expect(res.status).toBe(404)
   })
 })
+
+describe("LiveKit reads", () => {
+  test.each([
+    ["egress", "Egress"],
+    ["ingress", "Ingress"],
+    ["sip", "Sip"],
+  ])("%s answers in the contract shape, and 404 for another project", async (path, schema) => {
+    const res = await fetch(`${base}/${path}`)
+    expect(res.status).toBe(200)
+    expect(valid(schema, await res.json())).toBe("")
+    expect((await fetch(`http://console.test/api/v1/org/default/project/other/${path}`)).status).toBe(404)
+  })
+
+  test("captured Unix times become RFC 3339, and an unreported time stays null", async () => {
+    const eg = await (await fetch(`${base}/egress`)).json()
+    const times = eg.egress.flatMap((e: { startedAt: string | null; history: { at: string | null }[] }) => [e.startedAt, ...e.history.map((h) => h.at)])
+    expect(times.length).toBeGreaterThan(0)
+    for (const t of times) expect(t === null || !Number.isNaN(Date.parse(t))).toBe(true)
+  })
+})
