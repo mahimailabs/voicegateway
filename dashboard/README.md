@@ -7,15 +7,15 @@ Run these commands from the repository root:
 ```sh
 npm --prefix dashboard ci
 make dev        # Vite dev server
-make test       # helper regression tests
-make lint       # oxlint + TypeScript
+make dashboard-test  # dashboard tests
+make dashboard-lint  # oxlint + TypeScript
 make typecheck  # tsc -b
 make help       # list the targets
 ```
 
 `npm run build` (inside `dashboard/`) runs the type check, then the production build.
 
-`make test` runs the threshold-storage regression suite. Calls-list, call-detail and unknown-value UI tests remain tracked in issue #324. `make help` also lists the separate landing targets; they do not change what the dashboard commands run.
+`make dashboard-test` runs the dashboard tests; `make test` and `make lint` also run the Go checks. Calls-list, call-detail and unknown-value UI tests remain tracked in issue #324. `make help` also lists the separate landing targets; they do not change what the dashboard commands run.
 
 - `src/features/<page>/`: one folder per page.
 - `src/components/`: shared pieces. `ui/` is shadcn, `reui/` is vendored ReUI (keep edits minimal), `data-table.tsx` is the list every page uses.

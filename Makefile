@@ -1,8 +1,9 @@
-# Console targets. Backend targets arrive with Phase 2.
+# Console, Go platform and landing targets.
 DASHBOARD := dashboard
+COMPOSE := docker compose -f deploy/compose.yaml
 
 .DEFAULT_GOAL := help
-.PHONY: help dev test lint typecheck api-lint api-sources api-check landing-dev landing-check landing-deploy
+.PHONY: help dev test lint dashboard-test dashboard-lint typecheck up down preflight go-test go-lint api-lint api-sources api-check landing-dev landing-check landing-deploy
 
 help: ## List the targets
 	@grep -E '^[a-z][a-z0-9_-]*:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  make %-15s %s\n", $$1, $$2}'
@@ -10,15 +11,37 @@ help: ## List the targets
 dev: ## Start the dashboard dev server
 	npm --prefix $(DASHBOARD) run dev
 
-test: ## Run dashboard helper regression tests
+test: go-test dashboard-test ## Run the Go tests (race detector) and the dashboard tests
+
+lint: go-lint dashboard-lint ## Run Go lint and the dashboard lint and TypeScript checks
+
+dashboard-test: ## Run the dashboard tests
 	npm --prefix $(DASHBOARD) test
 
-lint: ## Run dashboard lint and TypeScript checks
+dashboard-lint: ## Run the dashboard lint and TypeScript checks
 	npm --prefix $(DASHBOARD) run lint
 	$(MAKE) typecheck
 
 typecheck: ## Run the dashboard TypeScript check
 	cd $(DASHBOARD) && npx --no-install tsc -b --noEmit
+
+up: ## Start the six-service stack; creates deploy/.env with random secrets on first run
+	tools/scripts/dev-env.sh deploy/.env
+	$(COMPOSE) --env-file deploy/.env up -d --build --wait
+
+down: ## Stop the stack (data volumes are kept)
+	$(COMPOSE) --env-file deploy/.env down
+
+preflight: ## Check that every dependency of the running stack answers
+	$(COMPOSE) --env-file deploy/.env run --rm --no-deps web preflight
+
+go-test: ## Run the Go tests with the race detector; container tests need Docker
+	go test -race ./...
+
+go-lint: ## Lint and format-check the Go code, and check go.mod is tidy
+	go tool golangci-lint run ./...
+	go tool golangci-lint fmt --diff ./...
+	go mod tidy -diff
 
 landing-dev: ## Start the landing dev server
 	pnpm --dir site/landing dev

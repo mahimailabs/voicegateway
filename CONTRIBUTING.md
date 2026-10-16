@@ -9,15 +9,29 @@ Run these commands from the repository root with Node 24:
 ```sh
 npm --prefix dashboard ci
 make dev
-make test
-make lint
+make dashboard-test
+make dashboard-lint
 npm --prefix dashboard run build
 make help
 ```
 
-The current tests cover threshold helpers. Calls-list, call-detail and unknown-value UI tests remain [#324](https://github.com/mahimailabs/voicegateway/issues/324). The API contract, generated types and contract-backed mocks remain #321, #322 and #323. Do not treat captured console data as an operational backend.
+The current tests cover threshold helpers. Calls-list, call-detail and unknown-value UI tests remain [#324](https://github.com/mahimailabs/voicegateway/issues/324). The API contract is `docs/api/openapi.yaml` (#321, done); generated types and contract-backed mocks remain #322 and #323. Do not treat captured console data as an operational backend.
 
 The [Connect execution plan](docs/specs/v1-connect-plan.md) explains dependencies, proposed PR slices, repository ownership and the legacy retirement boundary. The Go core and Python SDK paths described there are targets; create them as working code arrives.
+
+## V1 platform (Go)
+
+With Go 1.26 and Docker, from the repository root:
+
+```sh
+make up         # the six-service stack; creates deploy/.env with random secrets on first run
+make preflight  # checks Postgres, ClickHouse, Redis and the S3 bucket answer
+make go-test    # Go tests with the race detector; container tests need Docker
+make go-lint    # golangci-lint, gofumpt/goimports and go mod tidy
+make down
+```
+
+`make test` and `make lint` run the Go and dashboard checks together. The current phase is [phase02-foundation](docs/specs/phase02-foundation.md).
 
 ## Choose and submit work
 

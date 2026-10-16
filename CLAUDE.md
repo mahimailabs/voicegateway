@@ -17,7 +17,7 @@ Read these before any feature work. Do not restate their contents here.
 
 ## Stack
 
-Go 1.26 (one binary, `voicegateway`), Postgres 16, ClickHouse 26.1, Redis 8, MinIO. Dashboard: React 19, TypeScript 5, Vite, Tailwind v4, shadcn/ui. SDK: Python 3.11 to 3.13. Exact versions live in go.mod, package.json, uv.lock and deploy/compose.yaml.
+Go 1.26 (one binary, `voicegateway`), Postgres 16, ClickHouse 26.1, Redis 8, an S3 bucket (SeaweedFS in Compose, decision 0026). Dashboard: React 19, TypeScript 5, Vite, Tailwind v4, shadcn/ui. SDK: Python 3.11 to 3.13. Exact versions live in go.mod, package.json, uv.lock and deploy/compose.yaml.
 
 ## Commands
 
@@ -38,6 +38,7 @@ Every task goes through the root Makefile.
 
 - Every commit passes the pre-commit hooks. Go: gofumpt, goimports, golangci-lint (vet, staticcheck, errcheck, gosec), `go mod tidy` clean. `sdk/python`: ruff, ruff format, mypy. `dashboard/`: eslint, prettier, `tsc --noEmit`.
 - Tests prove behaviour; coverage is not the goal. One test per rule that matters (a join, an ack after insert, unknown is not zero). Table-driven, run with `-race`.
+- Container tests skip locally with `-short` or without Docker, but fail in CI (`CI` set) rather than skip, so they always run there.
 - Run the real thing instead of mocking it: Redis, ClickHouse and Postgres through testcontainers-go, webhooks from `livekit-server --dev`. Use `testing/synctest` for timers and batch flushes.
 - Frontend: Vitest with Testing Library, Playwright for user flows. Python SDK: pytest with LiveKit Agents' own test helpers (testing-livekit-agents skill).
 

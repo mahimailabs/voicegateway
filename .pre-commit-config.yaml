@@ -35,7 +35,30 @@ repos:
         args:
         - --fix
     -   id: ruff-format
+# Go checks (CLAUDE.md Code quality). They use the tool versions pinned in go.mod, so they run only
+# where Go is installed; the Go workflow runs the same checks in CI.
+-   repo: local
+    hooks:
+    -   id: go-fmt
+        name: gofumpt and goimports
+        entry: go tool golangci-lint fmt --diff ./...
+        language: system
+        files: \.go$
+        pass_filenames: false
+    -   id: go-lint
+        name: golangci-lint (vet, staticcheck, errcheck, gosec)
+        entry: go tool golangci-lint run ./...
+        language: system
+        files: (\.go|^go\.mod|^\.golangci\.yml)$
+        pass_filenames: false
+    -   id: go-mod-tidy
+        name: go mod tidy is clean
+        entry: go mod tidy -diff
+        language: system
+        files: ^go\.(mod|sum)$
+        pass_filenames: false
 
 ci:
+    skip: [go-fmt, go-lint, go-mod-tidy]
     autofix_commit_msg: 🎨 [pre-commit.ci] Auto format from pre-commit.com hooks
     autoupdate_commit_msg: ⬆ [pre-commit.ci] pre-commit autoupdate
