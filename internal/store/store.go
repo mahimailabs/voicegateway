@@ -23,6 +23,10 @@ var ErrLiveKitKeyInUse = errors.New("LiveKit API key is already used by another 
 // ErrProjectExists means the organisation already has a project with that id.
 var ErrProjectExists = errors.New("a project with this id already exists")
 
+// ErrBadRow means storage refused a row for what it holds, not because it is unreachable or busy:
+// retrying the same row cannot succeed.
+var ErrBadRow = errors.New("row refused by storage")
+
 // ErrNotFound means no record matched.
 var ErrNotFound = errors.New("not found")
 

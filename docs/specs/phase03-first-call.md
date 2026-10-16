@@ -73,6 +73,8 @@ Slice B (c), the worker into ClickHouse. `voicegateway migrate` also applies `mi
 18. Given an entry that cannot be decoded, then it moves to `voicegateway:ingest:dead` with its fields and the reason, and the entries after it are stored (measured by `TestSinkDeadLettersUndecodable`, `TestReadUnknownLayout`).
 19. Given ClickHouse unreachable, then nothing is acknowledged or dead-lettered, and once it answers every entry is stored (measured by `TestSinkAcksOnlyAfterInsert`).
 20. Given acknowledged entries, then they are deleted from the stream, so it does not grow (measured by `TestAppendReadAck`).
+21. Given a batch in which ClickHouse refuses one row for its data, then only that row is dead-lettered and the rest are stored; a failure that does not blame the data is retried and dead-letters nothing (measured by `TestSinkDeadLettersOnlyRefusedRows`, `TestSinkAcksOnlyAfterInsert`).
+22. Given a webhook dead-lettered with a TURN password in a body that does not parse, then the dead-lettered body has the password blanked (measured by `TestDeadLetterBlanksTURNPassword`).
 
 ## Manual Check
 

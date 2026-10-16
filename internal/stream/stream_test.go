@@ -137,7 +137,7 @@ func TestReadUnknownLayout(t *testing.T) {
 	}
 
 	// Dead-lettering keeps its fields and the reason, and removes it from the stream.
-	if err := c.DeadLetter(ctx, msgs[0], msgs[0].Err.Error()); err != nil {
+	if err := c.DeadLetter(ctx, msgs[0], msgs[0].Err.Error(), nil); err != nil {
 		t.Fatal(err)
 	}
 	if n := rdb.XLen(ctx, Ingest).Val(); n != 0 {

@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
+	"regexp"
 	"time"
 
 	"github.com/mahimailabs/voicegateway/internal/event"
@@ -19,14 +21,15 @@ type Stream interface {
 	Read(ctx context.Context, count int64, block time.Duration) ([]stream.Message, error)
 	Claim(ctx context.Context, minIdle time.Duration, count int64) ([]stream.Message, error)
 	Ack(ctx context.Context, ids ...string) error
-	DeadLetter(ctx context.Context, m stream.Message, reason string) error
+	DeadLetter(ctx context.Context, m stream.Message, reason string, scrub func([]byte) []byte) error
 }
 
 // Events is where envelopes are stored.
 type Events interface {
 	Existing(ctx context.Context, keys []store.EventKey) (map[store.EventKey]bool, error)
+	// Insert stores every row or none. It wraps store.ErrBadRow when the rows themselves were
+	// refused; any other error is transient.
 	Insert(ctx context.Context, events []store.Event) error
-	Ping(ctx context.Context) error
 }
 
 // Sink moves envelopes from the stream into Events.
@@ -43,9 +46,9 @@ type Sink struct {
 	ClaimIdle time.Duration
 	// Backoff is the first wait after a failure; it doubles up to MaxBackoff.
 	Backoff, MaxBackoff time.Duration
-	// Attempts is how many times a batch is tried while ClickHouse answers before its rows are
-	// stored one by one and the ones that still fail are dead-lettered.
-	Attempts int
+	// Timeout bounds each call to Events, so a hung ClickHouse is retried and logged, not waited
+	// on forever.
+	Timeout time.Duration
 }
 
 // Run stores entries until ctx is cancelled. It returns nil on cancellation; entries in flight stay
@@ -56,19 +59,16 @@ func (s *Sink) Run(ctx context.Context) error {
 		return nil
 	}
 	for ctx.Err() == nil {
-		msgs, err := s.Stream.Claim(ctx, s.ClaimIdle, s.Batch)
-		if err == nil && len(msgs) == 0 {
-			msgs, err = s.Stream.Read(ctx, s.Batch, s.Block)
-		}
-		if err != nil {
-			if ctx.Err() != nil {
-				break
+		var msgs []stream.Message
+		err := s.retry(ctx, "read stream", func(ctx context.Context) error {
+			var err error
+			msgs, err = s.Stream.Claim(ctx, s.ClaimIdle, s.Batch)
+			if err == nil && len(msgs) == 0 {
+				msgs, err = s.Stream.Read(ctx, s.Batch, s.Block)
 			}
-			s.Log.Error("sink: read stream", "err", err)
-			s.sleep(ctx, s.Backoff)
-			continue
-		}
-		if len(msgs) > 0 {
+			return err
+		})
+		if err == nil && len(msgs) > 0 {
 			s.store(ctx, msgs)
 		}
 	}
@@ -105,7 +105,9 @@ func (s *Sink) store(ctx context.Context, msgs []stream.Message) {
 		for i, r := range rows {
 			keys[i] = r.Key()
 		}
-		stored, err := s.Events.Existing(ctx, keys)
+		cctx, cancel := context.WithTimeout(ctx, s.Timeout)
+		defer cancel()
+		stored, err := s.Events.Existing(cctx, keys)
 		if err != nil {
 			return err
 		}
@@ -126,7 +128,7 @@ func (s *Sink) store(ctx context.Context, msgs []stream.Message) {
 	if skipped := len(rows) - len(fresh); skipped > 0 {
 		s.Log.Info("sink: skipped events already stored", "count", skipped)
 	}
-	if err := s.insert(ctx, fresh, msgs); err != nil {
+	if err := s.insert(ctx, fresh, byID(msgs)); err != nil {
 		return
 	}
 	if err := s.retry(ctx, "acknowledge", func(ctx context.Context) error { return s.Stream.Ack(ctx, ids...) }); err != nil {
@@ -135,55 +137,54 @@ func (s *Sink) store(ctx context.Context, msgs []stream.Message) {
 	s.Log.Debug("sink: stored batch", "entries", len(msgs), "inserted", len(fresh))
 }
 
-// insert stores rows, retrying while ClickHouse is unreachable. When ClickHouse answers but the
-// batch keeps failing, rows are stored one by one and those that still fail are dead-lettered.
-func (s *Sink) insert(ctx context.Context, rows []store.Event, msgs []stream.Message) error {
+// insert stores rows. A transient failure, such as ClickHouse down, busy or slow, is retried
+// without end and nothing is acknowledged meanwhile. When ClickHouse refuses the rows themselves,
+// the batch is split in halves until the refused rows are found; only those are dead-lettered.
+func (s *Sink) insert(ctx context.Context, rows []store.Event, msgs map[string]stream.Message) error {
 	if len(rows) == 0 {
 		return nil
 	}
-	failures := 0
 	wait := s.Backoff
 	for {
-		err := s.Events.Insert(ctx, rows)
-		if err == nil {
+		cctx, cancel := context.WithTimeout(ctx, s.Timeout)
+		err := s.Events.Insert(cctx, rows)
+		cancel()
+		switch {
+		case err == nil:
 			return nil
-		}
-		if ctx.Err() != nil {
+		case ctx.Err() != nil:
 			return ctx.Err()
-		}
-		if s.Events.Ping(ctx) != nil {
-			s.Log.Error("sink: ClickHouse unreachable, keeping entries pending", "rows", len(rows), "err", err)
-		} else {
-			failures++
-			s.Log.Error("sink: insert failed", "rows", len(rows), "attempt", failures, "err", err)
-			if failures >= s.Attempts {
-				return s.insertEach(ctx, rows, msgs)
+		case errors.Is(err, store.ErrBadRow) && len(rows) == 1:
+			s.deadLetter(ctx, msgs[rows[0].StreamID], "insert: "+err.Error())
+			return ctx.Err()
+		case errors.Is(err, store.ErrBadRow):
+			half := len(rows) / 2
+			if err := s.insert(ctx, rows[:half], msgs); err != nil {
+				return err
 			}
+			return s.insert(ctx, rows[half:], msgs)
 		}
+		s.Log.Error("sink: insert failed, keeping entries pending", "rows", len(rows), "err", err)
 		s.sleep(ctx, wait)
 		wait = min(wait*2, s.MaxBackoff)
 	}
 }
 
-func (s *Sink) insertEach(ctx context.Context, rows []store.Event, msgs []stream.Message) error {
-	byID := map[string]stream.Message{}
+func byID(msgs []stream.Message) map[string]stream.Message {
+	out := make(map[string]stream.Message, len(msgs))
 	for _, m := range msgs {
-		byID[m.ID] = m
+		out[m.ID] = m
 	}
-	for _, r := range rows {
-		if err := s.Events.Insert(ctx, []store.Event{r}); err != nil {
-			if ctx.Err() != nil {
-				return ctx.Err()
-			}
-			s.deadLetter(ctx, byID[r.StreamID], "insert: "+err.Error())
-		}
-	}
-	return nil
+	return out
 }
 
+// deadLetter moves an entry to the dead-letter stream with any TURN password blanked, since the
+// body there is not the stored, stripped one.
 func (s *Sink) deadLetter(ctx context.Context, m stream.Message, reason string) {
 	s.Log.Warn("sink: dead-lettering entry", "entry", m.ID, "reason", reason)
-	_ = s.retry(ctx, "dead-letter", func(ctx context.Context) error { return s.Stream.DeadLetter(ctx, m, reason) })
+	_ = s.retry(ctx, "dead-letter", func(ctx context.Context) error {
+		return s.Stream.DeadLetter(ctx, m, reason, blankTURNPassword)
+	})
 }
 
 // retry runs f until it succeeds or ctx is cancelled, backing off between attempts.
@@ -237,6 +238,16 @@ func toEvent(m stream.Message) (store.Event, error) {
 		ReceivedAt:     e.ReceivedAt,
 		Payload:        payload,
 	}, nil
+}
+
+// turnPasswordValue matches the value of any "turnPassword" member, however the body around it is
+// broken.
+var turnPasswordValue = regexp.MustCompile(`("turnPassword"\s*:\s*)"(?:[^"\\]|\\.)*"`)
+
+// blankTURNPassword empties every turnPassword value without parsing the body, for bodies that may
+// not parse.
+func blankTURNPassword(body []byte) []byte {
+	return turnPasswordValue.ReplaceAll(body, []byte(`$1""`))
 }
 
 // withoutTURNPassword removes room.turnPassword from a webhook body. VoiceGateway never needs it,

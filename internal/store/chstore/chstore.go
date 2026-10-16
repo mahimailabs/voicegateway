@@ -2,11 +2,13 @@ package chstore
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io/fs"
 
 	"github.com/ClickHouse/clickhouse-go/v2"
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
+	"github.com/ClickHouse/clickhouse-go/v2/lib/proto"
 	"github.com/pressly/goose/v3"
 
 	"github.com/mahimailabs/voicegateway/internal/store"
@@ -107,11 +109,32 @@ func (s *Store) Insert(ctx context.Context, events []store.Event) error {
 	for _, e := range events {
 		if err := batch.Append(e.OrganisationID, e.ProjectID, e.Kind, e.DedupeKey, e.EventID, e.StreamID, e.ReceivedAt, string(e.Payload)); err != nil {
 			_ = batch.Abort()
-			return fmt.Errorf("insert event %s: %w", e.StreamID, err)
+			// Append fails only when a value does not convert to its column.
+			return fmt.Errorf("insert event %s: %w: %w", e.StreamID, store.ErrBadRow, err)
 		}
 	}
 	if err := batch.Send(); err != nil {
+		var ex *proto.Exception
+		if errors.As(err, &ex) && dataErrors[ex.Code] {
+			return fmt.Errorf("insert %d events: %w: %w", len(events), store.ErrBadRow, err)
+		}
 		return fmt.Errorf("insert %d events: %w", len(events), err)
 	}
 	return nil
+}
+
+// dataErrors are the ClickHouse error codes that blame the data rather than the server
+// (src/Common/ErrorCodes.cpp). Every other failure, such as TOO_MANY_PARTS, a memory limit or a
+// timeout, is treated as transient and retried.
+var dataErrors = map[int32]bool{
+	6:   true, // CANNOT_PARSE_TEXT
+	27:  true, // CANNOT_PARSE_INPUT_ASSERTION_FAILED
+	38:  true, // CANNOT_PARSE_DATE
+	41:  true, // CANNOT_PARSE_DATETIME
+	53:  true, // TYPE_MISMATCH
+	69:  true, // ARGUMENT_OUT_OF_BOUND
+	70:  true, // CANNOT_CONVERT_TYPE
+	72:  true, // CANNOT_PARSE_NUMBER
+	117: true, // INCORRECT_DATA
+	321: true, // VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE
 }

@@ -3,6 +3,7 @@ package sink
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"os"
@@ -109,7 +110,7 @@ func (f fixture) sink(name string, events Events) *Sink {
 		Block:     100 * time.Millisecond,
 		ClaimIdle: 200 * time.Millisecond,
 		Backoff:   20 * time.Millisecond, MaxBackoff: 100 * time.Millisecond,
-		Attempts: 3,
+		Timeout: 10 * time.Second,
 	}
 }
 
@@ -243,7 +244,7 @@ func TestSinkDeadLettersUndecodable(t *testing.T) {
 	}
 }
 
-// down is ClickHouse unreachable for its first calls: inserts and pings fail.
+// down is ClickHouse unreachable for its first calls: inserts fail with a transient error.
 type down struct {
 	Events
 	failures atomic.Int32
@@ -254,13 +255,6 @@ func (d *down) Insert(ctx context.Context, rows []store.Event) error {
 		return errors.New("dial tcp: connection refused")
 	}
 	return d.Events.Insert(ctx, rows)
-}
-
-func (d *down) Ping(ctx context.Context) error {
-	if d.failures.Load() > 0 {
-		return errors.New("dial tcp: connection refused")
-	}
-	return d.Events.Ping(ctx)
 }
 
 // While ClickHouse is down nothing is acknowledged or dead-lettered; once it answers, every entry
@@ -293,5 +287,48 @@ func TestSinkAcksOnlyAfterInsert(t *testing.T) {
 	}
 	if n := f.rows(t); n != 2 {
 		t.Fatalf("rows after recovery = %d, want 2", n)
+	}
+}
+
+// poisoned refuses, as a data error, any batch holding a row whose payload is "poison".
+type poisoned struct{ Events }
+
+func (p poisoned) Insert(ctx context.Context, rows []store.Event) error {
+	for _, r := range rows {
+		if string(r.Payload) == "poison" {
+			return fmt.Errorf("insert: %w: CANNOT_PARSE_TEXT", store.ErrBadRow)
+		}
+	}
+	return p.Events.Insert(ctx, rows)
+}
+
+// When ClickHouse refuses rows for their data, only those rows are dead-lettered; the rest of the
+// batch is stored.
+func TestSinkDeadLettersOnlyRefusedRows(t *testing.T) {
+	f := newFixture(t)
+	for _, p := range []string{"a", "poison", "b", "c", "d"} {
+		f.append(t, event.KindAgentLogs, "", p)
+	}
+	run(t, f.sink("w1", poisoned{f.events}), func() bool { return f.streamLen() == 0 })
+	if n := f.rows(t); n != 4 {
+		t.Fatalf("rows = %d, want 4", n)
+	}
+	dead := f.rdb.XRange(context.Background(), stream.DeadLetters(stream.Ingest), "-", "+").Val()
+	if len(dead) != 1 || dead[0].Values["payload"] != "poison" {
+		t.Fatalf("dead letters = %+v, want only the poison row", dead)
+	}
+}
+
+// A webhook dead-lettered because its body does not parse keeps no TURN password either.
+func TestDeadLetterBlanksTURNPassword(t *testing.T) {
+	f := newFixture(t)
+	f.append(t, event.KindLiveKitWebhook, "EV_9", `{"event":"room_started","room":{"turnPassword":"turn-secret","sid":`)
+	run(t, f.sink("w1", f.events), func() bool { return f.streamLen() == 0 })
+	dead := f.rdb.XRange(context.Background(), stream.DeadLetters(stream.Ingest), "-", "+").Val()
+	if len(dead) != 1 {
+		t.Fatalf("dead letters = %d, want 1", len(dead))
+	}
+	if body, _ := dead[0].Values["payload"].(string); strings.Contains(body, "turn-secret") || !strings.Contains(body, `"turnPassword":""`) {
+		t.Fatalf("dead-lettered body = %s", body)
 	}
 }

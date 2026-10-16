@@ -152,10 +152,15 @@ func (c *Consumer) Ack(ctx context.Context, ids ...string) error {
 }
 
 // DeadLetter moves an entry the reader cannot store to the stream's dead-letter stream, with the
-// reason, then acknowledges it. Its fields are kept as they were, so nothing is lost.
-func (c *Consumer) DeadLetter(ctx context.Context, m Message, reason string) error {
+// reason, then acknowledges it. Its fields are kept as they were, so nothing is lost, except that
+// scrub, when set, rewrites the payload first, so a secret the store would remove is not kept here.
+func (c *Consumer) DeadLetter(ctx context.Context, m Message, reason string, scrub func([]byte) []byte) error {
 	values := []any{"dead_from", m.ID, "dead_reason", reason}
 	for k, v := range m.fields {
+		if k == fPayload && scrub != nil {
+			s, _ := v.(string)
+			v = string(scrub([]byte(s)))
+		}
 		values = append(values, k, v)
 	}
 	if err := c.rdb.XAdd(ctx, &redis.XAddArgs{Stream: DeadLetters(c.stream), Values: values}).Err(); err != nil {

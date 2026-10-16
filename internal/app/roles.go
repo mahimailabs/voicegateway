@@ -124,7 +124,7 @@ func Worker(ctx context.Context, c config.Config, log *slog.Logger) error {
 		Block:     time.Second,
 		ClaimIdle: time.Minute,
 		Backoff:   250 * time.Millisecond, MaxBackoff: 30 * time.Second,
-		Attempts: 5,
+		Timeout: 30 * time.Second,
 	}).Run(ctx)
 	log.Info("worker stopped")
 	return err
