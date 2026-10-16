@@ -1,9 +1,8 @@
-<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="VoiceGateway">
-  <rect width="64" height="64" rx="14" fill="#0a0a0a"/>
-  <g transform="translate(1.8 14.4) scale(0.6)" fill="none" stroke-width="10" stroke-linecap="round">
-    <path d="M16 27V39M34 4.5V26.5M52 5V19" stroke="#fafafa"/>
-    <path d="M73.4 20.1A38 38 0 0 1 88 50" stroke="#cba6f7"/>
-    <path d="M50 50L62 29.2" stroke="#fafafa" stroke-width="8"/>
-    <circle cx="50" cy="50" r="9" fill="#fafafa" stroke="none"/>
-  </g>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
+  <style>
+    .branches { fill: #1d1d1f; }
+    @media (prefers-color-scheme: dark) { .branches { fill: #f5f5f7; } }
+  </style>
+  <path class="branches" d="M16 24H80L136 80H240V104H128L16 48ZM16 232H80L136 176H240V152H128L16 208Z"/>
+  <path fill="#1F96AA" d="M16 104H96L128 120H240V136H128L96 152H16Z"/>
 </svg>

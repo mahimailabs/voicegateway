@@ -68,7 +68,7 @@ Open **[localhost:5180](http://localhost:5180)**, choose **Calls**, then open a 
 
 In this captured session, the caller asks about Toronto. The inspector shows the turn detector below its threshold and a **2.50 s end-of-turn wait**. That makes the next investigation specific: endpointing behaviour, with the transcript and measured turn timings beside it.
 
-[Read the console guide](dashboard/README.md) · [Watch the existing walkthrough](docs/assets/voicegateway-teaser.gif)
+[Read the console guide](dashboard/README.md)
 
 ## The road to V1
 
