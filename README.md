@@ -18,18 +18,24 @@ VoiceGateway profiles **LiveKit voice calls from the phone line to the model**. 
 > [!NOTE]
 > **V1 console preview.** The console uses captured LiveKit sessions; Live replays recorded observations. The Go backend and hosted Cloud service are in development. The published Python release is the earlier product.
 
-## Inside the console
+## Features
+
+Available in the **captured-data console preview**:
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/assets/readme/overview-dark.jpg" />
   <img src="docs/assets/readme/overview-light.jpg" alt="Captured console overview: answer-time distribution and the Live wire connecting callers, SIP, media server, agent and models." width="100%" />
 </picture>
 
-- **Follow one call.** Read its transcript, inspect individual turns and open the trace when the source captured one. See reported usage in tokens, audio seconds and characters.
-- **Find the wait.** Compare measured answer time with turn detection, model first token and voice first audio. Stages can overlap; their durations are not a sum of the call's latency.
-- **See the layers around it.** Browse media-server rooms, participants, agent workers, SIP, egress and ingress observations alongside the call.
-- **Spot repeated problems.** Explore grouped issues and the seven alert-rule previews. Notification delivery is part of the V1 backend work.
-- **Keep missing data honest.** Unreported measurements stay unknown. An absent span, recording or observation is not a zero.
+- **Call inspection:** transcripts, individual turns, events and agent spans when captured.
+- **Latency breakdowns:** measured answer time, end-of-turn wait, model first token and voice first audio. Overlapping stages are explained rather than added together.
+- **Usage visibility:** reported tokens, audio seconds and characters, without estimated model prices.
+- **LiveKit infrastructure views:** rooms, participants, agent workers, SIP, egress and ingress observations around the call.
+- **Issues and alert-rule previews:** grouped findings and seven supported rule previews. Notification delivery is planned for V1.
+- **Live replay:** explore captured room activity over time. The real-time backend feed is planned for V1.
+- **Embeddable widget previews:** answer time, calls, one call, turn anatomy and issues. Production tokens and origin enforcement are planned for V1.
+
+Unreported measurements stay **unknown**. Traces, usage and recordings appear only when the capture provides them. See [the V1 roadmap](#the-road-to-v1) for backend and hosted capabilities still being built.
 
 ## How it fits
 
