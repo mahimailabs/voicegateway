@@ -20,7 +20,7 @@ VoiceGateway is one Go binary, `voicegateway`, run in two roles (0013): `web` ta
 | Postgres | Projects (each one LiveKit project, with its URL, key and encrypted secret, 0016), API keys, settings, the call index. | Configuration |
 | ClickHouse | Events, turns, spans, usage and server metrics. | Everything measured |
 | Redis | The ingest stream, the live view feed, and locks for one-at-a-time jobs (0007). | Data in flight |
-| S3 or MinIO | Recordings from the agent's session upload, or from LiveKit Egress, opt-in per project (0008, 0015). | Audio |
+| S3 bucket (SeaweedFS in Compose, 0026) | Recordings from the agent's session upload, or from LiveKit Egress, opt-in per project (0008, 0015). | Audio |
 
 ## Data Flow
 
@@ -48,7 +48,7 @@ VoiceGateway is one Go binary, `voicegateway`, run in two roles (0013): `web` ta
 | Core | Go, one binary, constructor injection | docs/decisions/0009-go-core.md |
 | Roles | web and worker from one image | docs/decisions/0006-web-and-worker-roles.md |
 | Queue | Redis streams | docs/decisions/0007-redis-streams-for-ingest.md |
-| Storage | Postgres, ClickHouse, S3 or MinIO | docs/decisions/0005-self-hosted-platform-only.md |
+| Storage | Postgres, ClickHouse, any S3 bucket (SeaweedFS in Compose, 0026) | docs/decisions/0005-self-hosted-platform-only.md |
 | Libraries | chi, go-redis v9, clickhouse-go v2, pgx v5 with sqlc, goose, livekit/protocol, OTel pdata, slog, errgroup, cobra | docs/decisions/0009-go-core.md |
 | Dashboard | React, served from files in the image | docs/decisions/0011-dashboard-served-from-files.md |
 | SDK | Python, `attach()` for any agent framework | docs/decisions/0002-framework-agnostic-attach.md |

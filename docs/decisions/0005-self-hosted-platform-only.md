@@ -1,6 +1,6 @@
 # 0005: Self-hosted platform only
 
-- Status: accepted; the self-hosted-only scope is superseded by 0024
+- Status: accepted; the bundled bucket is SeaweedFS (0026); the self-hosted-only scope is superseded by 0024
 - Date: 2026-10-11
 
 ## Context
