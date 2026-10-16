@@ -98,6 +98,7 @@ export function DataTable<T extends RowData & object>({
   query: controlled,
   onQueryChange,
   bulk,
+  filtered = false,
 }: {
   data: T[]
   columns: Columns<T>
@@ -113,6 +114,8 @@ export function DataTable<T extends RowData & object>({
   onQueryChange?: (q: FilterQuery) => void
   // Row selection: a checkbox column, and these actions on a bar while any row is selected.
   bulk?: (selected: T[], clear: () => void) => React.ReactNode
+  // The data already answers the query (the server filtered it); the chips only edit it.
+  filtered?: boolean
 }) {
   // Filters and sort live in the URL (?q=, ?sort=), so a shared link opens the same rows. Each page has
   // one table, so the keys never collide.
@@ -122,7 +125,7 @@ export function DataTable<T extends RowData & object>({
   const [sorting, setSortingUrl] = useUrlState<SortingState>("sort", sort)
   const setSorting = (u: SortingState | ((old: SortingState) => SortingState)) => setSortingUrl(typeof u === "function" ? u(sorting) : u)
   const [pagination, setPagination] = useState<PaginationState>({ pageIndex: 0, pageSize })
-  const rows = useMemo(() => data.filter((r) => matches(r, query, fields)), [data, query, fields])
+  const rows = useMemo(() => (filtered ? data : data.filter((r) => matches(r, query, fields))), [data, query, fields, filtered])
   const [picked, setPicked] = useState<Set<string>>(new Set())
   // Selection only counts rows still in view (not filtered out, archived or resolved).
   const selected = rows.filter((r) => picked.has(getRowId(r)))

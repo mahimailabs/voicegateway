@@ -43,7 +43,7 @@ const Note = ({ children }: { children: React.ReactNode }) => <p className="py-1
 
 function Calls({ open }: { open: (room: string) => void }) {
   const list = useQuery(callsQuery())
-  const rows = useMemo(() => (list.data ?? []).map((s) => rowOf(s)).sort((a, b) => b.started - a.started), [list.data])
+  const rows = useMemo(() => (list.data?.items ?? []).map((s) => rowOf(s)).sort((a, b) => b.started - a.started), [list.data])
   const cols = useMemo(() => columns(noTags), [])
   if (list.isPending) return <Note>Loading calls.</Note>
   if (list.isError) return <Note>Calls could not be loaded.</Note>
@@ -52,7 +52,7 @@ function Calls({ open }: { open: (room: string) => void }) {
 
 function OneCall({ room, back }: { room: string | undefined; back: () => void }) {
   const list = useQuery(callsQuery())
-  const summary = room ? list.data?.find((s) => s.room === room) : undefined
+  const summary = room ? list.data?.items.find((s) => s.room === room) : undefined
   const read = useQuery({ ...callQuery(summary?.id ?? ""), enabled: summary !== undefined })
   const call = read.data
   if (!room) return <Note>Pass ?room=&lt;room name&gt; to show a call.</Note>

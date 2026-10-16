@@ -1,8 +1,8 @@
 import { capturedCalls } from "@/mocks/fixtures"
 import { currentScope } from "@/lib/url-state"
-import type { Call as GeneratedCall, CallPage, CallSummary, EndOfTurnEvent, ItemEvent, OverlapEvent, RecordingSegment, Span, StateEvent, TranscriptEvent, Turn } from "@/lib/api-types"
+import type { Call as GeneratedCall, CallPage, CallSummary, CallTotals, EndOfTurnEvent, ItemEvent, OverlapEvent, RecordingSegment, Span, StateEvent, TranscriptEvent, Turn } from "@/lib/api-types"
 
-export type { CallSummary, RecordingSegment, Span, Turn }
+export type { CallSummary, CallTotals, RecordingSegment, Span, Turn }
 export type SessionEvent = StateEvent | TranscriptEvent | EndOfTurnEvent | OverlapEvent | ItemEvent
 // preview is a console-only marker for the dev design preview, not part of the API contract.
 export type Recording = NonNullable<GeneratedCall["recording"]> & { preview?: string }
@@ -34,39 +34,62 @@ async function getJSON<T>(url: string): Promise<T> {
   } catch (e) {
     throw new ApiError(0, "network", e instanceof Error ? e.message : "No answer from the API")
   }
+  // Anything but JSON came from something other than the API, such as the dev server answering
+  // with the app's own page when no API runs.
+  const noApi = () => new ApiError(0, "no_api", `No VoiceGateway API answered at ${url.split("?")[0]}.`)
+  if (!res.headers.get("Content-Type")?.includes("json")) throw noApi()
+  const body: unknown = await res.json().catch(() => {
+    throw noApi()
+  })
   if (!res.ok) {
-    const body = (await res.json().catch(() => null)) as { code?: string; message?: string } | null
-    // An answer without the contract's error body came from something other than the API, such as
-    // the dev server when no API runs.
-    if (!body?.code) throw new ApiError(0, "no_api", `No VoiceGateway API answered at ${new URL(url, location.href).pathname}.`)
-    throw new ApiError(res.status, body.code, body.message ?? res.statusText)
+    const err = body as { code?: string; message?: string } | null
+    if (!err?.code) throw noApi()
+    throw new ApiError(res.status, err.code, err.message ?? res.statusText)
   }
-  return (await res.json()) as T
+  return body as T
 }
 
-// Every call summary in the project. The list is small enough to read whole for now; each page is
-// requested with the snapshot of the first, so pages never mix two reads.
-export async function fetchCallSummaries(): Promise<CallSummary[]> {
+// Every call matching the filters, with the server's totals for them. The pages are read with the
+// snapshot of the first, so they never mix two reads; the totals cover every match, not a page.
+export async function fetchCalls(filters = new URLSearchParams()): Promise<{ items: CallSummary[]; totals: CallTotals }> {
   const items: CallSummary[] = []
   let cursor: string | null = null
   let snapshot: string | null = null
+  let totals: CallTotals | null = null
   do {
-    const q = new URLSearchParams({ limit: "100" })
+    const q = new URLSearchParams(filters)
+    q.set("limit", "100")
     if (cursor && snapshot) {
       q.set("cursor", cursor)
       q.set("snapshot", snapshot)
     }
     const page: CallPage = await getJSON<CallPage>(`${projectApi()}/calls?${q}`)
     items.push(...page.items)
+    totals ??= page.totals
     cursor = page.page.nextCursor
     snapshot = page.page.snapshot
   } while (cursor)
-  return items
+  return { items, totals: totals! }
 }
+
+// Only the totals and the first rows, for counts beside the list (one page of one call).
+export const fetchCallCount = async (filters: URLSearchParams) => {
+  const q = new URLSearchParams(filters)
+  q.set("limit", "1")
+  return (await getJSON<CallPage>(`${projectApi()}/calls?${q}`)).totals.callCount
+}
+
+// The project's most recent call, unfiltered: where the time range ends, and whether there are calls at all.
+export const fetchLatestCall = async () => (await getJSON<CallPage>(`${projectApi()}/calls?limit=1&sort=startedAt&order=desc`)).items[0] ?? null
 
 export const fetchCall = (id: string) => getJSON<Call>(`${projectApi()}/calls/${encodeURIComponent(id)}`)
 
+// A 4xx or no API at all will not change by asking again; anything else is retried once.
+export const shouldRetry = (failures: number, error: unknown) => !(error instanceof ApiError && (error.status === 0 || (error.status >= 400 && error.status < 500))) && failures < 1
+
 // Query keys and functions for TanStack Query, scoped to the project so switching projects never
 // shows another project's cache.
-export const callsQuery = () => ({ queryKey: ["calls", currentScope()], queryFn: fetchCallSummaries })
+export const callsQuery = (filters = new URLSearchParams()) => ({ queryKey: ["calls", currentScope(), filters.toString()], queryFn: () => fetchCalls(filters) })
+export const latestCallQuery = () => ({ queryKey: ["calls", currentScope(), "latest"], queryFn: fetchLatestCall })
+export const callCountQuery = (filters: URLSearchParams) => ({ queryKey: ["calls", currentScope(), "count", filters.toString()], queryFn: () => fetchCallCount(filters) })
 export const callQuery = (id: string) => ({ queryKey: ["call", currentScope(), id], queryFn: () => fetchCall(id) })

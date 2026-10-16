@@ -331,6 +331,7 @@
   {
     "file": "dashboard/src/mocks/handlers.ts",
     "fixtures": [
+      "calls-query",
       "fixtures",
       "summaries"
     ],
@@ -346,6 +347,7 @@
   {
     "file": "dashboard/src/mocks/summaries.ts",
     "fixtures": [
+      "dispositions",
       "media-server.json"
     ],
     "assets": [],
@@ -373,5 +375,16 @@
       "/preview/recording.json": "DEV-only synthetic recording preview, excluded from production calls."
     },
     "exclusion": "Dev-only design preview of the recording view."
+  },
+  {
+    "file": "dashboard/src/mocks/dispositions.ts",
+    "fixtures": [],
+    "assets": [],
+    "browserStorage": true,
+    "operations": [
+      "listCalls"
+    ],
+    "assetNotes": {},
+    "exclusion": "The mock API serving the archive and tags the console keeps in this browser, as the server will store them."
   }
 ]

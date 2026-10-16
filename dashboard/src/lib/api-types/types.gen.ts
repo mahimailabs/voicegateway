@@ -601,6 +601,90 @@ export type Page = {
 export type CallPage = {
     items: Array<CallSummary>;
     page: Page;
+    totals: CallTotals;
+};
+
+/**
+ * Figures over every call matching a listCalls request's range and filters, independent of paging. Design-preview calls are never counted.
+ */
+export type CallTotals = {
+    /**
+     * Calls that match.
+     */
+    callCount: number | null;
+    byChannel: {
+        /**
+         * Matching calls with channel phone.
+         */
+        phone: number | null;
+        /**
+         * Matching calls with channel web.
+         */
+        web: number | null;
+        /**
+         * Matching calls with channel console.
+         */
+        console: number | null;
+        /**
+         * Matching calls with channel local.
+         */
+        local: number | null;
+        /**
+         * Matching calls with channel unknown.
+         */
+        unknown: number | null;
+    };
+    answers: {
+        /**
+         * Turns with a measured answer time.
+         */
+        turns: number | null;
+        /**
+         * Measured turns over budgetMs.
+         */
+        overBudget: number | null;
+        /**
+         * The project's answer budget the overBudget count used; a setting, not a measurement.
+         */
+        budgetMs: number;
+        /**
+         * Median of the measured answer times.
+         */
+        p50Ms: number | null;
+        /**
+         * The measured answer times, for the distribution strip; at most 1000, oldest calls dropped first.
+         */
+        valuesMs: Array<number>;
+        /**
+         * true when valuesMs holds fewer values than turns.
+         */
+        valuesTruncated: boolean;
+    };
+    /**
+     * Matching calls by their highest finding severity, as in CallSummary.issues.
+     */
+    issues: {
+        /**
+         * Calls with a high finding.
+         */
+        high: number | null;
+        /**
+         * Calls whose highest finding is medium.
+         */
+        medium: number | null;
+        /**
+         * Calls checked with no high or medium finding.
+         */
+        none: number | null;
+        /**
+         * Calls with nothing to check.
+         */
+        unknown: number | null;
+    };
+    /**
+     * Matching calls with a retained recording.
+     */
+    recorded: number | null;
 };
 
 /**
@@ -643,6 +727,10 @@ export type CallSummary = {
      * How the call reached the agent: a SIP participant means phone, a watched room without one means web or app, the agent console and local tests say so from their capture. unknown when no evidence says.
      */
     channel: 'phone' | 'web' | 'console' | 'local' | 'unknown';
+    /**
+     * How the agent produced speech: cascaded STT, LLM and TTS, a realtime speech-to-speech model, or text only, from the call's spans and session events. unknown when neither says.
+     */
+    pipeline: 'cascaded' | 'realtime' | 'text' | 'unknown';
     /**
      * Model names reported by the call's spans, most used first. Empty when spans named none.
      */
