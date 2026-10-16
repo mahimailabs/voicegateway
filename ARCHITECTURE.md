@@ -68,6 +68,7 @@ voicegateway/
 │   ├── preflight/         Preflight
 │   ├── event/             Envelope, Kind (shared contract)
 │   ├── stream/            Producer, Consumer (the web to worker contract)
+│   ├── ingest/            Webhooks, uploads: verify against the project's LiveKit key, append
 │   ├── auth/              Gate
 │   ├── decode/            Decoder: records.go, otlp.go, livekit.go
 │   ├── route/             Router, dead letters

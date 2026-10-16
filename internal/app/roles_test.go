@@ -1,6 +1,7 @@
 package app
 
 import (
+	"bytes"
 	"context"
 	"io"
 	"log/slog"
@@ -10,6 +11,7 @@ import (
 	"time"
 
 	"github.com/mahimailabs/voicegateway/internal/config"
+	"github.com/mahimailabs/voicegateway/internal/seal"
 )
 
 func TestWebServesHealthAndStopsCleanly(t *testing.T) {
@@ -22,7 +24,14 @@ func TestWebServesHealthAndStopsCleanly(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
-	go func() { done <- Web(ctx, config.Config{WebAddr: addr}, slog.New(slog.NewTextHandler(io.Discard, nil))) }()
+	// Nothing listens on these; web must still start and answer /healthz.
+	c := config.Config{
+		WebAddr:     addr,
+		PostgresURL: "postgres://voicegateway@127.0.0.1:1/voicegateway",
+		RedisURL:    "redis://127.0.0.1:1/0",
+		SecretKey:   bytes.Repeat([]byte{7}, seal.KeySize),
+	}
+	go func() { done <- Web(ctx, c, slog.New(slog.NewTextHandler(io.Discard, nil))) }()
 
 	var resp *http.Response
 	for range 50 {

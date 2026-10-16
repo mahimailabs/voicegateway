@@ -48,8 +48,17 @@ Slice A:
 4. Given a sealed secret and a different `VOICEGATEWAY_SECRET_KEY`, when it is opened, then a named error is returned, never a panic or the wrong plaintext (measured by `TestOpenWithWrongKey`).
 5. Given `make up`, when the stack starts, then `migrate` finishes before web and worker start (measured by the CI compose job).
 
-Slice B: checks are written with that slice.
+Slice B is built in three PRs: (a) webhooks to the stream, (b) the Agents observability uploads, (c) the worker into ClickHouse. Checks for (b) and (c) are written with them.
+
+Slice B (a), webhooks to the stream. LiveKit posts to `POST /livekit/webhook`; the `Authorization` JWT is checked with livekit/protocol `webhook.Receive` (v1.52.1), which finds the secret by the token's issuer (the LiveKit API key) and compares the body's SHA-256 with the token's claim. The stream entry layout is version 1 of `internal/stream`.
+
+6. Given a webhook signed by a project's LiveKit key and secret, when it is posted, then it answers 200 and one envelope is on the stream, attributed to that project, with LiveKit's event id and the body unchanged (measured by `TestWebhookVerified`).
+7. Given a webhook with no signature, a malformed token, an unknown key, the wrong secret or a body changed after signing, when it is posted, then it answers 401 and nothing is appended; a body over 1 MiB answers 413 (measured by `TestWebhookVerified`).
+8. Given Redis or the project lookup down, when a signed webhook is posted, then it answers 503 so LiveKit retries, never 200 or 401, and nothing is appended (measured by `TestWebhookStreamDown`, `TestWebhookProjectLookupDown`).
+9. Given envelopes appended before the worker's group exists, when the group is created and read, then they are delivered unchanged, stay pending until acknowledged, and an entry in an unknown layout is returned with its id and an error instead of being dropped (measured by `TestAppendReadAck`, `TestReadUnknownLayout`).
 
 ## Manual Check
 
 `make up`, then `voicegateway project add` with a real LiveKit Cloud project, then `psql` shows the project with a sealed secret and no plaintext.
+
+Slice B (a): add a project for `livekit-server --dev` (key `devkey`), run the server with `webhook.urls` set to `http://localhost:8080/livekit/webhook`, create and delete a room with `lk`, then `XRANGE voicegateway:ingest - +` shows the room_started and room_finished envelopes for that project.
