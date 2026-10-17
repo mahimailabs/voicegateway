@@ -12,12 +12,15 @@ import { cloudAgents, egress, ingress, mediaServer, sip } from "./livekit"
 
 // What the server will compute for the Issues and Alerts pages, here in the mock: the console's own
 // checks over the reads the mock serves (calls, CloudAgent, media server, SIP, egress, ingress), in
-// the contract's shape. Times are Unix seconds while the checks run and RFC 3339 in the answer; an
-// event with no time stays null and is kept whatever the range.
+// the contract's shape. Times are Unix seconds while the checks run and RFC 3339 in the answer. An
+// alert event with no time stays null and is kept whatever the range. An issue is an event (a call
+// finding, dated) or standing (an agent or SIP check over the current read, undated): a standing
+// issue is listed in every range, and an event hit with no time is in none.
 
 const iso = (s: number | null) => (s === null || !Number.isFinite(s) || s <= 0 ? null : new Date(s * 1000).toISOString())
 const secs = (t: string | null) => (t === null ? null : Date.parse(t) / 1000)
-const inRange = (s: number | null, from: number, to: number) => s === null || !Number.isFinite(s) || s <= 0 || (s * 1000 >= from && s * 1000 < to)
+const dated = (s: number | null): s is number => s !== null && Number.isFinite(s) && s > 0
+const inRange = (s: number | null, from: number, to: number) => !dated(s) || (s * 1000 >= from && s * 1000 < to)
 const source: Record<string, IssueList["items"][number]["source"]> = { Calls: "calls", "Agent workers": "agent_workers", "Phone bridge": "phone_bridge" }
 
 const calls = () => capturedCalls().filter((c) => !c.recording?.preview)
@@ -49,7 +52,7 @@ export function issues(): Issue[] {
     const at = Date.parse(c.startedAt) / 1000
     for (const f of findingsFor(c, buildModel(c))) {
       const kind = f.id.replace(/\d+$/, "")
-      const i = byKind.get(kind) ?? { id: kind, title: kinds[kind] ?? f.title, severity: f.severity, source: "Calls" as const, to: "/calls" as const, hits: [] }
+      const i = byKind.get(kind) ?? { id: kind, title: kinds[kind] ?? f.title, kind: "event" as const, severity: f.severity, source: "Calls" as const, to: "/calls" as const, hits: [] }
       if (rank[f.severity] < rank[i.severity]) i.severity = f.severity
       i.hits.push({ at: Number.isFinite(at) ? at : null, where: c.room, detail: f.title, callId: c.id })
       byKind.set(kind, i)
@@ -58,7 +61,7 @@ export function issues(): Issue[] {
   const fromChecks = (source: Issue["source"], to: Issue["to"], list: { severity: Severity; title: string; where: string; why: string }[]) => {
     const m = new Map<string, Issue>()
     for (const c of list) {
-      const i = m.get(c.title) ?? { id: `${to}:${c.title}`, title: c.title, severity: c.severity, source, to, hits: [] }
+      const i = m.get(c.title) ?? { id: `${to}:${c.title}`, title: c.title, kind: "standing" as const, severity: c.severity, source, to, hits: [] }
       i.hits.push({ at: null, where: c.where, detail: c.why })
       m.set(c.title, i)
     }
@@ -108,16 +111,19 @@ export function rules(): Rule[] {
 export function issueList(from: Date, to: Date): IssueList {
   const items = issues()
     .map((i) => {
-      const hits = i.hits.filter((h) => inRange(h.at, +from, +to))
-      const times = hits.flatMap((h) => (h.at !== null && Number.isFinite(h.at) && h.at > 0 ? [h.at] : []))
+      // Standing: every hit, undated, whatever the range. Event: the dated hits inside it.
+      const standing = i.kind === "standing"
+      const hits = standing ? i.hits : i.hits.filter((h) => dated(h.at) && h.at * 1000 >= +from && h.at * 1000 < +to)
+      const times = standing ? [] : hits.flatMap((h) => (dated(h.at) ? [h.at] : []))
       return {
         id: i.id,
         title: i.title,
+        kind: i.kind,
         severity: i.severity,
         source: source[i.source],
         lastSeenAt: times.length ? iso(Math.max(...times)) : null,
-        // Most recent first, as the contract orders them; hits with no time last.
-        hits: [...hits].sort((a, b) => (b.at ?? -Infinity) - (a.at ?? -Infinity)).map((h) => ({ at: iso(h.at), where: h.where, detail: h.detail, callId: h.callId ?? null })),
+        // Most recent first, as the contract orders them.
+        hits: [...hits].sort((a, b) => (b.at ?? -Infinity) - (a.at ?? -Infinity)).map((h) => ({ at: standing ? null : iso(h.at), where: h.where, detail: h.detail, callId: h.callId ?? null })),
       }
     })
     .filter((i) => i.hits.length > 0)

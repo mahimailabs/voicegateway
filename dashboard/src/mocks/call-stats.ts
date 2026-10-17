@@ -160,7 +160,8 @@ export function callStats(from: Date, to: Date): CallStats {
     hours.push({ hour: new Date(h).toISOString(), callCount: inHour.length, answerP50Ms: median(inHour.flatMap(({ s }) => s.answerMs ?? [])) })
   }
 
-  const found = issueList(from, to).items
+  // Problems in the range only: standing issues are current state, not counted in a range.
+  const found = issueList(from, to).items.filter((i) => i.kind === "event")
   const count = (sev: string) => found.filter((i) => i.severity === sev).length
   const overall = anatomy(calls)
 
