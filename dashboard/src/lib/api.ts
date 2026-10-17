@@ -91,6 +91,25 @@ export const callPagesQuery = (filters: URLSearchParams) =>
   })
 export const latestCallQuery = () => ({ queryKey: ["calls", currentScope(), "latest"], queryFn: fetchLatestCall })
 export const callCountQuery = (filters: URLSearchParams) => ({ queryKey: ["calls", currentScope(), "count", filters.toString()], queryFn: () => fetchCallCount(filters) })
+// The call that ran in one LiveKit room, matched by the room's SID so a reused room name never opens
+// another room's call. It pages through every call with that room name; null only when none matches,
+// and an error when the search stops early, so a partial search is never reported as no call.
+const MAX_ROOM_PAGES = 20
+export const callInRoomQuery = (name: string, sid: string) => ({
+  queryKey: ["calls", currentScope(), "in-room", sid],
+  queryFn: async () => {
+    const filters = new URLSearchParams({ room: name, sort: "startedAt", order: "desc" })
+    let next: { cursor: string; snapshot: string } | undefined
+    for (let page = 0; page < MAX_ROOM_PAGES; page++) {
+      const p = await fetchCallPage(filters, next, 100)
+      const hit = p.items.find((c) => c.roomSid === sid)
+      if (hit) return hit.id
+      if (!p.page.nextCursor) return null
+      next = { cursor: p.page.nextCursor, snapshot: p.page.snapshot }
+    }
+    throw new ApiError(0, "search_cut_short", `More than ${MAX_ROOM_PAGES * 100} calls use room ${name}; the search stopped before finding this room's call.`)
+  },
+})
 export const callQuery = (id: string) => ({ queryKey: ["call", currentScope(), id], queryFn: () => fetchCall(id) })
 
 // The LiveKit pages' reads, one document each.

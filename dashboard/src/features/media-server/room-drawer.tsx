@@ -10,7 +10,8 @@ import { cn } from "@/lib/utils"
 import type { MediaServer } from "@/lib/api-types"
 import { mediaServer } from "@/mocks/livekit"
 import { useEmbedded } from "@/lib/url-state"
-import { listCalls } from "@/lib/api"
+import { useQuery } from "@tanstack/react-query"
+import { callInRoomQuery } from "@/lib/api"
 
 // One room, opened from the Media server timeline: how it came together, what the agent was doing,
 // who was in it with which tracks, and the room's own settings. Everything comes from RoomService and
@@ -74,12 +75,19 @@ export function fromContract(m: Contract): MediaServerData {
 // Pages not yet reading getMediaServer use the mock's answer directly; #323 removes this.
 export const data = fromContract(mediaServer())
 
-// The call a room's recording belongs to: the latest call in that room, as the Live page opens it.
-// The recording names a room the captured calls hold, so a call is always found.
-const latestCallIn = (room: string) =>
-  listCalls()
-    .filter((c) => c.room === room)
-    .reduce((a, b) => (Date.parse(b.startedAt) > Date.parse(a.startedAt) ? b : a)).id
+// The call a room's recording belongs to, matched by the room's SID: a reused room name never links
+// to another room's call, and a room with no stored call says so.
+function CallInRoom({ name, sid }: { name: string; sid: string }) {
+  const read = useQuery(callInRoomQuery(name, sid))
+  if (read.isPending) return <span className="text-muted-foreground">Finding the call</span>
+  if (read.isError) return <span className="text-muted-foreground">Call could not be looked up</span>
+  if (read.data === null) return <span className="text-muted-foreground">Not in Calls</span>
+  return (
+    <Link to="/calls/$callId" params={{ callId: read.data }} className="flex items-center gap-1 text-primary hover:underline">
+      Open call <ArrowRight size={12} />
+    </Link>
+  )
+}
 export type Room = RoomData & { n: number }
 
 export const regionCity: Record<string, string> = { oashburn1b: "Ashburn", osanjose1a: "San Jose", otoronto1a: "Toronto" }
@@ -134,7 +142,7 @@ function Row({ k, v }: { k: string; v: React.ReactNode }) {
   )
 }
 
-export function RoomDrawer({ room, ms = data, open, onOpenChange }: { room: Room | null; ms?: MediaServerData; open: boolean; onOpenChange: (o: boolean) => void }) {
+export function RoomDrawer({ room, ms, open, onOpenChange }: { room: Room | null; ms: MediaServerData; open: boolean; onOpenChange: (o: boolean) => void }) {
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent side="right" onOpenAutoFocus={(e) => e.preventDefault()} className="gap-0 overflow-y-auto p-0 data-[side=right]:w-[560px] data-[side=right]:sm:max-w-none">
@@ -389,9 +397,7 @@ function Recording({ room, requested }: { room: Room; requested: boolean }) {
             ) : rec?.callRoom && embedded ? (
               <span>In Calls</span>
             ) : rec?.callRoom ? (
-              <Link to="/calls/$callId" params={{ callId: latestCallIn(rec.callRoom) }} className="flex items-center gap-1 text-primary hover:underline">
-                Open call <ArrowRight size={12} />
-              </Link>
+              <CallInRoom name={rec.callRoom} sid={room.sid} />
             ) : (
               <span>{requested ? "Requested, not received" : "Not requested"}</span>
             )}

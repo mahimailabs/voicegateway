@@ -1,5 +1,5 @@
 import { afterEach, expect, test, vi } from "vitest"
-import { ApiError, fetchCall, shouldRetry } from "../src/lib/api.ts"
+import { ApiError, callInRoomQuery, fetchCall, shouldRetry } from "../src/lib/api.ts"
 
 // What the console shows depends on telling "the API said no" from "no API answered".
 afterEach(() => vi.unstubAllGlobals())
@@ -36,4 +36,34 @@ test("4xx and no API are not retried; a 5xx is retried once", () => {
   expect(shouldRetry(0, new ApiError(0, "no_api", ""))).toBe(false)
   expect(shouldRetry(0, new ApiError(503, "source_unavailable", ""))).toBe(true)
   expect(shouldRetry(1, new ApiError(503, "source_unavailable", ""))).toBe(false)
+})
+
+test("a room opens the call with its own SID, never another call in a reused room name", async () => {
+  const row = (id: string, roomSid: string | null) => ({ id, room: "support", roomSid })
+  const page = { items: [row("newer", "RM_other"), row("unknown-sid", null), row("mine", "RM_mine")], page: { nextCursor: null, snapshot: "s" }, totals: {} }
+  const asked: string[] = []
+  vi.stubGlobal("fetch", async (url: string) => {
+    asked.push(url)
+    return new Response(JSON.stringify(page), { status: 200, headers: { "Content-Type": "application/json" } })
+  })
+  expect(await callInRoomQuery("support", "RM_mine").queryFn()).toBe("mine")
+  expect(await callInRoomQuery("support", "RM_absent").queryFn()).toBeNull()
+  expect(new URL(asked[0], "http://x").searchParams.get("room")).toBe("support")
+})
+
+test("a room's call on a later page is found, and a search cut short is an error, not no call", async () => {
+  const row = (id: string, roomSid: string) => ({ id, room: "support", roomSid })
+  const pages: Record<string, unknown> = {
+    first: { items: [row("a", "RM_a")], page: { nextCursor: "2", snapshot: "s" }, totals: {} },
+    second: { items: [row("b", "RM_b")], page: { nextCursor: null, snapshot: "s" }, totals: {} },
+  }
+  vi.stubGlobal("fetch", async (url: string) => {
+    const body = new URL(url, "http://x").searchParams.get("cursor") === "2" ? pages.second : pages.first
+    return new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json" } })
+  })
+  expect(await callInRoomQuery("support", "RM_b").queryFn()).toBe("b")
+  expect(await callInRoomQuery("support", "RM_absent").queryFn()).toBeNull()
+  // Every page has another after it: the search stops and says so.
+  vi.stubGlobal("fetch", async () => new Response(JSON.stringify(pages.first), { status: 200, headers: { "Content-Type": "application/json" } }))
+  await expect(callInRoomQuery("support", "RM_absent").queryFn()).rejects.toBeInstanceOf(ApiError)
 })
