@@ -6,9 +6,11 @@ import { Command, CommandDialog, CommandEmpty, CommandGroup, CommandInput, Comma
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Kbd, KbdGroup } from "@/components/ui/kbd"
 import { useTheme } from "@/components/theme"
-import { listCalls } from "@/lib/api"
-import { agents } from "@/features/agents/agents-model"
-import { issues } from "@/features/issues/issues-model"
+import { useQuery } from "@tanstack/react-query"
+import { cloudAgentsQuery, issuesQuery, mediaServerQuery, recentCallsQuery } from "@/lib/api"
+import { fromContract } from "@/features/media-server/room-drawer"
+import { agentsFrom } from "@/features/agents/agents-model"
+import { issuesFrom } from "@/features/issues/issues-model"
 
 // One palette for the whole console (cmdk through shadcn's Command): pages, calls, agents, issues and
 // actions. Hotkeys follow Linear's pattern: G then a letter goes to a page, so single keys stay free
@@ -64,9 +66,13 @@ const Keys = ({ keys }: { keys: string[] }) => (
 export function CommandPalette({ open, onOpenChange, pages, onSettings, onShortcuts }: { open: boolean; onOpenChange: (o: boolean) => void; pages: NavPage[]; onSettings: () => void; onShortcuts: () => void }) {
   const navigate = useNavigate()
   const { theme, toggle } = useTheme()
-  const calls = useMemo(() => listCalls().filter((c) => !c.recording?.preview), [])
-  const fleet = useMemo(() => agents(), [])
-  const found = useMemo(() => issues(), [])
+  // Read when the palette opens; each list shows what has answered so far.
+  const calls = useQuery({ ...recentCallsQuery(), enabled: open }).data ?? []
+  const cloud = useQuery({ ...cloudAgentsQuery(), enabled: open }).data
+  const media = useQuery({ ...mediaServerQuery(), enabled: open }).data
+  const fleet = useMemo(() => (cloud && media ? agentsFrom(cloud, fromContract(media)) : []), [cloud, media])
+  const issueList = useQuery({ ...issuesQuery(), enabled: open }).data
+  const found = useMemo(() => (issueList ? issuesFrom(issueList) : []), [issueList])
   const run = (fn: () => void) => {
     onOpenChange(false)
     fn()
@@ -95,7 +101,7 @@ export function CommandPalette({ open, onOpenChange, pages, onSettings, onShortc
           <CommandSeparator />
           <CommandGroup heading="Calls">
             {calls.map((c) => (
-              <CommandItem key={c.roomSid} value={`call ${c.room} ${c.startedAt}`} onSelect={() => run(() => navigate({ to: "/calls/$callId", params: { callId: c.id } }))}>
+              <CommandItem key={c.id} value={`call ${c.room} ${c.startedAt}`} onSelect={() => run(() => navigate({ to: "/calls/$callId", params: { callId: c.id } }))}>
                 <PhoneCall />
                 <span className="truncate font-mono text-[12px]">{c.room}</span>
                 <span className="ml-auto shrink-0 text-[12px] text-muted-foreground tnum">{when(c.startedAt)}</span>

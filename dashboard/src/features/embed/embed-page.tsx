@@ -4,14 +4,14 @@ import { ArrowLeft } from "@phosphor-icons/react"
 import mark from "@/assets/brand/mark.svg"
 import { DataTable } from "@/components/data-table"
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query"
-import { ApiError, callQuery, callPagesQuery } from "@/lib/api"
+import { ApiError, callQuery, callPagesQuery, issuesQuery } from "@/lib/api"
 import { BUDGET_MS } from "@/lib/thresholds"
 import { cn } from "@/lib/utils"
 import { CallView } from "@/features/call/call-view"
 import { columns, rowOf, serverSort, type Row } from "@/features/calls/calls-page"
 import type { SortingState } from "@tanstack/react-table"
 import { useUrlState } from "@/lib/url-state"
-import { issues, type Severity } from "@/features/issues/issues-model"
+import { issuesFrom, type Severity } from "@/features/issues/issues-model"
 import { fmtS, useOverview } from "@/features/overview/overview"
 import { AnswerGauge, TurnAnatomy, anatomy } from "@/features/overview/visuals"
 import { widgets } from "./widgets"
@@ -85,7 +85,10 @@ function OneCall({ callId, back }: { callId: string | undefined; back: () => voi
 }
 
 function Issues() {
-  const list = useMemo(() => issues(), [])
+  const read = useQuery(issuesQuery())
+  const list = useMemo(() => (read.data ? issuesFrom(read.data) : []), [read.data])
+  if (read.isPending) return <Note>Loading issues.</Note>
+  if (read.isError) return <Note>Issues could not be loaded.</Note>
   if (!list.length) return <p className="py-10 text-center text-[13px] text-muted-foreground">No issues found.</p>
   return (
     <ul className="divide-y rounded-xl border">

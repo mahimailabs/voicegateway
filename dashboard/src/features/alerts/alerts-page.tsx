@@ -10,7 +10,10 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { cn } from "@/lib/utils"
-import { CHANNELS, type Channel, type Event, type Rule, channelName, ruleSetup, rules, setRule, useRuleSetup } from "./alerts-model"
+import { CHANNELS, type Channel, type Event, type Rule, channelName, ruleSetup, rulesFrom, setRule, useRuleSetup } from "./alerts-model"
+import { useQuery } from "@tanstack/react-query"
+import { QueryState } from "@/components/page-state"
+import { alertEventsQuery } from "@/lib/api"
 import { useUrlState } from "@/lib/url-state"
 
 // Alerts: the console's checks, routed to where the team already works (decision 0020). Counts are
@@ -23,8 +26,10 @@ function ChannelMark({ c, size = 14 }: { c: Channel; size?: number }) {
   return <ProviderLogo provider={c} size={size} />
 }
 
-const day = (s: number) => new Date(s * 1000).toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" })
-const time = (s: number) => new Date(s * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+// An event with no reported time is listed under "Time unknown", never placed on a date.
+const day = (s: number | null) => (s === null ? "Time unknown" : new Date(s * 1000).toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" }))
+const time = (s: number | null) => (s === null ? "unknown" : new Date(s * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }))
+const within = (t: number | null, d: number) => t !== null && t >= d && t < d + 86400
 const sevTone = { high: "bg-destructive", medium: "bg-amber-500" }
 const sevText = { high: "text-destructive", medium: "text-amber-700 dark:text-amber-400" }
 const chartConfig = { high: { label: "High", color: "var(--destructive)" }, medium: { label: "Medium", color: "oklch(0.78 0.15 75)" } } satisfies ChartConfig
@@ -51,7 +56,7 @@ function Stat({ icon: I, label, value, children, alert }: { icon: Icon; label: s
 function RuleCard({ r, days }: { r: Rule; days: number[] }) {
   const setup = useRuleSetup()
   const s = ruleSetup(setup, r.id)
-  const perDay = days.map((d) => r.events.filter((e) => e.at >= d && e.at < d + 86400).length)
+  const perDay = days.map((d) => r.events.filter((e) => within(e.at, d)).length)
   const peak = Math.max(1, ...perDay)
   return (
     <div className={cn("relative overflow-hidden rounded-2xl border bg-background p-4 pl-5 transition-opacity", !s.on && "opacity-60")}>
@@ -156,24 +161,30 @@ function Timeline({ events }: { events: Fired[] }) {
 }
 
 export function AlertsPage() {
-  const list = useMemo(() => rules(), [])
+  const read = useQuery(alertEventsQuery())
+  const list = useMemo(() => (read.data ? rulesFrom(read.data) : null), [read.data])
+  if (!list) return <QueryState icon={Bell} what="alerts" query={read} />
+  return <AlertsView list={list} />
+}
+
+function AlertsView({ list }: { list: Rule[] }) {
   const setup = useRuleSetup()
   const [tab, setTab] = useUrlState("tab", "rules")
   const on = list.filter((r) => ruleSetup(setup, r.id).on)
-  const events: Fired[] = on.flatMap((r) => r.events.map((e) => ({ ...e, rule: r }))).sort((a, b) => b.at - a.at)
+  const events: Fired[] = on.flatMap((r) => r.events.map((e) => ({ ...e, rule: r }))).sort((a, b) => (a.at === null ? 1 : b.at === null ? -1 : b.at - a.at))
   const routed = on.filter((r) => ruleSetup(setup, r.id).to.length > 0).length
   const highs = events.filter((e) => e.rule.severity === "high").length
   const active = list.filter((r) => r.state)
 
   // Days from the first to the last event, so every rule's strip and the chart share one axis.
-  const dated = list.flatMap((r) => r.events.map((e) => e.at)).filter((t) => t > 0)
+  const dated = list.flatMap((r) => r.events.flatMap((e) => (e.at === null ? [] : [e.at])))
   const start = dated.length ? new Date(new Date(Math.min(...dated) * 1000).setHours(0, 0, 0, 0)).getTime() / 1000 : 0
   const end = dated.length ? Math.max(...dated) : 0
   const days = dated.length ? Array.from({ length: Math.max(1, Math.ceil((end - start) / 86400)) }, (_, i) => start + i * 86400) : []
   const series = days.map((d) => ({
     day: new Date(d * 1000).toLocaleDateString([], { month: "short", day: "numeric" }),
-    high: events.filter((e) => e.rule.severity === "high" && e.at >= d && e.at < d + 86400).length,
-    medium: events.filter((e) => e.rule.severity === "medium" && e.at >= d && e.at < d + 86400).length,
+    high: events.filter((e) => e.rule.severity === "high" && within(e.at, d)).length,
+    medium: events.filter((e) => e.rule.severity === "medium" && within(e.at, d)).length,
   }))
 
   return (

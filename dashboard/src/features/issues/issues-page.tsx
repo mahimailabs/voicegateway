@@ -1,6 +1,6 @@
 import { useMemo } from "react"
 import { Link } from "@tanstack/react-router"
-import { ArrowCounterClockwise, ArrowSquareOut, CaretRight, CheckCircle, DotsThree, EyeSlash, Phone, PhoneCall, Robot, Shapes, Warning } from "@phosphor-icons/react"
+import { ArrowCounterClockwise, ArrowSquareOut, CaretRight, CheckCircle, DotsThree, EyeSlash, Phone, PhoneCall, Robot, Shapes, Warning, WarningCircle } from "@phosphor-icons/react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
@@ -10,7 +10,10 @@ import { setIssueStates, statusOf, useIssueStates } from "./issue-state"
 import { type Columns, DataTable, type Field } from "@/components/data-table"
 import { DataGridColumnHeader } from "@/components/reui/data-grid/data-grid-column-header"
 import { cn } from "@/lib/utils"
-import { type Issue, type Severity, issues } from "./issues-model"
+import { type Issue, type Severity, issuesFrom } from "./issues-model"
+import { useQuery } from "@tanstack/react-query"
+import { QueryState } from "@/components/page-state"
+import { issuesQuery } from "@/lib/api"
 import { useUrlState } from "@/lib/url-state"
 
 // Issues: every finding the console computes, grouped so a pattern across calls reads as one row
@@ -131,7 +134,13 @@ type View = "open" | "resolved" | "ignored"
 const viewLabel: Record<View, string> = { open: "Open", resolved: "Resolved", ignored: "Ignored" }
 
 export function IssuesPage() {
-  const all = useMemo(() => issues(), [])
+  const read = useQuery(issuesQuery())
+  const all = useMemo(() => (read.data ? issuesFrom(read.data) : null), [read.data])
+  if (!all) return <QueryState icon={WarningCircle} what="issues" query={read} />
+  return <IssuesView all={all} />
+}
+
+function IssuesView({ all }: { all: Issue[] }) {
   const states = useIssueStates()
   const [view, setView] = useUrlState<View>("view", "open")
   const withStatus = all.map((i) => ({ i, st: statusOf(states, i.id, lastSeen(i)) }))

@@ -1,4 +1,5 @@
 import { useSyncExternalStore } from "react"
+import type { AlertEvents } from "@/lib/api-types"
 import { listCalls } from "@/lib/api"
 import { BUDGET_MS, JOIN_MS } from "@/lib/thresholds"
 import egressRaw from "@/mocks/egress.json"
@@ -14,9 +15,12 @@ import { type SipData, checks as sipChecks, routes } from "../sip/sip-model"
 // evaluated against the captured data to show what it would have fired on. Nothing is sent in
 // Phase 1: sending runs in the Phase 2 worker.
 
-export type Event = { at: number; where: string; detail: string; link?: { to: "/calls/$callId"; callId: string } | { to: "/sip" | "/egress" | "/ingress" | "/agents" } }
+// at is Unix seconds, null when the source reported no time.
+export type Event = { at: number | null; where: string; detail: string; link?: { to: "/calls/$callId"; callId: string } | { to: "/calls" | "/sip" | "/egress" | "/ingress" | "/agents" } }
 export type Rule = { id: string; title: string; condition: string; source: "Calls" | "Agents" | "Phone bridge" | "Egress" | "Ingress"; severity: "high" | "medium"; events: Event[]; state?: string }
 
+// The server's computation, run by the mock API (mocks/insights.ts); pages not yet moved call it
+// directly, which #323 removes.
 export function rules(): Rule[] {
   const calls = listCalls().filter((c) => !c.recording?.preview)
   const slow: Event[] = calls.flatMap((c) => {
@@ -30,12 +34,12 @@ export function rules(): Rule[] {
   })
   const all = agents()
   const failed: Event[] = all.flatMap((a) =>
-    a.jobs.filter((j) => j.failed).map((j) => ({ at: j.dispatchedMs / 1000, where: `${a.name ?? a.key} in ${j.room.name}`, detail: `${TEST_AGENTS.has(a.name ?? "") ? "Test data: our capture agent. " : ""}Job ${j.jobId} failed; LiveKit retried`, link: { to: "/agents" as const } })),
+    a.jobs.filter((j) => j.failed).map((j) => ({ at: Number.isFinite(j.dispatchedMs) ? j.dispatchedMs / 1000 : null, where: `${a.name ?? a.key} in ${j.room.name}`, detail: `${TEST_AGENTS.has(a.name ?? "") ? "Test data: our capture agent. " : ""}Job ${j.jobId} failed; LiveKit retried`, link: { to: "/agents" as const } })),
   )
   const slowJoin: Event[] = all.flatMap((a) =>
     a.jobs.flatMap((j) => {
       const d = joinDelays([j])[0]
-      return d !== undefined && d * 1000 > JOIN_MS ? [{ at: j.dispatchedMs / 1000, where: `${a.name ?? a.key} in ${j.room.name}`, detail: `Joined ${d.toFixed(1)} s after dispatch`, link: { to: "/agents" as const } }] : []
+      return d !== undefined && d * 1000 > JOIN_MS ? [{ at: Number.isFinite(j.dispatchedMs) ? j.dispatchedMs / 1000 : null, where: `${a.name ?? a.key} in ${j.room.name}`, detail: `Joined ${d.toFixed(1)} s after dispatch`, link: { to: "/agents" as const } }] : []
     }),
   )
   const sip = sipRaw as unknown as SipData
@@ -45,21 +49,63 @@ export function rules(): Rule[] {
   const eg = (egressRaw as unknown as { egress: { id: string; room: string | null; status: string; error: string | null; endedAt: number | null; file: { sizeBytes: number; durationS: number } | null }[] }).egress
   const lost: Event[] = eg
     .filter((e) => e.status === "EGRESS_FAILED")
-    .map((e) => ({ at: e.endedAt ?? 0, where: `${e.id} in ${e.room ?? "unknown room"}`, detail: e.file?.durationS ? `${Math.round(e.file.durationS)} s of audio not stored` : (e.error ?? "Failed"), link: { to: "/egress" as const } }))
+    .map((e) => ({ at: e.endedAt, where: `${e.id} in ${e.room ?? "unknown room"}`, detail: e.file?.durationS ? `${Math.round(e.file.durationS)} s of audio not stored` : (e.error ?? "Failed"), link: { to: "/egress" as const } }))
   const ing = (ingressRaw as unknown as { ingress: { id: string; name: string; status: string; error: string | null; endedAt: number | null }[] }).ingress
   const ingErr: Event[] = ing
     .filter((i) => i.status === "ENDPOINT_ERROR")
-    .map((i) => ({ at: i.endedAt ?? 0, where: `${i.name} (${i.id})`, detail: i.error ?? "Error", link: { to: "/ingress" as const } }))
+    .map((i) => ({ at: i.endedAt, where: `${i.name} (${i.id})`, detail: i.error ?? "Error", link: { to: "/ingress" as const } }))
 
-  return [
-    { id: "slow-answer", title: "Slow answers", condition: `A call has a turn over the ${BUDGET_MS / 1000} s answer time`, source: "Calls", severity: "medium", events: slow },
-    { id: "cut-off", title: "Replies cut off", condition: "The caller talks over the agent and it stops", source: "Calls", severity: "medium", events: cutOff },
-    { id: "job-failed", title: "Agent job failed", condition: "LiveKit reports an agent job as failed", source: "Agents", severity: "high", events: failed },
-    { id: "slow-join", title: "Slow agent join", condition: `An agent joins more than ${JOIN_MS / 1000} s after dispatch`, source: "Agents", severity: "medium", events: slowJoin },
-    { id: "plain-phone", title: "Unencrypted phone leg", condition: "A SIP trunk carries audio as plain RTP", source: "Phone bridge", severity: "medium", events: [], state: plain.length ? `${plain.length} ${plain.length === 1 ? "trunk" : "trunks"} now` : undefined },
-    { id: "recording-lost", title: "Recording lost", condition: "An egress recording fails to upload", source: "Egress", severity: "high", events: lost },
-    { id: "ingress-error", title: "Ingress error", condition: "An ingress endpoint goes into error", source: "Ingress", severity: "high", events: ingErr },
-  ]
+  const events: Record<RuleId, Event[]> = { "slow-answer": slow, "cut-off": cutOff, "job-failed": failed, "slow-join": slowJoin, "plain-phone": [], "recording-lost": lost, "ingress-error": ingErr }
+  return RULE_IDS.map((id) => ({ id, ...meta(id), events: events[id], state: id === "plain-phone" && plain.length ? `${plain.length} ${plain.length === 1 ? "trunk" : "trunks"} now` : undefined }))
+}
+
+// The seven rules (decision 0020): what each one is, which the page shows beside what the server
+// evaluated. Conditions read the current thresholds.
+export const RULE_IDS = ["slow-answer", "cut-off", "job-failed", "slow-join", "plain-phone", "recording-lost", "ingress-error"] as const
+export type RuleId = (typeof RULE_IDS)[number]
+export function meta(id: RuleId): Pick<Rule, "title" | "condition" | "source" | "severity"> {
+  switch (id) {
+    case "slow-answer":
+      return { title: "Slow answers", condition: `A call has a turn over the ${BUDGET_MS / 1000} s answer time`, source: "Calls", severity: "medium" }
+    case "cut-off":
+      return { title: "Replies cut off", condition: "The caller talks over the agent and it stops", source: "Calls", severity: "medium" }
+    case "job-failed":
+      return { title: "Agent job failed", condition: "LiveKit reports an agent job as failed", source: "Agents", severity: "high" }
+    case "slow-join":
+      return { title: "Slow agent join", condition: `An agent joins more than ${JOIN_MS / 1000} s after dispatch`, source: "Agents", severity: "medium" }
+    case "plain-phone":
+      return { title: "Unencrypted phone leg", condition: "A SIP trunk carries audio as plain RTP", source: "Phone bridge", severity: "medium" }
+    case "recording-lost":
+      return { title: "Recording lost", condition: "An egress recording fails to upload", source: "Egress", severity: "high" }
+    case "ingress-error":
+      return { title: "Ingress error", condition: "An ingress endpoint goes into error", source: "Ingress", severity: "high" }
+  }
+}
+
+// The page an event without a call links to.
+const pageOf: Record<RuleId, "/calls" | "/agents" | "/sip" | "/egress" | "/ingress"> = {
+  "slow-answer": "/calls",
+  "cut-off": "/calls",
+  "job-failed": "/agents",
+  "slow-join": "/agents",
+  "plain-phone": "/sip",
+  "recording-lost": "/egress",
+  "ingress-error": "/ingress",
+}
+
+// The page's view of listAlertEvents: each rule's description with what it would have fired on.
+export function rulesFrom(ev: AlertEvents): Rule[] {
+  return ev.rules.map((r) => ({
+    id: r.ruleId,
+    ...meta(r.ruleId),
+    state: r.state ?? undefined,
+    events: r.events.map((e) => ({
+      at: e.at === null ? null : Date.parse(e.at) / 1000,
+      where: e.where,
+      detail: e.detail,
+      link: e.callId ? { to: "/calls/$callId" as const, callId: e.callId } : { to: pageOf[r.ruleId] },
+    })),
+  }))
 }
 
 // Which rules are on and where each one goes. Kept in this browser until the server stores it.

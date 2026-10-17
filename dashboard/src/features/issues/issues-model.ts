@@ -1,4 +1,5 @@
 import { listCalls } from "@/lib/api"
+import type { IssueList } from "@/lib/api-types"
 import sipRaw from "@/mocks/sip.json"
 import { buildModel } from "../call/call-model"
 import { findingsFor } from "../call/call-steps"
@@ -13,6 +14,23 @@ import { type SipData, checks as sipChecks, routes } from "../sip/sip-model"
 export type Severity = "high" | "medium" | "low" | "info"
 export type Hit = { at: number | null; where: string; detail: string; callId?: string }
 export type Issue = { id: string; title: string; severity: Severity; source: "Calls" | "Agent workers" | "Phone bridge"; to: "/calls" | "/agents" | "/sip"; hits: Hit[] }
+
+// The page's view of listIssues: the source as its label and page, hit times as Unix seconds.
+const sourceView = {
+  calls: { label: "Calls", to: "/calls" },
+  agent_workers: { label: "Agent workers", to: "/agents" },
+  phone_bridge: { label: "Phone bridge", to: "/sip" },
+} as const
+export function issuesFrom(list: IssueList): Issue[] {
+  return list.items.map((i) => ({
+    id: i.id,
+    title: i.title,
+    severity: i.severity,
+    source: sourceView[i.source].label,
+    to: sourceView[i.source].to,
+    hits: i.hits.map((h) => ({ at: h.at === null ? null : Date.parse(h.at) / 1000, where: h.where, detail: h.detail, callId: h.callId ?? undefined })),
+  }))
+}
 
 // One name per call finding, so "3 of 9 replies were cut off" in two calls becomes one issue.
 const kinds: Record<string, string> = {
@@ -29,6 +47,8 @@ const kinds: Record<string, string> = {
 }
 const rank: Record<Severity, number> = { high: 0, medium: 1, low: 2, info: 3 }
 
+// The server's computation, run by the mock API (mocks/insights.ts); pages not yet moved call it
+// directly, which #323 removes.
 export function issues(): Issue[] {
   const byKind = new Map<string, Issue>()
   for (const c of listCalls().filter((x) => !x.recording?.preview)) {
