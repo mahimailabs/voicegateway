@@ -1,0 +1,420 @@
+package api
+
+import (
+	"context"
+	"fmt"
+	"net/http"
+	"net/url"
+	"slices"
+	"testing"
+	"time"
+
+	"github.com/livekit/protocol/livekit"
+
+	"github.com/mahimailabs/voicegateway/internal/event"
+	"github.com/mahimailabs/voicegateway/internal/join"
+	"github.com/mahimailabs/voicegateway/internal/store"
+)
+
+var listBase = time.Date(2026, 10, 17, 20, 0, 0, 0, time.UTC)
+
+func listPath(project string, q url.Values) string {
+	p := "/api/v1/org/default/project/" + project + "/calls"
+	if len(q) > 0 {
+		p += "?" + q.Encode()
+	}
+	return p
+}
+
+// summarize runs the worker's summary sweep until no call is stale.
+func (f *fixture) summarize() {
+	f.t.Helper()
+	j := &join.Joiner{Calls: f.pg, Traces: f.events, Log: f.log}
+	for range 10 {
+		if err := j.Summarize(context.Background(), time.Now()); err != nil {
+			f.t.Fatal(err)
+		}
+		stale, err := f.pg.StaleCalls(context.Background(), 1)
+		if err != nil {
+			f.t.Fatal(err)
+		}
+		if len(stale) == 0 {
+			return
+		}
+	}
+	f.t.Fatal("summaries still stale after 10 sweeps")
+}
+
+// roomCall stores a room_started webhook for a room created at the given time, and, when kind is
+// not nil, a participant of that kind.
+func (f *fixture) roomCall(sid string, created time.Time, kind *livekit.ParticipantInfo_Kind) {
+	f.t.Helper()
+	r := &livekit.Room{Sid: sid, Name: "room-" + sid, CreationTime: created.Unix()}
+	f.append(event.KindLiveKitWebhook, "EV_"+sid, webhook(f.t, &livekit.WebhookEvent{Event: "room_started", Id: "EV_" + sid, CreatedAt: created.Unix(), Room: r}))
+	if kind != nil {
+		f.append(event.KindLiveKitWebhook, "EV_P_"+sid, webhook(f.t, &livekit.WebhookEvent{
+			Event: "participant_joined", Id: "EV_P_" + sid, CreatedAt: created.Unix(), Room: r,
+			Participant: &livekit.ParticipantInfo{Sid: "PA_" + sid, Kind: *kind, JoinedAt: created.Unix()},
+		}))
+	}
+}
+
+// setSummary stores a summary for a call directly, as the sweep would.
+func (f *fixture) setSummary(callID string, answers []float64) {
+	f.t.Helper()
+	stale, err := f.pg.StaleCalls(context.Background(), 1000)
+	if err != nil {
+		f.t.Fatal(err)
+	}
+	for _, c := range stale {
+		if c.ID != callID {
+			continue
+		}
+		n := len(answers)
+		var median *float64
+		if n > 0 {
+			sorted := slices.Sorted(slices.Values(answers))
+			median = &sorted[n/2]
+		}
+		if err := f.pg.PutSummary(context.Background(), c, store.CallSummary{
+			TurnCount: &n, AnswerMs: answers, AnswerMsMedian: median, Models: []string{}, Pipeline: "unknown",
+		}, time.Now()); err != nil {
+			f.t.Fatal(err)
+		}
+		return
+	}
+	f.t.Fatalf("call %s is not stale", callID)
+}
+
+func (f *fixture) list(q url.Values) (callPage, int) {
+	f.t.Helper()
+	var p callPage
+	code := f.get(f.api(nil), listPath(f.project, q), &p)
+	return p, code
+}
+
+// Acceptance check 1.
+func TestSummaryFromStoredCalls(t *testing.T) {
+	f := newFixture(t)
+	f.storeRealCall("api/testdata/full-call.webhooks.jsonl", "api/testdata/full-call.spans.jsonl", "api/testdata/full-call.session_report.json")
+	f.storeRealCall("", "turn/testdata/agents-1.8.7-call.spans.jsonl", "turn/testdata/agents-1.8.7-call.session_report.json")
+	f.summarize()
+
+	p, code := f.list(nil)
+	if code != http.StatusOK || len(p.Items) != 2 {
+		t.Fatalf("status %d, items %d; want 200 and 2", code, len(p.Items))
+	}
+	byRoom := map[string]callSummary{}
+	for _, it := range p.Items {
+		byRoom[it.Room] = it
+	}
+	full := byRoom["vg-full-134152"]
+	if full.TurnCount == nil || *full.TurnCount != 3 || full.Pipeline != "cascaded" || len(full.Models) == 0 || full.Models[0] != "openai/gpt-4.1-mini" {
+		t.Errorf("webhook call = turns %v, pipeline %q, models %v", full.TurnCount, full.Pipeline, full.Models)
+	}
+	if len(full.AnswerMs) != 2 || !near(&full.AnswerMs[0], 956.5, 0.1) || !near(&full.AnswerMs[1], 844.6, 0.1) {
+		t.Errorf("webhook call answerMs = %v, want [956.5 844.6]", full.AnswerMs)
+	}
+	agent := byRoom["vg-check-130314"]
+	if want := time.Date(2026, 10, 17, 17, 3, 15, 679_406_000, time.UTC); agent.TurnCount == nil || *agent.TurnCount != 3 || !agent.StartedAt.Equal(want) {
+		t.Errorf("agent-only call = turns %v, startedAt %v; want 3 and %v", agent.TurnCount, agent.StartedAt, want)
+	}
+}
+
+// Acceptance check 2.
+func TestSummaryRebuildsAfterLateSpan(t *testing.T) {
+	f := newFixture(t)
+	f.roomCall("RM_LATE", listBase, nil)
+	f.store()
+	f.summarize()
+	id := f.callID("RM_LATE")
+
+	turnSpan := func(n int) []byte {
+		at := listBase.Add(time.Duration(n) * time.Minute)
+		return f.export([]store.Span{{
+			TraceID: fmt.Sprintf("%032x", n), SpanID: fmt.Sprintf("%016x", n), Name: "agent_turn",
+			Start: at, End: at.Add(time.Second), Attributes: map[string]string{"room_id": "RM_LATE", "lk.e2e_latency": "0.9"},
+		}})
+	}
+	f.append(event.KindAgentTraces, "", turnSpan(1))
+	f.store()
+	f.summarize()
+	if p, _ := f.list(nil); p.Items[0].TurnCount == nil || *p.Items[0].TurnCount != 1 {
+		t.Fatalf("turns after a late span = %v, want 1", p.Items[0].TurnCount)
+	}
+
+	// A span joined while a rebuild is running leaves the call stale for the next sweep.
+	f.append(event.KindAgentTraces, "", turnSpan(2))
+	f.store()
+	stale, err := f.pg.StaleCalls(context.Background(), 10)
+	if err != nil || len(stale) != 1 || stale[0].ID != id {
+		t.Fatalf("stale = %v, %v; want the call", stale, err)
+	}
+	f.append(event.KindAgentTraces, "", turnSpan(3))
+	f.store() // joins after the rebuild below read its mark
+	if err := f.pg.PutSummary(context.Background(), stale[0], store.CallSummary{Models: []string{}, Pipeline: "unknown"}, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if again, _ := f.pg.StaleCalls(context.Background(), 10); len(again) != 1 {
+		t.Fatalf("stale after a racing join = %d, want 1", len(again))
+	}
+	f.summarize()
+	if p, _ := f.list(nil); p.Items[0].TurnCount == nil || *p.Items[0].TurnCount != 3 {
+		t.Errorf("turns after the next sweep = %v, want 3", p.Items[0].TurnCount)
+	}
+}
+
+// Acceptance check 3.
+func TestListCallsPagesOnce(t *testing.T) {
+	f := newFixture(t)
+	for i := range 60 {
+		f.roomCall(fmt.Sprintf("RM_%02d", i), listBase.Add(time.Duration(i)*time.Minute), nil)
+	}
+	f.store()
+
+	var got []callSummary
+	q := url.Values{"limit": {"25"}}
+	for pages := 0; ; pages++ {
+		if pages == 4 {
+			t.Fatal("more than 3 pages")
+		}
+		p, code := f.list(q)
+		if code != http.StatusOK {
+			t.Fatalf("page %d status %d", pages+1, code)
+		}
+		got = append(got, p.Items...)
+		if p.Page.NextCursor == nil {
+			if pages != 2 {
+				t.Errorf("pages = %d, want 3", pages+1)
+			}
+			break
+		}
+		q = url.Values{"limit": {"25"}, "cursor": {*p.Page.NextCursor}, "snapshot": {p.Page.Snapshot}}
+	}
+	if len(got) != 60 {
+		t.Fatalf("calls = %d, want 60", len(got))
+	}
+	seen := map[string]bool{}
+	for i, c := range got {
+		if seen[c.ID] {
+			t.Errorf("call %s listed twice", c.ID)
+		}
+		seen[c.ID] = true
+		if i > 0 && c.StartedAt.After(got[i-1].StartedAt) {
+			t.Errorf("row %d starts after row %d: not startedAt desc", i, i-1)
+		}
+	}
+}
+
+// Acceptance check 4.
+func TestListCallsSnapshotHolds(t *testing.T) {
+	f := newFixture(t)
+	for i := range 30 {
+		f.roomCall(fmt.Sprintf("RM_%02d", i), listBase.Add(time.Duration(i)*time.Minute), nil)
+	}
+	f.store()
+	first, _ := f.list(url.Values{"limit": {"25"}})
+	for i := range 5 {
+		// Older than every listed call, so in startedAt desc order they fall after the cursor:
+		// only the snapshot keeps them off the second page.
+		f.roomCall(fmt.Sprintf("RM_NEW_%d", i), listBase.Add(-time.Hour+time.Duration(i)*time.Minute), nil)
+	}
+	// A call on the second page gets a new turn between the two reads.
+	f.append(event.KindAgentTraces, "", f.export([]store.Span{{
+		TraceID: fmt.Sprintf("%032x", 99), SpanID: fmt.Sprintf("%016x", 99),
+		Name: "agent_turn", Start: listBase, End: listBase.Add(time.Second), Attributes: map[string]string{"room_id": "RM_00", "lk.e2e_latency": "0.5"},
+	}}))
+	f.store()
+	f.summarize()
+
+	second, code := f.list(url.Values{"limit": {"25"}, "cursor": {*first.Page.NextCursor}, "snapshot": {first.Page.Snapshot}})
+	if code != http.StatusOK {
+		t.Fatalf("second page status %d", code)
+	}
+	all := append(slices.Clone(first.Items), second.Items...)
+	count := map[string]int{}
+	var updated *callSummary
+	for i, c := range all {
+		count[c.ID]++
+		if len(c.Room) >= 11 && c.Room[:11] == "room-RM_NEW" {
+			t.Errorf("call %s, stored after the snapshot, is listed", c.Room)
+		}
+		if c.Room == "room-RM_00" {
+			updated = &all[i]
+		}
+	}
+	if len(all) != 30 || len(count) != 30 {
+		t.Errorf("rows %d, distinct %d; want 30 and 30", len(all), len(count))
+	}
+	if updated == nil || updated.TurnCount == nil || *updated.TurnCount != 1 {
+		t.Errorf("updated call = %+v, want it once with its new turn", updated)
+	}
+	if *second.Totals.CallCount != *first.Totals.CallCount || *first.Totals.CallCount != 30 {
+		t.Errorf("totals %d then %d, want 30 both times", *first.Totals.CallCount, *second.Totals.CallCount)
+	}
+}
+
+// Acceptance check 5.
+func TestListCallsSortsUnknownLast(t *testing.T) {
+	f := newFixture(t)
+	answers := map[string][]float64{"RM_A": {900}, "RM_B": {300}, "RM_C": nil, "RM_D": {600}, "RM_E": nil}
+	sids := slices.Sorted(func(yield func(string) bool) {
+		for k := range answers {
+			if !yield(k) {
+				return
+			}
+		}
+	})
+	for i, sid := range sids {
+		f.roomCall(sid, listBase.Add(time.Duration(i)*time.Minute), nil)
+	}
+	f.store()
+	for _, sid := range sids {
+		f.setSummary(f.callID(sid), answers[sid])
+	}
+
+	for _, order := range []string{"asc", "desc"} {
+		p, _ := f.list(url.Values{"sort": {"answerMs"}, "order": {order}})
+		var medians []string
+		for _, it := range p.Items {
+			if it.AnswerMsMedian == nil {
+				medians = append(medians, "null")
+			} else {
+				medians = append(medians, fmt.Sprint(*it.AnswerMsMedian))
+			}
+		}
+		want := map[string]string{"asc": "[300 600 900 null null]", "desc": "[900 600 300 null null]"}[order]
+		if fmt.Sprint(medians) != want {
+			t.Errorf("%s: medians %v, want %s", order, medians, want)
+		}
+		if a, b := p.Items[3].ID, p.Items[4].ID; a > b {
+			t.Errorf("%s: unknowns not ordered by id: %s then %s", order, a, b)
+		}
+	}
+	p, _ := f.list(url.Values{"answerMsMin": {"0"}})
+	if len(p.Items) != 3 {
+		t.Errorf("answerMsMin=0 items = %d, want 3 (unknowns never match)", len(p.Items))
+	}
+}
+
+// Acceptance check 6.
+func TestListCallsRejectsMisusedCursor(t *testing.T) {
+	f := newFixture(t)
+	for i := range 3 {
+		f.roomCall(fmt.Sprintf("RM_%d", i), listBase.Add(time.Duration(i)*time.Minute), nil)
+	}
+	f.store()
+	first, _ := f.list(url.Values{"limit": {"1"}, "room": {"room-RM_1"}})
+	_ = first
+	p1, _ := f.list(url.Values{"limit": {"1"}})
+	c, s := *p1.Page.NextCursor, p1.Page.Snapshot
+	for name, q := range map[string]url.Values{
+		"changed filter": {"limit": {"1"}, "cursor": {c}, "snapshot": {s}, "room": {"room-RM_0"}},
+		"changed order":  {"limit": {"1"}, "cursor": {c}, "snapshot": {s}, "order": {"asc"}},
+		"no snapshot":    {"limit": {"1"}, "cursor": {c}},
+		"limit 0":        {"limit": {"0"}},
+		"limit 101":      {"limit": {"101"}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			var e apiError
+			if code := f.get(f.api(nil), listPath(f.project, q), &e); code != http.StatusBadRequest || e.Code != codeInvalidRequest {
+				t.Errorf("status %d, body %+v; want 400 invalid_request", code, e)
+			}
+		})
+	}
+}
+
+// Acceptance check 7.
+func TestListCallsChannelsAndUnstoredFilters(t *testing.T) {
+	f := newFixture(t)
+	sip, standard := livekit.ParticipantInfo_SIP, livekit.ParticipantInfo_STANDARD
+	f.roomCall("RM_SIP", listBase, &sip)
+	f.roomCall("RM_WEB", listBase.Add(time.Minute), &standard)
+	f.roomCall("RM_NONE", listBase.Add(2*time.Minute), nil)
+	f.store()
+
+	p, _ := f.list(nil)
+	got := map[string]string{}
+	for _, it := range p.Items {
+		got[it.Room] = it.Channel
+	}
+	if got["room-RM_SIP"] != "phone" || got["room-RM_WEB"] != "web" || got["room-RM_NONE"] != "unknown" {
+		t.Errorf("channels = %v", got)
+	}
+	if b := p.Totals.ByChannel; *b.Phone != 1 || *b.Web != 1 || *b.Unknown != 1 || *b.Console != 0 || *b.Local != 0 {
+		t.Errorf("byChannel = %+v", b)
+	}
+	for _, q := range []url.Values{{"issues": {"high"}}, {"tag": {"x"}}, {"archived": {"true"}}, {"recorded": {"true"}}} {
+		if p, _ := f.list(q); len(p.Items) != 0 || *p.Totals.CallCount != 0 {
+			t.Errorf("%v: items %d, callCount %d; want 0 and 0", q, len(p.Items), *p.Totals.CallCount)
+		}
+	}
+	if p, _ := f.list(url.Values{"archived": {"false"}}); len(p.Items) != 3 {
+		t.Errorf("archived=false items = %d, want 3", len(p.Items))
+	}
+}
+
+// Acceptance check 8. The median is the console's, the upper middle value: 1600 of four.
+func TestListCallsTotals(t *testing.T) {
+	f := newFixture(t)
+	answers := [][]float64{{1000}, {1400}, {1600}, {2000}, nil}
+	for i := range answers {
+		f.roomCall(fmt.Sprintf("RM_%d", i), listBase.Add(time.Duration(i)*time.Minute), nil)
+	}
+	f.store()
+	for i, a := range answers {
+		f.setSummary(f.callID(fmt.Sprintf("RM_%d", i)), a)
+	}
+	p, _ := f.list(nil)
+	a := p.Totals.Answers
+	if *a.Turns != 4 || *a.OverBudget != 2 || a.BudgetMs != 1500 || a.P50Ms == nil || *a.P50Ms != 1600 || len(a.ValuesMs) != 4 || a.ValuesTruncated {
+		t.Errorf("answers = turns %d, over %d, budget %d, p50 %v, values %v, truncated %v", *a.Turns, *a.OverBudget, a.BudgetMs, a.P50Ms, a.ValuesMs, a.ValuesTruncated)
+	}
+	// Newest call first: RM_3 (2000) was created last.
+	if a.ValuesMs[0] != 2000 {
+		t.Errorf("valuesMs = %v, want newest call first", a.ValuesMs)
+	}
+}
+
+// Acceptance check 9.
+func TestListCallsLeavesOutUnservableCalls(t *testing.T) {
+	f := newFixture(t)
+	f.roomCall("RM_OK", listBase, nil)
+	// No start: a room no source reported a time for.
+	f.append(event.KindLiveKitWebhook, "EV_NOSTART", webhook(t, &livekit.WebhookEvent{
+		Event: "room_started", Id: "EV_NOSTART", Room: &livekit.Room{Sid: "RM_NOSTART", Name: "no-start"},
+	}))
+	// No room: a job only spans name, with times. Neither: a job only spans name, with no times.
+	f.append(event.KindAgentTraces, "", f.export([]store.Span{
+		{TraceID: fmt.Sprintf("%032x", 1), SpanID: fmt.Sprintf("%016x", 1), Name: "agent_turn", Start: listBase, End: listBase.Add(time.Second), Attributes: map[string]string{"job_id": "AJ_NOROOM"}},
+		{TraceID: fmt.Sprintf("%032x", 2), SpanID: fmt.Sprintf("%016x", 2), Name: "agent_turn", Attributes: map[string]string{"job_id": "AJ_NEITHER"}},
+	}))
+	f.store()
+
+	p, _ := f.list(nil)
+	if len(p.Items) != 1 || p.Items[0].Room != "room-RM_OK" || *p.Totals.CallCount != 1 {
+		t.Fatalf("items %d, callCount %d; want only room-RM_OK", len(p.Items), *p.Totals.CallCount)
+	}
+	rows, err := f.pool.Query(context.Background(), `SELECT id::text FROM calls WHERE project_id = $1 AND COALESCE(room_sid, '') <> 'RM_OK'`, f.project)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			t.Fatal(err)
+		}
+		ids = append(ids, id)
+	}
+	rows.Close()
+	if len(ids) != 3 {
+		t.Fatalf("unservable calls stored = %d, want 3", len(ids))
+	}
+	for _, id := range ids {
+		var e apiError
+		if code := f.get(f.api(nil), path(f.project, id), &e); code != http.StatusNotFound {
+			t.Errorf("getCall %s = %d, want 404 by the same rule", id, code)
+		}
+	}
+}

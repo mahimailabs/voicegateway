@@ -19,13 +19,15 @@ SELECT EXISTS (SELECT 1 FROM organisations WHERE id = $1);
 -- name: UpsertCallByRoomSID :one
 -- Opens the call of one room instance or adds to it. A value already set is kept; the latest
 -- reported activity wins. GREATEST and COALESCE skip nulls, so an unreported time changes nothing.
-INSERT INTO calls (organisation_id, project_id, room_sid, room_name, job_id, started_at, last_activity_at)
-VALUES (@organisation_id, @project_id, @room_sid, sqlc.narg(room_name), sqlc.narg(job_id), sqlc.narg(started_at), sqlc.narg(last_activity_at))
+INSERT INTO calls (organisation_id, project_id, room_sid, room_name, job_id, started_at, last_activity_at, first_seen_at, summary_stale_at)
+VALUES (@organisation_id, @project_id, @room_sid, sqlc.narg(room_name), sqlc.narg(job_id), sqlc.narg(started_at), sqlc.narg(last_activity_at), sqlc.narg(first_seen_at), now())
 ON CONFLICT (organisation_id, project_id, room_sid) WHERE room_sid IS NOT NULL DO UPDATE SET
     room_name        = COALESCE(calls.room_name, EXCLUDED.room_name),
     job_id           = COALESCE(calls.job_id, EXCLUDED.job_id),
     started_at       = COALESCE(calls.started_at, EXCLUDED.started_at),
     last_activity_at = GREATEST(calls.last_activity_at, EXCLUDED.last_activity_at),
+    first_seen_at    = LEAST(calls.first_seen_at, EXCLUDED.first_seen_at),
+    summary_stale_at = now(),
     updated_at       = now()
 RETURNING id;
 
@@ -41,10 +43,12 @@ LIMIT 1;
 
 -- name: UpsertCallByJobID :one
 -- Opens a call for a job no source has named a room SID for, or adds to it.
-INSERT INTO calls (organisation_id, project_id, job_id, last_activity_at)
-VALUES (@organisation_id, @project_id, @job_id, sqlc.narg(last_activity_at))
+INSERT INTO calls (organisation_id, project_id, job_id, last_activity_at, first_seen_at, summary_stale_at)
+VALUES (@organisation_id, @project_id, @job_id, sqlc.narg(last_activity_at), sqlc.narg(first_seen_at), now())
 ON CONFLICT (organisation_id, project_id, job_id) WHERE room_sid IS NULL AND job_id IS NOT NULL DO UPDATE SET
     last_activity_at = GREATEST(calls.last_activity_at, EXCLUDED.last_activity_at),
+    first_seen_at    = LEAST(calls.first_seen_at, EXCLUDED.first_seen_at),
+    summary_stale_at = now(),
     updated_at       = now()
 RETURNING id;
 
@@ -65,6 +69,8 @@ UPDATE calls SET
     job_id           = COALESCE(job_id, sqlc.narg(job_id)),
     started_at       = COALESCE(started_at, sqlc.narg(started_at)),
     last_activity_at = GREATEST(last_activity_at, sqlc.narg(last_activity_at)),
+    first_seen_at    = LEAST(first_seen_at, sqlc.narg(first_seen_at)),
+    summary_stale_at = now(),
     updated_at       = now()
 WHERE id = @id;
 
@@ -101,7 +107,116 @@ WHERE organisation_id = $1 AND id = $2;
 
 -- name: CallByID :one
 -- One call of a project, with how many participants webhooks reported for it.
-SELECT c.id, c.room_name, c.room_sid, c.job_id, c.started_at, c.ended_at, c.end_state,
+SELECT c.id, c.room_name, c.room_sid, c.job_id, c.started_at, c.ended_at, c.end_state, c.first_seen_at,
        (SELECT count(*) FROM call_participants p WHERE p.call_id = c.id) AS participants
 FROM calls c
 WHERE c.organisation_id = @organisation_id AND c.project_id = @project_id AND c.id = @id;
+
+-- name: StaleCalls :many
+-- Calls whose summary needs rebuilding, oldest mark first.
+SELECT organisation_id, project_id, id, summary_stale_at
+FROM calls
+WHERE summary_stale_at IS NOT NULL
+ORDER BY summary_stale_at
+LIMIT @max_calls;
+
+-- name: PutSummary :exec
+-- Stores a call's rebuilt summary.
+INSERT INTO call_summaries (call_id, turn_count, answer_ms, answer_ms_median, models, pipeline, agent_key, computed_at)
+VALUES (@call_id, sqlc.narg(turn_count), @answer_ms, sqlc.narg(answer_ms_median), @models, @pipeline, sqlc.narg(agent_key), @computed_at)
+ON CONFLICT (call_id) DO UPDATE SET
+    turn_count       = EXCLUDED.turn_count,
+    answer_ms        = EXCLUDED.answer_ms,
+    answer_ms_median = EXCLUDED.answer_ms_median,
+    models           = EXCLUDED.models,
+    pipeline         = EXCLUDED.pipeline,
+    agent_key        = EXCLUDED.agent_key,
+    computed_at      = EXCLUDED.computed_at;
+
+-- name: HealCall :exec
+-- Fills what an older call lacks from its spans: the room name the agent reported and the earliest
+-- time a span reported. A value already stored is kept.
+UPDATE calls SET
+    room_name     = COALESCE(room_name, sqlc.narg(room_name)),
+    first_seen_at = LEAST(first_seen_at, sqlc.narg(first_seen_at))
+WHERE id = @id;
+
+-- name: ClearStale :exec
+-- Clears a call's stale mark only if nothing joined since the rebuild read it.
+UPDATE calls SET summary_stale_at = NULL
+WHERE id = @id AND summary_stale_at = @seen;
+
+-- name: ListCalls :many
+-- One page of a project's calls as of a snapshot. The sort key is one number, negated for
+-- descending order, so unknowns sort last and ties break by id in both orders; the cursor is the
+-- last row's (unknown, key, id).
+WITH f AS (
+    SELECT l.*,
+        CASE @sort_by::text
+            WHEN 'startedAt'       THEN EXTRACT(EPOCH FROM l.start_at)::double precision
+            WHEN 'durationSeconds' THEN l.duration_seconds
+            WHEN 'turnCount'       THEN l.turn_count::double precision
+            WHEN 'answerMs'        THEN l.answer_ms_median
+        END * CASE WHEN @descending::bool THEN -1 ELSE 1 END AS sort_key
+    FROM call_list l
+    WHERE l.organisation_id = @organisation_id AND l.project_id = @project_id AND l.created_at <= @snapshot_at
+      AND (sqlc.narg(from_at)::timestamptz IS NULL OR l.start_at >= sqlc.narg(from_at)::timestamptz)
+      AND (sqlc.narg(to_at)::timestamptz IS NULL OR l.start_at < sqlc.narg(to_at)::timestamptz)
+      AND (sqlc.narg(room)::text IS NULL OR l.room_name = sqlc.narg(room)::text)
+      AND (cardinality(@channels::text[]) = 0 OR l.channel = ANY(@channels::text[]))
+      AND (sqlc.narg(answer_min)::float8 IS NULL OR l.answer_ms_median >= sqlc.narg(answer_min)::float8)
+      AND (sqlc.narg(answer_max)::float8 IS NULL OR l.answer_ms_median <= sqlc.narg(answer_max)::float8)
+      AND (sqlc.narg(duration_min)::float8 IS NULL OR l.duration_seconds >= sqlc.narg(duration_min)::float8)
+      AND (sqlc.narg(duration_max)::float8 IS NULL OR l.duration_seconds <= sqlc.narg(duration_max)::float8)
+      AND (sqlc.narg(turns_min)::int IS NULL OR l.turn_count >= sqlc.narg(turns_min)::int)
+      AND (sqlc.narg(turns_max)::int IS NULL OR l.turn_count <= sqlc.narg(turns_max)::int)
+      AND (NOT @unknown_answer::bool OR l.answer_ms_median IS NULL)
+      AND (NOT @unknown_duration::bool OR l.duration_seconds IS NULL)
+      AND (NOT @unknown_turns::bool OR l.turn_count IS NULL)
+      AND NOT @match_none::bool
+)
+SELECT f.id, f.room_name, f.room_sid, f.start_at, f.started_at, f.ended_at, f.end_state, f.duration_seconds,
+       f.participants, f.channel, f.turn_count, f.answer_ms, f.answer_ms_median, f.models, f.pipeline, f.agent_key,
+       (f.sort_key IS NULL) AS key_unknown, COALESCE(f.sort_key, 0)::double precision AS sort_value
+FROM f
+WHERE NOT @after_cursor::bool
+   OR ((f.sort_key IS NULL), COALESCE(f.sort_key, 0), f.id) > (@cursor_unknown::bool, @cursor_value::float8, @cursor_id::uuid)
+ORDER BY (f.sort_key IS NULL), COALESCE(f.sort_key, 0), f.id
+LIMIT @max_rows;
+
+-- name: CallTotals :one
+-- Totals over every call the same filters match as of the snapshot, not one page. Answer values
+-- come newest call first, each call's in turn order, so a cut drops the oldest calls first; the
+-- median is the console's, the upper middle value.
+WITH f AS (
+    SELECT l.*
+    FROM call_list l
+    WHERE l.organisation_id = @organisation_id AND l.project_id = @project_id AND l.created_at <= @snapshot_at
+      AND (sqlc.narg(from_at)::timestamptz IS NULL OR l.start_at >= sqlc.narg(from_at)::timestamptz)
+      AND (sqlc.narg(to_at)::timestamptz IS NULL OR l.start_at < sqlc.narg(to_at)::timestamptz)
+      AND (sqlc.narg(room)::text IS NULL OR l.room_name = sqlc.narg(room)::text)
+      AND (cardinality(@channels::text[]) = 0 OR l.channel = ANY(@channels::text[]))
+      AND (sqlc.narg(answer_min)::float8 IS NULL OR l.answer_ms_median >= sqlc.narg(answer_min)::float8)
+      AND (sqlc.narg(answer_max)::float8 IS NULL OR l.answer_ms_median <= sqlc.narg(answer_max)::float8)
+      AND (sqlc.narg(duration_min)::float8 IS NULL OR l.duration_seconds >= sqlc.narg(duration_min)::float8)
+      AND (sqlc.narg(duration_max)::float8 IS NULL OR l.duration_seconds <= sqlc.narg(duration_max)::float8)
+      AND (sqlc.narg(turns_min)::int IS NULL OR l.turn_count >= sqlc.narg(turns_min)::int)
+      AND (sqlc.narg(turns_max)::int IS NULL OR l.turn_count <= sqlc.narg(turns_max)::int)
+      AND (NOT @unknown_answer::bool OR l.answer_ms_median IS NULL)
+      AND (NOT @unknown_duration::bool OR l.duration_seconds IS NULL)
+      AND (NOT @unknown_turns::bool OR l.turn_count IS NULL)
+      AND NOT @match_none::bool
+), a AS (
+    SELECT u.v, f.start_at, f.id, u.ord
+    FROM f, unnest(f.answer_ms) WITH ORDINALITY AS u(v, ord)
+)
+SELECT
+    (SELECT count(*) FROM f) AS call_count,
+    (SELECT count(*) FROM f WHERE channel = 'phone') AS phone,
+    (SELECT count(*) FROM f WHERE channel = 'web') AS web,
+    (SELECT count(*) FROM f WHERE channel = 'unknown') AS unknown_channel,
+    (SELECT count(*) FROM a) AS answer_turns,
+    (SELECT count(*) FROM a WHERE a.v > @budget_ms::float8) AS over_budget,
+    -- Null when no turn measured an answer.
+    (SELECT (array_agg(a.v ORDER BY a.v))[count(*) / 2 + 1] FROM a) AS p50_ms,
+    COALESCE((SELECT (array_agg(a.v ORDER BY a.start_at DESC, a.id, a.ord))[1:@max_values::int] FROM a), '{}')::double precision[] AS values_ms;

@@ -74,6 +74,7 @@ func Web(ctx context.Context, c config.Config, log *slog.Logger) error {
 	}
 	mux.Handle("/api/v1/", (&api.API{
 		Projects: projects, Calls: projects, Traces: events, Log: log, Now: time.Now, Gate: api.BearerToken(c.APIToken),
+		AnswerBudgetMs: c.AnswerBudgetMs,
 	}).Routes())
 
 	srv := &http.Server{
@@ -110,7 +111,7 @@ func Web(ctx context.Context, c config.Config, log *slog.Logger) error {
 }
 
 // Worker joins and stores what web appends to the stream until ctx is cancelled, and sweeps idle
-// calls and unlinked traces once a minute. It never answers HTTP (CLAUDE.md Boundaries).
+// calls and unlinked traces once a minute and rebuilds stale call summaries every 10 s. It never answers HTTP (CLAUDE.md Boundaries).
 func Worker(ctx context.Context, c config.Config, log *slog.Logger) error {
 	opts, err := redis.ParseURL(c.RedisURL)
 	if err != nil {
@@ -137,10 +138,14 @@ func Worker(ctx context.Context, c config.Config, log *slog.Logger) error {
 	}
 
 	log.Info("worker started", "consumer", name)
-	swept := make(chan struct{})
+	swept := make(chan struct{}, 2)
 	go func() {
-		defer close(swept)
-		sweep(ctx, joiner, log)
+		defer func() { swept <- struct{}{} }()
+		every(ctx, sweepEvery, "sweep", joiner.Sweep, log)
+	}()
+	go func() {
+		defer func() { swept <- struct{}{} }()
+		every(ctx, summarizeEvery, "summarize", joiner.Summarize, log)
 	}()
 	err = (&sink.Sink{
 		Stream:    stream.NewConsumer(rdb, stream.Ingest, workerGroup, name),
@@ -154,25 +159,31 @@ func Worker(ctx context.Context, c config.Config, log *slog.Logger) error {
 		Timeout: 30 * time.Second,
 	}).Run(ctx)
 	<-swept
+	<-swept
 	log.Info("worker stopped")
 	return err
 }
 
-// sweepEvery is how often the worker closes idle calls and counts unlinked traces. Every worker
-// sweeps; both sweeps are safe to run twice.
-const sweepEvery = time.Minute
+// sweepEvery is how often the worker closes idle calls and counts unlinked traces;
+// summarizeEvery is how often it rebuilds stale call summaries (phase 04d). Every worker runs both;
+// both are safe to run twice.
+const (
+	sweepEvery     = time.Minute
+	summarizeEvery = 10 * time.Second
+)
 
-func sweep(ctx context.Context, j *join.Joiner, log *slog.Logger) {
-	t := time.NewTicker(sweepEvery)
+// every runs f each period until ctx is cancelled. A failure is logged and retried next period.
+func every(ctx context.Context, period time.Duration, what string, f func(context.Context, time.Time) error, log *slog.Logger) {
+	t := time.NewTicker(period)
 	defer t.Stop()
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case now := <-t.C:
-			cctx, cancel := context.WithTimeout(ctx, sweepEvery)
-			if err := j.Sweep(cctx, now); err != nil && ctx.Err() == nil {
-				log.Error("worker: sweep failed, retrying next minute", "err", err)
+			cctx, cancel := context.WithTimeout(ctx, period)
+			if err := f(cctx, now); err != nil && ctx.Err() == nil {
+				log.Error("worker: "+what+" failed, retrying next period", "err", err)
 			}
 			cancel()
 		}

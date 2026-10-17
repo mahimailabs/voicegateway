@@ -8,24 +8,29 @@ import (
 
 	"github.com/mahimailabs/voicegateway/internal/event"
 	"github.com/mahimailabs/voicegateway/internal/store"
+	"github.com/mahimailabs/voicegateway/internal/turn"
 )
 
 // Calls is the call index.
 type Calls interface {
 	UpsertCall(ctx context.Context, c store.CallUpsert) (string, error)
-	UpsertCallByJob(ctx context.Context, organisationID, projectID, jobID string, activityAt *time.Time) (string, error)
+	UpsertCallByJob(ctx context.Context, organisationID, projectID, jobID string, activityAt, firstSeenAt *time.Time) (string, error)
 	CallByRoom(ctx context.Context, organisationID, projectID, roomSID string) (store.CallRef, error)
 	CallByJob(ctx context.Context, organisationID, projectID, jobID string) (store.CallRef, error)
 	CallInRoom(ctx context.Context, organisationID, projectID, roomName string, at time.Time) (string, error)
-	TouchCall(ctx context.Context, callID, jobID string, startedAt, activityAt *time.Time) error
+	TouchCall(ctx context.Context, callID, jobID string, startedAt, activityAt, firstSeenAt *time.Time) error
 	FinishCall(ctx context.Context, callID string, endedAt *time.Time) error
 	UpsertParticipant(ctx context.Context, p store.Participant) error
 	CloseIdleCalls(ctx context.Context, idleSince time.Time) (int64, error)
+	StaleCalls(ctx context.Context, limit int) ([]store.StaleCall, error)
+	PutSummary(ctx context.Context, c store.StaleCall, sum store.CallSummary, computedAt time.Time) error
 }
 
-// Traces counts traces that never linked to a call.
+// Traces counts traces that never linked to a call, and reads a call's spans and the turns built
+// from them, for its summary.
 type Traces interface {
 	CountUnlinkedTraces(ctx context.Context, lastSpanBefore time.Time) (uint64, error)
+	CallTrace(ctx context.Context, organisationID, projectID, callID string) ([]store.Span, turn.Result, error)
 }
 
 // Joiner joins events to calls.
@@ -110,12 +115,51 @@ func (j *Joiner) Sweep(ctx context.Context, now time.Time) error {
 	return nil
 }
 
+// SummaryBatch is the most summaries one sweep rebuilds, oldest mark first.
+const SummaryBatch = 200
+
+// Summarize rebuilds the summaries of calls marked stale, at most SummaryBatch, as of now. A call
+// joined to again while its summary was rebuilt stays marked, for the next sweep.
+func (j *Joiner) Summarize(ctx context.Context, now time.Time) error {
+	stale, err := j.Calls.StaleCalls(ctx, SummaryBatch)
+	if err != nil {
+		return err
+	}
+	for _, c := range stale {
+		spans, res, err := j.Traces.CallTrace(ctx, c.OrganisationID, c.ProjectID, c.ID)
+		if err != nil {
+			return err
+		}
+		s := turn.Summarize(spans, res)
+		sum := store.CallSummary{
+			TurnCount: s.TurnCount, AnswerMs: s.AnswerMs, AnswerMsMedian: s.AnswerMsMedian,
+			Models: s.Models, Pipeline: s.Pipeline, AgentKey: s.AgentKey,
+			RoomName: s.RoomName, FirstSeenAt: s.FirstSeenAt,
+		}
+		if err := j.Calls.PutSummary(ctx, c, sum, now); err != nil {
+			return err
+		}
+	}
+	if len(stale) > 0 {
+		j.Log.Debug("join: rebuilt call summaries", "count", len(stale))
+	}
+	return nil
+}
+
 // ptr returns a pointer to t, or nil when t is zero: an unreported time.
 func ptr(t time.Time) *time.Time {
 	if t.IsZero() {
 		return nil
 	}
 	return &t
+}
+
+// earliest returns the earlier of two optional times.
+func earliest(a, b *time.Time) *time.Time {
+	if a == nil || (b != nil && b.Before(*a)) {
+		return b
+	}
+	return a
 }
 
 // latest returns the later of two optional times.

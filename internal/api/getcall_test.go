@@ -1,6 +1,8 @@
 package api
 
 import (
+	"bytes"
+	"log/slog"
 	"math"
 	"net/http"
 	"strings"
@@ -195,9 +197,16 @@ func TestGetCallStorageDown(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = down.Close() })
+	var logged bytes.Buffer
+	a := f.api(down)
+	a.Log = slog.New(slog.NewJSONHandler(&logged, nil))
 	var e apiError
-	if code := f.get(f.api(down), path(f.project, f.callID("RM_DOWN")), &e); code != http.StatusInternalServerError || e.Code != codeInternal {
+	if code := f.get(a, path(f.project, f.callID("RM_DOWN")), &e); code != http.StatusInternalServerError || e.Code != codeInternal {
 		t.Errorf("status %d, body %+v; want 500 internal_error", code, e)
+	}
+	// The log line an operator searches for carries the request id the body gave.
+	if e.RequestID == "" || !strings.Contains(logged.String(), `"request_id":"`+e.RequestID+`"`) {
+		t.Errorf("log %q does not carry request id %q", logged.String(), e.RequestID)
 	}
 	if strings.Contains(e.Message, "127.0.0.1") || strings.Contains(e.Message, "refused") {
 		t.Errorf("error message leaks the storage error: %q", e.Message)

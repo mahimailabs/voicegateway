@@ -50,7 +50,7 @@ func (j *Joiner) metrics(ctx context.Context, r *store.Event) error {
 		for n, i := range idx {
 			items[n] = window{r.MetricPoints[i].Start, r.MetricPoints[i].End}
 		}
-		callID, joined, err := j.joinRef(ctx, r, k, items, "metric points")
+		callID, joined, err := j.joinRef(ctx, r, k, items, "", "metric points")
 		if err != nil {
 			return err
 		}
