@@ -245,3 +245,10 @@ How the list reads:
 - `issues`, `tag`, `archived=true` and `recorded=true` match nothing until each has a stored source.
 
 Medians use the console's rule, the upper middle value. Checks 1 to 10 pass on real Postgres, ClickHouse and Redis. Mutations fail them: dropping the snapshot cut, or dropping unknowns-last.
+
+Manual check, on the stack holding the two real calls:
+- The migration applied over the stored data, and the sweep rebuilt both summaries, healing the agent-only call's room and start from its spans.
+- `listCalls` with the token lists both, newest first: the webhook call `web`, 3 turns, answers 956.5 and 844.6 ms; the agent-only call `unknown`, 3 turns.
+- Totals: 2 calls, 4 measured answers, `p50Ms` by the console's rule.
+- Without the token: 401.
+- Each row's id opens the same call through `getCall`.
