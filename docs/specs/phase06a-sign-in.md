@@ -26,13 +26,14 @@ A person with an account signs in to the console with their email and password, 
   - `POST /auth/sign-out` deletes the session server-side.
   - `GET /auth/session` returns `{email, organisations: [{id, role}]}` for the signed-in user, or 401.
   - These are not console reads, so they are not in `docs/api/openapi.yaml`.
-- **Passwords:** argon2id (`golang.org/x/crypto/argon2`) with parameters from RFC 9106's second recommended option, and a random salt. An unknown email and a wrong password get the same 401 and take the same time, with a dummy hash compared for an unknown email.
-- **Sign-in limits:** after 10 failures for one email, or 50 from one address, in 15 minutes, sign-in answers 429 with `Retry-After` until the window passes. The counts live in Postgres, so several web replicas share them.
+- **Passwords:** argon2id (`golang.org/x/crypto/argon2`) with t=3, m=64 MiB, p=4, a 16-byte random salt and a 32-byte key, stored as a PHC string (`$argon2id$v=19$m=65536,t=3,p=4$<salt>$<hash>`) and compared with `subtle.ConstantTimeCompare`. A semaphore caps concurrent hashes at the number of CPUs, so a burst of sign-ins queues instead of exhausting memory. An unknown email and a wrong password get the same 401 and take the same time, with a dummy hash compared for an unknown email.
+- **The client address**, for the per-address limit: the connection's peer, unless the peer is in `VOICEGATEWAY_TRUSTED_PROXIES` (a list of addresses and CIDRs). Then it is the right-most hop of `X-Forwarded-For` that is not itself a trusted proxy. A forwarded header from an untrusted peer is ignored, so it cannot choose its own address.
+- **Sign-in limits:** after 10 failures for one email, or 50 from one client address, in 15 minutes, sign-in answers 429 with `Retry-After` until the window passes. The counts live in Postgres, so several web replicas share them. Known trade-off: anyone who knows an email can lock that account for 15 minutes by failing on purpose. The per-email limit is kept anyway, because without it one address could guess one password without end.
 - **Sessions** use `alexedwards/scs/v2` with `pgxstore`:
   - The cookie is HttpOnly and SameSite=Lax, with a 12-hour idle and 7-day absolute lifetime. The session id is renewed on sign-in.
   - It is `Secure` when `VOICEGATEWAY_PUBLIC_URL` is `https`, or when a request from an address in `VOICEGATEWAY_TRUSTED_PROXIES` carries `X-Forwarded-Proto: https`.
   - On plain HTTP away from `localhost`, `POST /auth/sign-in` answers 400 with `https_required` and stores nothing, so the console can say HTTPS is required instead of looping.
-- **Cross-origin writes:** every `/auth` write passes through `net/http`'s `CrossOriginProtection`, so a write from another origin is 403.
+- **Cross-origin writes:** `net/http`'s `CrossOriginProtection` wraps web's whole mux, so a write from another origin is 403 on every route, not only `/auth`.
 - **The `/api/v1` gate** accepts either a valid session or, until 06c, the interim bearer token.
   - With a session, it checks that the user is a member of the organisation in the path. A non-member gets 403 `forbidden`.
   - A request with neither credential is 401 as today.
@@ -58,7 +59,7 @@ A person with an account signs in to the console with their email and password, 
 
 ## Constraints
 
-- Library first: `scs/v2` v2.9.0 and its `pgxstore` (pinned to its exact pseudo-version), argon2 from `golang.org/x/crypto` (already in go.mod), and `CrossOriginProtection` from the standard library. No hand-written session or CSRF code.
+- Library first: `scs/v2` v2.9.0 and its `pgxstore` pinned at `v0.0.0-20251002162104-209de6e426de`, argon2 from `golang.org/x/crypto` (already in go.mod), and `CrossOriginProtection` from the standard library. No hand-written session or CSRF code.
 - CLAUDE.md, decision 0027:
   - Never log a password, a session id, an invitation token or an API key secret.
   - Every `/api/v1` route goes through the one gate.
@@ -72,6 +73,7 @@ A person with an account signs in to the console with their email and password, 
 2. Given that user, when `POST /auth/sign-in` sends the right password over HTTPS, then it answers 204 with a cookie that is HttpOnly, SameSite=Lax and Secure. `GET /auth/session` then returns the email and its admin organisation. After `POST /auth/sign-out`, the same cookie gets 401 (measured by `TestSignInSessionSignOut`).
 3. Given a wrong password and an unknown email, then both answer 401 with the same body. Over 20 tries each, their median times differ by less than 25% (measured by `TestSignInFailuresLookAlike`).
 4. Given 10 failed sign-ins for one email within 15 minutes, then the 11th answers 429 with a `Retry-After` header, even with the right password. Each sign-in in this check goes to a different web instance over the same Postgres (measured by `TestSignInLimitIsShared`).
+5a. Given web behind a trusted proxy, when two clients at `203.0.113.7` and `203.0.113.8` each fail 50 times through it, then each is limited on its own address and neither locks out the other. A request whose peer is not trusted, carrying `X-Forwarded-For: 203.0.113.7`, is counted under its peer's address, not the header's (measured by `TestClientAddressBehindProxy`).
 5. Given a plain-HTTP request from `10.0.0.5`, then sign-in answers 400 `https_required` and sets no cookie. From `localhost` over plain HTTP, it answers 204 with a cookie that is not `Secure`. Through a trusted proxy sending `X-Forwarded-Proto: https`, the cookie is `Secure`. From an untrusted address sending the same header, it is treated as plain HTTP (measured by `TestSessionCookieFollowsHTTPS`).
 6. Given a sign-in `POST` with an `Origin` of another site, then it answers 403 and sets no cookie (measured by `TestCrossOriginSignInRefused`).
 7. Given a signed-in member of organisation A, when they read `getCall` for a call in A, then 200. For a call in organisation B, where they are not a member, 403 `forbidden`. With no cookie and no token, 401. With the interim token, 200 as before (measured by `TestGateAcceptsSessionScopedToMembership`).
