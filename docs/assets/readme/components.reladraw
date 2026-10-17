@@ -30,7 +30,7 @@ node dash "Dashboard + MCP / [quiet]reads only through web[/quiet]" badge: react
 
 edge livekit -> vg.web "webhooks, metrics" from: bottom to: top
 edge agent -> vg.web "spans, uploads" from: bottom to: top
-edge dash -> vg.web "API" from: bottom to: top
+edge dash -> vg.web "API" from: bottom to: right
 edge vg.web -> vg.redis "append" line: (pattern: dashed)
 edge vg.redis -> vg.worker "consume" from: top to: bottom line: (pattern: dashed)
 edge vg.worker -> vg.ch "batched writes" from: bottom to: top line: (pattern: dashed)

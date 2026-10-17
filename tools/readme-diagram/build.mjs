@@ -105,6 +105,10 @@ for (const [name, theme] of Object.entries(themes)) {
   const fontLicense = element('metadata', { id: 'kalam-font-license' });
   fontLicense.textContent = await readFile(new URL('./Kalam-OFL.txt', import.meta.url), 'utf8');
   root.appendChild(fontLicense);
-  await writeFile(new URL(`components-${name}.svg`, dir), new XMLSerializer().serializeToString(doc) + '\n');
+  const output = new XMLSerializer().serializeToString(doc) + '\n';
+  // The repository caps every file at 250 KiB; fail the build rather than commit a larger SVG.
+  const bytes = Buffer.byteLength(output);
+  if (bytes > 250 * 1024) throw new Error(`components-${name}.svg is ${bytes} bytes, over the 250 KiB file cap.`);
+  await writeFile(new URL(`components-${name}.svg`, dir), output);
   console.log(`Built components-${name}.svg (${root.getAttribute('width')} x ${root.getAttribute('height')})`);
 }

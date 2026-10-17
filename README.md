@@ -53,7 +53,7 @@ Unreported measurements stay **unknown**. Traces, usage and recordings appear on
   <img src="docs/assets/readme/components-light.svg" alt="VoiceGateway components. LiveKit sends webhooks and metrics, and voice agents send spans and session uploads, to web. The dashboard and MCP read through web's API. web appends to a Redis stream and reads Postgres; worker consumes the stream and writes batches to ClickHouse. An S3 bucket holds opt-in recordings." width="100%" />
 </picture>
 
-One Go binary runs as **web** (checks keys, takes data in, serves the API and dashboard) and **worker** (joins events into calls, writes to ClickHouse). A Redis stream is their only link. Postgres holds projects and keys, ClickHouse everything measured, and your own S3 bucket any recordings. `docker compose up` starts all six. See [ARCHITECTURE.md](ARCHITECTURE.md).
+One Go binary runs as **web** (checks keys, takes data in, serves the API and dashboard) and **worker** (joins events into calls, writes to ClickHouse). A Redis stream is their only link. Postgres holds projects and keys, ClickHouse everything measured, and your own S3 bucket any recordings. `make up` starts all six. See [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ## Quickstart
 
