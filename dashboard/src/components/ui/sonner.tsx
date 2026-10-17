@@ -9,7 +9,8 @@ const Toaster = ({ ...props }: ToasterProps) => {
   return (
     <Sonner
       theme={theme as ToasterProps["theme"]}
-      className="toaster group"
+      // An open Radix modal sets pointer-events: none on the body; toasts (and their Undo) stay clickable.
+      className="toaster group pointer-events-auto"
       icons={{
         success: (
           <CircleCheckIcon className="size-4" />

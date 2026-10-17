@@ -75,11 +75,20 @@ export function ProjectSwitcher({ onManage }: { onManage: () => void }) {
   const router = useRouter()
   const path = useRouterState({ select: (s) => s.location.pathname })
   const [adding, setAdding] = useState(false)
-  const media = useQuery(mediaServerQuery())
-  const current = org?.projects.find((p) => p.id === currentScope().project) ?? org?.projects[0]
-  if (!org || !current) return null
-  // Switching project keeps the page and moves the URL to the other project's scope.
-  const open = (id: string) => id !== current.id && router.history.push(`/org/${org.id}/project/${id}${path}`)
+  // null when the URL names a project this organisation does not have: nothing is checked, picking
+  // any project opens it, and the unknown project's server is not asked for.
+  const current = org?.projects.find((p) => p.id === currentScope().project) ?? null
+  const media = useQuery({ ...mediaServerQuery(), enabled: current !== null })
+  if (!org || !org.projects.length) return null
+  // Switching project keeps the page and moves the URL to the other project's scope. Leaving a project
+  // that does not exist loads the page afresh, as the "No such project" link does, so the shell reads
+  // the new project's settings.
+  const open = (id: string) => {
+    if (id === current?.id) return
+    const to = `/org/${org.id}/project/${id}${path}`
+    if (current) router.history.push(to)
+    else window.location.assign(to)
+  }
   const host = media.isPending ? "Loading the server" : media.isError ? "Server could not be read" : (media.data.server?.url.replace(/^wss?:\/\//, "") ?? "server not reported")
   return (
     <>
@@ -87,7 +96,7 @@ export function ProjectSwitcher({ onManage }: { onManage: () => void }) {
       <DropdownMenu>
         <DropdownMenuTrigger className={trigger}>
           <TreeStructure size={15} className="text-muted-foreground" />
-          <span className="truncate">{current.name}</span>
+          <span className="truncate">{current?.name ?? "Choose a project"}</span>
           <CaretUpDown size={13} className="text-muted-foreground" />
         </DropdownMenuTrigger>
         <DropdownMenuContent align="start" className="min-w-72 rounded-xl" onCloseAutoFocus={keepFocus}>
@@ -98,9 +107,9 @@ export function ProjectSwitcher({ onManage }: { onManage: () => void }) {
               <span className="min-w-0">
                 <span className="block">{p.name}</span>
                 {/* The server read is the current project's, so only its row names a server. */}
-                {p.id === current.id && <span className={cn("block truncate text-[11px] text-muted-foreground", media.data?.server && "font-mono")}>{host}</span>}
+                {p.id === current?.id && <span className={cn("block truncate text-[11px] text-muted-foreground", media.data?.server && "font-mono")}>{host}</span>}
               </span>
-              {p.id === current.id && <Check className="ml-auto size-4" />}
+              {p.id === current?.id && <Check className="ml-auto size-4" />}
             </DropdownMenuItem>
           ))}
           <DropdownMenuSeparator />
