@@ -1,8 +1,6 @@
 package api
 
 import (
-	"context"
-	"errors"
 	"math"
 	"net/http"
 	"strings"
@@ -14,7 +12,7 @@ import (
 
 	"github.com/mahimailabs/voicegateway/internal/event"
 	"github.com/mahimailabs/voicegateway/internal/store"
-	"github.com/mahimailabs/voicegateway/internal/turn"
+	"github.com/mahimailabs/voicegateway/internal/store/chstore"
 )
 
 func path(project, callID string) string {
@@ -182,15 +180,6 @@ func TestGetCallNotFound(t *testing.T) {
 	}
 }
 
-// chDown is ClickHouse unreachable.
-type chDown struct{}
-
-var errDown = errors.New("dial tcp 127.0.0.1:9000: connect: connection refused")
-
-func (chDown) CallTrace(context.Context, string, string, string) ([]store.Span, turn.Result, error) {
-	return nil, turn.Result{}, errDown
-}
-
 // Acceptance check 6.
 func TestGetCallStorageDown(t *testing.T) {
 	f := newFixture(t)
@@ -200,11 +189,17 @@ func TestGetCallStorageDown(t *testing.T) {
 		Room: &livekit.Room{Sid: "RM_DOWN", Name: "down", CreationTime: base.Unix()},
 	}))
 	f.store()
+	// ClickHouse at a port nothing listens on: a real connection that fails, not a fake.
+	down, err := chstore.OpenReadOnly("clickhouse://voicegateway@127.0.0.1:1/voicegateway?dial_timeout=1s")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = down.Close() })
 	var e apiError
-	if code := f.get(f.api(chDown{}), path(f.project, f.callID("RM_DOWN")), &e); code != http.StatusInternalServerError || e.Code != codeInternal {
+	if code := f.get(f.api(down), path(f.project, f.callID("RM_DOWN")), &e); code != http.StatusInternalServerError || e.Code != codeInternal {
 		t.Errorf("status %d, body %+v; want 500 internal_error", code, e)
 	}
-	if strings.Contains(e.Message, "9000") || strings.Contains(e.Message, "refused") {
+	if strings.Contains(e.Message, "127.0.0.1") || strings.Contains(e.Message, "refused") {
 		t.Errorf("error message leaks the storage error: %q", e.Message)
 	}
 }

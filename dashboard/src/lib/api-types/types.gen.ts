@@ -922,7 +922,7 @@ export type CallStats = {
         valuesTruncated: boolean;
     };
     /**
-     * Issues in the range by severity, the same groups listIssues returns.
+     * Event issues with a hit in the range by severity, the same groups listIssues returns with kind event. Standing issues are current state, not problems in the range, and are not counted.
      */
     issueCounts: {
         /**
@@ -1123,7 +1123,7 @@ export type IssueList = {
      */
     complete: boolean;
     /**
-     * Issues in the range, high severity first, then by hits. Grouping, titles and severities are the ones in issues-model.ts.
+     * Event issues with a hit in the range, and every standing issue whatever the range, high severity first, then by hits. Grouping, titles and severities are the ones in issues-model.ts.
      */
     items: Array<{
         /**
@@ -1134,6 +1134,10 @@ export type IssueList = {
          * Issue title.
          */
         title: string;
+        /**
+         * event: something that happened, each hit dated and kept only when from <= at < to. standing: a state true of the latest read (an agent worker or phone bridge check over what LiveKit lists now), listed in every range with undated hits and never counted as a problem in the range.
+         */
+        kind: 'event' | 'standing';
         /**
          * Severity of the underlying check.
          */
@@ -1147,7 +1151,7 @@ export type IssueList = {
          */
         lastSeenAt: string | null;
         /**
-         * Where the issue was found, most recent first.
+         * Where the issue was found, most recent first. Never empty.
          */
         hits: Array<{
             /**

@@ -1,6 +1,6 @@
 import { useMemo } from "react"
 import { Link } from "@tanstack/react-router"
-import { ArrowCounterClockwise, ArrowSquareOut, CaretRight, CheckCircle, DotsThree, EyeSlash, Phone, PhoneCall, Robot, Shapes, Warning, WarningCircle } from "@phosphor-icons/react"
+import { ArrowCounterClockwise, ArrowSquareOut, CaretRight, CheckCircle, Clock, DotsThree, EyeSlash, Phone, PhoneCall, Robot, Shapes, Warning, WarningCircle } from "@phosphor-icons/react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
@@ -10,14 +10,16 @@ import { type Store, statusOf, storeFrom, useSaveIssueStates } from "./issue-sta
 import { type Columns, DataTable, type Field } from "@/components/data-table"
 import { DataGridColumnHeader } from "@/components/reui/data-grid/data-grid-column-header"
 import { cn } from "@/lib/utils"
-import { type Issue, type Severity, issuesFrom } from "./issues-model"
+import { type Issue, type Severity, issuesFrom, lastSeen, lastSortKey } from "./issues-model"
 import { useQuery } from "@tanstack/react-query"
 import { QueryState } from "@/components/page-state"
 import { issueDispositionsQuery, issuesQuery } from "@/lib/api"
 import { useUrlState } from "@/lib/url-state"
 
 // Issues: every finding the console computes, grouped so a pattern across calls reads as one row
-// (decision 0021). Open a row for the calls or components it was found on.
+// (decision 0021). Open a row for the calls or components it was found on. A standing issue is
+// current state (an agent or phone bridge check over the latest read): it reads "Current", not a
+// time, and is counted apart from the problems that happened.
 
 const dot: Record<Severity, string> = { high: "bg-destructive", medium: "bg-amber-500", low: "bg-muted-foreground/50", info: "bg-muted-foreground/30" }
 const sourceIcon = { Calls: PhoneCall, "Agent workers": Robot, "Phone bridge": Phone }
@@ -28,7 +30,7 @@ function Hits({ issue }: { issue: Issue }) {
     <ul className="divide-y">
       {issue.hits.map((h, k) => (
         <li key={k} className="grid grid-cols-[120px_minmax(0,220px)_minmax(0,1fr)] items-baseline gap-4 py-2.5 text-[13px]">
-          <span className="text-muted-foreground tnum">{h.at === null ? "Now" : day(h.at)}</span>
+          <span className="text-muted-foreground tnum">{issue.kind === "standing" ? "Current" : h.at === null ? "Unknown" : day(h.at)}</span>
           {h.callId ? (
             <Link to="/calls/$callId" params={{ callId: h.callId }} className="truncate font-mono text-[12px] hover:underline">
               {h.where}
@@ -45,18 +47,22 @@ function Hits({ issue }: { issue: Issue }) {
   )
 }
 
-const lastSeen = (i: Issue) => {
-  const t = Math.max(...i.hits.map((h) => h.at ?? -Infinity))
-  return Number.isFinite(t) ? t : null
-}
-
 function Seen({ i }: { i: Issue }) {
   const n = i.hits.length
   return <span className="tnum">{`${n} ${i.source === "Calls" ? (n === 1 ? "call" : "calls") : n === 1 ? "place" : "places"}`}</span>
 }
 function Last({ i }: { i: Issue }) {
   const t = lastSeen(i)
-  return <span className="tnum">{t === null ? "Now" : day(t)}</span>
+  if (i.kind === "standing")
+    return (
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span className="cursor-help">Current</span>
+        </TooltipTrigger>
+        <TooltipContent className="text-xs">True of the latest read whatever the range, not an event in it.</TooltipContent>
+      </Tooltip>
+    )
+  return <span className="tnum">{t === null ? "Unknown" : day(t)}</span>
 }
 
 function TitleCell({ i, regressed = false }: { i: Issue; regressed?: boolean }) {
@@ -132,7 +138,7 @@ const columns: Columns<Issue> = [
   },
   {
     id: "last",
-    accessorFn: (i) => lastSeen(i) ?? -1,
+    accessorFn: lastSortKey,
     header: ({ column }) => <DataGridColumnHeader title="Last" column={column} />,
     meta: { headerClassName: "[&>div]:w-full [&>div]:justify-end", cellClassName: "text-right" },
     cell: ({ row }) => (
@@ -153,6 +159,17 @@ const fields: Field<Issue>[] = [
     icon: <Shapes />,
     options: (["Calls", "Agent workers", "Phone bridge"] as const).map((v) => ({ value: v, label: v })),
     get: (i) => i.source,
+  },
+  {
+    id: "kind",
+    label: "Kind",
+    type: "select",
+    icon: <Clock />,
+    options: [
+      { value: "event", label: "Happened in range" },
+      { value: "standing", label: "Current state" },
+    ],
+    get: (i) => i.kind,
   },
   { id: "seen", label: "Seen", type: "number", icon: <PhoneCall />, get: (i) => i.hits.length },
 ]
@@ -177,9 +194,13 @@ function IssuesView({ all, states }: { all: Issue[]; states: Store }) {
   const count = (v: View) => withStatus.filter((x) => x.st.status === v).length
   const shown = withStatus.filter((x) => x.st.status === view).map((x) => x.i)
   const regressed = new Set(withStatus.filter((x) => x.st.regressed).map((x) => x.i.id))
-  const open = withStatus.filter((x) => x.st.status === "open").map((x) => x.i)
+  const openAll = withStatus.filter((x) => x.st.status === "open").map((x) => x.i)
+  // The headline counts what happened; standing issues are current state and counted apart.
+  const open = openAll.filter((i) => i.kind === "event")
+  const current = openAll.filter((i) => i.kind === "standing")
   const calls = new Set(open.flatMap((i) => i.hits.map((h) => h.callId).filter(Boolean))).size
   const high = open.filter((i) => i.severity === "high").length
+  const currentHigh = current.filter((i) => i.severity === "high").length
 
   // Every change can be undone from its toast; the store keeps the state from before.
   const apply = (list: Issue[], state: "resolved" | "ignored" | "open", done?: () => void) => {
@@ -253,6 +274,11 @@ function IssuesView({ all, states }: { all: Issue[]; states: Store }) {
         <h1 className="text-[28px] leading-tight font-semibold tracking-[-0.02em] text-balance">
           {open.length} open{high ? `, ${high} high` : ""}. <span className="text-muted-foreground">{calls ? `On ${calls} calls and the components around them.` : "Nothing open on calls."}</span>
         </h1>
+        <p className="text-[13px] text-muted-foreground">
+          {current.length
+            ? `Plus ${current.length} current ${current.length === 1 ? "state" : "states"}${currentHigh ? `, ${currentHigh} high,` : ""} on agent workers and the phone bridge, true now whatever the range.`
+            : "No open current state on agent workers or the phone bridge."}
+        </p>
       </header>
       <Tabs value={view} onValueChange={(v) => setView(v as View)}>
         <TabsList>
@@ -292,7 +318,7 @@ function IssuesView({ all, states }: { all: Issue[]; states: Store }) {
           </>
         )}
       />
-      <p className="text-[12px] text-muted-foreground">Resolved and ignored are kept in this browser until the server stores them. A resolved issue reopens as regressed when it is seen again. "Now" is a check on current configuration.</p>
+      <p className="text-[12px] text-muted-foreground">Resolved and ignored are kept in this browser until the server stores them. A resolved issue reopens as regressed when it is seen again. "Current" is a check on the latest read of agents or the phone bridge, not an event with a time.</p>
     </div>
   )
 }

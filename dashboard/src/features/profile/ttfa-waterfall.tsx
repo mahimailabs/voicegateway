@@ -1,21 +1,24 @@
+import { useQuery } from "@tanstack/react-query"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
-import type { Call } from "@/lib/api"
+import { type Call, providerProbesQuery } from "@/lib/api"
+import type { ProviderProbes } from "@/lib/api-types"
+import { useEmbedded } from "@/lib/url-state"
 import { cn } from "@/lib/utils"
-import probe from "@/mocks/network-probe.json"
 import { type CallModel, type Placed, type TurnModel, fmtMs, placed } from "@/features/call/call-model"
 
 // Time to first audio for one turn, stage by stage on one clock, from the moment the caller stopped
 // talking. Every bar is a real span or event of that turn. The hatched part of a model bar is the
-// network round trip to that provider, measured separately from the agent's machine; the rest is the
-// provider's own time. Bars may overlap: the model can start before the turn is confirmed.
-// A Gantt with hatched sub-segments has no library component, so it is laid out here.
+// network round trip to that provider, measured separately from the agent's machine
+// (getProviderProbes); the rest is the provider's own time. Without that read no part is hatched.
+// Bars may overlap: the model can start before the turn is confirmed. A Gantt with hatched
+// sub-segments has no library component, so it is laid out here.
 
 type Row = { label: string; sub: string; start: number; end: number; hopMs?: number; kind: "speech" | "model" | "turn" | "hop" | "tool" }
 
-const hop = (role: string) => probe.endpoints.find((e) => e.role === role)?.tcpMs ?? null
 const sec = (s: Placed) => s.startMs / 1000
 
-export function waterfallRows(call: Call, t: TurnModel): Row[] | null {
+export function waterfallRows(call: Call, t: TurnModel, probes: ProviderProbes | null): Row[] | null {
+  const hop = (role: string) => probes?.endpoints.find((e) => e.role === role)?.tcpMs ?? null
   // Only spans with a start and duration can be drawn.
   const spans = (call.spans ?? []).filter(placed)
   if (!t.utterance || !spans.length) return null
@@ -54,8 +57,14 @@ const tone: Record<Row["kind"], string> = {
 }
 
 export function TtfaWaterfall({ call, model, turn, compact }: { call: Call; model: CallModel; turn: number; compact?: boolean }) {
+  // An embed token cannot read the probes, so an embedded call draws no network part.
+  const embedded = useEmbedded()
+  const probes = useQuery({ ...providerProbesQuery(), enabled: !embedded })
   const t = model.turns[turn]
-  const rows = t ? waterfallRows(call, t) : null
+  // Wait for the probes rather than redraw every bar when the network part arrives.
+  if (!embedded && probes.isPending) return <p className="text-sm text-muted-foreground">Loading network timings.</p>
+  const rows = t ? waterfallRows(call, t, probes.data ?? null) : null
+  const gap = embedded ? "Network time is not shown in an embed, so model bars include it." : probes.isError ? "Network round trips could not be read, so model bars include network time." : null
   if (!t || !rows) return <p className="text-sm text-muted-foreground">This turn has no span timings to draw.</p>
   const max = Math.max(...rows.map((r) => r.end), t.e2eMs ?? 0) * (compact ? 1.35 : 1.2)
   const ticks = Array.from({ length: 6 }, (_, k) => Math.round(((max / 5) * k) / 50) * 50)
@@ -63,6 +72,7 @@ export function TtfaWaterfall({ call, model, turn, compact }: { call: Call; mode
   const network = rows.reduce((a, r) => a + (r.hopMs ?? 0), 0)
   return (
     <div className="space-y-4">
+      {gap && <p className="text-[12px] text-muted-foreground">{gap}</p>}
       <div className="space-y-2">
         {rows.map((r, k) => (
           <div key={k} className={cn("grid items-center gap-4", compact ? "grid-cols-[120px_minmax(0,1fr)]" : "grid-cols-[150px_minmax(0,1fr)]")}>

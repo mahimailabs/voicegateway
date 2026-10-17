@@ -107,7 +107,7 @@ function Issues() {
             <span className="block truncate text-[13px] font-medium">{i.title}</span>
             <span className="block text-[12px] text-muted-foreground">{i.source}</span>
           </span>
-          <span className="shrink-0 text-[12px] text-muted-foreground tnum">{`${i.hits.length} ${i.hits.length === 1 ? "place" : "places"}`}</span>
+          <span className="shrink-0 text-[12px] text-muted-foreground tnum">{i.kind === "standing" ? "Current" : `${i.hits.length} ${i.hits.length === 1 ? "place" : "places"}`}</span>
         </li>
       ))}
     </ul>

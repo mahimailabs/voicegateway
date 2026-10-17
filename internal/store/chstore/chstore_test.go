@@ -2,12 +2,14 @@ package chstore
 
 import (
 	"context"
+	"errors"
 	"io/fs"
 	"os"
 	"testing"
 	"time"
 
 	"github.com/ClickHouse/clickhouse-go/v2"
+	"github.com/ClickHouse/clickhouse-go/v2/lib/proto"
 	"github.com/pressly/goose/v3"
 	"github.com/testcontainers/testcontainers-go"
 	tcclickhouse "github.com/testcontainers/testcontainers-go/modules/clickhouse"
@@ -108,7 +110,8 @@ func TestOpenReadOnlyRefusesWrites(t *testing.T) {
 		OrganisationID: "default", ProjectID: "production", Kind: "livekit.webhook",
 		DedupeKey: "EV_1", StreamID: "1-0", ReceivedAt: time.Now(), Payload: []byte("{}"),
 	}})
-	if err == nil {
-		t.Fatal("read-only insert succeeded, want it refused")
+	var ex *proto.Exception
+	if !errors.As(err, &ex) || ex.Code != 164 { // READONLY, src/Common/ErrorCodes.cpp
+		t.Fatalf("read-only insert err = %v, want ClickHouse code 164 (READONLY)", err)
 	}
 }

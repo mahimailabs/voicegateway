@@ -128,7 +128,7 @@ export function CommandPalette({ open, onOpenChange, pages, onSettings, onShortc
               <CommandItem key={i.id} value={`issue ${i.title} ${i.source}`} onSelect={() => run(() => navigate({ to: "/issues" }))}>
                 <WarningCircle className={i.severity === "high" ? "text-destructive" : i.severity === "medium" ? "text-amber-600" : ""} />
                 <span className="truncate">{i.title}</span>
-                <span className="ml-auto shrink-0 text-[12px] text-muted-foreground tnum">{`${i.hits.length} · ${i.source}`}</span>
+                <span className="ml-auto shrink-0 text-[12px] text-muted-foreground tnum">{`${i.kind === "standing" ? "Current" : i.hits.length} · ${i.source}`}</span>
               </CommandItem>
             ))}
           </CommandGroup>
