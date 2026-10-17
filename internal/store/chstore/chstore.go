@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"time"
 
 	"github.com/ClickHouse/clickhouse-go/v2"
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
@@ -96,31 +97,192 @@ func (s *Store) Existing(ctx context.Context, keys []store.EventKey) (map[store.
 	return found, nil
 }
 
-// Insert writes events in one batch. Either every row lands or the call fails.
+// Insert writes events with their spans, trace links and unmatched records. Those go first and
+// the events last, so a stored event means everything joined to it is stored; every table folds a
+// repeated row, so a retry after a partial write leaves one of each.
 func (s *Store) Insert(ctx context.Context, events []store.Event) error {
 	if len(events) == 0 {
 		return nil
 	}
-	batch, err := s.conn.PrepareBatch(ctx,
-		`INSERT INTO events (organisation_id, project_id, kind, dedupe_key, event_id, stream_id, received_at, payload)`)
-	if err != nil {
-		return fmt.Errorf("prepare insert: %w", err)
+	if err := s.insertSpans(ctx, events); err != nil {
+		return err
 	}
+	if err := s.insertTraceCalls(ctx, events); err != nil {
+		return err
+	}
+	if err := s.insertUnmatched(ctx, events); err != nil {
+		return err
+	}
+	return s.send(ctx, "events", len(events),
+		`INSERT INTO events (organisation_id, project_id, kind, call_id, dedupe_key, event_id, stream_id, received_at, payload)`,
+		func(b driver.Batch) error {
+			for _, e := range events {
+				if err := b.Append(e.OrganisationID, e.ProjectID, e.Kind, e.CallID, e.DedupeKey, e.EventID, e.StreamID, e.ReceivedAt, string(e.Payload)); err != nil {
+					return fmt.Errorf("event %s: %w", e.StreamID, err)
+				}
+			}
+			return nil
+		})
+}
+
+func (s *Store) insertSpans(ctx context.Context, events []store.Event) error {
+	n := 0
 	for _, e := range events {
-		if err := batch.Append(e.OrganisationID, e.ProjectID, e.Kind, e.DedupeKey, e.EventID, e.StreamID, e.ReceivedAt, string(e.Payload)); err != nil {
-			_ = batch.Abort()
-			// Append fails only when a value does not convert to its column.
-			return fmt.Errorf("insert event %s: %w: %w", e.StreamID, store.ErrBadRow, err)
-		}
+		n += len(e.Spans)
+	}
+	if n == 0 {
+		return nil
+	}
+	return s.send(ctx, "spans", n,
+		`INSERT INTO spans (organisation_id, project_id, trace_id, span_id, parent_span_id, call_id, name, kind, start_time, end_time, status_code, room_id, job_id, scope_name, attributes, resource, stream_id)`,
+		func(b driver.Batch) error {
+			for _, e := range events {
+				for _, sp := range e.Spans {
+					if err := b.Append(e.OrganisationID, e.ProjectID, sp.TraceID, sp.SpanID, sp.ParentSpanID, sp.CallID, sp.Name, sp.Kind,
+						sp.Start, sp.End, sp.StatusCode, sp.RoomID, sp.JobID, sp.ScopeName, nonNil(sp.Attributes), nonNil(sp.Resource), e.StreamID); err != nil {
+						return fmt.Errorf("span of %s: %w", e.StreamID, err)
+					}
+				}
+			}
+			return nil
+		})
+}
+
+func (s *Store) insertTraceCalls(ctx context.Context, events []store.Event) error {
+	n := 0
+	for _, e := range events {
+		n += len(e.TraceCalls)
+	}
+	if n == 0 {
+		return nil
+	}
+	return s.send(ctx, "trace links", n, `INSERT INTO trace_calls (organisation_id, project_id, trace_id, call_id)`,
+		func(b driver.Batch) error {
+			for _, e := range events {
+				for _, tc := range e.TraceCalls {
+					if err := b.Append(e.OrganisationID, e.ProjectID, tc.TraceID, tc.CallID); err != nil {
+						return fmt.Errorf("trace link of %s: %w", e.StreamID, err)
+					}
+				}
+			}
+			return nil
+		})
+}
+
+func (s *Store) insertUnmatched(ctx context.Context, events []store.Event) error {
+	n := 0
+	for _, e := range events {
+		n += len(e.Unmatched)
+	}
+	if n == 0 {
+		return nil
+	}
+	return s.send(ctx, "unmatched", n, `INSERT INTO unmatched (organisation_id, project_id, kind, key, reason)`,
+		func(b driver.Batch) error {
+			for _, e := range events {
+				for _, u := range e.Unmatched {
+					if err := b.Append(e.OrganisationID, e.ProjectID, u.Kind, u.Key, u.Reason); err != nil {
+						return fmt.Errorf("unmatched of %s: %w", e.StreamID, err)
+					}
+				}
+			}
+			return nil
+		})
+}
+
+// send prepares one insert, lets fill append its rows and sends it. An append that fails, or a
+// data error from ClickHouse, wraps store.ErrBadRow; any other failure is transient.
+func (s *Store) send(ctx context.Context, what string, n int, query string, fill func(driver.Batch) error) error {
+	batch, err := s.conn.PrepareBatch(ctx, query)
+	if err != nil {
+		return fmt.Errorf("prepare insert of %s: %w", what, err)
+	}
+	if err := fill(batch); err != nil {
+		_ = batch.Abort()
+		// Append fails only when a value does not convert to its column.
+		return fmt.Errorf("insert %s: %w: %w", what, store.ErrBadRow, err)
 	}
 	if err := batch.Send(); err != nil {
 		var ex *proto.Exception
 		if errors.As(err, &ex) && dataErrors[ex.Code] {
-			return fmt.Errorf("insert %d events: %w: %w", len(events), store.ErrBadRow, err)
+			return fmt.Errorf("insert %d %s: %w: %w", n, what, store.ErrBadRow, err)
 		}
-		return fmt.Errorf("insert %d events: %w", len(events), err)
+		return fmt.Errorf("insert %d %s: %w", n, what, err)
 	}
 	return nil
+}
+
+func nonNil(m map[string]string) map[string]string {
+	if m == nil {
+		return map[string]string{}
+	}
+	return m
+}
+
+// UnlinkedTraceKind is the unmatched kind of a trace none of whose spans joined a call.
+const UnlinkedTraceKind = "trace"
+
+// unlinkedLookback bounds how far back the unlinked-trace sweep reads spans, so each sweep scans a
+// day of partitions rather than every span ever stored. A trace whose last span is older was
+// counted by an earlier sweep, unless the worker was down for the whole day.
+const unlinkedLookback = 24 * time.Hour
+
+// CountUnlinkedTraces records in unmatched, once each, every trace whose last span ended before
+// lastSpanBefore, none of whose spans joined a call and that no trace link names. It returns how
+// many it recorded.
+func (s *Store) CountUnlinkedTraces(ctx context.Context, lastSpanBefore time.Time) (uint64, error) {
+	const unlinked = `
+		SELECT organisation_id, project_id, toString(trace_id) AS key
+		FROM spans FINAL
+		WHERE start_time >= @since
+		  AND (organisation_id, project_id, trace_id) NOT IN (SELECT organisation_id, project_id, trace_id FROM trace_calls)
+		GROUP BY organisation_id, project_id, trace_id
+		HAVING max(end_time) < @before AND countIf(call_id != '') = 0
+		   AND (organisation_id, project_id, key) NOT IN (SELECT organisation_id, project_id, key FROM unmatched WHERE kind = @kind)`
+	args := []any{
+		clickhouse.Named("since", lastSpanBefore.Add(-unlinkedLookback)),
+		clickhouse.Named("before", lastSpanBefore),
+		clickhouse.Named("kind", UnlinkedTraceKind),
+	}
+	var n uint64
+	if err := s.conn.QueryRow(ctx, `SELECT count() FROM (`+unlinked+`)`, args...).Scan(&n); err != nil {
+		return 0, fmt.Errorf("count unlinked traces: %w", err)
+	}
+	if n == 0 {
+		return 0, nil
+	}
+	err := s.conn.Exec(ctx, `INSERT INTO unmatched (organisation_id, project_id, kind, key, reason)
+		SELECT organisation_id, project_id, @kind, key, 'unlinked 15 minutes after its last span' FROM (`+unlinked+`)`, args...)
+	if err != nil {
+		return 0, fmt.Errorf("record unlinked traces: %w", err)
+	}
+	return n, nil
+}
+
+// SpanCalls returns the call each span of a trace resolves to: its own call id, else the call its
+// trace is linked to, else empty.
+func (s *Store) SpanCalls(ctx context.Context, organisationID, projectID, traceID string) (map[string]string, error) {
+	rows, err := s.conn.Query(ctx, `
+		SELECT span_id, if(call_id != '', call_id,
+			(SELECT any(call_id) FROM trace_calls FINAL WHERE organisation_id = @org AND project_id = @project AND trace_id = @trace))
+		FROM spans FINAL WHERE organisation_id = @org AND project_id = @project AND trace_id = @trace`,
+		clickhouse.Named("org", organisationID), clickhouse.Named("project", projectID), clickhouse.Named("trace", traceID))
+	if err != nil {
+		return nil, fmt.Errorf("span calls: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	out := map[string]string{}
+	for rows.Next() {
+		var span, call string
+		if err := rows.Scan(&span, &call); err != nil {
+			return nil, fmt.Errorf("span calls: %w", err)
+		}
+		out[span] = call
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("span calls: %w", err)
+	}
+	return out, nil
 }
 
 // dataErrors are the ClickHouse error codes that blame the data rather than the server

@@ -32,10 +32,17 @@ type Events interface {
 	Insert(ctx context.Context, events []store.Event) error
 }
 
+// Joiner resolves rows to calls before they are stored, setting each row's call id and what is
+// stored with it. It may be called again with the same rows; an error is transient.
+type Joiner interface {
+	Join(ctx context.Context, rows []store.Event) error
+}
+
 // Sink moves envelopes from the stream into Events.
 type Sink struct {
 	Stream Stream
 	Events Events
+	Join   Joiner
 	Log    *slog.Logger
 	// Batch is the most entries read and stored at once.
 	Batch int64
@@ -127,6 +134,14 @@ func (s *Sink) store(ctx context.Context, msgs []stream.Message) {
 	}
 	if skipped := len(rows) - len(fresh); skipped > 0 {
 		s.Log.Info("sink: skipped events already stored", "count", skipped)
+	}
+	// Joined before inserting: an event row that carries a call id always has its call.
+	if err := s.retry(ctx, "join calls", func(ctx context.Context) error {
+		cctx, cancel := context.WithTimeout(ctx, s.Timeout)
+		defer cancel()
+		return s.Join.Join(cctx, fresh)
+	}); err != nil {
+		return
 	}
 	msgsByID := byID(msgs)
 	for _, chunk := range chunks(fresh, maxBatchBytes) {
