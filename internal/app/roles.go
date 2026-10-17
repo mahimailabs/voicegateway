@@ -15,6 +15,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
 
+	"github.com/mahimailabs/voicegateway/internal/api"
 	"github.com/mahimailabs/voicegateway/internal/config"
 	"github.com/mahimailabs/voicegateway/internal/event"
 	"github.com/mahimailabs/voicegateway/internal/ingest"
@@ -30,9 +31,9 @@ import (
 // shutdownGrace is how long in-flight requests get to finish once the role is told to stop.
 const shutdownGrace = 10 * time.Second
 
-// Web serves HTTP until ctx is cancelled: /healthz and LiveKit webhooks today; the dashboard API
-// and MCP mount here in later phases. Connections open lazily, so web starts while a dependency is
-// still coming up and answers 503 for what needs it.
+// Web serves HTTP until ctx is cancelled: /healthz, LiveKit webhooks, agent uploads and the
+// dashboard API (getCall so far); MCP mounts here in a later phase. Connections open lazily, so
+// web starts while a dependency is still coming up and answers 503 for what needs it.
 func Web(ctx context.Context, c config.Config, log *slog.Logger) error {
 	sealer, err := seal.New(c.SecretKey)
 	if err != nil {
@@ -50,6 +51,12 @@ func Web(ctx context.Context, c config.Config, log *slog.Logger) error {
 	rdb := redis.NewClient(opts)
 	defer func() { _ = rdb.Close() }()
 
+	// The API reads what the worker stored; web never writes ClickHouse (CLAUDE.md Boundaries).
+	events, err := chstore.Open(c.ClickHouseURL)
+	if err != nil {
+		return redactErr(err, c.ClickHouseURL)
+	}
+	defer func() { _ = events.Close() }()
 	projects := pgstore.NewStore(pool, sealer)
 	producer := stream.NewProducer(rdb, stream.Ingest)
 	uploads := &ingest.Uploads{Projects: projects, Stream: producer, Log: log, Now: time.Now}
@@ -62,6 +69,12 @@ func Web(ctx context.Context, c config.Config, log *slog.Logger) error {
 	mux.Handle("POST /observability/logs/otlp/v0", uploads.OTLP(event.KindAgentLogs))
 	mux.Handle("POST /observability/metrics/otlp/v0", uploads.OTLP(event.KindAgentMetrics))
 	mux.HandleFunc("POST /observability/recordings/v0", uploads.SessionReport)
+	if c.APIToken == "" {
+		log.Warn("web: VOICEGATEWAY_API_TOKEN is not set, so /api/v1 answers 401 to every request")
+	}
+	mux.Handle("/api/v1/", (&api.API{
+		Projects: projects, Calls: projects, Traces: events, Log: log, Now: time.Now, Gate: api.BearerToken(c.APIToken),
+	}).Routes())
 
 	srv := &http.Server{
 		Addr:              c.WebAddr,

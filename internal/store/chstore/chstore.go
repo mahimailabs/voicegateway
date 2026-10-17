@@ -346,7 +346,7 @@ func (s *Store) CallTurns(ctx context.Context, organisationID, projectID, callID
 		// An empty id is what unjoined rows carry; it names no call.
 		return turn.Result{}, nil
 	}
-	spans, err := s.callSpans(ctx, organisationID, projectID, callID)
+	spans, err := s.CallSpans(ctx, organisationID, projectID, callID)
 	if err != nil {
 		return turn.Result{}, err
 	}
@@ -382,7 +382,9 @@ func (s *Store) usageSum(ctx context.Context, organisationID, projectID, callID,
 	return &sum, nil
 }
 
-func (s *Store) callSpans(ctx context.Context, organisationID, projectID, callID string) ([]store.Span, error) {
+// CallSpans returns every span that resolves to a call, by its own call id or its trace's link, in
+// start order.
+func (s *Store) CallSpans(ctx context.Context, organisationID, projectID, callID string) ([]store.Span, error) {
 	rows, err := s.conn.Query(ctx, `
 		SELECT toString(trace_id), toString(span_id), parent_span_id, call_id, name, kind, start_time, end_time, status_code, room_id, job_id, scope_name, attributes
 		FROM spans FINAL

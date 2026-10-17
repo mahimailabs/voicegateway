@@ -123,6 +123,21 @@ func (s *Store) ProjectByLiveKitKey(ctx context.Context, key string) (store.Proj
 	}, nil
 }
 
+// Project finds a project by its organisation and id, or store.ErrNotFound.
+func (s *Store) Project(ctx context.Context, organisationID, projectID string) (store.Project, error) {
+	row, err := s.q.ProjectByID(ctx, ProjectByIDParams{OrganisationID: organisationID, ID: projectID})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return store.Project{}, store.ErrNotFound
+	}
+	if err != nil {
+		return store.Project{}, fmt.Errorf("project %s/%s: %w", organisationID, projectID, err)
+	}
+	return store.Project{
+		OrganisationID: row.OrganisationID, ID: row.ID, Name: row.Name,
+		LiveKitURL: row.LivekitUrl, LiveKitAPIKey: row.LivekitApiKey, CreatedAt: row.CreatedAt.Time,
+	}, nil
+}
+
 // LiveKitSecret opens a project's LiveKit API secret, for verifying what that project signs.
 func (s *Store) LiveKitSecret(ctx context.Context, organisationID, projectID string) (string, error) {
 	sealed, err := s.q.SealedLiveKitSecret(ctx, SealedLiveKitSecretParams{OrganisationID: organisationID, ID: projectID})

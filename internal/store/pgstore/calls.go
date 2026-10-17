@@ -167,3 +167,30 @@ func uuid(s string) (pgtype.UUID, error) {
 	}
 	return id, nil
 }
+
+// Call returns one call of a project, or store.ErrNotFound, including when the id is not a UUID.
+func (s *Store) Call(ctx context.Context, organisationID, projectID, callID string) (store.Call, error) {
+	id, err := uuid(callID)
+	if err != nil {
+		return store.Call{}, store.ErrNotFound
+	}
+	row, err := s.q.CallByID(ctx, CallByIDParams{OrganisationID: organisationID, ProjectID: projectID, ID: id})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return store.Call{}, store.ErrNotFound
+	}
+	if err != nil {
+		return store.Call{}, fmt.Errorf("call %s: %w", callID, err)
+	}
+	return store.Call{
+		ID: row.ID.String(), RoomName: row.RoomName.String, RoomSID: row.RoomSid.String, JobID: row.JobID.String,
+		StartedAt: timeOf(row.StartedAt), EndedAt: timeOf(row.EndedAt), EndState: row.EndState, Participants: row.Participants,
+	}, nil
+}
+
+func timeOf(t pgtype.Timestamptz) *time.Time {
+	if !t.Valid {
+		return nil
+	}
+	v := t.Time.UTC()
+	return &v
+}

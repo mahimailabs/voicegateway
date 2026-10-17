@@ -93,3 +93,15 @@ ON CONFLICT (call_id, participant_sid) DO UPDATE SET
 UPDATE calls SET end_state = 'inferred', ended_at = last_activity_at
 WHERE end_state = 'open' AND updated_at < @idle_since
   AND (last_activity_at IS NULL OR last_activity_at < @idle_since);
+
+-- name: ProjectByID :one
+SELECT organisation_id, id, name, livekit_url, livekit_api_key, created_at
+FROM projects
+WHERE organisation_id = $1 AND id = $2;
+
+-- name: CallByID :one
+-- One call of a project, with how many participants webhooks reported for it.
+SELECT c.id, c.room_name, c.room_sid, c.job_id, c.started_at, c.ended_at, c.end_state,
+       (SELECT count(*) FROM call_participants p WHERE p.call_id = c.id) AS participants
+FROM calls c
+WHERE c.organisation_id = @organisation_id AND c.project_id = @project_id AND c.id = @id;
