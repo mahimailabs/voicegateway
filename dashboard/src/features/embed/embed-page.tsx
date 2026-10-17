@@ -38,7 +38,7 @@ function Anatomy() {
   const stats = useCallStats()
   if (!stats.data) return <Note>{stats.isError ? "Turn anatomy could not be loaded." : "Loading turn anatomy."}</Note>
   const s = stats.data as CallStats
-  const realtime = s.agents.filter((a) => a.stages.some((st) => st.stage === "Realtime")).map((a) => a.name ?? a.key ?? "Agent not identified")
+  const realtime = s.agents.filter((a) => a.stages.some((st) => st.stage === "Realtime")).map((a) => a.name ?? (a.key === null ? "Agent not identified" : "Unnamed agent"))
   return <TurnAnatomy lanes={lanesFrom(s.stages, realtime)} e2e={s.answers.p50Ms} turns={s.anatomyTurns} budget={BUDGET_MS} />
 }
 

@@ -65,10 +65,12 @@ export type FleetRow = { key: string; name: string; agent: Agent | null; stats: 
 // One row per agent the fleet knows plus one per agent the calls name that it does not, and one for
 // calls no agent is identified on. Calls and figures come from getCallStats; the agent from the fleet.
 function fleetRows(fleet: Agent[], stats: CallStats): FleetRow[] {
+  // The API keys an agent by its registered name, "unnamed" when it has none, as the rooms report it.
   const byKey = new Map(stats.agents.map((a) => [a.key, a]))
-  const rows: FleetRow[] = fleet.map((a) => ({ key: a.key, name: a.name ?? "Unnamed agent", agent: a, stats: byKey.get(a.key) ?? null }))
+  const keyOf = (a: Agent) => a.name ?? "unnamed"
+  const rows: FleetRow[] = fleet.map((a) => ({ key: a.key, name: a.name ?? "Unnamed agent", agent: a, stats: byKey.get(keyOf(a)) ?? null }))
   for (const a of stats.agents)
-    if (a.key !== null && !fleet.some((f) => f.key === a.key)) rows.push({ key: a.key, name: a.name ?? "Unnamed agent", agent: null, stats: a })
+    if (a.key !== null && !fleet.some((f) => keyOf(f) === a.key)) rows.push({ key: a.key, name: a.name ?? "Unnamed agent", agent: null, stats: a })
   rows.push({ key: "other", name: "Agent not identified", agent: null, stats: byKey.get(null) ?? null })
   return rows
 }
@@ -138,8 +140,9 @@ function OverviewView({ stats, cloud, ms: rooms, sip: sipRead, egress, ingress, 
   const p50 = answers.p50Ms
   const highs = issueCounts.high
   const issueTotal = sumOrNull([issueCounts.high, issueCounts.medium, issueCounts.low, issueCounts.info])
-  const active = rows.filter((r) => (r.stats?.callCount ?? 0) > 0)
-  const idle = rows.filter((r) => r.agent && !r.stats)
+  // An unknown call count keeps the agent's card, which says unknown; only a known zero is idle.
+  const active = rows.filter((r) => r.stats && r.stats.callCount !== 0)
+  const idle = rows.filter((r) => r.agent && (!r.stats || r.stats.callCount === 0))
   const chosen = pick === "all" ? null : (active.find((r) => r.key === pick) ?? null)
   const realtimeIn = (list: FleetRow[]) => list.filter((r) => r.stats?.stages.some((s) => s.stage === "Realtime")).map((r) => r.name)
   const shape = chosen?.stats
@@ -149,7 +152,7 @@ function OverviewView({ stats, cloud, ms: rooms, sip: sipRead, egress, ingress, 
   const dots = answers.values.flatMap((v) => (v.ms === null ? [] : [{ ms: v.ms, room: v.room, turn: v.turn, agent: nameOf(v.agentKey) }]))
 
   // The Live wire and the stage chain still read the captured calls (#323).
-  const legacy = useMemo(() => rows.map((r) => ({ key: r.key, name: r.name, agent: r.agent, callList: legacyCalls(r.key === "other" ? null : r.key) })), [rows])
+  const legacy = useMemo(() => rows.map((r) => ({ key: r.key, name: r.name, agent: r.agent, callList: legacyCalls(r.key === "other" ? null : r.agent ? (r.agent.name ?? "unnamed") : r.key) })), [rows])
   const wire = useMemo(() => wireData(legacy, BUDGET_MS), [legacy])
   const chainGroups = legacy.filter((r) => r.callList.length && (pick === "all" || r.key === pick)).map((r) => ({ key: r.key, name: r.name, calls: r.callList, joins: r.agent ? joinDelays(r.agent.jobs) : [] }))
 
@@ -240,7 +243,7 @@ function OverviewView({ stats, cloud, ms: rooms, sip: sipRead, egress, ingress, 
             const failed = r.agent ? r.agent.jobs.filter((j) => j.failed).length : 0
             const st = r.stats!
             const p50 = st.answerP50Ms
-            const perCall = st.calls.map((c) => ({ room: c.room, p50: c.answerP50Ms }))
+            const perCall = st.calls.map((c) => ({ id: c.callId, room: c.room, p50: c.answerP50Ms }))
             return (
               <button
                 key={r.key}

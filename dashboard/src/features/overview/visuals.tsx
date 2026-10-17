@@ -83,7 +83,7 @@ export function TurnStrip({ dots, budget, max = 5000 }: { dots: TurnDot[]; budge
 // stops talking. The solid bar runs from the stage's median start to its median end; the pale tail
 // runs on to its 90th percentile end. Stages overlap where the agent works in parallel. Stages nobody
 // measures keep their lane and say "not reported".
-export type Lane = { key: string; label: string; field: string; start: number; end: number; p90: number; n: number; tone: string; missing?: "before" | "after" }
+export type Lane = { key: string; label: string; field: string; start: number; end: number; p90: number; n: number | null; tone: string; missing?: "before" | "after" }
 export const stageDefs: { key: string; label: string; field: string; tone: string }[] = [
   { key: "Speech to text", label: "Final transcript", field: "transcription_delay", tone: "bg-muted-foreground/45" },
   { key: "Turn detection", label: "Turn detector", field: "eou_detection span", tone: "bg-muted-foreground/60" },
@@ -107,10 +107,10 @@ export function lanesFrom(stages: StageTiming[], realtimeAgents: string[]): Lane
   for (const st of stages) {
     if (st.startMs === null || st.medianMs === null || st.p90Ms === null) continue
     const def = stageDefs.find((d) => d.key === st.stage)
-    if (def) lanes.push({ key: def.key, label: def.label, field: def.field, start: st.startMs, end: st.medianMs, p90: st.p90Ms, n: st.turns ?? 0, tone: def.tone })
+    if (def) lanes.push({ key: def.key, label: def.label, field: def.field, start: st.startMs, end: st.medianMs, p90: st.p90Ms, n: st.turns, tone: def.tone })
     else if (st.stage === "Realtime") {
       const who = realtimeAgents.join(", ")
-      lanes.push({ key: "rt", label: `Realtime · ${who}`, field: `${st.field} · used by ${who} only`, start: st.startMs, end: st.medianMs, p90: st.p90Ms, n: st.turns ?? 0, tone: "bg-violet-500/70" })
+      lanes.push({ key: "rt", label: `Realtime · ${who}`, field: `${st.field} · used by ${who} only`, start: st.startMs, end: st.medianMs, p90: st.p90Ms, n: st.turns, tone: "bg-violet-500/70" })
     }
   }
   return lanes
@@ -140,7 +140,7 @@ export function TurnAnatomy({ lanes, e2e, turns, budget }: { lanes: Lane[]; e2e:
                   {l.label}
                 </div>
               </TooltipTrigger>
-              <TooltipContent className="text-xs">{l.missing ? `${l.field}: not reported` : `${l.field} · ${l.n} of ${turns ?? "an unknown number of"} turns`}</TooltipContent>
+              <TooltipContent className="text-xs">{l.missing ? `${l.field}: not reported` : `${l.field} · ${l.n ?? "an unknown number"} of ${turns ?? "an unknown number of"} turns`}</TooltipContent>
             </Tooltip>
           ))}
         </div>
@@ -181,7 +181,7 @@ export function TurnAnatomy({ lanes, e2e, turns, budget }: { lanes: Lane[]; e2e:
                         </motion.span>
                       </span>
                     </TooltipTrigger>
-                    <TooltipContent className="text-xs">{`${l.label}: ${fmtMs(l.end - l.start)} median, ${fmtMs(l.p90 - l.start)} at p90 · ${l.field} · ${l.n} of ${turns ?? "an unknown number of"} turns`}</TooltipContent>
+                    <TooltipContent className="text-xs">{`${l.label}: ${fmtMs(l.end - l.start)} median, ${fmtMs(l.p90 - l.start)} at p90 · ${l.field} · ${l.n ?? "an unknown number"} of ${turns ?? "an unknown number of"} turns`}</TooltipContent>
                   </Tooltip>
                 )}
                 {!l.missing && (
@@ -221,11 +221,11 @@ export function TurnAnatomy({ lanes, e2e, turns, budget }: { lanes: Lane[]; e2e:
 }
 
 // Each call as a block, coloured by its median answer against the budget.
-export function CallTracker({ calls, budget }: { calls: { room: string; p50: number | null }[]; budget: number }) {
+export function CallTracker({ calls, budget }: { calls: { id?: string; room: string; p50: number | null }[]; budget: number }) {
   return (
     <div className="flex h-7 gap-[3px]">
       {calls.map((c) => (
-        <Tooltip key={c.room}>
+        <Tooltip key={c.id ?? c.room}>
           <TooltipTrigger asChild>
             <span
               className={cn("h-full min-w-1.5 flex-1 rounded-[3px] transition-opacity hover:opacity-70", c.p50 === null ? "bg-muted-foreground/20" : c.p50 > budget ? "bg-destructive" : c.p50 > budget * 0.67 ? "bg-amber-500" : "bg-good")}
