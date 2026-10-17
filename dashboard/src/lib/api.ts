@@ -1,7 +1,7 @@
 import { infiniteQueryOptions } from "@tanstack/react-query"
 import { capturedCalls } from "@/mocks/fixtures"
 import { currentScope } from "@/lib/url-state"
-import type { Call as GeneratedCall, CallPage, CallSummary, CallTotals, Egress, EndOfTurnEvent, Ingress, Sip, ItemEvent, OverlapEvent, RecordingSegment, Span, StateEvent, TranscriptEvent, Turn } from "@/lib/api-types"
+import type { Call as GeneratedCall, CallPage, CallSummary, CallTotals, Egress, EndOfTurnEvent, Ingress, MediaServer, Sip, ItemEvent, OverlapEvent, RecordingSegment, Span, StateEvent, TranscriptEvent, Turn } from "@/lib/api-types"
 
 export type { CallSummary, CallTotals, RecordingSegment, Span, Turn }
 export type SessionEvent = StateEvent | TranscriptEvent | EndOfTurnEvent | OverlapEvent | ItemEvent
@@ -94,3 +94,4 @@ export const callQuery = (id: string) => ({ queryKey: ["call", currentScope(), i
 export const egressQuery = () => ({ queryKey: ["egress", currentScope()], queryFn: () => getJSON<Egress>(`${projectApi()}/egress`) })
 export const ingressQuery = () => ({ queryKey: ["ingress", currentScope()], queryFn: () => getJSON<Ingress>(`${projectApi()}/ingress`) })
 export const sipQuery = () => ({ queryKey: ["sip", currentScope()], queryFn: () => getJSON<Sip>(`${projectApi()}/sip`) })
+export const mediaServerQuery = () => ({ queryKey: ["media-server", currentScope()], queryFn: () => getJSON<MediaServer>(`${projectApi()}/media-server`) })

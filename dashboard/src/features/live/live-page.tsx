@@ -30,12 +30,17 @@ const windows = [
 ]
 
 // The captured rooms on a compressed timeline: real lengths and order, gaps capped at 30 s.
-const captured: Room[] = data.rooms.map((r, k) => ({ ...r, n: k + 1 })).sort((a, b) => a.createdMs - b.createdMs)
-type Slot = { room: Room; start: number; end: number }
+// Rooms with no reported creation or last-seen time cannot be replayed and are left out.
+type Timed = Room & { createdMs: number; lastSeen: number }
+const captured: Timed[] = data.rooms
+  .map((r, k) => ({ ...r, n: k + 1 }))
+  .filter((r): r is Timed => r.createdMs !== null && r.lastSeen !== null)
+  .sort((a, b) => a.createdMs - b.createdMs)
+type Slot = { room: Timed; start: number; end: number }
 const slots: Slot[] = []
 {
   let cursor = 0
-  let prevEnd = captured[0].createdMs / 1000
+  let prevEnd = captured.length ? captured[0].createdMs / 1000 : 0
   for (const r of captured) {
     const start = r.createdMs / 1000
     cursor += Math.min(Math.max(start - prevEnd, 0), 30)
@@ -45,7 +50,7 @@ const slots: Slot[] = []
     prevEnd = Math.max(prevEnd, r.lastSeen)
   }
 }
-const cycle = Math.max(...slots.map((s) => s.end)) + 30
+const cycle = Math.max(0, ...slots.map((s) => s.end)) + 30
 
 const hms = (s: number) => new Date(s * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false })
 const hm = (s: number) => new Date(s * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false })
@@ -69,7 +74,7 @@ export function LivePage() {
   const [q, setQ] = useUrlState("search", "")
   const [openRoom, setOpenRoom] = useUrlPick<Room>("room", captured, (r) => r.sid)
   // Anchor the replay so the page opens with one room just finished and one live.
-  const [anchor] = useState(() => Date.now() / 1000 - (slots[Math.min(1, slots.length - 1)].start + 20))
+  const [anchor] = useState(() => Date.now() / 1000 - ((slots[Math.min(1, slots.length - 1)]?.start ?? 0) + 20))
   // A dragged range on the time strip pauses the stream and shows just that range.
   const [range, setRange] = useState<{ from: number; to: number } | null>(null)
   const [drag, setDrag] = useState<{ a: number; b: number } | null>(null)
@@ -103,7 +108,7 @@ export function LivePage() {
   const callRooms = useMemo(() => new Map([...listCalls()].sort((a, b) => Date.parse(a.startedAt) - Date.parse(b.startedAt)).map((c) => [c.room, c.id])), [])
 
   // Every repetition of the captured set that overlaps the window.
-  const rows: { key: string; room: Room; start: number; end: number }[] = []
+  const rows: { key: string; room: Timed; start: number; end: number }[] = []
   for (let c = Math.floor((from - anchor) / cycle) - 1; c <= Math.floor((now - anchor) / cycle); c++) {
     for (const s of slots) {
       const start = anchor + c * cycle + s.start

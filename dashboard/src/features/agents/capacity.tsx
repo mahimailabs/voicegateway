@@ -31,7 +31,9 @@ const median = (xs: number[]) => (xs.length ? [...xs].sort((a, b) => a - b)[Math
 function idleNow(a: Agent) {
   const name = a.name ?? "unnamed"
   const busy = data.rooms.filter((r) => openAtWatchEnd(r) && r.participants.some((p) => p.kind === "agent" && (p.agentName ?? "unnamed") === name && openAtWatchEnd(p)))
-  const lastRead = Math.max(...data.windows.map((w) => w.end))
+  // The last read: the latest known end of a watch (NaN when no watch reported one, shown as unknown).
+  const ends = data.windows.flatMap((w) => (w.end === null ? [] : [w.end]))
+  const lastRead = ends.length ? Math.max(...ends) : NaN
   return { idle: busy.length === 0, busy: busy.map((r) => r.name), lastRead }
 }
 
@@ -139,7 +141,7 @@ export function CapacityDialog({ agent: a, onOpenChange }: { agent: Agent | null
                 tone={idle.idle ? "good" : "bad"}
                 icon={idle.idle ? CheckCircle : WarningCircle}
                 label={idle.idle ? "Idle" : `Busy in ${idle.busy.length} ${idle.busy.length === 1 ? "room" : "rooms"}`}
-                tip={`At the last read, ${new Date(idle.lastRead * 1000).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}. The server checks again before it starts, and stops if a real call arrives.`}
+                tip={`At the last read, ${Number.isFinite(idle.lastRead) ? new Date(idle.lastRead * 1000).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "at a time not reported"}. The server checks again before it starts, and stops if a real call arrives.`}
               />
               {production && <Hint tone="warn" icon={Info} label="Production" tip="Callers arriving during the test share this agent." />}
               {cloud && <Hint tone="warn" icon={Info} label="Per replica" tip="LiveKit Cloud adds replicas under load, so the result is per replica. The Build plan stops Cloud agents at 5 sessions; that is the plan's limit." />}

@@ -67,7 +67,7 @@ export function agents(): Agent[] {
       if (jobs.length)
         for (const { d, j } of jobs) {
           if (j.workerId && !a.workers.includes(j.workerId)) a.workers.push(j.workerId)
-          a.jobs.push({ room: r, jobId: j.id, workerId: j.workerId, status: j.status, dispatchedMs: d.createdAtMs, joinedMs: ps[0]?.joinedAtMs ?? null, failed: j.statuses.some((s) => s.status === "JS_FAILED"), region: ps[0]?.region ?? null })
+          a.jobs.push({ room: r, jobId: j.id, workerId: j.workerId, status: j.status, dispatchedMs: d.createdAtMs ?? NaN, joinedMs: ps[0]?.joinedAtMs ?? null, failed: j.statuses.some((s) => s.status === "JS_FAILED"), region: ps[0]?.region ?? null })
         }
       else
         // The earliest watch kept no dispatch detail: one job per agent participant, timing unknown.

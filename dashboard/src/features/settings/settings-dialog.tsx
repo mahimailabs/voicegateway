@@ -159,7 +159,7 @@ function Organisation() {
       <Header title={org.name} description="The organisation that owns your projects. The open-source edition is one organisation with any number of projects and no usage limits." />
       <Group label="Projects">
         {org.projects.map(({ name: p }, k) => (
-          <Row key={p} icon={TreeStructure} title={p} description="Current project" value={<span className="font-mono text-[13px]">{media.server.url}</span>} last={k === org.projects.length - 1} />
+          <Row key={p} icon={TreeStructure} title={p} description="Current project" value={<span className="font-mono text-[13px]">{media.server?.url ?? "not reported"}</span>} last={k === org.projects.length - 1} />
         ))}
       </Group>
       <div className="pt-3">

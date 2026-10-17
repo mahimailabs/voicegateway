@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { CaretRight, Flask, Info, MagnifyingGlass, X, LockSimpleOpen, PhoneIncoming, PhoneOutgoing, ShieldWarning, Timer } from "@phosphor-icons/react"
 import type { Icon } from "@phosphor-icons/react"
 import { CategoryBar } from "@/components/tremor/CategoryBar"
@@ -9,10 +9,10 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { cn } from "@/lib/utils"
 import { useQuery } from "@tanstack/react-query"
 import { QueryState } from "@/components/page-state"
-import { sipQuery } from "@/lib/api"
+import { mediaServerQuery, sipQuery } from "@/lib/api"
 // A hand-written layout example (?data=test), not API data: it shows the page with many trunks.
 import synthetic from "@/mocks/sip-test.json"
-import { type Room, RoomDrawer, data } from "../media-server/room-drawer"
+import { type MediaServerData, type Room, RoomDrawer, fromContract } from "../media-server/room-drawer"
 import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput, InputGroupText } from "@/components/ui/input-group"
 import { Kbd } from "@/components/ui/kbd"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -117,14 +117,21 @@ const secs = (s: number) => (s >= 60 ? `${Math.floor(s / 60)}m ${String(Math.rou
 export function SipPage() {
   const test = new URLSearchParams(window.location.search).get("data") === "test"
   const read = useQuery({ ...sipQuery(), enabled: !test })
-  if (test) return <SipView sip={synthetic as SipData} test />
+  // The watched phone calls come from the media server read.
+  const media = useQuery({ ...mediaServerQuery(), enabled: !test })
+  const ms = useMemo(() => (media.data ? fromContract(media.data) : null), [media.data])
+  if (test) return <SipView sip={synthetic as SipData} ms={null} test />
   if (!read.data) return <QueryState icon={PhoneIncoming} what="the phone bridge" query={read} />
-  return <SipView sip={read.data} test={false} />
+  // The trunks and checks do not need the watched calls; while those load or if they fail, the page shows without them.
+  const callsNote = ms ? undefined : media.isError ? "The watched calls could not be loaded." : "Loading the watched calls."
+  return <SipView sip={read.data} ms={ms} test={false} callsNote={callsNote} />
 }
 
-function SipView({ sip, test }: { sip: SipData; test: boolean }) {
+// ms is null for the layout example, and while the watched calls load or when they could not be read.
+// callsNote says why there are no watched calls when they were not read, so "none watched" is never claimed.
+function SipView({ sip, ms, test, callsNote }: { sip: SipData; ms: MediaServerData | null; test: boolean; callsNote?: string }) {
   const [tab, setTab] = useUrlState("tab", "paths")
-  const calls = test ? [] : data.rooms.map((r, k) => ({ ...r, n: k + 1 })).filter((r) => r.participants.some((p) => p.kind === "sip"))
+  const calls = !ms ? [] : ms.rooms.map((r, k) => ({ ...r, n: k + 1 })).filter((r) => r.participants.some((p) => p.kind === "sip"))
   const [openRoom, setOpenRoom] = useUrlPick<Room>("room", calls, (r) => r.sid)
   const hints = calls.flatMap((r) => r.participants.filter((p) => p.sip).map((p) => ({ trunkId: p.sip!.trunkId, twilio: Boolean((p.sip as { twilio?: boolean }).twilio) })))
   const rows = routes(sip, hints)
@@ -176,7 +183,11 @@ function SipView({ sip, test }: { sip: SipData; test: boolean }) {
   // Median ring-to-answer over watched phone calls: INVITE time to the first read with callStatus active.
   const answers = calls
     .map((r) => r.participants.find((p) => p.kind === "sip")?.sip)
-    .flatMap((x) => (x?.inviteMs && x.statuses.find((s) => s.status === "active") ? [x.statuses.find((s) => s.status === "active")!.t - x.inviteMs / 1000] : []))
+    .flatMap((x) => {
+      // Both times must be reported; a call with either missing is left out of the median.
+      const active = x?.statuses.find((s) => s.status === "active")?.t
+      return x?.inviteMs != null && active != null ? [active - x.inviteMs / 1000] : []
+    })
     .sort((a, b) => a - b)
   const answer = answers.length ? answers[Math.floor(answers.length / 2)] : null
   const providers = [...new Set([...rows.map((r) => r.provider.name), ...sip.outbound.map((t) => providerOf(t.address) ?? t.address)])]
@@ -227,8 +238,8 @@ function SipView({ sip, test }: { sip: SipData; test: boolean }) {
           <StatCard icon={Timer} value={answer === null ? "Unknown" : `${answer.toFixed(1)} s`} label="Ring to answered">
             <p className="text-[11px] text-muted-foreground">
               {answer === null
-                ? "No phone call watched yet"
-                : `median of ${answers.length} watched ${answers.length === 1 ? "call" : "calls"}${calls.every((r) => r.participants.some((p) => p.sip?.trunkId && data.sipTrunks[p.sip.trunkId])) ? ", our test trunk only" : ""}`}
+                ? (callsNote ?? "No phone call watched yet")
+                : `median of ${answers.length} watched ${answers.length === 1 ? "call" : "calls"}${calls.every((r) => r.participants.some((p) => p.sip?.trunkId && ms?.sipTrunks[p.sip.trunkId])) ? ", our test trunk only" : ""}`}
             </p>
           </StatCard>
           <StatCard icon={ShieldWarning} value={list.length} label="Checks to fix" alert={list.some((c) => c.severity === "high")}>
@@ -245,7 +256,7 @@ function SipView({ sip, test }: { sip: SipData; test: boolean }) {
             Checks <span className="ml-1 rounded-full bg-destructive/10 px-1.5 text-[11px] text-destructive tnum">{list.length}</span>
           </TabsTrigger>
           <TabsTrigger value="calls">
-            Calls watched <span className="ml-1 text-[11px] text-muted-foreground tnum">{calls.length}</span>
+            Calls watched <span className="ml-1 text-[11px] text-muted-foreground tnum">{callsNote ? "?" : calls.length}</span>
           </TabsTrigger>
         </TabsList>
         <TabsContent value="paths">
@@ -376,11 +387,15 @@ function SipView({ sip, test }: { sip: SipData; test: boolean }) {
               {calls.map((r) => {
                 const p = r.participants.find((x) => x.kind === "sip")!
                 const agent = r.participants.find((x) => x.kind === "agent")
+                // Measured from the INVITE, or the room's creation; with neither reported nothing can be placed.
                 const t0 = p.sip?.inviteMs ?? r.createdMs
                 const answered = p.sip?.statuses.find((s) => s.status === "active")
-                const trunk = p.sip?.trunkId ? data.sipTrunks[p.sip.trunkId] : undefined
-                const marks = [{ at: r.createdMs, label: "room" }, ...(agent ? [{ at: agent.joinedAtMs, label: "agent" }] : []), ...(answered ? [{ at: answered.t * 1000, label: "answered" }] : [])]
-                const end = Math.max(...marks.map((m) => m.at)) - t0 || 1
+                const answeredMs = answered?.t != null ? answered.t * 1000 : null
+                const trunk = p.sip?.trunkId ? ms!.sipTrunks[p.sip.trunkId] : undefined
+                const marks = (
+                  [{ at: r.createdMs, label: "room" }, ...(agent ? [{ at: agent.joinedAtMs, label: "agent" }] : []), ...(answered ? [{ at: answeredMs, label: "answered" }] : [])] as { at: number | null; label: string }[]
+                ).filter((m): m is { at: number; label: string } => m.at !== null && t0 !== null)
+                const end = t0 === null ? 1 : Math.max(...marks.map((m) => m.at)) - t0 || 1
                 return (
                   <li key={r.sid}>
                     <button type="button" onClick={() => setOpenRoom(r)} className="grid w-full grid-cols-[72px_minmax(0,1fr)_minmax(0,2fr)_80px] items-center gap-4 px-4 py-3 text-left hover:bg-muted/50">
@@ -388,7 +403,7 @@ function SipView({ sip, test }: { sip: SipData; test: boolean }) {
                       <span className="text-[13px]">
                         <span className="flex items-center gap-1.5">
                           {p.sip?.ruleId ? <PhoneIncoming size={14} /> : <PhoneOutgoing size={14} />}
-                          {clock(t0)}
+                          {t0 === null ? "time unknown" : clock(t0)}
                         </span>
                         <span className="text-[11px] text-muted-foreground">via {trunk ? `${trunk.name} (deleted)` : (p.sip?.trunkId ?? "unknown trunk")}</span>
                       </span>
@@ -397,28 +412,28 @@ function SipView({ sip, test }: { sip: SipData; test: boolean }) {
                         {marks.map((m) => (
                           <Tooltip key={m.label}>
                             <TooltipTrigger asChild>
-                              <span className="absolute top-1/2 flex -translate-x-1/2 -translate-y-1/2 flex-col items-center" style={{ left: `${((m.at - t0) / end) * 100}%` }}>
+                              <span className="absolute top-1/2 flex -translate-x-1/2 -translate-y-1/2 flex-col items-center" style={{ left: `${((m.at - t0!) / end) * 100}%` }}>
                                 <span className="size-2.5 rounded-full bg-primary" />
                               </span>
                             </TooltipTrigger>
-                            <TooltipContent>{`${m.label} at +${((m.at - t0) / 1000).toFixed(2)} s after the INVITE`}</TooltipContent>
+                            <TooltipContent>{`${m.label} at +${((m.at - t0!) / 1000).toFixed(2)} s after the INVITE`}</TooltipContent>
                           </Tooltip>
                         ))}
                         <span className="absolute top-1/2 left-0 size-2.5 -translate-y-1/2 rounded-full bg-foreground" />
-                        <span className="absolute -bottom-2 right-0 text-[11px] text-muted-foreground tnum">{answered ? `answered in ${((answered.t * 1000 - t0) / 1000).toFixed(1)} s` : "not answered while watched"}</span>
+                        <span className="absolute -bottom-2 right-0 text-[11px] text-muted-foreground tnum">{answered ? (answeredMs !== null && t0 !== null ? `answered in ${((answeredMs - t0) / 1000).toFixed(1)} s` : "answered, time unknown") : "not answered while watched"}</span>
                       </span>
-                      <span className="text-right text-[13px] tnum">{secs(p.lastSeen - t0 / 1000)}</span>
+                      <span className="text-right text-[13px] tnum">{p.lastSeen !== null && t0 !== null ? secs(p.lastSeen - t0 / 1000) : "unknown"}</span>
                     </button>
                   </li>
                 )
               })}
-              {calls.length === 0 && <li className="px-4 py-6 text-center text-[13px] text-muted-foreground">No phone calls while we watched.</li>}
+              {calls.length === 0 && <li className="px-4 py-6 text-center text-[13px] text-muted-foreground">{callsNote ?? "No phone calls while we watched."}</li>}
             </ul>
           </section>
         </TabsContent>
       </Tabs>
 
-      <RoomDrawer room={openRoom} open={openRoom !== null} onOpenChange={(o) => !o && setOpenRoom(null)} />
+      {ms && <RoomDrawer room={openRoom} ms={ms} open={openRoom !== null} onOpenChange={(o) => !o && setOpenRoom(null)} />}
     </div>
   )
 }

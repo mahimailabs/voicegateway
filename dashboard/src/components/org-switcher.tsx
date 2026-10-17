@@ -74,7 +74,7 @@ export function ProjectSwitcher({ onManage }: { onManage: () => void }) {
   // Switching project keeps the page and moves the URL to the other project's scope.
   const open = (id: string) => id !== current.id && router.history.push(`/org/${org.id}/project/${id}${path}`)
   const [adding, setAdding] = useState(false)
-  const host = media.server.url.replace(/^wss?:\/\//, "")
+  const host = media.server?.url.replace(/^wss?:\/\//, "") ?? "server not reported"
   return (
     <>
       <NewProjectDialog open={adding} onOpenChange={setAdding} />

@@ -5,7 +5,12 @@ import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@/components/u
 import { type GlobeArc, type GlobePoint, NetworkGlobe } from "@/components/network-globe"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { cn } from "@/lib/utils"
-import { type Participant, type Room, RoomDrawer, data, kindIcon, kindName, openAtWatchEnd, roomOrigin } from "./room-drawer"
+import { useMemo } from "react"
+import { useQuery } from "@tanstack/react-query"
+import { HardDrives } from "@phosphor-icons/react"
+import { QueryState } from "@/components/page-state"
+import { mediaServerQuery } from "@/lib/api"
+import { type MediaServerData, type Participant, type Room, RoomDrawer, fromContract, kindIcon, kindName, openAtWatchEnd, roomOrigin } from "./room-drawer"
 
 // The media server as the project's three keys see it (decision 0016): a few numbers, where people
 // came in on a globe, and every room on one clock. Explanations live in tooltips, not on the page.
@@ -17,8 +22,6 @@ const regions: Record<string, { city: string; lat: number; lng: number }> = {
   osanjose1a: { city: "San Jose", lat: 37.3382, lng: -121.8863 },
   otoronto1a: { city: "Toronto", lat: 43.6532, lng: -79.3832 },
 }
-const nodeRegion = data.server.nodeId.split("_")[1]?.toLowerCase() ?? ""
-const node = regions[nodeRegion]
 
 const hhmm = (t: number) => new Date(t * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
 const dur = (sec: number) => {
@@ -26,8 +29,6 @@ const dur = (sec: number) => {
   if (s >= 3600) return `${Math.floor(s / 3600)}h ${String(Math.floor((s % 3600) / 60)).padStart(2, "0")}m`
   return s >= 60 ? `${Math.floor(s / 60)}m ${String(s % 60).padStart(2, "0")}s` : `${s}s`
 }
-const watched = data.windows.map((w) => `${hhmm(w.start)} to ${hhmm(w.end)}`).join(" and ")
-const allRooms: Room[] = data.rooms.map((r, k) => ({ ...r, n: k + 1 }))
 
 function Stat({ value, label }: { value: React.ReactNode; label: string }) {
   return (
@@ -38,16 +39,29 @@ function Stat({ value, label }: { value: React.ReactNode; label: string }) {
   )
 }
 
-// The fixture's "now" is the end of the last watch.
-const now = data.windows[data.windows.length - 1].end
 const GAP = 4 // percent of the axis between two watched stretches
 
 export function MediaServerPage() {
+  const read = useQuery(mediaServerQuery())
+  const ms = useMemo(() => (read.data ? fromContract(read.data) : null), [read.data])
+  if (!ms) return <QueryState icon={HardDrives} what="the media server" query={read} />
+  return <MediaServerView data={ms} />
+}
+
+function MediaServerView({ data }: { data: MediaServerData }) {
+  const nodeRegion = data.server?.nodeId.split("_")[1]?.toLowerCase() ?? ""
+  const node = regions[nodeRegion]
+  // Only watches with both ends reported can be drawn on the clock.
+  const windows = data.windows.filter((w): w is typeof w & { start: number; end: number } => w.start !== null && w.end !== null)
+  const watched = windows.map((w) => `${hhmm(w.start)} to ${hhmm(w.end)}`).join(" and ")
+  const allRooms: Room[] = data.rooms.map((r, k) => ({ ...r, n: k + 1 }))
+  // "Now" is the end of the last watch, or the present when no watch has a known end.
+  const now = windows.length ? windows[windows.length - 1].end : Date.now() / 1000
   const [range, setRange] = useUrlRange("6h", now)
   const [openRoom, setOpenRoom] = useUrlPick<Room>("room", allRooms, (r) => r.sid)
 
   // The axis: each watched stretch inside the range, sized by its length, with a small break between.
-  const segs = data.windows.map((w) => ({ start: Math.max(w.start, range.from), end: Math.min(w.end, range.to) })).filter((s) => s.end > s.start)
+  const segs = windows.map((w) => ({ start: Math.max(w.start, range.from), end: Math.min(w.end, range.to) })).filter((s) => s.end > s.start)
   const total = segs.reduce((a, s) => a + s.end - s.start, 0)
   const usable = 100 - GAP * Math.max(segs.length - 1, 0)
   const layout = segs.map((s, k) => {
@@ -60,13 +74,16 @@ export function MediaServerPage() {
   }
   const covered = segs.length > 0
   const partial = !covered || range.from < segs[0].start - 60 || range.to > segs[segs.length - 1].end + 60 || segs.length > 1
-  const inRange = (r: Room) => segs.some((s) => r.lastSeen >= s.start && Math.max(r.createdMs / 1000, r.firstSeen - 10) <= s.end)
+  // A room is placed by when it was last seen and when it began (created, or first seen); a room with
+  // neither reported cannot be placed and is left off the clock.
+  const began = (r: Room) => (r.createdMs !== null ? r.createdMs / 1000 : r.firstSeen !== null ? r.firstSeen - 10 : null)
+  const inRange = (r: Room) => r.lastSeen !== null && began(r) !== null && segs.some((s) => r.lastSeen! >= s.start && Math.max(began(r)!, (r.firstSeen ?? began(r)!) - 10) <= s.end)
   const rooms = covered ? allRooms.filter(inRange) : []
-  const lifetimes = rooms.map((r) => r.lastSeen - r.createdMs / 1000).filter((s) => s > 0)
+  const lifetimes = rooms.flatMap((r) => (r.createdMs !== null && r.lastSeen !== null ? [r.lastSeen - r.createdMs / 1000] : [])).filter((s) => s > 0)
   const avg = lifetimes.length ? lifetimes.reduce((a, b) => a + b, 0) / lifetimes.length : null
   const axisEnd = covered ? segs[segs.length - 1].end : now
   const atEnd = range.to >= now
-  const live = rooms.filter((r) => r.lastSeen >= axisEnd - 1).length
+  const live = rooms.filter((r) => r.lastSeen! >= axisEnd - 1).length
   const people = rooms.reduce((a, r) => a + r.participants.length, 0)
 
   const byRegion = new Map<string, Participant[]>()
@@ -93,16 +110,18 @@ export function MediaServerPage() {
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
           <h1 className="text-[28px] leading-tight font-semibold tracking-[-0.02em]">Media server</h1>
           <span className="rounded-full bg-muted px-2.5 py-0.5 text-[13px] text-muted-foreground">
-            LiveKit {data.server.edition} {data.server.version}
+            {data.server ? `LiveKit ${data.server.edition} ${data.server.version}` : "LiveKit version unknown"}
           </span>
-          <span className="rounded-full bg-muted px-2.5 py-0.5 text-[13px] text-muted-foreground">{node?.city ?? data.server.region}</span>
+          <span className="rounded-full bg-muted px-2.5 py-0.5 text-[13px] text-muted-foreground">{node?.city ?? data.server?.region ?? "Region unknown"}</span>
           <Tooltip>
             <TooltipTrigger asChild>
               <button type="button" aria-label="How this was read" className="text-muted-foreground hover:text-foreground">
                 <Info size={18} />
               </button>
             </TooltipTrigger>
-            <TooltipContent className="max-w-96 text-xs leading-relaxed">{`${data.source} Node ${data.server.nodeId}, protocol ${data.server.protocol}, joined in ${data.server.joinMs} ms.`}</TooltipContent>
+            <TooltipContent className="max-w-96 text-xs leading-relaxed">{data.server
+              ? `${data.source} Node ${data.server.nodeId}, protocol ${data.server.protocol ?? "unknown"}, joined in ${data.server.joinMs === null ? "an unreported time" : `${data.server.joinMs} ms`}.`
+              : `${data.source} The server details were not reported.`}</TooltipContent>
           </Tooltip>
           <div className="ml-auto flex flex-wrap items-center gap-3">
             {partial && (
@@ -185,9 +204,10 @@ export function MediaServerPage() {
                 ))}
               </div>
               {rooms.map((r) => {
-                const start = pct(Math.max(r.createdMs / 1000, range.from))
-                const end = pct(r.lastSeen)
-                const open = openAtWatchEnd(r)
+                // Placed rooms have a known start and last-seen time (see inRange).
+                const start = pct(Math.max(began(r)!, range.from))
+                const end = pct(r.lastSeen!)
+                const open = openAtWatchEnd(r, data)
                 const failed = r.dispatches?.some((d) => d.jobs.some((j) => j.statuses.some((x) => x.status === "JS_FAILED"))) ?? false
                 return (
                   <button
@@ -223,7 +243,7 @@ export function MediaServerPage() {
                           )
                         })}
                         <span className="ml-auto pl-1 text-[11px] whitespace-nowrap text-muted-foreground tnum">
-                          {dur(r.lastSeen - r.createdMs / 1000)}
+                          {r.createdMs !== null ? dur(r.lastSeen! - r.createdMs / 1000) : "length unknown"}
                           {open ? "+" : ""}
                         </span>
                       </div>
@@ -262,7 +282,7 @@ export function MediaServerPage() {
         ))}
       </footer>
 
-      <RoomDrawer room={openRoom} open={openRoom !== null} onOpenChange={(o) => !o && setOpenRoom(null)} />
+      <RoomDrawer room={openRoom} ms={data} open={openRoom !== null} onOpenChange={(o) => !o && setOpenRoom(null)} />
     </div>
   )
 }

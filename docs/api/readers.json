@@ -124,14 +124,15 @@
   {
     "file": "dashboard/src/features/media-server/room-drawer.tsx",
     "fixtures": [
-      "media-server.json"
+      "livekit"
     ],
     "assets": [],
     "browserStorage": false,
     "operations": [
       "getMediaServer"
     ],
-    "assetNotes": {}
+    "assetNotes": {},
+    "exclusion": "The room drawer's view of getMediaServer (fromContract). Its legacy `data` export reads the mock directly for pages not yet moved (#323)."
   },
   {
     "file": "dashboard/src/features/overview/latency-chain.tsx",
@@ -371,6 +372,7 @@
     "fixtures": [
       "egress.json",
       "ingress.json",
+      "media-server.json",
       "sip.json"
     ],
     "assets": [],
@@ -378,6 +380,7 @@
     "operations": [
       "getEgress",
       "getIngress",
+      "getMediaServer",
       "getSip"
     ],
     "assetNotes": {},
