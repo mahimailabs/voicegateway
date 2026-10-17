@@ -19,7 +19,7 @@ func BearerToken(token string) func(http.Handler) http.Handler {
 				writeError(w, r, http.StatusUnauthorized, codeUnauthenticated, "the API is off until VOICEGATEWAY_API_TOKEN is set")
 				return
 			}
-			got, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
+			got, ok := bearer(r.Header.Get("Authorization"))
 			sum := sha256.Sum256([]byte(got))
 			if !ok || subtle.ConstantTimeCompare(sum[:], want[:]) != 1 {
 				writeError(w, r, http.StatusUnauthorized, codeUnauthenticated, "a valid API token is required")
@@ -28,4 +28,14 @@ func BearerToken(token string) func(http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 		})
 	}
+}
+
+// bearer returns the credentials of a Bearer Authorization header. The scheme name is
+// case-insensitive (RFC 7235); the token is everything after one space.
+func bearer(header string) (string, bool) {
+	const scheme = "bearer "
+	if len(header) <= len(scheme) || !strings.EqualFold(header[:len(scheme)], scheme) {
+		return "", false
+	}
+	return header[len(scheme):], true
 }

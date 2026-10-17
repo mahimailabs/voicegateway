@@ -41,6 +41,24 @@ func Open(url string) (*Store, error) {
 	return &Store{conn: conn}, nil
 }
 
+// OpenReadOnly connects like Open, with every query run under readonly=2: reads only, so web cannot
+// write ClickHouse even by mistake (ARCHITECTURE.md Boundaries).
+func OpenReadOnly(url string) (*Store, error) {
+	opts, err := clickhouse.ParseDSN(url)
+	if err != nil {
+		return nil, fmt.Errorf("parse ClickHouse URL: %w", err)
+	}
+	if opts.Settings == nil {
+		opts.Settings = clickhouse.Settings{}
+	}
+	opts.Settings["readonly"] = 2
+	conn, err := clickhouse.Open(opts)
+	if err != nil {
+		return nil, fmt.Errorf("open ClickHouse: %w", err)
+	}
+	return &Store{conn: conn}, nil
+}
+
 // Close releases the connections.
 func (s *Store) Close() error { return s.conn.Close() }
 
@@ -342,25 +360,32 @@ func (s *Store) SpanCalls(ctx context.Context, organisationID, projectID, traceI
 // id or through its trace's link, and from the chat history of its latest session report. Turns are
 // built at read time, so spans stored late or out of order change the answer without a rewrite.
 func (s *Store) CallTurns(ctx context.Context, organisationID, projectID, callID string) (turn.Result, error) {
+	_, res, err := s.CallTrace(ctx, organisationID, projectID, callID)
+	return res, err
+}
+
+// CallTrace returns a call's spans and the turns and usage built from those same spans, from one
+// read, so both describe the same stored state.
+func (s *Store) CallTrace(ctx context.Context, organisationID, projectID, callID string) ([]store.Span, turn.Result, error) {
 	if callID == "" {
 		// An empty id is what unjoined rows carry; it names no call.
-		return turn.Result{}, nil
+		return nil, turn.Result{}, nil
 	}
 	spans, err := s.CallSpans(ctx, organisationID, projectID, callID)
 	if err != nil {
-		return turn.Result{}, err
+		return nil, turn.Result{}, err
 	}
 	history, err := s.chatHistory(ctx, organisationID, projectID, callID)
 	if err != nil {
-		return turn.Result{}, err
+		return nil, turn.Result{}, err
 	}
 	res := turn.Build(spans, history)
 	// STT audio has no per-turn source in LiveKit Agents 1.8.7; the call's comes from its
 	// lk.agents.usage.stt_audio_duration points, null when none joined.
 	if res.Usage.STTAudioSeconds.Sum, err = s.usageSum(ctx, organisationID, projectID, callID, "lk.agents.usage.stt_audio_duration"); err != nil {
-		return turn.Result{}, err
+		return nil, turn.Result{}, err
 	}
-	return res, nil
+	return spans, res, nil
 }
 
 // usageSum adds up a usage counter's points joined to a call; nil when none joined.

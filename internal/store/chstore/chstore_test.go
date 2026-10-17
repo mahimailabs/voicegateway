@@ -5,12 +5,14 @@ import (
 	"io/fs"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/ClickHouse/clickhouse-go/v2"
 	"github.com/pressly/goose/v3"
 	"github.com/testcontainers/testcontainers-go"
 	tcclickhouse "github.com/testcontainers/testcontainers-go/modules/clickhouse"
 
+	"github.com/mahimailabs/voicegateway/internal/store"
 	"github.com/mahimailabs/voicegateway/migrations"
 )
 
@@ -84,5 +86,29 @@ func TestMigrateTwice(t *testing.T) {
 		if _, err := db.ExecContext(ctx, q); err != nil {
 			t.Errorf("%s: %v", q, err)
 		}
+	}
+}
+
+// Web opens ClickHouse read-only: reads work, and any write is refused by the server.
+func TestOpenReadOnlyRefusesWrites(t *testing.T) {
+	ctx := context.Background()
+	url := startClickHouse(t)
+	if _, err := Migrate(ctx, url); err != nil {
+		t.Fatal(err)
+	}
+	ro, err := OpenReadOnly(url)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = ro.Close() })
+	if _, err := ro.CallSpans(ctx, "default", "production", "11111111-1111-1111-1111-111111111111"); err != nil {
+		t.Fatalf("read-only read: %v", err)
+	}
+	err = ro.Insert(ctx, []store.Event{{
+		OrganisationID: "default", ProjectID: "production", Kind: "livekit.webhook",
+		DedupeKey: "EV_1", StreamID: "1-0", ReceivedAt: time.Now(), Payload: []byte("{}"),
+	}})
+	if err == nil {
+		t.Fatal("read-only insert succeeded, want it refused")
 	}
 }

@@ -17,8 +17,8 @@ type Calls interface {
 	Call(ctx context.Context, organisationID, projectID, callID string) (store.Call, error)
 }
 
-// Traces reads what the agent uploaded for a call: its spans, and its turns and usage.
+// Traces reads what the agent uploaded for a call: its spans, and the turns and usage built from
+// those same spans.
 type Traces interface {
-	CallSpans(ctx context.Context, organisationID, projectID, callID string) ([]store.Span, error)
-	CallTurns(ctx context.Context, organisationID, projectID, callID string) (turn.Result, error)
+	CallTrace(ctx context.Context, organisationID, projectID, callID string) ([]store.Span, turn.Result, error)
 }

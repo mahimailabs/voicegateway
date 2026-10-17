@@ -373,6 +373,8 @@ var (
 )
 
 // get requests a path from a, checks the response against docs/api/openapi.yaml, and decodes it.
+// The contract is OpenAPI 3.1.1, so it is read with libopenapi-validator: kin-openapi does not read
+// 3.1 documents in full.
 func (f *fixture) get(a *API, path string, out any) int {
 	f.t.Helper()
 	return f.getAuth(a, path, "", out)

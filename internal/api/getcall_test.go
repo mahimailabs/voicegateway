@@ -187,12 +187,8 @@ type chDown struct{}
 
 var errDown = errors.New("dial tcp 127.0.0.1:9000: connect: connection refused")
 
-func (chDown) CallSpans(context.Context, string, string, string) ([]store.Span, error) {
-	return nil, errDown
-}
-
-func (chDown) CallTurns(context.Context, string, string, string) (turn.Result, error) {
-	return turn.Result{}, errDown
+func (chDown) CallTrace(context.Context, string, string, string) ([]store.Span, turn.Result, error) {
+	return nil, turn.Result{}, errDown
 }
 
 // Acceptance check 6.

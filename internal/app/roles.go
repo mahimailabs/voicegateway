@@ -52,7 +52,7 @@ func Web(ctx context.Context, c config.Config, log *slog.Logger) error {
 	defer func() { _ = rdb.Close() }()
 
 	// The API reads what the worker stored; web never writes ClickHouse (CLAUDE.md Boundaries).
-	events, err := chstore.Open(c.ClickHouseURL)
+	events, err := chstore.OpenReadOnly(c.ClickHouseURL)
 	if err != nil {
 		return redactErr(err, c.ClickHouseURL)
 	}

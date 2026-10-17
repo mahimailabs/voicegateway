@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/go-chi/chi/v5/middleware"
 
 	"github.com/mahimailabs/voicegateway/internal/store"
 	"github.com/mahimailabs/voicegateway/internal/turn"
@@ -107,12 +108,7 @@ func (a *API) getCall(w http.ResponseWriter, r *http.Request) {
 		a.fail(w, r, err, "call not found")
 		return
 	}
-	spans, err := a.Traces.CallSpans(ctx, org, project, c.ID)
-	if err != nil {
-		a.fail(w, r, err, "")
-		return
-	}
-	built, err := a.Traces.CallTurns(ctx, org, project, c.ID)
+	spans, built, err := a.Traces.CallTrace(ctx, org, project, c.ID)
 	if err != nil {
 		a.fail(w, r, err, "")
 		return
@@ -134,7 +130,7 @@ func (a *API) fail(w http.ResponseWriter, r *http.Request, err error, notFound s
 		writeError(w, r, http.StatusNotFound, codeNotFound, notFound)
 		return
 	}
-	a.Log.Error("api: read failed", "path", r.URL.Path, "err", err)
+	a.Log.Error("api: read failed", "path", r.URL.Path, "request_id", middleware.GetReqID(r.Context()), "err", err)
 	writeError(w, r, http.StatusInternalServerError, codeInternal, "the call could not be read")
 }
 
@@ -185,8 +181,9 @@ func buildCall(c store.Call, spans []store.Span, built turn.Result) (call, bool)
 }
 
 // clocks returns the call clock, anchored at startedAt, and the trace clock, anchored at the
-// earliest span. A start taken from the spans themselves is inferred, and so is the trace's
-// offset to it.
+// earliest span. The call clock is observed when a webhook or report gave the start, inferred when
+// the start came from the spans. The trace clock's offset compares the agent host's clock with
+// LiveKit's, two machines, so it is inferred whenever there are spans and unknown otherwise.
 func clocks(started time.Time, startObserved bool, traceStart *time.Time) []clock {
 	align := alignInferred
 	if startObserved {
@@ -197,7 +194,7 @@ func clocks(started time.Time, startObserved bool, traceStart *time.Time) []cloc
 	trace := clock{ID: clockTrace, Origin: "trace_start", Alignment: alignUnknown}
 	if traceStart != nil {
 		offset := traceStart.Sub(started).Seconds()
-		trace.OriginAt, trace.Offset, trace.Alignment = traceStart, &offset, align
+		trace.OriginAt, trace.Offset, trace.Alignment = traceStart, &offset, alignInferred
 	}
 	return append(out, trace)
 }

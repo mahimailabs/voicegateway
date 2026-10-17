@@ -9,6 +9,7 @@ import (
 
 // Error codes of the contract's Error schema.
 const (
+	codeInvalidRequest  = "invalid_request"
 	codeUnauthenticated = "unauthenticated"
 	codeNotFound        = "not_found"
 	codeInternal        = "internal_error"

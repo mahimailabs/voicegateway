@@ -1,7 +1,9 @@
 package api
 
 import (
+	"encoding/json"
 	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
@@ -36,7 +38,9 @@ func TestAPIRequiresToken(t *testing.T) {
 		{"no header", token, "", http.StatusUnauthorized},
 		{"wrong token", token, "Bearer 0123456789abcdef0123456789abcdee", http.StatusUnauthorized},
 		{"not a bearer", token, token, http.StatusUnauthorized},
+		{"empty bearer", token, "Bearer ", http.StatusUnauthorized},
 		{"right token", token, "Bearer " + token, http.StatusOK},
+		{"scheme in lower case", token, "bearer " + token, http.StatusOK},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			var body map[string]any
@@ -47,5 +51,28 @@ func TestAPIRequiresToken(t *testing.T) {
 				t.Errorf("code = %v, want unauthenticated", body["code"])
 			}
 		})
+	}
+}
+
+// Paths outside the call routes are gated as well, and answer in the contract's Error shape.
+func TestUnknownAPIPathIsGated(t *testing.T) {
+	a := &API{Gate: BearerToken("0123456789abcdef0123456789abcdef")}
+	for _, tt := range []struct {
+		auth string
+		want int
+	}{
+		{"", http.StatusUnauthorized},
+		{"Bearer 0123456789abcdef0123456789abcdef", http.StatusNotFound},
+	} {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/anything", nil)
+		if tt.auth != "" {
+			req.Header.Set("Authorization", tt.auth)
+		}
+		rec := httptest.NewRecorder()
+		a.Routes().ServeHTTP(rec, req)
+		var e apiError
+		if err := json.Unmarshal(rec.Body.Bytes(), &e); err != nil || rec.Code != tt.want || e.RequestID == "" {
+			t.Errorf("auth %q: status %d, body %s; want %d in the Error shape", tt.auth, rec.Code, rec.Body.String(), tt.want)
+		}
 	}
 }
