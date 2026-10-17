@@ -51,7 +51,9 @@ const (
 var workers atomic.Int64
 
 // every is the scrape interval in these tests; the lock lasts 9/10 of it, so ticks are spaced by it.
-const every = 300 * time.Millisecond
+// One tick against the containers takes up to about 700 ms on a loaded machine, so the interval
+// stays above that: a slow tick must not read as a gap of more than three intervals.
+const every = time.Second
 
 type fixture struct {
 	agent    atomic.Pointer[lksdk.Room] // the test agent's connection, once it took a job
@@ -156,6 +158,20 @@ func (f *fixture) scraper(dial scrape.Dial) *scrape.Scraper {
 		Log: quiet(), Now: now, ID: fmt.Sprintf("worker-%d", workers.Add(1)),
 		Every: every, FullEvery: time.Minute, Timeout: 5 * time.Second,
 	}
+}
+
+// waitReads waits until n more reads of p1's media server are stored than when it was called.
+func (f *fixture) waitReads(t *testing.T, n int) {
+	t.Helper()
+	count := func() int {
+		reads, err := f.layers.LayerReads(context.Background(), org, "p1", store.LayerMediaServer, time.Now().Add(-time.Hour))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return len(reads)
+	}
+	want := count() + n
+	waitFor(t, fmt.Sprintf("%d more reads", n), func() bool { return count() >= want })
 }
 
 // sample runs n ticks spaced by the interval, as the worker's loop does.
@@ -363,10 +379,15 @@ func TestMediaServerLive(t *testing.T) {
 	}
 	lkRoom := listed.GetRooms()[0]
 
-	// The agent goes listening, thinking, listening; full reads on every tick see each state.
+	// The agent goes listening, thinking, listening; full reads on every tick see each state. The
+	// worker's own loop keeps reading while the state changes, as it does in production, so the
+	// reads form one continuous window.
 	s := f.scraper(nil)
 	s.FullEvery = every
-	f.sample(t, s, 2)
+	runCtx, stop := context.WithCancel(ctx)
+	running := make(chan error, 1)
+	go func() { running <- s.Run(runCtx) }()
+	f.waitReads(t, 2)
 	for _, state := range []string{"thinking", "listening"} {
 		waitFor(t, "the agent's connection", func() bool { return f.agent.Load() != nil })
 		f.agent.Load().LocalParticipant.SetAttributes(map[string]string{"lk.agent.state": state})
@@ -379,8 +400,11 @@ func TestMediaServerLive(t *testing.T) {
 			}
 			return false
 		})
-		time.Sleep(every)
-		f.sample(t, s, 2)
+		f.waitReads(t, 2)
+	}
+	stop()
+	if err := <-running; err != nil {
+		t.Fatal(err)
 	}
 	ms := f.read(t, "p1")
 
