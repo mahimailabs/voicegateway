@@ -280,4 +280,14 @@ Checks 1 to 13 pass: Go on real Postgres, and the console with Vitest and Testin
 
 Manual check: the pair reviewer reports running it on the Compose stack behind an HTTPS proxy, and that `user add`, sign-in with a Secure cookie, sign-out then 401, and `https_required` by IP all passed. Still open: opening the two stored calls in the console.
 
-Next: 06b, invitations, members and roles (`docs/specs/phase06b-invites-and-roles.md`).
+Next: 06b, members and roles (`docs/specs/phase06b-members-and-roles.md`). Then 06c, project API keys, and 06d, invitation links. Invitations were split out of 06b to keep it one session.
+
+Carried to the 06d spec, from the 06b reviews:
+- The link base is `VOICEGATEWAY_PUBLIC_URL` when set, otherwise the request's scheme and Host.
+- The token goes in the link's fragment. The console drops the fragment with `history.replaceState`, and the page sends `Referrer-Policy: no-referrer`.
+- An admin's password-reset link reuses the invitation table (a `kind` column, hashed token, 7 days). Accepting it sets the password and signs the user out everywhere.
+- `invited_by` is nullable, for the Cloud instance API.
+- Accepting renews the session id.
+- Accepting as someone already a member uses up the invitation, keeps their role and signs them in.
+- Two parallel accepts that create the same new email must not answer 500.
+- Tests cover: create 400 and 409, the 12-character minimum, `https_required` on accept, revoke 204, and expiry through an injectable clock.
