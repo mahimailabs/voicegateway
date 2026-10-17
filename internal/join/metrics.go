@@ -1,7 +1,9 @@
 package join
 
 import (
+	"cmp"
 	"context"
+	"slices"
 	"strings"
 
 	"go.opentelemetry.io/collector/pdata/pmetric"
@@ -37,6 +39,11 @@ func (j *Joiner) metrics(ctx context.Context, r *store.Event) error {
 		}
 		byRef[k] = append(byRef[k], i)
 	}
+	// Room SIDs first, as for spans, so a job-only point finds the call its room opened rather than
+	// opening a second one.
+	slices.SortStableFunc(refs, func(a, b ref) int {
+		return cmp.Compare(boolInt(a.roomSID == ""), boolInt(b.roomSID == ""))
+	})
 	for _, k := range refs {
 		idx := byRef[k]
 		items := make([]window, len(idx))
@@ -75,7 +82,10 @@ func usagePoints(md pmetric.Metrics) []store.MetricPoint {
 			ms := sms.At(k).Metrics()
 			for m := range ms.Len() {
 				mt := ms.At(m)
-				if mt.Type() != pmetric.MetricTypeSum || !strings.HasPrefix(mt.Name(), usagePrefix) {
+				// Only delta points add up. A cumulative sum (another SDK, a collector in between)
+				// repeats its running total in every export and would be counted many times.
+				if mt.Type() != pmetric.MetricTypeSum || !strings.HasPrefix(mt.Name(), usagePrefix) ||
+					mt.Sum().AggregationTemporality() != pmetric.AggregationTemporalityDelta {
 					continue
 				}
 				dps := mt.Sum().DataPoints()

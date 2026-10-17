@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
+	"log/slog"
 	"math"
 	"os"
 	"sync/atomic"
@@ -11,6 +13,8 @@ import (
 	"time"
 
 	"github.com/livekit/protocol/livekit"
+	"go.opentelemetry.io/collector/pdata/pmetric"
+	"go.opentelemetry.io/collector/pdata/pmetric/pmetricotlp"
 
 	"github.com/mahimailabs/voicegateway/internal/event"
 	"github.com/mahimailabs/voicegateway/internal/join"
@@ -540,6 +544,11 @@ func TestSTTAudioFromUsageMetric(t *testing.T) {
 		if s := got.Usage.STTAudioSeconds.Sum; s == nil || math.Abs(*s-want) > 0.001 {
 			t.Errorf("call %s STT audio = %s, want %.3f", sid, orNull(s), want)
 		}
+		for i, tu := range got.Turns {
+			if tu.STTAudioSeconds.Sum != nil {
+				t.Errorf("call %s turn %d STT audio = %.3f; no per-turn source exists", sid, i+1, *tu.STTAudioSeconds.Sum)
+			}
+		}
 	}
 	quiet, err := f.events.CallTurns(ctx, "default", f.project, calls["RM_NOSTT"].ID)
 	if err != nil {
@@ -555,4 +564,29 @@ func orNull(v *float64) string {
 		return "null"
 	}
 	return fmt.Sprintf("%.3f", *v)
+}
+
+// A cumulative sum repeats its running total in every export, so it is not stored: summing it would
+// count the same audio many times.
+func TestCumulativeUsageSumIsNotStored(t *testing.T) {
+	md := pmetric.NewMetrics()
+	m := md.ResourceMetrics().AppendEmpty().ScopeMetrics().AppendEmpty().Metrics().AppendEmpty()
+	m.SetName("lk.agents.usage.stt_audio_duration")
+	sum := m.SetEmptySum()
+	sum.SetAggregationTemporality(pmetric.AggregationTemporalityCumulative)
+	dp := sum.DataPoints().AppendEmpty()
+	dp.SetDoubleValue(30)
+	dp.Attributes().PutStr("room_id", "RM_CUM")
+	b, err := pmetricotlp.NewExportRequestFromMetrics(md).MarshalProto()
+	if err != nil {
+		t.Fatal(err)
+	}
+	row := store.Event{Kind: string(event.KindAgentMetrics), OrganisationID: "default", ProjectID: "p", Payload: b}
+	rows := []store.Event{row}
+	if err := (&join.Joiner{Log: slog.New(slog.NewTextHandler(io.Discard, nil))}).Join(context.Background(), rows); err != nil {
+		t.Fatal(err)
+	}
+	if n := len(rows[0].MetricPoints); n != 0 {
+		t.Errorf("cumulative points stored = %d, want 0", n)
+	}
 }
