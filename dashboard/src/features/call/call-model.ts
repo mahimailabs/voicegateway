@@ -225,3 +225,8 @@ export const median = (xs: number[]) => {
   const s = [...xs].sort((a, b) => a - b)
   return s[Math.floor(s.length / 2)]
 }
+
+// The turns the call view lists, so the list and the call agree: reported turns when the call has
+// session events or a recording, else placed agent_turn spans. Zero only when the session reported no
+// turns and no agent turn started; turns the view cannot place are unknown, not zero.
+export const turnCount = (c: Call, model: CallModel) => model.turns.length || (c.turns?.length === 0 && !c.spans?.some((s) => s.name === "agent_turn") ? 0 : null)

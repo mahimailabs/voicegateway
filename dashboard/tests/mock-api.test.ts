@@ -9,6 +9,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, test, vi } from "vite
 import { parse } from "yaml"
 import { handlers } from "../src/mocks/handlers.ts"
 import { capturedCalls } from "../src/mocks/fixtures.ts"
+import { buildModel, turnCount } from "../src/features/call/call-model.ts"
 import { QueryClient } from "@tanstack/react-query"
 import type { AlertSetup } from "../src/lib/api-types"
 import { localSave, writeLocal } from "../src/lib/local-store.ts"
@@ -176,6 +177,18 @@ describe("getCall", () => {
     const call = await res.json()
     expect(valid("Call", call)).toBe("")
     expect(call.id).toBe(id)
+  })
+
+  test("the list's turn count is the number of turns the call view shows, for every captured call", async () => {
+    const list = (await (await fetch(`${base}/calls?limit=100`)).json()).items as { id: string; turnCount: number | null }[]
+    expect(list.length).toBe(capturedCalls().length)
+    for (const row of list) {
+      const call = await (await fetch(`${base}/calls/${encodeURIComponent(row.id)}`)).json()
+      // The drawer's count: a known count is the same number, and unknown is unknown on both sides.
+      expect(turnCount(call, buildModel(call)), row.id).toBe(row.turnCount)
+    }
+    // The phone test call has four agent_turn spans, but only two of them spoke.
+    expect(list.find((r) => r.id.includes("937b5111"))?.turnCount).toBe(2)
   })
 
   test("an unknown id is 404, not the first fixture", async () => {

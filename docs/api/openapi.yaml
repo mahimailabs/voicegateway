@@ -3157,10 +3157,10 @@ components:
           x-source: { kind: computed, file: dashboard/src/mocks/summaries.ts, pointer: null, detail: "The agent participant's agentName in the watched room, else lk.agent_name on the call's spans." }
         turnCount:
           type: [ integer, "null" ]
-          description: "Agent turns: agent_turn spans when present, else reported turns."
+          description: "Conversation turns, as getCall's call view lists them: reported turns when the call has session events or a recording, else agent_turn spans placed on the timeline. Zero only when the session reported no turns and no agent turn started."
           x-unit: count
-          x-null-reason: "Neither spans nor turns were reported."
-          x-source: { kind: computed, file: dashboard/src/features/calls/calls-page.tsx, pointer: null, detail: "Agent turns: agent_turn spans when present, else reported turns." }
+          x-null-reason: "No turns were reported or placed, or the reported ones could not be placed."
+          x-source: { kind: computed, file: dashboard/src/mocks/summaries.ts, pointer: null, detail: "The turns the call view builds: reported turns with session events or a recording, else placed agent_turn spans." }
         answerMs:
           type: [ array, "null" ]
           description: "Every measured answer time in the call, in turn order: caller stops to agent audio. Turns without a measurement are left out, not zero."

@@ -1,5 +1,5 @@
 import { useMemo } from "react"
-import { useNavigate, useParams, useSearch } from "@tanstack/react-router"
+import { Link, useNavigate, useParams, useSearch } from "@tanstack/react-router"
 import { ArrowLeft } from "@phosphor-icons/react"
 import mark from "@/assets/brand/mark.svg"
 import { DataTable } from "@/components/data-table"
@@ -7,7 +7,7 @@ import { useInfiniteQuery, useQuery } from "@tanstack/react-query"
 import { ApiError, callQuery, callPagesQuery, issuesQuery } from "@/lib/api"
 import { cn } from "@/lib/utils"
 import { CallView } from "@/features/call/call-view"
-import { columns, rowOf, serverSort, type Row } from "@/features/calls/calls-page"
+import { type CallLink, columns, rowOf, serverSort, type Row } from "@/features/calls/calls-page"
 import type { SortingState } from "@tanstack/react-table"
 import { useUrlState } from "@/lib/url-state"
 import { issuesFrom, type Severity } from "@/features/issues/issues-model"
@@ -43,13 +43,20 @@ function Anatomy() {
 
 const Note = ({ children }: { children: React.ReactNode }) => <p className="py-10 text-center text-[13px] text-muted-foreground">{children}</p>
 
+// Inside a frame a call opens the call widget, never the console.
+const WidgetCallLink: CallLink = ({ row, className, children }) => (
+  <Link to="/embed/$widget" params={{ widget: "call" }} search={(p: Record<string, unknown>) => ({ theme: p.theme, call: row.summary.id })} onClick={(e) => e.stopPropagation()} className={className}>
+    {children}
+  </Link>
+)
+
 function Calls({ open }: { open: (callId: string) => void }) {
   // The table's sort is the server's, read a page at a time; newest first by default.
   const [sorting] = useUrlState<SortingState>("sort", [{ id: "started", desc: true }])
   const key = sorting[0] && serverSort[sorting[0].id] ? sorting[0] : { id: "started", desc: true }
   const list = useInfiniteQuery(callPagesQuery(new URLSearchParams({ archived: "false", sort: serverSort[key.id], order: key.desc ? "desc" : "asc" })))
   const rows = useMemo(() => (list.data?.pages ?? []).flatMap((p) => p.items).map((s) => rowOf(s)), [list.data])
-  const cols = useMemo(() => columns(noTags), [])
+  const cols = useMemo(() => columns(noTags, WidgetCallLink), [])
   if (list.isPending) return <Note>Loading calls.</Note>
   if (list.isError) return <Note>Calls could not be loaded.</Note>
   return (
@@ -59,6 +66,7 @@ function Calls({ open }: { open: (callId: string) => void }) {
       filtered
       server={{ total: list.data?.pages[0]?.totals.callCount ?? null, hasMore: Boolean(list.hasNextPage), loading: list.isFetchingNextPage, loadMore: () => void list.fetchNextPage() }}
       getRowId={(r) => r.summary.roomSid ?? r.summary.id}
+      phoneColumns={["room"]}
       onRowClick={(r) => open(r.summary.id)}
       empty="No calls in this project yet."
     />
