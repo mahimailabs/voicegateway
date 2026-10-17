@@ -750,7 +750,7 @@ export type CallSummary = {
      */
     agentKey: string | null;
     /**
-     * Agent turns: agent_turn spans when present, else reported turns.
+     * Conversation turns, as getCall's call view lists them: reported turns when the call has session events or a recording, else agent_turn spans placed on the timeline. Zero only when the session reported no turns and no agent turn started.
      */
     turnCount: number | null;
     /**

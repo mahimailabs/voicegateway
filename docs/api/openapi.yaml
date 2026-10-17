@@ -3182,10 +3182,10 @@ components:
           x-source: { kind: computed, file: dashboard/src/mocks/summaries.ts, pointer: null, detail: "The agent participant's agentName in the watched room, else lk.agent_name on the call's spans." }
         turnCount:
           type: [ integer, "null" ]
-          description: "Agent turns: agent_turn spans when present, else reported turns."
+          description: "Conversation turns, as getCall's call view lists them: reported turns when the call has session events or a recording, else agent_turn spans placed on the timeline. Zero only when the session reported no turns and no agent turn started."
           x-unit: count
-          x-null-reason: "Neither spans nor turns were reported."
-          x-source: { kind: computed, file: dashboard/src/features/calls/calls-page.tsx, pointer: null, detail: "Agent turns: agent_turn spans when present, else reported turns." }
+          x-null-reason: "No turns were reported or placed, or the reported ones could not be placed."
+          x-source: { kind: computed, file: dashboard/src/mocks/summaries.ts, pointer: null, detail: "The turns the call view builds: reported turns with session events or a recording, else placed agent_turn spans." }
         answerMs:
           type: [ array, "null" ]
           description: "Every measured answer time in the call, in turn order: caller stops to agent audio. Turns without a measurement are left out, not zero."
@@ -4050,11 +4050,11 @@ components:
         id:
           type: string
           description: Unique project URL identifier within the organisation; server enforces uniqueness.
-          x-source: { kind: configuration, file: dashboard/src/components/workspace-switcher.tsx, pointer: null, detail: Unique project URL identifier within the organisation; server enforces uniqueness. }
+          x-source: { kind: configuration, file: dashboard/src/mocks/workspaces.ts, pointer: null, detail: Unique project URL identifier within the organisation; server enforces uniqueness. }
         name:
           type: string
           description: Project display name.
-          x-source: { kind: configuration, file: dashboard/src/components/workspace-switcher.tsx, pointer: null, detail: Project display name. }
+          x-source: { kind: configuration, file: dashboard/src/mocks/workspaces.ts, pointer: null, detail: Project display name. }
     Workspace:
       type: object
       additionalProperties: false
@@ -4063,16 +4063,16 @@ components:
         id:
           type: string
           description: Unique organisation URL identifier.
-          x-source: { kind: configuration, file: dashboard/src/components/workspace-switcher.tsx, pointer: null, detail: Unique organisation URL identifier. }
+          x-source: { kind: configuration, file: dashboard/src/mocks/workspaces.ts, pointer: null, detail: Unique organisation URL identifier. }
         name:
           type: string
           description: Organisation display name.
-          x-source: { kind: configuration, file: dashboard/src/components/workspace-switcher.tsx, pointer: null, detail: Organisation display name. }
+          x-source: { kind: configuration, file: dashboard/src/mocks/workspaces.ts, pointer: null, detail: Organisation display name. }
         projects:
           type: array
           items:
             $ref: "#/components/schemas/WorkspaceProject"
-          x-source: { kind: configuration, file: dashboard/src/components/workspace-switcher.tsx, pointer: null, detail: Only projects the authenticated principal may access. }
+          x-source: { kind: configuration, file: dashboard/src/mocks/workspaces.ts, pointer: null, detail: Only projects the authenticated principal may access. }
     Workspaces:
       type: object
       additionalProperties: false
@@ -4082,7 +4082,7 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/Workspace"
-          x-source: { kind: configuration, file: dashboard/src/components/workspace-switcher.tsx, pointer: null, detail: Only organisations visible to the authenticated principal. Unknown scope must not silently fall back to an unrelated workspace. }
+          x-source: { kind: configuration, file: dashboard/src/mocks/workspaces.ts, pointer: null, detail: Only organisations visible to the authenticated principal. Unknown scope must not silently fall back to an unrelated workspace. }
     RecordingSegment:
       type: object
       additionalProperties: false

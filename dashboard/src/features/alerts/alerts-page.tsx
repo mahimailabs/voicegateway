@@ -10,10 +10,10 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { cn } from "@/lib/utils"
-import { CHANNELS, type Channel, type Event, type Rule, channelName, ruleSetup, rulesFrom, setRule, useRuleSetup } from "./alerts-model"
+import { CHANNELS, type Channel, type Event, type Rule, channelName, ruleSetup, rulesFrom, type Setup, setupFrom, useSetRule } from "./alerts-model"
 import { useQuery } from "@tanstack/react-query"
 import { QueryState } from "@/components/page-state"
-import { alertEventsQuery } from "@/lib/api"
+import { alertEventsQuery, alertSetupQuery } from "@/lib/api"
 import { useUrlState } from "@/lib/url-state"
 
 // Alerts: the console's checks, routed to where the team already works (decision 0020). Counts are
@@ -53,8 +53,8 @@ function Stat({ icon: I, label, value, children, alert }: { icon: Icon; label: s
 
 // One card per rule: severity rail, on switch, how often it would have fired with a per-day strip, and
 // where it sends.
-function RuleCard({ r, days }: { r: Rule; days: number[] }) {
-  const setup = useRuleSetup()
+function RuleCard({ r, days, setup }: { r: Rule; days: number[]; setup: Setup }) {
+  const setRule = useSetRule()
   const s = ruleSetup(setup, r.id)
   const perDay = days.map((d) => r.events.filter((e) => within(e.at, d)).length)
   const peak = Math.max(1, ...perDay)
@@ -74,7 +74,7 @@ function RuleCard({ r, days }: { r: Rule; days: number[] }) {
           </div>
           <p className="mt-0.5 text-[12px] text-muted-foreground">{r.condition}</p>
         </div>
-        <Switch className="data-[state=checked]:bg-foreground" checked={s.on} onCheckedChange={(v) => setRule(r.id, { ...s, on: v })} aria-label={`${r.title} on`} />
+        <Switch className="data-[state=checked]:bg-foreground" checked={s.on} onCheckedChange={(v) => setRule(r.id, { on: v })} aria-label={`${r.title} on`} />
       </div>
 
       <div className="mt-4 flex items-end justify-between gap-4">
@@ -98,7 +98,7 @@ function RuleCard({ r, days }: { r: Rule; days: number[] }) {
 
       <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t pt-3">
         <span className="text-[11px] text-muted-foreground">{s.to.length ? `Sends to ${s.to.map((c) => channelName[c]).join(", ")}` : "Not sending yet"}</span>
-        <ToggleGroup type="multiple" size="sm" value={s.to} onValueChange={(v) => setRule(r.id, { ...s, to: v as Channel[] })} aria-label={`Channels for ${r.title}`} className="gap-0.5">
+        <ToggleGroup type="multiple" size="sm" value={s.to} onValueChange={(v) => setRule(r.id, { to: v as Channel[] })} aria-label={`Channels for ${r.title}`} className="gap-0.5">
           {CHANNELS.map((c) => (
             <Tooltip key={c}>
               <TooltipTrigger asChild>
@@ -163,12 +163,14 @@ function Timeline({ events }: { events: Fired[] }) {
 export function AlertsPage() {
   const read = useQuery(alertEventsQuery())
   const list = useMemo(() => (read.data ? rulesFrom(read.data) : null), [read.data])
+  const saved = useQuery(alertSetupQuery())
+  const setup = useMemo(() => (saved.data ? setupFrom(saved.data) : null), [saved.data])
   if (!list) return <QueryState icon={Bell} what="alerts" query={read} />
-  return <AlertsView list={list} />
+  if (!setup) return <QueryState icon={Bell} what="alert setup" query={saved} />
+  return <AlertsView list={list} setup={setup} />
 }
 
-function AlertsView({ list }: { list: Rule[] }) {
-  const setup = useRuleSetup()
+function AlertsView({ list, setup }: { list: Rule[]; setup: Setup }) {
   const [tab, setTab] = useUrlState("tab", "rules")
   const on = list.filter((r) => ruleSetup(setup, r.id).on)
   const events: Fired[] = on.flatMap((r) => r.events.map((e) => ({ ...e, rule: r }))).sort((a, b) => (a.at === null ? 1 : b.at === null ? -1 : b.at - a.at))
@@ -241,7 +243,7 @@ function AlertsView({ list }: { list: Rule[] }) {
             {[...list]
               .sort((a, b) => Number(Boolean(b.state)) - Number(Boolean(a.state)) || (a.severity === b.severity ? b.events.length - a.events.length : a.severity === "high" ? -1 : 1))
               .map((r) => (
-                <RuleCard key={r.id} r={r} days={days} />
+                <RuleCard key={r.id} r={r} days={days} setup={setup} />
               ))}
           </div>
           <p className="text-[12px] text-muted-foreground">Thresholds come from Settings, so a rule and the page it watches always agree. Your choices are kept in this browser until the server stores them.</p>

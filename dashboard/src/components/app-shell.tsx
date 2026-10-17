@@ -35,10 +35,12 @@ import {
 import { ThemeToggle } from "@/components/theme"
 import { UserMenu } from "@/components/user-menu"
 import { useQuery } from "@tanstack/react-query"
-import { callCountQuery } from "@/lib/api"
-import { useThresholds } from "@/lib/thresholds"
+import { callCountQuery, projectSettingsQuery } from "@/lib/api"
+import { DEFAULTS, applyThresholds } from "@/lib/thresholds"
+import { PageState, errorText } from "@/components/page-state"
+import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty"
 import { SettingsDialog, type SettingsPage } from "@/features/settings/settings-dialog"
-import { useUrlState } from "@/lib/url-state"
+import { firstProjectPath, scopeUnknown, useUrlState } from "@/lib/url-state"
 import { OrgSwitcher, ProjectSwitcher } from "@/components/org-switcher"
 import { BrandWordmark } from "@/components/brand-wordmark"
 import { motion } from "motion/react"
@@ -89,10 +91,16 @@ export function AppShell() {
   const [shortcuts, setShortcuts] = useState(false)
   const pages = useMemo(() => [...groups.flatMap((g) => g.items), { to: "/project", label: "Project", icon: TreeStructure, key: "j" }], [])
   useCommandHotkeys({ pages, onPalette: () => setPalette((o) => !o), onSettings: () => openSettings(), onShortcuts: () => setShortcuts(true) })
-  // A threshold change re-renders the page so its checks use the new numbers.
-  const thresholds = useThresholds()
+  // Pages judge calls against the project's thresholds, so they wait for the settings read, and a
+  // threshold change renders the page again. Settings that could not be read leave the contract's
+  // defaults in place, and the page says so.
+  // A link to an organisation or project this person cannot read asks nothing of the API.
+  const unknown = scopeUnknown()
+  const settings = useQuery({ ...projectSettingsQuery(), enabled: !unknown })
+  const thresholds = settings.data?.thresholds ?? DEFAULTS
+  applyThresholds(thresholds)
   // The Calls badge is the server's count of every call; nothing shows until it answers.
-  const callCount = useQuery(callCountQuery(new URLSearchParams())).data
+  const callCount = useQuery({ ...callCountQuery(new URLSearchParams()), enabled: !unknown }).data
   const badgeOf = (it: Item) => (it.to === "/calls" ? (callCount == null ? undefined : String(callCount)) : it.badge)
   // The current page carries a pill that slides between items as you move.
   const nav = (it: Item) => {
@@ -181,7 +189,14 @@ export function AppShell() {
           </div>
         </header>
         <main className="mx-auto w-full max-w-[1200px] space-y-6 px-4 pt-8 pb-32 md:px-8">
-          <Outlet key={`${thresholds.answerMs}-${thresholds.joinMs}-${thresholds.ttsStartMs}`} />
+          {unknown ? (
+            <NoSuchProject />
+          ) : (
+            <>
+              {settings.isError && <p className="rounded-lg border bg-muted px-3 py-2 text-[13px] text-muted-foreground">{`Project settings could not be read, so checks use the default thresholds. ${errorText(settings.error)}`}</p>}
+              {settings.isPending ? <PageState icon={Settings} loading title="Loading the project's settings" /> : <Outlet key={`${thresholds.answerMs}-${thresholds.joinMs}-${thresholds.ttsStartMs}`} />}
+            </>
+          )}
         </main>
       </SidebarInset>
       <SettingsDialog open={settingsOpen} onOpenChange={closeSettings} page={settingsParam} onPageChange={openSettings} />
@@ -189,5 +204,29 @@ export function AppShell() {
       <ShortcutsDialog open={shortcuts} onOpenChange={setShortcuts} pages={pages} />
       <Toaster position="bottom-right" duration={8000} />
     </SidebarProvider>
+  )
+}
+
+// The URL names an organisation or project this person cannot read. Say so, and link to the first
+// project they can, as a full page load so that project's settings are read.
+function NoSuchProject() {
+  const first = firstProjectPath()
+  return (
+    <Empty className="mx-auto max-w-[1200px]">
+      <EmptyHeader>
+        <EmptyMedia variant="icon">
+          <TreeStructure />
+        </EmptyMedia>
+        <EmptyTitle>No such project</EmptyTitle>
+        <EmptyDescription>This link names an organisation or project that does not exist, or one you cannot read.</EmptyDescription>
+      </EmptyHeader>
+      {first && (
+        <EmptyContent>
+          <Button size="sm" variant="outline" asChild>
+            <a href={first}>Open your first project</a>
+          </Button>
+        </EmptyContent>
+      )}
+    </Empty>
   )
 }

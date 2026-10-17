@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react"
 import type { ColumnDef, PaginationState, RowData, SortingState } from "@tanstack/react-table"
 import { useTable } from "@tanstack/react-table"
+import { useIsPhone } from "@/hooks/use-mobile"
 import { DataGrid, DataGridContainer, dataGridFeatures, type DataGridFeatures } from "@/components/reui/data-grid/data-grid"
 import { DataGridPagination } from "@/components/reui/data-grid/data-grid-pagination"
 import { Button } from "@/components/ui/button"
@@ -102,6 +103,7 @@ export function DataTable<T extends RowData & object>({
   bulk,
   filtered = false,
   server,
+  phoneColumns,
 }: {
   data: T[]
   columns: Columns<T>
@@ -122,7 +124,11 @@ export function DataTable<T extends RowData & object>({
   // The server sorts and pages: the table shows the rows read so far, sorts nothing itself and offers
   // the next page. Sort columns map to the server's sort keys.
   server?: { total: number | null; hasMore: boolean; loading: boolean; loadMore: () => void }
+  // At phone width only these columns show (plus row selection), so a row stacks what matters in its
+  // first cell instead of scrolling sideways.
+  phoneColumns?: string[]
 }) {
+  const phone = useIsPhone()
   // Filters and sort live in the URL (?q=, ?sort=), so a shared link opens the same rows. Each page has
   // one table, so the keys never collide.
   const [own, setOwn] = useUrlState<FilterQuery>("q", emptyQuery)
@@ -180,7 +186,11 @@ export function DataTable<T extends RowData & object>({
     getRowId,
     getRowCanExpand: canExpand ? (row) => canExpand(row.original) : undefined,
     // Server mode shows every row read so far on one page; "Show more" reads the next.
-    state: { sorting, pagination: server ? { pageIndex: 0, pageSize: Math.max(rows.length, 1) } : pagination },
+    state: {
+      sorting,
+      pagination: server ? { pageIndex: 0, pageSize: Math.max(rows.length, 1) } : pagination,
+      columnVisibility: phone && phoneColumns ? Object.fromEntries(cols.map((c) => [c.id ?? "", c.id === "select" || phoneColumns.includes(c.id ?? "")])) : {},
+    },
     manualSorting: Boolean(server),
     // The server always sorts by something, so a column cannot be un-sorted.
     enableSortingRemoval: !server,

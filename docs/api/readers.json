@@ -41,7 +41,7 @@
       "sip.json"
     ],
     "assets": [],
-    "browserStorage": true,
+    "browserStorage": false,
     "operations": [
       "getAlertSetup",
       "getEgress",
@@ -86,16 +86,6 @@
     ],
     "assetNotes": {},
     "exclusion": "Reads calls only through the API; preview.ts is the dev-only design preview."
-  },
-  {
-    "file": "dashboard/src/features/issues/issue-state.ts",
-    "fixtures": [],
-    "assets": [],
-    "browserStorage": true,
-    "operations": [
-      "getIssueDispositions"
-    ],
-    "assetNotes": {}
   },
   {
     "file": "dashboard/src/features/issues/issues-model.ts",
@@ -148,18 +138,6 @@
     "assetNotes": {}
   },
   {
-    "file": "dashboard/src/features/settings/settings-dialog.tsx",
-    "fixtures": [],
-    "assets": [],
-    "browserStorage": true,
-    "operations": [
-      "getInvitations",
-      "getProjectSettings",
-      "getWorkspaces"
-    ],
-    "assetNotes": {}
-  },
-  {
     "file": "dashboard/src/features/sip/sip-page.tsx",
     "fixtures": [
       "sip-test.json"
@@ -194,14 +172,18 @@
     }
   },
   {
-    "file": "dashboard/src/lib/thresholds.ts",
+    "file": "dashboard/src/lib/local-store.ts",
     "fixtures": [],
     "assets": [],
     "browserStorage": true,
     "operations": [
+      "getAlertSetup",
+      "getInvitations",
+      "getIssueDispositions",
       "getProjectSettings"
     ],
-    "assetNotes": {}
+    "assetNotes": {},
+    "exclusion": "The console's writes (thresholds, issue decisions, alert setup, invitations) kept in this browser until web stores them; the console reads them back only through these operations, which the mock serves from the same storage."
   },
   {
     "file": "dashboard/src/mocks/browser.ts",
@@ -215,15 +197,56 @@
     "exclusion": "Starts the mock API service worker; not a page."
   },
   {
+    "file": "dashboard/src/mocks/call-stats.ts",
+    "fixtures": [
+      "fixtures",
+      "insights",
+      "settings",
+      "summaries"
+    ],
+    "assets": [],
+    "browserStorage": false,
+    "operations": [
+      "getCallStats"
+    ],
+    "assetNotes": {},
+    "exclusion": "Server-side CallStats computation inside the mock API; the answer budget is the stored threshold (settings.ts)."
+  },
+  {
+    "file": "dashboard/src/mocks/calls-query.ts",
+    "fixtures": [
+      "settings"
+    ],
+    "assets": [],
+    "browserStorage": false,
+    "operations": [
+      "listCalls"
+    ],
+    "assetNotes": {},
+    "exclusion": "Server-side listCalls filtering and totals inside the mock API; the answer budget is the stored threshold."
+  },
+  {
+    "file": "dashboard/src/mocks/dispositions.ts",
+    "fixtures": [],
+    "assets": [],
+    "browserStorage": true,
+    "operations": [
+      "listCalls"
+    ],
+    "assetNotes": {},
+    "exclusion": "The mock API serving the archive and tags the console keeps in this browser, as the server will store them."
+  },
+  {
     "file": "dashboard/src/mocks/fixtures.ts",
     "fixtures": [
       "calls.json",
-      "capture-session.json",
       "capture-cloud.json",
       "capture-crash.json",
+      "capture-session.json",
       "capture-sip.json",
+      "console-realtime.json",
       "console-session.json",
-      "console-realtime.json"
+      "recordings"
     ],
     "assets": [],
     "browserStorage": false,
@@ -232,7 +255,7 @@
       "listCalls"
     ],
     "assetNotes": {},
-    "exclusion": "The mock API's adapter from captured fixtures to contract shape."
+    "exclusion": "The mock API's adapter from captured fixtures to contract shape; recording ids come from recordings.ts."
   },
   {
     "file": "dashboard/src/mocks/handlers.ts",
@@ -242,22 +265,31 @@
       "fixtures",
       "insights",
       "livekit",
-      "summaries"
+      "recordings",
+      "settings",
+      "summaries",
+      "workspaces"
     ],
     "assets": [],
     "browserStorage": false,
     "operations": [
+      "getAlertSetup",
       "getCall",
       "getCallStats",
       "getCapacity",
       "getCloudAgents",
       "getEgress",
       "getIngress",
+      "getInvitations",
+      "getIssueDispositions",
       "getMediaServer",
+      "getProjectSettings",
       "getProjectSnapshot",
       "getProviderProbes",
+      "getRecordingMedia",
       "getSip",
       "getWorkers",
+      "getWorkspaces",
       "listAlertEvents",
       "listCalls",
       "listIssues"
@@ -266,18 +298,34 @@
     "exclusion": "The mock API itself, answering the contract's paths."
   },
   {
-    "file": "dashboard/src/mocks/summaries.ts",
+    "file": "dashboard/src/mocks/livekit.ts",
     "fixtures": [
-      "dispositions",
-      "media-server.json"
+      "agents.json",
+      "capacity.json",
+      "egress.json",
+      "ingress.json",
+      "media-server.json",
+      "network-probe.json",
+      "project-snapshot.json",
+      "recordings",
+      "sip.json",
+      "workers.json"
     ],
     "assets": [],
     "browserStorage": false,
     "operations": [
-      "listCalls"
+      "getCapacity",
+      "getCloudAgents",
+      "getEgress",
+      "getIngress",
+      "getMediaServer",
+      "getProjectSnapshot",
+      "getProviderProbes",
+      "getSip",
+      "getWorkers"
     ],
     "assetNotes": {},
-    "exclusion": "Server-side CallSummary computation inside the mock API."
+    "exclusion": "The mock API's adapter from the captured LiveKit reads to contract shape; recording ids come from recordings.ts."
   },
   {
     "file": "dashboard/src/mocks/preview.ts",
@@ -298,58 +346,32 @@
     "exclusion": "Dev-only design preview of the recording view."
   },
   {
-    "file": "dashboard/src/mocks/dispositions.ts",
+    "file": "dashboard/src/mocks/recordings.ts",
     "fixtures": [],
+    "assets": [
+      "<dynamic>"
+    ],
+    "browserStorage": false,
+    "operations": [
+      "getRecordingMedia"
+    ],
+    "assetNotes": {
+      "<dynamic>": "The mock API's getRecordingMedia reading a captured recording's local /captures file for an id a capture names; the console plays only the API url."
+    },
+    "exclusion": "Recording audio inside the mock API."
+  },
+  {
+    "file": "dashboard/src/mocks/summaries.ts",
+    "fixtures": [
+      "dispositions",
+      "media-server.json"
+    ],
     "assets": [],
-    "browserStorage": true,
+    "browserStorage": false,
     "operations": [
       "listCalls"
     ],
     "assetNotes": {},
-    "exclusion": "The mock API serving the archive and tags the console keeps in this browser, as the server will store them."
-  },
-  {
-    "file": "dashboard/src/mocks/livekit.ts",
-    "fixtures": [
-      "agents.json",
-      "capacity.json",
-      "egress.json",
-      "ingress.json",
-      "media-server.json",
-      "network-probe.json",
-      "project-snapshot.json",
-      "sip.json",
-      "workers.json"
-    ],
-    "assets": [],
-    "browserStorage": false,
-    "operations": [
-      "getCapacity",
-      "getCloudAgents",
-      "getEgress",
-      "getIngress",
-      "getMediaServer",
-      "getProjectSnapshot",
-      "getProviderProbes",
-      "getSip",
-      "getWorkers"
-    ],
-    "assetNotes": {},
-    "exclusion": "The mock API's adapter from the captured LiveKit reads to contract shape."
-  },
-  {
-    "file": "dashboard/src/mocks/call-stats.ts",
-    "fixtures": [
-      "fixtures",
-      "insights",
-      "summaries"
-    ],
-    "assets": [],
-    "browserStorage": false,
-    "operations": [
-      "getCallStats"
-    ],
-    "assetNotes": {},
-    "exclusion": "Server-side CallStats computation inside the mock API."
+    "exclusion": "Server-side CallSummary computation inside the mock API."
   }
 ]

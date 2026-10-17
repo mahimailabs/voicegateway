@@ -4,7 +4,7 @@ import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/componen
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Unknown } from "@/components/unknown"
 import type { Call } from "@/lib/api"
-import { type CallModel, buildModel, callLength, fmtMs, interruptionCount, median } from "./call-model"
+import { type CallModel, buildModel, callLength, fmtMs, interruptionCount, median, turnCount } from "./call-model"
 import { CallScript } from "./call-script"
 import { CallPathStrip } from "./call-path-strip"
 import { CallTimeline, clock } from "./call-timeline"
@@ -24,6 +24,8 @@ function Verdict({ call, model }: { call: Call; model: CallModel }) {
   const responses = model.turns.map((t) => t.responseMs).filter((v): v is number => v !== null)
   const med = median(responses)
   const length = callLength(call, model)
+  // The same count as the Calls list: unknown stays unknown, never 0.
+  const turns = turnCount(call, model)
   const derived = model.turns.some((t) => t.responseDerived)
   const cut = model.source === "events" ? interruptionCount(model) : null
   const ended = call.endReason
@@ -36,7 +38,7 @@ function Verdict({ call, model }: { call: Call; model: CallModel }) {
   return (
     <div className="space-y-1 px-6 pt-4">
       <p className="text-[22px] leading-tight font-semibold tracking-[-0.02em] text-balance">
-        {model.turns.length} {model.turns.length === 1 ? "turn" : "turns"} in {length !== null ? clock(length) : <Unknown why="Neither the room nor the call's timeline reported a length" />}.{" "}
+        {turns ?? <span className="text-muted-foreground">?</span>} {turns === 1 ? "turn" : "turns"} in {length !== null ? clock(length) : <Unknown why="Neither the room nor the call's timeline reported a length" />}.{" "}
         {med !== null && (
           <span className="text-muted-foreground">
             Answers in {fmtMs(med)}

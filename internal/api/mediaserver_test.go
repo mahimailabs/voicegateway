@@ -160,11 +160,21 @@ func (f *fixture) sample(t *testing.T, s *scrape.Scraper, n int) {
 	}
 }
 
+// testToken is the API token the layer tests send, so they read through the real gate.
+const testToken = "0123456789abcdef0123456789abcdef"
+
 func (f *fixture) get(t *testing.T, project string) (int, []byte) {
 	t.Helper()
-	srv := httptest.NewServer((&api.API{Projects: f.projects, Layers: f.layers, Log: quiet(), Now: time.Now}).Routes())
+	srv := httptest.NewServer((&api.API{
+		Projects: f.projects, Layers: f.layers, Log: quiet(), Now: time.Now, Gate: api.BearerToken(testToken),
+	}).Routes())
 	defer srv.Close()
-	res, err := http.Get(srv.URL + "/api/v1/org/" + org + "/project/" + project + "/media-server")
+	req, err := http.NewRequest(http.MethodGet, srv.URL+"/api/v1/org/"+org+"/project/"+project+"/media-server", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Authorization", "Bearer "+testToken)
+	res, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -428,7 +438,12 @@ func TestMediaServerLive(t *testing.T) {
 		t.Errorf("sourceStatus = %+v, want a good last read", ms.SourceStatus)
 	}
 	if len(ms.Windows) != 1 {
-		t.Errorf("windows = %+v, want one continuous window", ms.Windows)
+		reads, _ := f.layers.LayerReads(ctx, org, "p1", store.LayerMediaServer, time.Now().Add(-time.Hour))
+		var seen []string
+		for _, rd := range reads {
+			seen = append(seen, fmt.Sprintf("%s ok=%t %s", rd.ReadAt.Format("15:04:05.000"), rd.OK, rd.ErrorClass))
+		}
+		t.Errorf("windows = %+v, want one continuous window; reads %v", ms.Windows, seen)
 	}
 }
 

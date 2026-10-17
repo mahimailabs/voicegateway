@@ -1,12 +1,19 @@
 import fs from "node:fs"
+import http from "node:http"
+import type { AddressInfo } from "node:net"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
 import { Ajv2020 } from "ajv/dist/2020.js"
 import { setupServer } from "msw/node"
-import { afterAll, beforeAll, describe, expect, test } from "vitest"
+import { afterAll, afterEach, beforeAll, describe, expect, test, vi } from "vitest"
 import { parse } from "yaml"
 import { handlers } from "../src/mocks/handlers.ts"
 import { capturedCalls } from "../src/mocks/fixtures.ts"
+import { buildModel, turnCount } from "../src/features/call/call-model.ts"
+import { QueryClient } from "@tanstack/react-query"
+import type { AlertSetup } from "../src/lib/api-types"
+import { localSave, writeLocal } from "../src/lib/local-store.ts"
+import { type Setup, setupFrom } from "../src/features/alerts/alerts-model.ts"
 
 // The mock API answers through the contract: every response is checked against docs/api/openapi.yaml
 // itself, not against types written for the test.
@@ -170,6 +177,18 @@ describe("getCall", () => {
     const call = await res.json()
     expect(valid("Call", call)).toBe("")
     expect(call.id).toBe(id)
+  })
+
+  test("the list's turn count is the number of turns the call view shows, for every captured call", async () => {
+    const list = (await (await fetch(`${base}/calls?limit=100`)).json()).items as { id: string; turnCount: number | null }[]
+    expect(list.length).toBe(capturedCalls().length)
+    for (const row of list) {
+      const call = await (await fetch(`${base}/calls/${encodeURIComponent(row.id)}`)).json()
+      // The drawer's count: a known count is the same number, and unknown is unknown on both sides.
+      expect(turnCount(call, buildModel(call)), row.id).toBe(row.turnCount)
+    }
+    // The phone test call has four agent_turn spans, but only two of them spoke.
+    expect(list.find((r) => r.id.includes("937b5111"))?.turnCount).toBe(2)
   })
 
   test("an unknown id is 404, not the first fixture", async () => {
@@ -348,5 +367,189 @@ describe("getCallStats", () => {
     // The console and realtime sessions name no agent; their realtime turns are that row's, nobody else's.
     const realtime = s.agents.filter((a: { chain: { stage: string }[] }) => a.chain.some((c) => c.stage === "realtime"))
     expect(realtime.map((a: { key: string | null }) => a.key)).toEqual([null])
+  })
+})
+
+// Settings come back from what the console saved in this browser; each case brings its own storage.
+function storage(saved: Record<string, unknown>, blocked: boolean | "writes" = false) {
+  const items = new Map(Object.entries(saved).map(([k, v]) => [k, typeof v === "string" ? v : JSON.stringify(v)]))
+  vi.stubGlobal("localStorage", {
+    getItem: (k: string) => {
+      if (blocked === true) throw new Error("blocked")
+      return items.get(k) ?? null
+    },
+    setItem: (k: string, v: string) => {
+      if (blocked) throw new Error("blocked")
+      items.set(k, v)
+    },
+  })
+}
+const get = async (url: string) => {
+  const res = await fetch(url)
+  return { status: res.status, body: await res.json() }
+}
+
+describe("settings reads", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  test("an unconfigured project reports no bucket, retention or origins as null, never zero, and the contract's default thresholds", async () => {
+    storage({})
+    const { status, body } = await get(`${base}/settings`)
+    expect(status).toBe(200)
+    expect(valid("ProjectSettings", body)).toBe("")
+    expect(body).toEqual({ thresholds: { answerMs: 1500, joinMs: 2000, ttsStartMs: 1000 }, storageBucket: null, transcriptRetentionDays: null, traceRetentionDays: null, recordingRetentionDays: null, allowedOrigins: null })
+  })
+
+  test.each([
+    ["valid values are served as saved", { answerMs: 1200, joinMs: 2500, ttsStartMs: 500 }, [1200, 2500, 500]],
+    ["each invalid field falls back on its own", { answerMs: "1500", joinMs: 3000, ttsStartMs: -1 }, [1500, 3000, 1000]],
+    ["zero and NaN are not thresholds", { answerMs: 0, joinMs: null, ttsStartMs: {} }, [1500, 2000, 1000]],
+    ["malformed storage serves the defaults", "{broken", [1500, 2000, 1000]],
+    ["a non-object serves the defaults", "[]", [1500, 2000, 1000]],
+  ])("thresholds: %s", async (_name, saved, expected) => {
+    storage({ "vg.thresholds": saved })
+    const { body } = await get(`${base}/settings`)
+    expect(valid("ProjectSettings", body)).toBe("")
+    expect([body.thresholds.answerMs, body.thresholds.joinMs, body.thresholds.ttsStartMs]).toEqual(expected)
+  })
+
+  test("blocked storage serves the defaults", async () => {
+    storage({}, true)
+    expect((await get(`${base}/settings`)).body.thresholds).toEqual({ answerMs: 1500, joinMs: 2000, ttsStartMs: 1000 })
+  })
+
+  test("a saved answer threshold is the budget the server judges calls by", async () => {
+    storage({ "vg.thresholds": { answerMs: 900 } })
+    const range = "from=2000-01-01T00:00:00Z&to=2100-01-01T00:00:00Z"
+    const stats = (await get(`${base}/call-stats?${range}`)).body
+    const page = (await get(`${base}/calls?limit=1`)).body
+    expect(stats.answers.budgetMs).toBe(900)
+    expect(stats.answers.overBudget).toBe(stats.answers.values.filter((v: { ms: number }) => v.ms > 900).length)
+    expect(page.totals.answers.budgetMs).toBe(900)
+  })
+
+  test("issue decisions come back as saved, in RFC 3339, and a malformed one is left out", async () => {
+    const at = Date.UTC(2026, 9, 17, 10, 0, 0)
+    storage({ "vg.issue-state": { slow: { state: "resolved", at }, sip: { state: "ignored", at }, bad: { state: "maybe", at }, undated: { state: "resolved" } } })
+    const { status, body } = await get(`${base}/issue-dispositions`)
+    expect(status).toBe(200)
+    expect(valid("IssueDispositions", body)).toBe("")
+    expect(body.items).toEqual([
+      { issueId: "slow", state: "resolved", at: "2026-10-17T10:00:00.000Z" },
+      { issueId: "sip", state: "ignored", at: "2026-10-17T10:00:00.000Z" },
+    ])
+  })
+
+  test("alert setup names every rule; an unchanged rule is on and sends nowhere, and an unknown channel is dropped", async () => {
+    storage({ "vg.alert-rules": { "slow-join": { on: false, to: ["email", "fax"] } } })
+    const { body } = await get(`${base}/alert-setup`)
+    expect(valid("AlertSetup", body)).toBe("")
+    expect(body.items).toHaveLength(7)
+    expect(body.items.find((r: { ruleId: string }) => r.ruleId === "slow-join")).toEqual({ ruleId: "slow-join", on: false, to: ["email"] })
+    expect(body.items.find((r: { ruleId: string }) => r.ruleId === "cut-off")).toEqual({ ruleId: "cut-off", on: true, to: [] })
+  })
+
+  test("when storage reads but refuses writes, a save still comes back for this page view", async () => {
+    storage({ "vg.thresholds": { answerMs: 900 } }, "writes")
+    writeLocal("vg.thresholds", { answerMs: 2500, joinMs: 2000, ttsStartMs: 1000 })
+    expect((await get(`${base}/settings`)).body.thresholds.answerMs).toBe(2500)
+    // A write storage takes again ends the memory-only value.
+    storage({})
+    writeLocal("vg.thresholds", null)
+  })
+
+  test("two saves made before the read is answered again both land", async () => {
+    storage({})
+    const client = new QueryClient()
+    const key = ["alert-setup-test"]
+    client.setQueryData(key, (await get(`${base}/alert-setup`)).body)
+    const save = localSave<Setup, AlertSetup>(client, "vg.alert-rules", key, (a) => (a ? setupFrom(a) : {}))
+    void save((s) => ({ ...s, "slow-join": { on: false, to: [] } }))
+    void save((s) => ({ ...s, "cut-off": { on: true, to: ["email"] } }))
+    const { body } = await get(`${base}/alert-setup`)
+    expect(body.items.find((r: { ruleId: string }) => r.ruleId === "slow-join").on).toBe(false)
+    expect(body.items.find((r: { ruleId: string }) => r.ruleId === "cut-off").to).toEqual(["email"])
+  })
+
+  test("invitations are the organisation's, valid ones only, and an unknown organisation is not found", async () => {
+    storage({ "vg.invites": [{ email: "a@example.com", role: "Viewer" }, { email: "not an email", role: "Admin" }, { email: "b@example.com", role: "Owner" }] })
+    const { status, body } = await get("http://console.test/api/v1/org/default/invitations")
+    expect(status).toBe(200)
+    expect(valid("Invitations", body)).toBe("")
+    expect(body.items).toEqual([{ email: "a@example.com", role: "Viewer" }])
+    const other = await get("http://console.test/api/v1/org/other/invitations")
+    expect(other.status).toBe(404)
+    expect(valid("Error", other.body)).toBe("")
+  })
+
+  test("workspaces list the organisations and projects the mock answers for, and every settings read refuses another project", async () => {
+    const { body } = await get("http://console.test/api/v1/workspaces")
+    expect(valid("Workspaces", body)).toBe("")
+    expect(body.items.flatMap((o: { id: string; projects: { id: string }[] }) => o.projects.map((p) => `${o.id}/${p.id}`))).toEqual(["default/default-project"])
+    for (const path of ["settings", "issue-dispositions", "alert-setup"]) {
+      const res = await get(`http://console.test/api/v1/org/default/project/elsewhere/${path}`)
+      expect(res.status).toBe(404)
+      expect(valid("Error", res.body)).toBe("")
+    }
+  })
+})
+
+describe("getRecordingMedia", () => {
+  // A stand-in for the dev server's /captures folder, holding one recording.
+  const audio = Buffer.from("OggS fake audio bytes for range tests")
+  let origin = ""
+  let files: http.Server
+  beforeAll(async () => {
+    files = http.createServer((req, res) => {
+      if (req.url !== "/captures/RM_mVQFRQtyjpiJ.ogg") {
+        res.writeHead(200, { "Content-Type": "text/html" }).end("<!doctype html>")
+        return
+      }
+      const m = /bytes=(\d+)-(\d*)/.exec(req.headers.range ?? "")
+      if (!m) {
+        res.writeHead(200, { "Content-Type": "audio/ogg", "Content-Length": audio.length }).end(audio)
+        return
+      }
+      const end = m[2] ? Number(m[2]) : audio.length - 1
+      res.writeHead(206, { "Content-Type": "audio/ogg", "Content-Range": `bytes ${m[1]}-${end}/${audio.length}`, "Content-Length": end - Number(m[1]) + 1 }).end(audio.subarray(Number(m[1]), end + 1))
+    })
+    await new Promise<void>((done) => files.listen(0, "127.0.0.1", done))
+    origin = `http://127.0.0.1:${(files.address() as AddressInfo).port}`
+  })
+  afterAll(() => {
+    files.close()
+  })
+  const project = () => `${origin}/api/v1/org/default/project/default-project`
+
+  test("a call's recording plays through the API in its own project, never from the captured file", async () => {
+    for (const c of capturedCalls().filter((x) => x.recording && !x.recording.preview)) {
+      const { body } = await get(`${base}/calls/${encodeURIComponent(c.id)}`)
+      expect(body.recording.url).toBe(`/api/v1/org/default/project/default-project/recordings/${body.recording.id}`)
+    }
+  })
+
+  test("serves the audio, and the byte range the player asks for", async () => {
+    const whole = await fetch(`${project()}/recordings/RM_mVQFRQtyjpiJ`)
+    expect(whole.status).toBe(200)
+    expect(whole.headers.get("Content-Type")).toBe("audio/ogg")
+    expect(whole.headers.get("Accept-Ranges")).toBe("bytes")
+    expect(whole.headers.get("Cache-Control")).toContain("private")
+    expect(Buffer.from(await whole.arrayBuffer())).toEqual(audio)
+    const part = await fetch(`${project()}/recordings/RM_mVQFRQtyjpiJ`, { headers: { Range: "bytes=0-3" } })
+    expect(part.status).toBe(206)
+    expect(part.headers.get("Content-Range")).toBe(`bytes 0-3/${audio.length}`)
+    expect(Buffer.from(await part.arrayBuffer()).toString()).toBe("OggS")
+  })
+
+  test.each([
+    ["an id no capture names", "RM_unknown"],
+    ["a path in place of an id", "..%2F..%2Fpackage.json"],
+    ["a captured recording whose file is not on this machine", "RM_4rPUQqJUkbpr"],
+  ])("%s is not found, never another file or the app's page", async (_name, id) => {
+    const res = await fetch(`${project()}/recordings/${id}`)
+    expect(res.status).toBe(404)
+    expect(valid("Error", await res.json())).toBe("")
   })
 })

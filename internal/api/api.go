@@ -12,11 +12,14 @@ import (
 // API serves the console's /api/v1 reads.
 type API struct {
 	Projects Projects
+	Calls    Calls
+	Traces   Traces
 	Layers   Layers
 	Log      *slog.Logger
 	Now      func() time.Time
-	// Gate runs before every /api/v1 route. The access scheme is not decided yet (#321), so it is a
-	// pass-through until it is; reads stay scoped to the organisation and project in the path.
+	// Gate runs before every /api/v1 route: BearerToken until the sign-in decision (#321) lands.
+	// Nil passes every request through, for tests; reads stay scoped to the organisation and
+	// project in the path either way.
 	Gate func(http.Handler) http.Handler
 }
 
@@ -24,12 +27,19 @@ type API struct {
 func (a *API) Routes() http.Handler {
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID)
-	gate := a.Gate
-	if gate == nil {
-		gate = func(next http.Handler) http.Handler { return next }
+	// The gate runs on the whole router, so an unknown /api/v1 path is gated too; what is not a
+	// route answers in the contract's Error shape.
+	if a.Gate != nil {
+		r.Use(a.Gate)
 	}
+	r.NotFound(func(w http.ResponseWriter, r *http.Request) {
+		writeError(w, r, http.StatusNotFound, codeNotFound, "no such API path")
+	})
+	r.MethodNotAllowed(func(w http.ResponseWriter, r *http.Request) {
+		writeError(w, r, http.StatusMethodNotAllowed, codeInvalidRequest, "method not allowed")
+	})
 	r.Route("/api/v1/org/{orgId}/project/{projectId}", func(r chi.Router) {
-		r.Use(gate)
+		r.Get("/calls/{callId}", a.getCall)
 		r.Get("/media-server", a.mediaServer)
 	})
 	return r

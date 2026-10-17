@@ -1,5 +1,5 @@
-import { useEffect, useMemo } from "react"
-import { useNavigate, useParams } from "@tanstack/react-router"
+import { useEffect, useMemo, useRef } from "react"
+import { Link, useNavigate, useParams } from "@tanstack/react-router"
 import { keepPreviousData, useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query"
 import type { SortingState } from "@tanstack/react-table"
 import { Archive, ArrowCounterClockwise, CaretRight, ChatsCircle, Clock, Desktop, Flask, Globe, Hash, Phone, PhoneCall, Question, Tag, Timer, Waveform, WarningCircle } from "@phosphor-icons/react"
@@ -105,9 +105,57 @@ const length = (s: number) => (s >= 60 ? `${Math.floor(s / 60)}m ${String(s % 60
 const right = { headerClassName: "[&>div]:w-full [&>div]:justify-end", cellClassName: "text-right" }
 
 // The columns the server can sort, by their listCalls sort key. The others do not sort.
+const startedText = (r: Row) => new Date(r.summary.startedAt).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })
+
 export const serverSort: Record<string, string> = { started: "startedAt", length: "durationSeconds", turns: "turnCount", answer: "answerMs", issues: "issues" }
 
-export function columns(tagsOf: (room: string) => string[]): Columns<Row> {
+function AnswerCell({ r }: { r: Row }) {
+  return r.summary.answerMsMedian !== null ? (
+    <div className="flex items-center gap-2">
+      <span className={cn("w-12 text-[13px] tnum", r.summary.answerMsMedian > BUDGET_MS && "text-destructive")}>{fmt(r.summary.answerMsMedian)}</span>
+      <AnswerDots answers={answersOf(r)} />
+    </div>
+  ) : (
+    <span className="text-[12px] text-muted-foreground">not measured</span>
+  )
+}
+function IssuesCell({ r }: { r: Row }) {
+  const n = issueCounts(r)
+  if (!n) return <span className="text-[12px] text-muted-foreground">unknown</span>
+  return n.high + n.medium ? (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span className="flex cursor-help items-center gap-1">
+          {n.high > 0 && <span className="rounded-md bg-destructive/10 px-1.5 text-[11px] text-destructive tnum">{n.high} high</span>}
+          {n.medium > 0 && <span className="rounded-md bg-amber-500/10 px-1.5 text-[11px] text-amber-700 tnum dark:text-amber-400">{n.medium} medium</span>}
+        </span>
+      </TooltipTrigger>
+      <TooltipContent className="max-w-80 text-xs">
+        <ul className="space-y-0.5">
+          {r.summary.issues.titles.map((t) => (
+            <li key={t}>{t}</li>
+          ))}
+        </ul>
+      </TooltipContent>
+    </Tooltip>
+  ) : (
+    <span className="text-[12px] text-muted-foreground">none</span>
+  )
+}
+
+// The call's name is a real link, so the keyboard, a middle click and "copy link" all open the call.
+// The row's own click stays for the pointer; the link stops it so a call opens once.
+export type CallLink = (p: { row: Row; className: string; children: React.ReactNode }) => React.ReactNode
+const linkClass = "truncate rounded-sm font-mono text-[12px] outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring"
+// Opening a call keeps the list's filters and range, not the previous call's drawer state.
+const keepListState = ({ turn: _t, pane: _p, events: _e, ...rest }: Record<string, unknown>) => rest
+const ConsoleCallLink: CallLink = ({ row, className, children }) => (
+  <Link to="/calls/$callId" params={{ callId: row.summary.id }} search={keepListState} onClick={(e) => e.stopPropagation()} className={className} data-call-id={row.summary.id}>
+    {children}
+  </Link>
+)
+
+export function columns(tagsOf: (room: string) => string[], CallName: CallLink = ConsoleCallLink): Columns<Row> {
   return [
     {
       id: "room",
@@ -118,11 +166,22 @@ export function columns(tagsOf: (room: string) => string[]): Columns<Row> {
       cell: ({ row: { original: r } }) => (
         <div className="min-w-0 py-1">
           <div className="flex items-center gap-2">
-            <span className="truncate font-mono text-[12px]">{r.summary.room}</span>
+            <CallName row={r} className={linkClass}>
+              {r.summary.room}
+            </CallName>
             {r.summary.recorded && <Waveform size={14} className="shrink-0 text-primary" aria-label="Recorded" />}
             {r.preview && <span className="rounded-full bg-accent px-2 py-0.5 text-[11px] text-accent-foreground">Design preview</span>}
           </div>
           <div className="truncate text-[11px] text-muted-foreground">{r.label || "pipeline not reported"}</div>
+          {/* At phone width the other columns hide; when it started, its turns, the answer time and issues stack here instead. */}
+          <div className="mt-1 flex flex-wrap items-center gap-3 sm:hidden">
+            <span className="text-[12px] text-muted-foreground tnum">{startedText(r)}</span>
+            <span className="text-[12px] text-muted-foreground tnum">
+              {r.summary.turnCount ?? "?"} {r.summary.turnCount === 1 ? "turn" : "turns"}
+            </span>
+            <AnswerCell r={r} />
+            <IssuesCell r={r} />
+          </div>
           {tagsOf(r.summary.room).length > 0 && (
             <div className="mt-1 flex flex-wrap gap-1">
               {tagsOf(r.summary.room).map((t) => (
@@ -153,7 +212,7 @@ export function columns(tagsOf: (room: string) => string[]): Columns<Row> {
       accessorFn: (r) => r.started,
       header: ({ column }) => <DataGridColumnHeader title="Started" column={column} />,
       size: 130,
-      cell: ({ row: { original: r } }) => <span className="text-[12px] text-muted-foreground tnum">{new Date(r.summary.startedAt).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}</span>,
+      cell: ({ row: { original: r } }) => <span className="text-[12px] text-muted-foreground tnum">{startedText(r)}</span>,
     },
     {
       id: "length",
@@ -178,15 +237,7 @@ export function columns(tagsOf: (room: string) => string[]): Columns<Row> {
       accessorFn: (r) => r.summary.answerMsMedian ?? -1,
       header: ({ column }) => <DataGridColumnHeader title="Answer time" column={column} />,
       size: 190,
-      cell: ({ row: { original: r } }) =>
-        r.summary.answerMsMedian !== null ? (
-          <div className="flex items-center gap-2">
-            <span className={cn("w-12 text-[13px] tnum", r.summary.answerMsMedian > BUDGET_MS && "text-destructive")}>{fmt(r.summary.answerMsMedian)}</span>
-            <AnswerDots answers={answersOf(r)} />
-          </div>
-        ) : (
-          <span className="text-[12px] text-muted-foreground">not measured</span>
-        ),
+      cell: ({ row: { original: r } }) => <AnswerCell r={r} />,
     },
     {
       id: "issues",
@@ -197,29 +248,7 @@ export function columns(tagsOf: (room: string) => string[]): Columns<Row> {
       },
       header: ({ column }) => <DataGridColumnHeader title="Issues" column={column} />,
       size: 150,
-      cell: ({ row: { original: r } }) => {
-        const n = issueCounts(r)
-        if (!n) return <span className="text-[12px] text-muted-foreground">unknown</span>
-        return n.high + n.medium ? (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <span className="flex cursor-help items-center gap-1">
-                {n.high > 0 && <span className="rounded-md bg-destructive/10 px-1.5 text-[11px] text-destructive tnum">{n.high} high</span>}
-                {n.medium > 0 && <span className="rounded-md bg-amber-500/10 px-1.5 text-[11px] text-amber-700 tnum dark:text-amber-400">{n.medium} medium</span>}
-              </span>
-            </TooltipTrigger>
-            <TooltipContent className="max-w-80 text-xs">
-              <ul className="space-y-0.5">
-                {r.summary.issues.titles.map((t) => (
-                  <li key={t}>{t}</li>
-                ))}
-              </ul>
-            </TooltipContent>
-          </Tooltip>
-        ) : (
-          <span className="text-[12px] text-muted-foreground">none</span>
-        )
-      },
+      cell: ({ row: { original: r } }) => <IssuesCell r={r} />,
     },
     { id: "go", header: () => null, size: 32, enableSorting: false, cell: () => <CaretRight className="text-muted-foreground" /> },
   ]
@@ -260,6 +289,17 @@ export function CallsPage() {
   const { callId } = useParams({ strict: false }) as { callId?: string }
   const navigate = useNavigate()
   const queryClient = useQueryClient()
+  // The call last open, so closing its drawer puts focus back on its link and keyboard users keep their place.
+  const lastOpen = useRef<string | null>(null)
+  useEffect(() => {
+    if (callId) lastOpen.current = callId
+  }, [callId])
+  const refocus = (e: Event) => {
+    const link = lastOpen.current && document.querySelector<HTMLElement>(`[data-call-id="${CSS.escape(lastOpen.current)}"]`)
+    if (!link) return
+    e.preventDefault()
+    link.focus()
+  }
   const [query, setQuery] = useUrlState<FilterQuery>(
     "q",
     useMemo(() => createFilterQuery([]), []),
@@ -317,11 +357,11 @@ export function CallsPage() {
     ],
     [preview, view, query, list.data, server.nothing],
   )
-  // Opening or closing a call keeps the list's filters and range; closing drops the drawer's own state.
+  // Opening or closing a call keeps the list's filters and range and drops the drawer's own state.
   const setOpen = (r: { id: string } | null) =>
     r
-      ? navigate({ to: "/calls/$callId", params: { callId: r.id }, search: (p: Record<string, unknown>) => p } as never)
-      : navigate({ to: "/calls", search: ({ turn: _t, pane: _p, events: _e, ...rest }: Record<string, unknown>) => rest } as never)
+      ? navigate({ to: "/calls/$callId", params: { callId: r.id }, search: keepListState } as never)
+      : navigate({ to: "/calls", search: keepListState } as never)
   const archive = (calls: { roomSid: string | null; id: string; room: string }[], to: boolean, done?: () => void) => {
     const before = archived
     const ids = calls.map(keyOf)
@@ -407,6 +447,7 @@ export function CallsPage() {
           onQueryChange={setQuery}
           getRowId={(r) => keyOf(r.summary)}
           onRowClick={(r) => setOpen(r.summary)}
+          phoneColumns={["room"]}
           sort={DEFAULT_SORT}
           empty={view === "archived" ? "No archived calls." : "No calls match these filters."}
           bulk={(sel, clear) =>
@@ -445,7 +486,7 @@ export function CallsPage() {
         <p className="text-[12px] text-muted-foreground">{`Answer time: caller stops talking to agent audio, per turn. The line marks the ${BUDGET_MS / 1000} s budget, a setting, not a measurement.`}</p>
       </section>
       <Sheet open={callId !== undefined} onOpenChange={(o) => !o && setOpen(null)}>
-        <SheetContent side="right" onOpenAutoFocus={(e) => e.preventDefault()} onPointerDownOutside={keepOpenOnInsidePress} className="gap-0 p-0 data-[side=right]:w-[80vw] data-[side=right]:sm:max-w-none">
+        <SheetContent side="right" onOpenAutoFocus={(e) => e.preventDefault()} onCloseAutoFocus={refocus} onPointerDownOutside={keepOpenOnInsidePress} className="gap-0 p-0 data-[side=right]:w-[80vw] data-[side=right]:sm:max-w-none">
           {callId !== undefined && <CallDrawer callId={callId} preview={preview?.call.id === callId ? preview.call : undefined} archived={archived} archive={archive} />}
         </SheetContent>
       </Sheet>

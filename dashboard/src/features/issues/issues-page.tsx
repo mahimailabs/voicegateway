@@ -6,14 +6,14 @@ import { Button } from "@/components/ui/button"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
-import { setIssueStates, statusOf, useIssueStates } from "./issue-state"
+import { type Store, statusOf, storeFrom, useSaveIssueStates } from "./issue-state"
 import { type Columns, DataTable, type Field } from "@/components/data-table"
 import { DataGridColumnHeader } from "@/components/reui/data-grid/data-grid-column-header"
 import { cn } from "@/lib/utils"
 import { type Issue, type Severity, issuesFrom } from "./issues-model"
 import { useQuery } from "@tanstack/react-query"
 import { QueryState } from "@/components/page-state"
-import { issuesQuery } from "@/lib/api"
+import { issueDispositionsQuery, issuesQuery } from "@/lib/api"
 import { useUrlState } from "@/lib/url-state"
 
 // Issues: every finding the console computes, grouped so a pattern across calls reads as one row
@@ -50,6 +50,40 @@ const lastSeen = (i: Issue) => {
   return Number.isFinite(t) ? t : null
 }
 
+function Seen({ i }: { i: Issue }) {
+  const n = i.hits.length
+  return <span className="tnum">{`${n} ${i.source === "Calls" ? (n === 1 ? "call" : "calls") : n === 1 ? "place" : "places"}`}</span>
+}
+function Last({ i }: { i: Issue }) {
+  const t = lastSeen(i)
+  return <span className="tnum">{t === null ? "Now" : day(t)}</span>
+}
+
+function TitleCell({ i, regressed = false }: { i: Issue; regressed?: boolean }) {
+  return (
+    <>
+      <span className="flex items-center gap-2 text-[14px] font-medium">
+        <span className={cn("size-2 shrink-0 rounded-full", dot[i.severity])} aria-label={i.severity} />
+        {i.title}
+        {regressed && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span className="rounded-full bg-destructive/10 px-1.5 text-[11px] font-medium text-destructive">Regressed</span>
+            </TooltipTrigger>
+            <TooltipContent className="text-xs">Resolved, then seen again after that.</TooltipContent>
+          </Tooltip>
+        )}
+      </span>
+      {/* At phone width the other columns hide; where and when it was seen stack here instead. */}
+      <span className="mt-0.5 flex flex-wrap gap-x-3 pl-4 text-[12px] text-muted-foreground sm:hidden">
+        <span>{i.source}</span>
+        <Seen i={i} />
+        <Last i={i} />
+      </span>
+    </>
+  )
+}
+
 const columns: Columns<Issue> = [
   {
     id: "expand",
@@ -69,12 +103,7 @@ const columns: Columns<Issue> = [
     accessorFn: (i) => i.title,
     header: ({ column }) => <DataGridColumnHeader title="Issue" column={column} />,
     size: 420,
-    cell: ({ row }) => (
-      <span className="flex items-center gap-2 text-[14px] font-medium">
-        <span className={cn("size-2 shrink-0 rounded-full", dot[row.original.severity])} aria-label={row.original.severity} />
-        {row.original.title}
-      </span>
-    ),
+    cell: ({ row }) => <TitleCell i={row.original} />,
   },
   {
     id: "source",
@@ -95,24 +124,22 @@ const columns: Columns<Issue> = [
     accessorFn: (i) => i.hits.length,
     header: ({ column }) => <DataGridColumnHeader title="Seen" column={column} />,
     meta: { headerClassName: "[&>div]:w-full [&>div]:justify-end", cellClassName: "text-right" },
-    cell: ({ row }) => {
-      const n = row.original.hits.length
-      return (
-        <span className="text-[13px] tnum">
-          {n} {row.original.source === "Calls" ? (n === 1 ? "call" : "calls") : n === 1 ? "place" : "places"}
-        </span>
-      )
-    },
+    cell: ({ row }) => (
+      <span className="text-[13px] whitespace-nowrap">
+        <Seen i={row.original} />
+      </span>
+    ),
   },
   {
     id: "last",
     accessorFn: (i) => lastSeen(i) ?? -1,
     header: ({ column }) => <DataGridColumnHeader title="Last" column={column} />,
     meta: { headerClassName: "[&>div]:w-full [&>div]:justify-end", cellClassName: "text-right" },
-    cell: ({ row }) => {
-      const t = lastSeen(row.original)
-      return <span className="text-[13px] text-muted-foreground tnum">{t === null ? "Now" : day(t)}</span>
-    },
+    cell: ({ row }) => (
+      <span className="text-[13px] whitespace-nowrap text-muted-foreground">
+        <Last i={row.original} />
+      </span>
+    ),
   },
 ]
 
@@ -135,13 +162,16 @@ const viewLabel: Record<View, string> = { open: "Open", resolved: "Resolved", ig
 
 export function IssuesPage() {
   const read = useQuery(issuesQuery())
+  const decided = useQuery(issueDispositionsQuery())
   const all = useMemo(() => (read.data ? issuesFrom(read.data) : null), [read.data])
+  const states = useMemo(() => (decided.data ? storeFrom(decided.data) : null), [decided.data])
   if (!all) return <QueryState icon={WarningCircle} what="issues" query={read} />
-  return <IssuesView all={all} />
+  if (!states) return <QueryState icon={WarningCircle} what="issue decisions" query={decided} />
+  return <IssuesView all={all} states={states} />
 }
 
-function IssuesView({ all }: { all: Issue[] }) {
-  const states = useIssueStates()
+function IssuesView({ all, states }: { all: Issue[]; states: Store }) {
+  const setIssueStates = useSaveIssueStates()
   const [view, setView] = useUrlState<View>("view", "open")
   const withStatus = all.map((i) => ({ i, st: statusOf(states, i.id, lastSeen(i)) }))
   const count = (v: View) => withStatus.filter((x) => x.st.status === v).length
@@ -153,13 +183,16 @@ function IssuesView({ all }: { all: Issue[] }) {
 
   // Every change can be undone from its toast; the store keeps the state from before.
   const apply = (list: Issue[], state: "resolved" | "ignored" | "open", done?: () => void) => {
-    const before = states
-    const next = { ...states }
-    for (const i of list) {
-      if (state === "open") delete next[i.id]
-      else next[i.id] = { state, at: Date.now() }
-    }
-    setIssueStates(next)
+    let before: Store = {}
+    setIssueStates((current) => {
+      before = current
+      const next = { ...current }
+      for (const i of list) {
+        if (state === "open") delete next[i.id]
+        else next[i.id] = { state, at: Date.now() }
+      }
+      return next
+    })
     done?.()
     const what = list.length === 1 ? `"${list[0].title}"` : `${list.length} issues`
     toast(state === "open" ? `Reopened ${what}` : state === "resolved" ? `Resolved ${what}` : `Ignored ${what}`, { action: { label: "Undo", onClick: () => setIssueStates(before) } })
@@ -207,20 +240,7 @@ function IssuesView({ all }: { all: Issue[] }) {
       c.id === "title"
         ? {
             ...c,
-            cell: ({ row }: { row: { original: Issue } }) => (
-              <span className="flex items-center gap-2 text-[14px] font-medium">
-                <span className={cn("size-2 shrink-0 rounded-full", dot[row.original.severity])} aria-label={row.original.severity} />
-                {row.original.title}
-                {regressed.has(row.original.id) && (
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <span className="rounded-full bg-destructive/10 px-1.5 text-[11px] font-medium text-destructive">Regressed</span>
-                    </TooltipTrigger>
-                    <TooltipContent className="text-xs">Resolved, then seen again after that.</TooltipContent>
-                  </Tooltip>
-                )}
-              </span>
-            ),
+            cell: ({ row }: { row: { original: Issue } }) => <TitleCell i={row.original} regressed={regressed.has(row.original.id)} />,
           }
         : c,
     ),
@@ -250,6 +270,7 @@ function IssuesView({ all }: { all: Issue[] }) {
         fields={fields}
         getRowId={(i) => i.id}
         canExpand={() => true}
+        phoneColumns={["expand", "title", "actions"]}
         empty={view === "open" ? "No open issue matches these filters." : `No ${view} issues.`}
         bulk={(sel, clear) => (
           <>

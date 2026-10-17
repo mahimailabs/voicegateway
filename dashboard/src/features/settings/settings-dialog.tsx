@@ -1,4 +1,5 @@
-import { useState, useSyncExternalStore } from "react"
+import { useState } from "react"
+import { useQuery } from "@tanstack/react-query"
 import { EnvelopeSimple as Envelope, WebhooksLogo, Buildings, Database, Key as KeyIcon, Clock, Copy, EnvelopeSimple, GearSix, FrameCorners, Lock, UsersThree, X, Plug, Plus, TreeStructure, User } from "@phosphor-icons/react"
 import type { Icon } from "@phosphor-icons/react"
 import { toast } from "sonner"
@@ -17,11 +18,13 @@ import { Sidebar, SidebarContent, SidebarGroup, SidebarGroupContent, SidebarGrou
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import { useTheme } from "@/components/theme"
 import { NewProjectDialog } from "@/components/new-project-dialog"
-import { orgs } from "@/components/workspace-switcher"
-import { scopePrefix, useUrlState } from "@/lib/url-state"
+import { currentOrg, currentScope, scopePrefix, useUrlState } from "@/lib/url-state"
 import { type WidgetId, widgets } from "@/features/embed/widgets"
-import { DEFAULTS, type Thresholds as T, setThresholds, useThresholds } from "@/lib/thresholds"
-import { listCalls } from "@/lib/api"
+import { DEFAULTS, type Thresholds as T } from "@/lib/thresholds"
+import { invitationsQuery, listCalls, projectSettingsQuery } from "@/lib/api"
+import type { Invitation, Invitations, ProjectSettings } from "@/lib/api-types"
+import { useLocalSave } from "@/lib/local-store"
+import { errorText } from "@/components/page-state"
 import { data as media } from "@/features/media-server/room-drawer"
 
 // Settings as a modal over the page you are on (layout from shadcn's sidebar-13 block). Three groups,
@@ -31,8 +34,10 @@ import { data as media } from "@/features/media-server/room-drawer"
 // (thresholds, tags, appearance) works and is kept in this browser, with undo; what the Phase 2
 // server will own is read from the captured project or says "Not set".
 
-const org = orgs[0]
-const project = org.projects[0].name
+// The organisation and its projects as getWorkspaces named them (lib/workspaces.ts). When it named
+// none, the scope's id stands in and no project is listed.
+const org = () => currentOrg() ?? { id: currentScope().org, name: currentScope().org, projects: [] }
+const projectName = () => org().projects.find((p) => p.id === currentScope().project)?.name ?? currentScope().project
 
 type Key = "account" | "organisation" | "access" | "integrations" | "embeds" | "data" | "thresholds"
 type Page = { key: Key; label: string; icon: Icon; scope: "project" | "organisation" | "you" }
@@ -156,10 +161,10 @@ function Organisation() {
   const [adding, setAdding] = useState(false)
   return (
     <>
-      <Header title={org.name} description="The organisation that owns your projects. The open-source edition is one organisation with any number of projects and no usage limits." />
+      <Header title={org().name} description="The organisation that owns your projects. The open-source edition is one organisation with any number of projects and no usage limits." />
       <Group label="Projects">
-        {org.projects.map(({ name: p }, k) => (
-          <Row key={p} icon={TreeStructure} title={p} description="Current project" value={<span className="font-mono text-[13px]">{media.server?.url ?? "not reported"}</span>} last={k === org.projects.length - 1} />
+        {org().projects.map(({ name: p }, k) => (
+          <Row key={p} icon={TreeStructure} title={p} description="Current project" value={<span className="font-mono text-[13px]">{media.server?.url ?? "not reported"}</span>} last={k === org().projects.length - 1} />
         ))}
       </Group>
       <div className="pt-3">
@@ -177,33 +182,10 @@ function Organisation() {
   )
 }
 
-// Invites wait in this browser until the Phase 2 server sends them (decision 0019).
-type Role = "Admin" | "Member" | "Viewer"
-type Invite = { email: string; role: Role }
-const INVITES = "vg.invites"
-let invites: Invite[] = (() => {
-  try {
-    return JSON.parse(localStorage.getItem(INVITES) ?? "[]") as Invite[]
-  } catch {
-    return []
-  }
-})()
-const inviteListeners = new Set<() => void>()
-function setInvites(next: Invite[]) {
-  invites = next
-  try {
-    localStorage.setItem(INVITES, JSON.stringify(next))
-  } catch {
-    // Storage is unavailable; the list lasts for this page view.
-  }
-  inviteListeners.forEach((l) => l())
-}
-const useInvites = () =>
-  useSyncExternalStore(
-    (l) => (inviteListeners.add(l), () => inviteListeners.delete(l)),
-    () => invites,
-    () => invites,
-  )
+// Invites wait in this browser until the Phase 2 server sends them (decision 0019); getInvitations
+// reads them back.
+type Role = Invitation["role"]
+type Invite = Invitation
 
 const roles: { role: Role; description: string }[] = [
   { role: "Admin", description: "Everything, including settings, projects, API keys and members." },
@@ -212,15 +194,18 @@ const roles: { role: Role; description: string }[] = [
 ]
 
 function People() {
-  const list = useInvites()
+  const read = useQuery(invitationsQuery())
+  const setInvites = useLocalSave<Invite[], Invitations>("vg.invites", invitationsQuery().queryKey, (d) => d?.items ?? [])
+  const list = read.data?.items ?? []
   const [email, setEmail] = useState("")
   const [role, setRole] = useState<Role>("Member")
   const clean = email.trim().toLowerCase()
-  const valid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(clean) && !list.some((i) => i.email === clean)
+  const valid = read.isSuccess && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(clean) && !list.some((i) => i.email === clean)
   const invite = () => {
-    setInvites([...list, { email: clean, role }])
+    const added = clean
+    setInvites((current) => (current.some((x) => x.email === added) ? current : [...current, { email: added, role }]))
     setEmail("")
-    toast(`Invited ${clean} as ${role}`, { action: { label: "Undo", onClick: () => setInvites(list) } })
+    toast(`Invited ${added} as ${role}`, { action: { label: "Undo", onClick: () => setInvites((current) => current.filter((x) => x.email !== added)) } })
   }
   return (
     <>
@@ -235,7 +220,7 @@ function People() {
         >
           <div className="space-y-0.5">
             <p className="text-[14px] font-medium">Invite people</p>
-            <p className="text-[13px] text-muted-foreground">They get an email to join {org.name}. Sending starts with the server; until then invites wait here.</p>
+            <p className="text-[13px] text-muted-foreground">They get an email to join {org().name}. Sending starts with the server; until then invites wait here.</p>
           </div>
           <div className="space-y-3">
             <InputGroup>
@@ -260,7 +245,8 @@ function People() {
         </form>
       </section>
       <Group label="People">
-        <Row title="You" description="Sign-in arrives with the server." value="Admin" last={list.length === 0} />
+        <Row title="You" description="Sign-in arrives with the server." value="Admin" last={list.length === 0 && read.isSuccess} />
+        {!read.isSuccess && <Row title="Invitations" description={read.isError ? errorText(read.error) : undefined} value={read.isError ? "Could not be read" : "Loading"} last />}
         {list.map((i, k) => (
           <Row
             key={i.email}
@@ -271,9 +257,8 @@ function People() {
                 variant="ghost"
                 size="sm"
                 onClick={() => {
-                  const before = list
-                  setInvites(list.filter((x) => x.email !== i.email))
-                  toast(`Revoked the invite for ${i.email}`, { action: { label: "Undo", onClick: () => setInvites(before) } })
+                  setInvites((current) => current.filter((x) => x.email !== i.email))
+                  toast(`Revoked the invite for ${i.email}`, { action: { label: "Undo", onClick: () => setInvites((current) => (current.some((x) => x.email === i.email) ? current : [...current, i])) } })
                 }}
               >
                 Revoke
@@ -390,7 +375,7 @@ function ApiKeys() {
     <>
       <Header title="API keys" description="For agents on other frameworks, for the SDK and for MCP. Each key belongs to one project." />
       <Group footer="The server creates a key, shows it once and stores it hashed. Keys arrive with the Phase 2 server.">
-        {org.projects.map(({ name: p }, k) => (
+        {org().projects.map(({ name: p }, k) => (
           <Row
             key={p}
             icon={KeyIcon}
@@ -401,7 +386,7 @@ function ApiKeys() {
                 <Plus /> Create key
               </Button>
             }
-            last={k === org.projects.length - 1}
+            last={k === org().projects.length - 1}
           />
         ))}
       </Group>
@@ -481,7 +466,11 @@ function Access() {
   )
 }
 
-function Data() {
+const days = (n: number | null) => (n === null ? <NotSet /> : `${n} ${n === 1 ? "day" : "days"}`)
+
+const Data = () => <WithSettings title="Data">{(s) => <DataPane s={s} />}</WithSettings>
+
+function DataPane({ s }: { s: ProjectSettings }) {
   const calls = listCalls().filter((c) => !c.recording?.preview)
   const recorded = calls.filter((c) => c.recording).length
   return (
@@ -490,19 +479,38 @@ function Data() {
       <Group label="Recordings">
         <Row title="Captured calls with a recording" value={`${recorded} of ${calls.length}`} />
         <Row title="Source" description="Turned on in the agent session. LiveKit Egress is the other option." value="Agent session upload" />
-        <Row title="Storage bucket" description="MinIO from the install, or any S3 bucket." value={<NotSet />} last />
+        <Row title="Storage bucket" description="SeaweedFS from the install, or any S3 bucket." value={s.storageBucket ?? <NotSet />} last />
       </Group>
       <Group label="Retention" footer="The server deletes what is older. Until it runs, nothing is deleted.">
-        <Row title="Transcripts" value={<NotSet />} />
-        <Row title="Traces and metrics" value={<NotSet />} />
-        <Row title="Recordings" value={<NotSet />} last />
+        <Row title="Transcripts" value={days(s.transcriptRetentionDays)} />
+        <Row title="Traces and metrics" value={days(s.traceRetentionDays)} />
+        <Row title="Recordings" value={days(s.recordingRetentionDays)} last />
       </Group>
     </>
   )
 }
 
-function Thresholds() {
-  const t = useThresholds()
+// A settings pane whose values come from getProjectSettings: loading, the error, then the pane.
+function WithSettings({ title, children }: { title: string; children: (s: ProjectSettings) => React.ReactNode }) {
+  const read = useQuery(projectSettingsQuery())
+  if (read.data) return children(read.data)
+  return (
+    <>
+      <Header title={title} description={read.isError ? `The project's settings could not be read. ${errorText(read.error)}` : "Loading the project's settings."} />
+      {read.isError && (
+        <Button variant="outline" size="sm" className="mt-4" onClick={() => void read.refetch()}>
+          Try again
+        </Button>
+      )}
+    </>
+  )
+}
+
+const Thresholds = () => <WithSettings title="Thresholds">{(s) => <ThresholdsForm t={s.thresholds} />}</WithSettings>
+
+function ThresholdsForm({ t }: { t: T }) {
+  // Every page's checks and the server's judgements use these, so a save asks every read again.
+  const setThresholds = useLocalSave<T>("vg.thresholds", [])
   const asDraft = (x: T) => ({ answer: String(x.answerMs / 1000), join: String(x.joinMs / 1000), tts: String(x.ttsStartMs / 1000) })
   const [draft, setDraft] = useState(asDraft(t))
   const n = (v: string) => Number(v)
@@ -551,6 +559,7 @@ function Thresholds() {
 
 // Widgets a platform puts in its own product (decision 0023). The preview is the real widget in a frame.
 function Embeds() {
+  const origins = useQuery(projectSettingsQuery())
   const [pick, setPick] = useUrlState<WidgetId>("widget", "answer-time")
   const [theme, setTheme] = useState<"light" | "dark">("light")
   const w = widgets.find((x) => x.id === pick) ?? widgets[0]
@@ -602,7 +611,7 @@ function Embeds() {
             </Button>
           }
         />
-        <Row title="Allowed origins" description="Only these sites can show the widgets." value={<NotSet />} last />
+        <Row title="Allowed origins" description="Only these sites can show the widgets." value={origins.data ? (origins.data.allowedOrigins?.join(", ") ?? <NotSet />) : origins.isError ? "Could not be read" : "Loading"} last />
       </Group>
       <Group label="Enterprise">
         <Row icon={Lock} muted title="Per-customer tokens" description="A token that shows only one of your customers' calls." />
@@ -620,7 +629,12 @@ export function SettingsDialog({ open, onOpenChange, page, onPageChange }: { ope
   const active: Key = pages.some((p) => p.key === page) ? (page as Key) : "integrations"
   const setActive = onPageChange
   const current = pages.find((p) => p.key === active)!
-  const [picked, setPicked] = useState(project)
+  // The picked project follows the URL: after a project switch the picker starts on the new one.
+  const scope = currentScope()
+  const at = `${scope.org}/${scope.project}`
+  const [pick, setPick] = useState({ at, name: projectName() })
+  const picked = pick.at === at ? pick.name : projectName()
+  const setPicked = (name: string) => setPick({ at, name })
   const Body = body[active]
   const nav = (p: Page) => (
     <SidebarMenuItem key={p.key}>
@@ -652,7 +666,7 @@ export function SettingsDialog({ open, onOpenChange, page, onPageChange }: { ope
           <div className="min-w-0 flex-1 space-y-0.5">
             <DialogTitle className="text-[18px] font-semibold">Settings</DialogTitle>
             <DialogDescription className="text-[14px]">
-              {current.scope === "you" ? "Your own account." : current.scope === "organisation" ? `Settings for ${org.name}.` : `Settings for ${picked}.`}{" "}
+              {current.scope === "you" ? "Your own account." : current.scope === "organisation" ? `Settings for ${org().name}.` : `Settings for ${picked}.`}{" "}
               <span className="whitespace-nowrap">
                 Open anywhere with{" "}
                 <KbdGroup>
@@ -678,7 +692,7 @@ export function SettingsDialog({ open, onOpenChange, page, onPageChange }: { ope
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        {org.projects.map(({ name: p }) => (
+                        {org().projects.map(({ name: p }) => (
                           <SelectItem key={p} value={p}>
                             {p}
                           </SelectItem>
@@ -719,7 +733,7 @@ export function SettingsDialog({ open, onOpenChange, page, onPageChange }: { ope
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {org.projects.map(({ name: p }) => (
+                    {org().projects.map(({ name: p }) => (
                       <SelectItem key={p} value={p}>
                         {p}
                       </SelectItem>
