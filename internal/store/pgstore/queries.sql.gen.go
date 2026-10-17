@@ -141,6 +141,48 @@ func (q *Queries) FinishCall(ctx context.Context, arg FinishCallParams) error {
 	return err
 }
 
+const listProjects = `-- name: ListProjects :many
+SELECT organisation_id, id, name, livekit_url, livekit_api_key, created_at
+FROM projects
+ORDER BY organisation_id, id
+`
+
+type ListProjectsRow struct {
+	OrganisationID string
+	ID             string
+	Name           string
+	LivekitUrl     string
+	LivekitApiKey  string
+	CreatedAt      pgtype.Timestamptz
+}
+
+func (q *Queries) ListProjects(ctx context.Context) ([]ListProjectsRow, error) {
+	rows, err := q.db.Query(ctx, listProjects)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListProjectsRow
+	for rows.Next() {
+		var i ListProjectsRow
+		if err := rows.Scan(
+			&i.OrganisationID,
+			&i.ID,
+			&i.Name,
+			&i.LivekitUrl,
+			&i.LivekitApiKey,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const openCallInRoom = `-- name: OpenCallInRoom :one
 SELECT id FROM calls
 WHERE organisation_id = $1 AND project_id = $2 AND room_name = $3
@@ -181,6 +223,40 @@ func (q *Queries) OrganisationExists(ctx context.Context, id string) (bool, erro
 	var exists bool
 	err := row.Scan(&exists)
 	return exists, err
+}
+
+const projectByID = `-- name: ProjectByID :one
+SELECT organisation_id, id, name, livekit_url, livekit_api_key, created_at
+FROM projects
+WHERE organisation_id = $1 AND id = $2
+`
+
+type ProjectByIDParams struct {
+	OrganisationID string
+	ID             string
+}
+
+type ProjectByIDRow struct {
+	OrganisationID string
+	ID             string
+	Name           string
+	LivekitUrl     string
+	LivekitApiKey  string
+	CreatedAt      pgtype.Timestamptz
+}
+
+func (q *Queries) ProjectByID(ctx context.Context, arg ProjectByIDParams) (ProjectByIDRow, error) {
+	row := q.db.QueryRow(ctx, projectByID, arg.OrganisationID, arg.ID)
+	var i ProjectByIDRow
+	err := row.Scan(
+		&i.OrganisationID,
+		&i.ID,
+		&i.Name,
+		&i.LivekitUrl,
+		&i.LivekitApiKey,
+		&i.CreatedAt,
+	)
+	return i, err
 }
 
 const projectByLiveKitKey = `-- name: ProjectByLiveKitKey :one
