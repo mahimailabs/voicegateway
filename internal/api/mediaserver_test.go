@@ -23,6 +23,7 @@ import (
 	"github.com/testcontainers/testcontainers-go"
 	tcclickhouse "github.com/testcontainers/testcontainers-go/modules/clickhouse"
 	tcredis "github.com/testcontainers/testcontainers-go/modules/redis"
+	"github.com/testcontainers/testcontainers-go/network"
 	"github.com/testcontainers/testcontainers-go/wait"
 	"google.golang.org/protobuf/proto"
 
@@ -58,6 +59,7 @@ type fixture struct {
 	agent    atomic.Pointer[lksdk.Room] // the test agent's connection, once it took a job
 	layers   *chstore.Store
 	rdb      *redis.Client
+	chURL    string
 	url      string
 	projects *projects
 }
@@ -91,7 +93,13 @@ func newFixture(t *testing.T) *fixture {
 	}
 	t.Cleanup(func() { _ = layers.Close() })
 
-	rd, err := tcredis.Run(ctx, redisImage)
+	// livekit-server keeps SIP trunks and rules in Redis; without it the SIP service is off.
+	nw, err := network.New(ctx)
+	testcontainers.CleanupNetwork(t, nw)
+	if err != nil {
+		t.Fatalf("create network: %v", err)
+	}
+	rd, err := tcredis.Run(ctx, redisImage, network.WithNetwork([]string{"redis"}, nw))
 	testcontainers.CleanupContainer(t, rd)
 	if err != nil {
 		t.Fatalf("start redis: %v", err)
@@ -110,7 +118,8 @@ func newFixture(t *testing.T) *fixture {
 	lk, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
 		ContainerRequest: testcontainers.ContainerRequest{
 			Image:        livekitImage,
-			Cmd:          []string{"--dev", "--bind", "0.0.0.0"},
+			Cmd:          []string{"--dev", "--bind", "0.0.0.0", "--redis-host", "redis:6379"},
+			Networks:     []string{nw.Name},
 			ExposedPorts: []string{"7880/tcp"},
 			WaitingFor:   wait.ForHTTP("/").WithPort("7880/tcp"),
 		},
@@ -129,7 +138,7 @@ func newFixture(t *testing.T) *fixture {
 		t.Fatal(err)
 	}
 	return &fixture{
-		layers: layers, rdb: rdb,
+		layers: layers, rdb: rdb, chURL: chURL,
 		url:      fmt.Sprintf("http://%s:%s", host, port.Port()),
 		projects: &projects{secrets: map[string]string{}},
 	}
@@ -181,11 +190,17 @@ const testToken = "0123456789abcdef0123456789abcdef"
 
 func (f *fixture) get(t *testing.T, project string) (int, []byte) {
 	t.Helper()
+	return f.getRead(t, project, "media-server")
+}
+
+// getRead answers one of a project's reads, such as "sip", through the real gate.
+func (f *fixture) getRead(t *testing.T, project, read string) (int, []byte) {
+	t.Helper()
 	srv := httptest.NewServer((&api.API{
 		Projects: f.projects, Layers: f.layers, Log: quiet(), Now: time.Now, Gate: api.BearerToken(testToken),
 	}).Routes())
 	defer srv.Close()
-	req, err := http.NewRequest(http.MethodGet, srv.URL+"/api/v1/org/"+org+"/project/"+project+"/media-server", nil)
+	req, err := http.NewRequest(http.MethodGet, srv.URL+"/api/v1/org/"+org+"/project/"+project+"/"+read, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

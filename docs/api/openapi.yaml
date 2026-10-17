@@ -2122,6 +2122,9 @@ components:
             required: [ id, type, prefixSet, pin, trunkIds, hidePhoneNumber, inboundNumbers, agents, media ]
             x-source: { kind: livekit_api, file: dashboard/src/mocks/sip.json, pointer: /rules/0, detail: SIP ListSIPInboundTrunk/ListSIPOutboundTrunk/ListSIPDispatchRule/ListPhoneNumbers; redacted captured response }
           x-source: { kind: livekit_api, file: dashboard/src/mocks/sip.json, pointer: /rules, detail: SIP ListSIPInboundTrunk/ListSIPOutboundTrunk/ListSIPDispatchRule/ListPhoneNumbers; redacted captured response }
+        sourceStatus:
+          $ref: "#/components/schemas/SourceStatus"
+          x-source: { kind: computed, file: internal/api/sip.go, pointer: null, detail: "Freshness of the SIP configuration read, from ClickHouse layer_reads." }
       required: [ readAt, source, livekitNumbers, inbound, outbound, rules ]
       x-source: { kind: livekit_api, file: dashboard/src/mocks/sip.json, pointer: "", detail: SIP ListSIPInboundTrunk/ListSIPOutboundTrunk/ListSIPDispatchRule/ListPhoneNumbers; redacted captured response }
     Egress:

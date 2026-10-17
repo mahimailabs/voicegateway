@@ -82,7 +82,7 @@ func TestUnknownAPIPathIsGated(t *testing.T) {
 func TestLayerRoutesAreGated(t *testing.T) {
 	const token = "0123456789abcdef0123456789abcdef"
 	a := &API{Gate: BearerToken(token)}
-	for _, route := range []string{"/media-server"} {
+	for _, route := range []string{"/media-server", "/sip"} {
 		for _, auth := range []string{"", "Bearer 0123456789abcdef0123456789abcdee", token} {
 			t.Run(route+" "+auth, func(t *testing.T) {
 				req := httptest.NewRequest(http.MethodGet, "/api/v1/org/org_1/project/prj_1"+route, nil)
