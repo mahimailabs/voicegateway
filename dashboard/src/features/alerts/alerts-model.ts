@@ -1,6 +1,6 @@
-import { useSyncExternalStore } from "react"
-import type { AlertEvents } from "@/lib/api-types"
-import { listCalls } from "@/lib/api"
+import type { AlertEvents, AlertSetup } from "@/lib/api-types"
+import { alertSetupQuery, listCalls } from "@/lib/api"
+import { useLocalSave } from "@/lib/local-store"
 import { BUDGET_MS, JOIN_MS } from "@/lib/thresholds"
 import egressRaw from "@/mocks/egress.json"
 import ingressRaw from "@/mocks/ingress.json"
@@ -108,28 +108,15 @@ export function rulesFrom(ev: AlertEvents): Rule[] {
   }))
 }
 
-// Which rules are on and where each one goes. Kept in this browser until the server stores it.
+// Which rules are on and where each one goes: getAlertSetup reads it; saving goes to this browser
+// until the server stores it.
 export const CHANNELS = ["slack", "teams", "discord", "pagerduty", "opsgenie", "email", "webhook"] as const
 export type Channel = (typeof CHANNELS)[number]
 export const channelName: Record<Channel, string> = { slack: "Slack", teams: "Microsoft Teams", discord: "Discord", pagerduty: "PagerDuty", opsgenie: "Opsgenie", email: "Email", webhook: "Webhook" }
-type Setup = Record<string, { on: boolean; to: Channel[] }>
-const KEY = "vg.alert-rules"
-let setup: Setup = (() => {
-  try {
-    return JSON.parse(localStorage.getItem(KEY) ?? "{}") as Setup
-  } catch {
-    return {}
-  }
-})()
-const listeners = new Set<() => void>()
-export function setRule(id: string, next: { on: boolean; to: Channel[] }) {
-  setup = { ...setup, [id]: next }
-  try {
-    localStorage.setItem(KEY, JSON.stringify(setup))
-  } catch {
-    // Storage is unavailable; the choice lasts for this page view.
-  }
-  listeners.forEach((l) => l())
+export type Setup = Record<string, { on: boolean; to: Channel[] }>
+export const setupFrom = (a: AlertSetup): Setup => Object.fromEntries(a.items.map((r) => [r.ruleId, { on: r.on, to: r.to }]))
+export function useSetRule() {
+  const save = useLocalSave<Setup, AlertSetup>("vg.alert-rules", alertSetupQuery().queryKey, (a) => (a ? setupFrom(a) : {}))
+  return (id: string, change: Partial<{ on: boolean; to: Channel[] }>) => save((current) => ({ ...current, [id]: { ...ruleSetup(current, id), ...change } }))
 }
-export const useRuleSetup = () => useSyncExternalStore((l) => (listeners.add(l), () => listeners.delete(l)), () => setup, () => setup)
 export const ruleSetup = (s: Setup, id: string) => s[id] ?? { on: true, to: [] as Channel[] }

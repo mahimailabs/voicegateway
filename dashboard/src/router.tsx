@@ -12,8 +12,7 @@ import { EgressPage } from "@/features/egress/egress-page"
 import { SipPage } from "@/features/sip/sip-page"
 import { MediaServerPage } from "@/features/media-server/media-server-page"
 import { EmbedPage } from "@/features/embed/embed-page"
-import { scopePrefix, scopeRewrite } from "@/lib/url-state"
-import { orgs } from "@/components/workspace-switcher"
+import { entryPath, scopeRewrite } from "@/lib/url-state"
 
 // The console pages sit inside the app shell; embeddable widgets (decision 0023) render on their own.
 const root = createRootRoute({ component: Outlet })
@@ -40,15 +39,11 @@ const sfu = createRoute({ getParentRoute: () => app, path: "/sfu", component: Me
 const sip = createRoute({ getParentRoute: () => app, path: "/sip", component: SipPage })
 const settings = createRoute({ getParentRoute: () => app, path: "/settings", component: OverviewPage })
 
-// A bare link (an old bookmark, /calls) or one naming an organisation or project that does not exist is
-// moved under the current project before the router reads it.
+// A bare link is moved under the current project before the router reads it. The workspaces are read
+// first (main.tsx), so the shell can tell a project that does not exist from one it may read.
 {
-  const m = location.pathname.match(/^\/org\/([^/]+)\/project\/([^/]+)(\/.*)?$/)
-  const known = m && orgs.some((o) => o.id === m[1] && o.projects.some((p) => p.id === m[2]))
-  if (!known) {
-    const rest = m ? (m[3] ?? "") : location.pathname === "/" ? "" : location.pathname
-    history.replaceState(history.state, "", scopePrefix() + rest + location.search + location.hash)
-  }
+  const next = entryPath(location)
+  if (next) history.replaceState(history.state, "", next)
 }
 
 export const router = createRouter({

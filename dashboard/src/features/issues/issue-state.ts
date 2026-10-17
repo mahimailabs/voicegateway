@@ -1,29 +1,16 @@
-import { useSyncExternalStore } from "react"
+import type { IssueDispositions } from "@/lib/api-types"
+import { issueDispositionsQuery } from "@/lib/api"
+import { useLocalSave } from "@/lib/local-store"
 
-// What a person decided about an issue: resolved or ignored, and when. Kept in this browser until the
-// Phase 2 server stores it. An issue resolved before it was last seen comes back as regressed.
+// What a person decided about an issue: resolved or ignored, and when. getIssueDispositions reads the
+// decisions; saving goes to this browser until the Phase 2 server stores it. An issue resolved before
+// it was last seen comes back as regressed.
 
 export type IssueState = { state: "resolved" | "ignored"; at: number }
-type Store = Record<string, IssueState>
-const KEY = "vg.issue-state"
-let store: Store = (() => {
-  try {
-    return JSON.parse(localStorage.getItem(KEY) ?? "{}") as Store
-  } catch {
-    return {}
-  }
-})()
-const listeners = new Set<() => void>()
-export function setIssueStates(next: Store) {
-  store = next
-  try {
-    localStorage.setItem(KEY, JSON.stringify(next))
-  } catch {
-    // Storage is unavailable; the choice lasts for this page view.
-  }
-  listeners.forEach((l) => l())
-}
-export const useIssueStates = () => useSyncExternalStore((l) => (listeners.add(l), () => listeners.delete(l)), () => store, () => store)
+export type Store = Record<string, IssueState>
+
+export const storeFrom = (d: IssueDispositions): Store => Object.fromEntries(d.items.map((x) => [x.issueId, { state: x.state, at: Date.parse(x.at) }]))
+export const useSaveIssueStates = () => useLocalSave<Store, IssueDispositions>("vg.issue-state", issueDispositionsQuery().queryKey, (d) => (d ? storeFrom(d) : {}))
 
 // Open unless resolved or ignored; resolved turns back to open (regressed) when seen again after.
 export function statusOf(s: Store, id: string, lastSeen: number | null): { status: "open" | "resolved" | "ignored"; regressed: boolean; at?: number } {

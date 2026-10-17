@@ -1,5 +1,5 @@
 import type { CallSummary, CallTotals } from "@/lib/api-types"
-import { BUDGET_MS } from "@/lib/thresholds"
+import { storedThresholds } from "./settings"
 
 // listCalls' range, filters, sort and totals, as docs/api/openapi.yaml defines them, for the mock
 // API. An unknown value never matches a bound and is only matched by `unknown`.
@@ -157,13 +157,14 @@ export function totals(calls: CallSummary[]): CallTotals {
   const newest = [...calls].sort((a, b) => Date.parse(b.startedAt) - Date.parse(a.startedAt))
   const all = newest.flatMap((c) => c.answerMs ?? [])
   const sev = calls.map(severity)
+  const budget = storedThresholds().answerMs
   return {
     callCount: calls.length,
     byChannel,
     answers: {
       turns: all.length,
-      overBudget: all.filter((a) => a > BUDGET_MS).length,
-      budgetMs: BUDGET_MS,
+      overBudget: all.filter((a) => a > budget).length,
+      budgetMs: budget,
       p50Ms: median(all),
       valuesMs: all.slice(0, MAX_VALUES),
       valuesTruncated: all.length > MAX_VALUES,

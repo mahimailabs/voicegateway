@@ -11,6 +11,47 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const callByID = `-- name: CallByID :one
+SELECT c.id, c.room_name, c.room_sid, c.job_id, c.started_at, c.ended_at, c.end_state,
+       (SELECT count(*) FROM call_participants p WHERE p.call_id = c.id) AS participants
+FROM calls c
+WHERE c.organisation_id = $1 AND c.project_id = $2 AND c.id = $3
+`
+
+type CallByIDParams struct {
+	OrganisationID string
+	ProjectID      string
+	ID             pgtype.UUID
+}
+
+type CallByIDRow struct {
+	ID           pgtype.UUID
+	RoomName     pgtype.Text
+	RoomSid      pgtype.Text
+	JobID        pgtype.Text
+	StartedAt    pgtype.Timestamptz
+	EndedAt      pgtype.Timestamptz
+	EndState     string
+	Participants int64
+}
+
+// One call of a project, with how many participants webhooks reported for it.
+func (q *Queries) CallByID(ctx context.Context, arg CallByIDParams) (CallByIDRow, error) {
+	row := q.db.QueryRow(ctx, callByID, arg.OrganisationID, arg.ProjectID, arg.ID)
+	var i CallByIDRow
+	err := row.Scan(
+		&i.ID,
+		&i.RoomName,
+		&i.RoomSid,
+		&i.JobID,
+		&i.StartedAt,
+		&i.EndedAt,
+		&i.EndState,
+		&i.Participants,
+	)
+	return i, err
+}
+
 const callByJobID = `-- name: CallByJobID :one
 SELECT id, ended_at FROM calls
 WHERE organisation_id = $1 AND project_id = $2 AND job_id = $3

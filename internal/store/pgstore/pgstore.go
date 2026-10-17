@@ -139,7 +139,7 @@ func (s *Store) Projects(ctx context.Context) ([]store.Project, error) {
 	return out, nil
 }
 
-// Project finds one project by its organisation and id.
+// Project finds a project by its organisation and id, or store.ErrNotFound.
 func (s *Store) Project(ctx context.Context, organisationID, projectID string) (store.Project, error) {
 	row, err := s.q.ProjectByID(ctx, ProjectByIDParams{OrganisationID: organisationID, ID: projectID})
 	if errors.Is(err, pgx.ErrNoRows) {

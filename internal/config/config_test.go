@@ -45,6 +45,11 @@ func TestConfigMissingAndRedacted(t *testing.T) {
 			env:     map[string]string{"VOICEGATEWAY_SECRET_KEY": "c2hvcnQta2V5"},
 			wantErr: []string{"VOICEGATEWAY_SECRET_KEY must be 32 bytes"},
 		},
+		{
+			name:    "short API token",
+			env:     map[string]string{"VOICEGATEWAY_API_TOKEN": "too-short"},
+			wantErr: []string{"VOICEGATEWAY_API_TOKEN must be at least 32 characters"},
+		},
 		{name: "bad flag", env: map[string]string{"VOICEGATEWAY_S3_USE_SSL": "maybe"}, wantErr: []string{"VOICEGATEWAY_S3_USE_SSL must be true or false"}},
 		{name: "bad level", env: map[string]string{"VOICEGATEWAY_LOG_LEVEL": "loud"}, wantErr: []string{"VOICEGATEWAY_LOG_LEVEL must be"}},
 	}

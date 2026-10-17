@@ -9,13 +9,15 @@ import (
 
 // Error codes of the contract's Error schema.
 const (
+	codeInvalidRequest    = "invalid_request"
+	codeUnauthenticated   = "unauthenticated"
 	codeNotFound          = "not_found"
 	codeSourceUnavailable = "source_unavailable"
 	codeInternal          = "internal_error"
 )
 
 // apiError is the contract's Error: a stable code, a safe message and the request id. It never
-// carries an upstream credential, a request body or LiveKit's own error text.
+// carries an upstream credential, a request body, a storage error's text or LiveKit's own error text.
 type apiError struct {
 	Code      string `json:"code"`
 	Message   string `json:"message"`

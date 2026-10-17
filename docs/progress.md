@@ -178,6 +178,10 @@ Overview no longer reads any fixture. `CallStats` adds `chain` (every stage of a
 
 The Live page reads `getMediaServer` and replays its rooms as before. A room opens its call by the room's SID (`callInRoomQuery`: `listCalls` filtered by room name, then the summary whose `roomSid` matches), so a reused room name never opens another room's call; a room with no matching call, or a lookup that fails, opens the room drawer. The room drawer's "Open call" link uses the same lookup and says "Not in Calls" when nothing matches, instead of assuming a call exists. `RoomDrawer` now requires the media server read, and the call view's path strip reads it instead of the fixture (it says it is loading, or that the read failed, rather than showing a room as not watched). On the captures, the rooms that open calls are the same two as before. Next, part 4b-4: settings reads, then removing the remaining legacy fixture paths (`data` in room-drawer, `agents()`, `issues()`, `rules()`, `listCalls`/`getCall`).
 
+### 2026-10-17: mock API, part 4b-4 (#323): settings reads
+
+Settings now read through the contract: `getProjectSettings` (thresholds, bucket, retention, embed origins), `getIssueDispositions`, `getAlertSetup`, `getInvitations`, `getWorkspaces` and `getRecordingMedia`. The console's saves (thresholds, issue decisions, alert setup, invitations) still stay in this browser until web stores them; they go through `lib/local-store.ts`, and the mock API reads the same storage and validates it as the server will, so a malformed or out-of-range value is left out or falls back on its own instead of reaching a page. A save asks the read again; a threshold save asks every read again, because the server's judgements (`answers.budgetMs`, `overBudget`) use the stored threshold. The app shell waits for the project's settings before it renders a page, and if they cannot be read the page says the default thresholds are in use. Workspaces are read once at start, before the router resolves which project a URL names; the placeholder `workspace-switcher.tsx` is gone. A link naming an organisation or project the read does not list keeps its URL and shows "No such project" with a link to the first readable project, never another project (the Workspaces contract); a bare link such as `/calls` still moves under the current project. Bucket, retention and allowed origins are null (not configured), never zero or a guessed default. Recordings play from `/api/v1/org/<org>/project/<project>/recordings/<id>` with the room SID as the id, served with byte ranges for the player; an id no capture names, a path, or a capture whose file is not on this machine is 404, never another file or the app's page. The embedded answer-time widget takes its budget from `getCallStats` instead of the console's threshold, since an embed token cannot read settings. Tests add: the contract shape of every new read, null for unconfigured settings, thresholds falling back per field, a saved threshold changing the server's budget, malformed decisions, rules, channels and invitations left out, another project or organisation refused, and recording audio with ranges. Next: removing the remaining legacy fixture paths, then how undated issue hits show in a range.
+
 ### 2026-10-17: phase 04a, calls, participants and span links
 
 The worker joins each event to its call before storing it (`internal/join`, spec `docs/specs/phase04-call-join.md`). Postgres gains `calls`, one per project and room SID, and `call_participants`; ClickHouse gains `spans` (decoded from the OTLP trace exports with pdata, folded on trace and span id), `trace_calls`, `unmatched` and `events.call_id`. Webhooks join by the room SID (an Egress's `room_id`, a job's room), Ingress by room name at its reported time; session reports by `room_id`, else job id; spans by their own `room_id`, `job_id`, `lk.room_sid`, `lk.job_id` in that order, never the resource, and a span with none resolves through its trace. Following the pair review, a span that starts more than a minute after the call its ids name has ended is stored unjoined, since LiveKit Agents falls back to the last job's ids between jobs; the minute covers shutdown spans and clock skew. A row Postgres refuses for its values (a NUL byte, invalid UTF-8, a missing project) is dead-lettered on its own instead of holding up the stream. Span times the exporter did not send are stored null. Every call time is nullable and set only from a reported value. Postgres writes come first, then spans, links and unmatched rows, then the event row, then the ack, so an event row with a call id always has its call. Every minute the worker closes calls with no reported activity for 2 hours as inferred (end = last reported activity, null if none) and counts traces unlinked 15 minutes after their last span, once each.
@@ -195,3 +199,27 @@ Acceptance checks 1 to 11 pass locally against Postgres, ClickHouse and Redis co
 LiveKit's unavailable sentinels stay unknown. STT audio seconds come from the agent's `lk.agents.usage.stt_audio_duration` delta counter. The worker now stores each `lk.agents.usage.*` point in `metric_points`, joined by its own room and job ids, because one export can carry two jobs' points. The call's STT audio is the sum of its points, null when none joined.
 
 Tests cover checks 1 to 10 against the console capture (5 turns, field for field), the real 2026-10-17 call (preemptive generation) and its metric exports (33.85 s and 33.25 s). Mutations fail them: dropping the trace-link read, or reading points without FINAL after a redelivered export.
+
+### 2026-10-17: phase 04c, getCall from storage
+
+`getCall` is served from storage through `internal/api`, a chi sub-router at `/api/v1/org/{orgId}/project/{projectId}` (spec `docs/specs/phase04c-get-call.md`). It uses #365's package conventions, so whichever of the two lands second merges them.
+
+What a call carries:
+- Room, times and end state come from the call index.
+- Spans and turns come from 04a and 04b, on a `trace` clock.
+- Usage values are left null when any request did not report them, and the note says how many.
+- `room` and `startedAt` fall back to the room name and earliest start the agent's own spans report, and the `call` clock is then `inferred`.
+- Fields the server does not store are null, or omitted where the contract allows.
+
+`/api/v1` sits behind an interim bearer token (`VOICEGATEWAY_API_TOKEN`, generated by `make up`, compared in constant time) until the sign-in decision lands. With no token set, it answers 401 rather than run open.
+
+Checks 1 to 7 pass on real Postgres, ClickHouse and Redis with the two 2026-10-17 calls as fixtures. Every response is validated against `docs/api/openapi.yaml` with libopenapi-validator, which reads OpenAPI 3.1 as kin-openapi does not. A renamed field fails it.
+
+Manual check (curl half), on the stack still holding the two real calls:
+- Without the token: 401.
+- Webhook call: every mapped field as in the tests; 56 spans; 3 turns with spoken-reply TTFTs of 316.2, 326.1 and 323.6 ms; 213 input tokens; the call clock observed and the trace clock inferred (0.39 s offset).
+- Agent-only call: room and start from its spans, and the call clock inferred.
+
+`sttSeconds` reads null on that stack, because its metric exports were stored before 04b extracted usage points, and nothing backfills them. The tests, which store the same exports through the current worker, read 33.25 s.
+
+The console half waits on the sign-in decision: the console does not send a token yet. Next: 04d, `listCalls`.
