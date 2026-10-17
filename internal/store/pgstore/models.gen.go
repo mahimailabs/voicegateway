@@ -8,6 +8,29 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+type Call struct {
+	ID             pgtype.UUID
+	OrganisationID string
+	ProjectID      string
+	RoomName       pgtype.Text
+	RoomSid        pgtype.Text
+	JobID          pgtype.Text
+	StartedAt      pgtype.Timestamptz
+	EndedAt        pgtype.Timestamptz
+	EndState       string
+	LastActivityAt pgtype.Timestamptz
+	UpdatedAt      pgtype.Timestamptz
+}
+
+type CallParticipant struct {
+	CallID         pgtype.UUID
+	ParticipantSid string
+	Identity       string
+	Kind           string
+	JoinedAt       pgtype.Timestamptz
+	LeftAt         pgtype.Timestamptz
+}
+
 type Organisation struct {
 	ID        string
 	Name      string
