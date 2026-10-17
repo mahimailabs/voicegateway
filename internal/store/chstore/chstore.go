@@ -2,9 +2,13 @@ package chstore
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
+	"maps"
+	"slices"
+	"strings"
 	"time"
 
 	"github.com/ClickHouse/clickhouse-go/v2"
@@ -12,7 +16,9 @@ import (
 	"github.com/ClickHouse/clickhouse-go/v2/lib/proto"
 	"github.com/pressly/goose/v3"
 
+	"github.com/mahimailabs/voicegateway/internal/event"
 	"github.com/mahimailabs/voicegateway/internal/store"
+	"github.com/mahimailabs/voicegateway/internal/turn"
 	"github.com/mahimailabs/voicegateway/migrations"
 )
 
@@ -113,6 +119,9 @@ func (s *Store) Insert(ctx context.Context, events []store.Event) error {
 	if err := s.insertUnmatched(ctx, events); err != nil {
 		return err
 	}
+	if err := s.insertMetricPoints(ctx, events); err != nil {
+		return err
+	}
 	return s.send(ctx, "events", len(events),
 		`INSERT INTO events (organisation_id, project_id, kind, call_id, dedupe_key, event_id, stream_id, received_at, payload)`,
 		func(b driver.Batch) error {
@@ -190,6 +199,28 @@ func (s *Store) insertUnmatched(ctx context.Context, events []store.Event) error
 		})
 }
 
+func (s *Store) insertMetricPoints(ctx context.Context, events []store.Event) error {
+	n := 0
+	for _, e := range events {
+		n += len(e.MetricPoints)
+	}
+	if n == 0 {
+		return nil
+	}
+	return s.send(ctx, "metric points", n,
+		`INSERT INTO metric_points (organisation_id, project_id, name, call_id, value, start_time, end_time, room_id, job_id, attributes, attributes_key, stream_id)`,
+		func(b driver.Batch) error {
+			for _, e := range events {
+				for _, p := range e.MetricPoints {
+					if err := b.Append(e.OrganisationID, e.ProjectID, p.Name, p.CallID, p.Value, p.Start, p.End, p.RoomID, p.JobID, nonNil(p.Attributes), attributesKey(p.Attributes), e.StreamID); err != nil {
+						return fmt.Errorf("metric point of %s: %w", e.StreamID, err)
+					}
+				}
+			}
+			return nil
+		})
+}
+
 // send prepares one insert, lets fill append its rows and sends it. An append that fails, or a
 // data error from ClickHouse, wraps store.ErrBadRow; any other failure is transient.
 func (s *Store) send(ctx context.Context, what string, n int, query string, fill func(driver.Batch) error) error {
@@ -218,6 +249,19 @@ func orNil(t time.Time) *time.Time {
 		return nil
 	}
 	return &t
+}
+
+// attributesKey is a map as sorted key=value lines: equal maps give equal keys.
+func attributesKey(m map[string]string) string {
+	keys := slices.Sorted(maps.Keys(m))
+	var b strings.Builder
+	for _, k := range keys {
+		b.WriteString(k)
+		b.WriteByte('=')
+		b.WriteString(m[k])
+		b.WriteByte('\n')
+	}
+	return b.String()
 }
 
 func nonNil(m map[string]string) map[string]string {
@@ -292,6 +336,119 @@ func (s *Store) SpanCalls(ctx context.Context, organisationID, projectID, traceI
 		return nil, fmt.Errorf("span calls: %w", err)
 	}
 	return out, nil
+}
+
+// CallTurns builds a call's turns and usage from every span that resolves to it, by its own call
+// id or through its trace's link, and from the chat history of its latest session report. Turns are
+// built at read time, so spans stored late or out of order change the answer without a rewrite.
+func (s *Store) CallTurns(ctx context.Context, organisationID, projectID, callID string) (turn.Result, error) {
+	if callID == "" {
+		// An empty id is what unjoined rows carry; it names no call.
+		return turn.Result{}, nil
+	}
+	spans, err := s.callSpans(ctx, organisationID, projectID, callID)
+	if err != nil {
+		return turn.Result{}, err
+	}
+	history, err := s.chatHistory(ctx, organisationID, projectID, callID)
+	if err != nil {
+		return turn.Result{}, err
+	}
+	res := turn.Build(spans, history)
+	// STT audio has no per-turn source in LiveKit Agents 1.8.7; the call's comes from its
+	// lk.agents.usage.stt_audio_duration points, null when none joined.
+	if res.Usage.STTAudioSeconds.Sum, err = s.usageSum(ctx, organisationID, projectID, callID, "lk.agents.usage.stt_audio_duration"); err != nil {
+		return turn.Result{}, err
+	}
+	return res, nil
+}
+
+// usageSum adds up a usage counter's points joined to a call; nil when none joined.
+func (s *Store) usageSum(ctx context.Context, organisationID, projectID, callID, name string) (*float64, error) {
+	var (
+		n   uint64
+		sum float64
+	)
+	if err := s.conn.QueryRow(ctx, `
+		SELECT count(), sum(value) FROM metric_points FINAL
+		WHERE organisation_id = @org AND project_id = @project AND call_id = @call AND name = @name`,
+		clickhouse.Named("org", organisationID), clickhouse.Named("project", projectID),
+		clickhouse.Named("call", callID), clickhouse.Named("name", name)).Scan(&n, &sum); err != nil {
+		return nil, fmt.Errorf("usage %s: %w", name, err)
+	}
+	if n == 0 {
+		return nil, nil
+	}
+	return &sum, nil
+}
+
+func (s *Store) callSpans(ctx context.Context, organisationID, projectID, callID string) ([]store.Span, error) {
+	rows, err := s.conn.Query(ctx, `
+		SELECT toString(trace_id), toString(span_id), parent_span_id, call_id, name, kind, start_time, end_time, status_code, room_id, job_id, scope_name, attributes
+		FROM spans FINAL
+		WHERE organisation_id = @org AND project_id = @project
+		  AND (call_id = @call OR (call_id = '' AND trace_id IN (
+		      SELECT trace_id FROM trace_calls FINAL WHERE organisation_id = @org AND project_id = @project AND call_id = @call)))
+		ORDER BY start_time`,
+		clickhouse.Named("org", organisationID), clickhouse.Named("project", projectID), clickhouse.Named("call", callID))
+	if err != nil {
+		return nil, fmt.Errorf("call spans: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var out []store.Span
+	for rows.Next() {
+		var (
+			sp         store.Span
+			start, end *time.Time
+		)
+		if err := rows.Scan(&sp.TraceID, &sp.SpanID, &sp.ParentSpanID, &sp.CallID, &sp.Name, &sp.Kind, &start, &end,
+			&sp.StatusCode, &sp.RoomID, &sp.JobID, &sp.ScopeName, &sp.Attributes); err != nil {
+			return nil, fmt.Errorf("call spans: %w", err)
+		}
+		// Null is a time the exporter did not send: zero, which turn reads as unknown.
+		if start != nil {
+			sp.Start = start.UTC()
+		}
+		if end != nil {
+			sp.End = end.UTC()
+		}
+		out = append(out, sp)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("call spans: %w", err)
+	}
+	return out, nil
+}
+
+// chatHistory returns the chat_history.json of the call's latest session report, nil when it has
+// none.
+func (s *Store) chatHistory(ctx context.Context, organisationID, projectID, callID string) ([]byte, error) {
+	rows, err := s.conn.Query(ctx, `
+		SELECT payload FROM events FINAL
+		WHERE organisation_id = @org AND project_id = @project AND kind = @kind AND call_id = @call
+		ORDER BY received_at DESC LIMIT 1`,
+		clickhouse.Named("org", organisationID), clickhouse.Named("project", projectID),
+		clickhouse.Named("kind", string(event.KindAgentSessionReport)), clickhouse.Named("call", callID))
+	if err != nil {
+		return nil, fmt.Errorf("session report: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	if !rows.Next() {
+		return nil, rows.Err()
+	}
+	var payload string
+	if err := rows.Scan(&payload); err != nil {
+		return nil, fmt.Errorf("session report: %w", err)
+	}
+	var report event.SessionReport
+	if err := json.Unmarshal([]byte(payload), &report); err != nil {
+		// A report the worker stored but cannot read holds no history to pair; the turns stand.
+		return nil, nil //nolint:nilerr // an unreadable report is no history, not a failed read
+	}
+	if report.ChatHistory == "" {
+		return nil, nil
+	}
+	return []byte(report.ChatHistory), nil
 }
 
 // dataErrors are the ClickHouse error codes that blame the data rather than the server

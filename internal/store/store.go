@@ -44,11 +44,12 @@ type Event struct {
 	StreamID   string
 	ReceivedAt time.Time
 	Payload    []byte
-	// Spans, TraceCalls and Unmatched are stored with the event, before it, in its organisation
+	// Spans, TraceCalls, Unmatched and MetricPoints are stored with the event, before it, in its organisation
 	// and project.
-	Spans      []Span
-	TraceCalls []TraceCall
-	Unmatched  []Unmatched
+	Spans        []Span
+	TraceCalls   []TraceCall
+	Unmatched    []Unmatched
+	MetricPoints []MetricPoint
 }
 
 // EventKey is what makes an Event unique.
@@ -121,4 +122,17 @@ type Participant struct {
 type CallRef struct {
 	ID      string
 	EndedAt *time.Time
+}
+
+// MetricPoint is one data point of an agent's lk.agents.usage.* counter, from an OTLP metric
+// export. LiveKit Agents exports these with delta temporality, so a call's points add up.
+type MetricPoint struct {
+	Name string
+	// CallID is the call the point joined by its own room_id or job_id, empty when it joined none.
+	CallID     string
+	Value      float64
+	Start, End time.Time
+	// RoomID and JobID are the point's own attributes; the resource's are never read.
+	RoomID, JobID string
+	Attributes    map[string]string
 }
