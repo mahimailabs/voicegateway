@@ -736,6 +736,10 @@ export type CallSummary = {
      */
     models: Array<string>;
     /**
+     * The agent that took the call: the name it registered with LiveKit, read from the agent participant in the watched room, else from lk.agent_name on the call's spans. The same key as CallStats.agents and the agents read; unnamed when the agent registered without a name.
+     */
+    agentKey: string | null;
+    /**
      * Agent turns: agent_turn spans when present, else reported turns.
      */
     turnCount: number | null;
@@ -861,11 +865,32 @@ export type CallStats = {
          */
         p90Ms: number | null;
         /**
-         * Measured answer times, most recent first, for the turn strip. At most 5,000; see valuesTruncated.
+         * Every measured turn, most recent call first, for the turn strip: its answer time and which call, turn and agent it belongs to. At most 5,000; see valuesTruncated.
          */
-        valuesMs: Array<number>;
+        values: Array<{
+            /**
+             * Answer time: caller stops to agent audio. The strip draws only entries with a value.
+             */
+            ms: number | null;
+            /**
+             * The call the turn belongs to, the value getCall takes.
+             */
+            callId: string;
+            /**
+             * That call's room name, for the label.
+             */
+            room: string;
+            /**
+             * The turn's position in the call, counted from 0.
+             */
+            turn: number | null;
+            /**
+             * The agent that took the call, as in CallSummary.agentKey.
+             */
+            agentKey: string | null;
+        }>;
         /**
-         * true when valuesMs holds only the most recent 5,000 of more measured turns. The counts and percentiles always use every turn.
+         * true when values holds only the most recent 5,000 of more measured turns. The counts and percentiles always use every turn.
          */
         valuesTruncated: boolean;
     };
@@ -885,7 +910,15 @@ export type CallStats = {
          * Low-severity issues.
          */
         low: number | null;
+        /**
+         * Informational issues.
+         */
+        info: number | null;
     };
+    /**
+     * Turns with a transcript or a measured answer: what Turn anatomy counts each stage's turns against.
+     */
+    anatomyTurns: number | null;
     /**
      * Turn anatomy for all agents: one entry per stage that any turn reported. Stages nothing reports are absent, not zero.
      */
@@ -919,9 +952,34 @@ export type CallStats = {
          */
         models: Array<string>;
         /**
+         * This agent's turns with a transcript or a measured answer.
+         */
+        anatomyTurns: number | null;
+        /**
          * Turn anatomy for this agent only.
          */
         stages: Array<StageTiming>;
+        /**
+         * This agent's calls, oldest first, each with its median answer, for the per-call strip. At most 500, the most recent; see callsTruncated.
+         */
+        calls: Array<{
+            /**
+             * The call, the value getCall takes.
+             */
+            callId: string;
+            /**
+             * That call's room name, for the label.
+             */
+            room: string;
+            /**
+             * The call's median answer, as CallSummary.answerMsMedian.
+             */
+            answerP50Ms: number | null;
+        }>;
+        /**
+         * true when calls holds only the most recent 500 of this agent's calls. callCount always counts every call.
+         */
+        callsTruncated: boolean;
     }>;
 };
 
@@ -946,7 +1004,7 @@ export type StageTiming = {
      */
     medianMs: number | null;
     /**
-     * 90th percentile end of the stage after the caller stops speaking.
+     * Where the stage's slow tail ends after the caller stops speaking: its median start plus the 90th percentile of its length, never before medianMs.
      */
     p90Ms: number | null;
     /**

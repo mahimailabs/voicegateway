@@ -1,9 +1,10 @@
 import { http, HttpResponse, type PathParams } from "msw"
-import type { AlertEvents, Call, CallPage, IssueList, CapacityRun, CloudAgents, Egress, Error as ApiErrorBody, Ingress, MediaServer, ProjectSnapshot, Sip } from "@/lib/api-types"
+import type { AlertEvents, Call, CallPage, CallStats, IssueList, ProviderProbes, Workers, CapacityRun, CloudAgents, Egress, Error as ApiErrorBody, Ingress, MediaServer, ProjectSnapshot, Sip } from "@/lib/api-types"
 import { orgs } from "@/components/workspace-switcher"
+import { callStats } from "./call-stats"
 import { capturedCalls } from "./fixtures"
 import { alertEvents, issueList } from "./insights"
-import { capacity, cloudAgents, egress, ingress, mediaServer, projectSnapshot, sip } from "./livekit"
+import { capacity, cloudAgents, egress, ingress, mediaServer, projectSnapshot, providerProbes, sip, workers } from "./livekit"
 import { summarize } from "./summaries"
 import { matchesFilters, parseFilters, sortCalls, totals } from "./calls-query"
 
@@ -76,7 +77,12 @@ export const handlers = [
     return call ? HttpResponse.json(call) : fail(404, "not_found", "No such call in this project.")
   }),
 
-  // Issues and alert evaluation over a range; both bounds are required.
+  // Overview's aggregates, issues and alert evaluation over a range; both bounds are required.
+  http.get<PathParams, never, CallStats | ApiErrorBody>(`${project}/call-stats`, ({ params, request }) => {
+    if (!known(params)) return fail(404, "not_found", "No such project.")
+    const r = range(new URL(request.url).searchParams)
+    return typeof r === "string" ? fail(400, "invalid_request", r) : HttpResponse.json(callStats(r.from, r.to))
+  }),
   http.get<PathParams, never, IssueList | ApiErrorBody>(`${project}/issues`, ({ params, request }) => {
     if (!known(params)) return fail(404, "not_found", "No such project.")
     const r = range(new URL(request.url).searchParams)
@@ -95,5 +101,7 @@ export const handlers = [
   http.get<PathParams, never, CloudAgents | ApiErrorBody>(`${project}/agents`, ({ params }) => (known(params) ? HttpResponse.json(cloudAgents()) : fail(404, "not_found", "No such project."))),
   http.get<PathParams, never, CapacityRun | null | ApiErrorBody>(`${project}/capacity`, ({ params }) => (known(params) ? HttpResponse.json(capacity()) : fail(404, "not_found", "No such project."))),
   http.get<PathParams, never, ProjectSnapshot | ApiErrorBody>(`${project}/snapshot`, ({ params }) => (known(params) ? HttpResponse.json(projectSnapshot()) : fail(404, "not_found", "No such project."))),
+  http.get<PathParams, never, Workers | ApiErrorBody>(`${project}/workers`, ({ params }) => (known(params) ? HttpResponse.json(workers()) : fail(404, "not_found", "No such project."))),
+  http.get<PathParams, never, ProviderProbes | ApiErrorBody>(`${project}/provider-probes`, ({ params }) => (known(params) ? HttpResponse.json(providerProbes()) : fail(404, "not_found", "No such project."))),
   http.get<PathParams, never, Sip | ApiErrorBody>(`${project}/sip`, ({ params }) => (known(params) ? HttpResponse.json(sip()) : fail(404, "not_found", "No such project."))),
 ]

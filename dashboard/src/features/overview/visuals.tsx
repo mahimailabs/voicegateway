@@ -1,10 +1,9 @@
 import { Gauge, GaugeHub, GaugeNeedle, GaugeTickLabels, GaugeTicks, GaugeZones } from "@/components/gauge"
 import { motion } from "motion/react"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
-import type { Call } from "@/lib/api"
+import type { StageTiming } from "@/lib/api-types"
 import { cn } from "@/lib/utils"
-import { buildModel, fmtMs, median } from "@/features/call/call-model"
-import { waterfallRows } from "@/features/profile/ttfa-waterfall"
+import { fmtMs } from "@/features/call/call-model"
 
 // The Overview's own visuals. Each draws measured values only; a stage nobody reports is drawn as a
 // hatched block that says so, never as a short bar.
@@ -34,7 +33,7 @@ export function AnswerGauge({ p50, budget, max = 5000 }: { p50: number | null; b
 }
 
 // Every turn as a dot on one 0 to 5 s line, stacked where they collide, red past the budget.
-export type TurnDot = { ms: number; room: string; turn: number; agent: string }
+export type TurnDot = { ms: number; room: string; turn: number | null; agent: string }
 export function TurnStrip({ dots, budget, max = 5000 }: { dots: TurnDot[]; budget: number; max?: number }) {
   const bin = 120
   const stacks = new Map<number, number>()
@@ -67,7 +66,7 @@ export function TurnStrip({ dots, budget, max = 5000 }: { dots: TurnDot[]; budge
                 style={{ left: x(d.ms), bottom: 4 + d.level * 12 }}
               />
             </TooltipTrigger>
-            <TooltipContent className="text-xs">{`${fmtMs(d.ms)} · turn ${d.turn + 1} · ${d.room} · ${d.agent}`}</TooltipContent>
+            <TooltipContent className="text-xs">{`${fmtMs(d.ms)} · ${d.turn === null ? "turn unknown" : `turn ${d.turn + 1}`} · ${d.room} · ${d.agent}`}</TooltipContent>
           </Tooltip>
         ))}
       </div>
@@ -84,8 +83,8 @@ export function TurnStrip({ dots, budget, max = 5000 }: { dots: TurnDot[]; budge
 // stops talking. The solid bar runs from the stage's median start to its median end; the pale tail
 // runs on to its 90th percentile end. Stages overlap where the agent works in parallel. Stages nobody
 // measures keep their lane and say "not reported".
-export type Lane = { key: string; label: string; field: string; start: number; end: number; p90: number; n: number; tone: string; missing?: "before" | "after" }
-const stageDefs: { key: string; label: string; field: string; tone: string }[] = [
+export type Lane = { key: string; label: string; field: string; start: number; end: number; p90: number; n: number | null; tone: string; missing?: "before" | "after" }
+export const stageDefs: { key: string; label: string; field: string; tone: string }[] = [
   { key: "Speech to text", label: "Final transcript", field: "transcription_delay", tone: "bg-muted-foreground/45" },
   { key: "Turn detection", label: "Turn detector", field: "eou_detection span", tone: "bg-muted-foreground/60" },
   { key: "Turn confirmed", label: "Endpointing wait", field: "end_of_turn_delay", tone: "bg-muted-foreground/30" },
@@ -101,60 +100,23 @@ const before = [
   { key: "nc", label: "Noise cancellation", field: "Krisp, no timing exposed" },
   { key: "vad", label: "Voice activity detection", field: "VADMetrics has inference time only" },
 ]
-const p90 = (xs: number[]) => (xs.length ? [...xs].sort((a, b) => a - b)[Math.min(xs.length - 1, Math.ceil(xs.length * 0.9) - 1)] : null)
-
-export function anatomy(groups: { name: string; calls: Call[] }[]) {
-  const by = new Map<string, { s: number[]; e: number[] }>()
-  const e2e: number[] = []
-  const rt: number[] = []
-  const rtAgents = new Set<string>()
-  let total = 0
-  for (const g of groups)
-    for (const c of g.calls) {
-      const m = buildModel(c)
-      for (const t of m.turns) {
-        if (t.responseMs === null && t.userText === null) continue
-        total++
-        if (t.responseMs !== null) e2e.push(t.responseMs)
-        if (m.pipeline === "realtime") {
-          if (t.responseMs !== null) {
-            rt.push(t.responseMs)
-            rtAgents.add(g.name)
-          }
-          continue
-        }
-        for (const r of waterfallRows(c, t) ?? []) {
-          const key = r.label === "LLM" ? "LLM, call 1" : r.label
-          const v = by.get(key) ?? { s: [], e: [] }
-          v.s.push(r.start)
-          v.e.push(r.end)
-          by.set(key, v)
-        }
-      }
+// Turn anatomy's lanes from the stage timings getCallStats returns. The realtime lane names the agents
+// whose calls reported it.
+export function lanesFrom(stages: StageTiming[], realtimeAgents: string[]): Lane[] {
+  const lanes: Lane[] = []
+  for (const st of stages) {
+    if (st.startMs === null || st.medianMs === null || st.p90Ms === null) continue
+    const def = stageDefs.find((d) => d.key === st.stage)
+    if (def) lanes.push({ key: def.key, label: def.label, field: def.field, start: st.startMs, end: st.medianMs, p90: st.p90Ms, n: st.turns, tone: def.tone })
+    else if (st.stage === "Realtime") {
+      const who = realtimeAgents.join(", ")
+      lanes.push({ key: "rt", label: `Realtime · ${who}`, field: `${st.field} · used by ${who} only`, start: st.startMs, end: st.medianMs, p90: st.p90Ms, n: st.turns, tone: "bg-violet-500/70" })
     }
-  const lanes: Lane[] = stageDefs
-    .filter((d) => by.has(d.key))
-    .map((d) => {
-      const v = by.get(d.key)!
-      const start = median(v.s) ?? 0
-      const end = Math.max(median(v.e) ?? start, start + 1)
-      return { key: d.key, label: d.label, field: d.field, start, end, p90: Math.max(start + (p90(v.e.map((e, i) => e - v.s[i])) ?? 0), end), n: v.s.length, tone: d.tone }
-    })
-  if (rt.length)
-    lanes.push({
-      key: "rt",
-      label: `Realtime · ${[...rtAgents].join(", ")}`,
-      field: `realtime ttft, no stage breakdown · used by ${[...rtAgents].join(", ")} only`,
-      start: 0,
-      end: median(rt)!,
-      p90: p90(rt)!,
-      n: rt.length,
-      tone: "bg-violet-500/70",
-    })
-  return { lanes, e2e: median(e2e), e2e90: p90(e2e), turns: total }
+  }
+  return lanes
 }
 
-export function TurnAnatomy({ lanes, e2e, turns, budget }: { lanes: Lane[]; e2e: number | null; turns: number; budget: number }) {
+export function TurnAnatomy({ lanes, e2e, turns, budget }: { lanes: Lane[]; e2e: number | null; turns: number | null; budget: number }) {
   const end = Math.max(e2e ?? 0, budget, ...lanes.map((l) => l.p90)) * 1.08
   const pre = end * 0.13
   const span = end + pre
@@ -178,7 +140,7 @@ export function TurnAnatomy({ lanes, e2e, turns, budget }: { lanes: Lane[]; e2e:
                   {l.label}
                 </div>
               </TooltipTrigger>
-              <TooltipContent className="text-xs">{l.missing ? `${l.field}: not reported` : `${l.field} · ${l.n} of ${turns} turns`}</TooltipContent>
+              <TooltipContent className="text-xs">{l.missing ? `${l.field}: not reported` : `${l.field} · ${l.n ?? "an unknown number"} of ${turns ?? "an unknown number of"} turns`}</TooltipContent>
             </Tooltip>
           ))}
         </div>
@@ -219,7 +181,7 @@ export function TurnAnatomy({ lanes, e2e, turns, budget }: { lanes: Lane[]; e2e:
                         </motion.span>
                       </span>
                     </TooltipTrigger>
-                    <TooltipContent className="text-xs">{`${l.label}: ${fmtMs(l.end - l.start)} median, ${fmtMs(l.p90 - l.start)} at p90 · ${l.field} · ${l.n} of ${turns} turns`}</TooltipContent>
+                    <TooltipContent className="text-xs">{`${l.label}: ${fmtMs(l.end - l.start)} median, ${fmtMs(l.p90 - l.start)} at p90 · ${l.field} · ${l.n ?? "an unknown number"} of ${turns ?? "an unknown number of"} turns`}</TooltipContent>
                   </Tooltip>
                 )}
                 {!l.missing && (
@@ -259,11 +221,11 @@ export function TurnAnatomy({ lanes, e2e, turns, budget }: { lanes: Lane[]; e2e:
 }
 
 // Each call as a block, coloured by its median answer against the budget.
-export function CallTracker({ calls, budget }: { calls: { room: string; p50: number | null }[]; budget: number }) {
+export function CallTracker({ calls, budget }: { calls: { id?: string; room: string; p50: number | null }[]; budget: number }) {
   return (
     <div className="flex h-7 gap-[3px]">
       {calls.map((c) => (
-        <Tooltip key={c.room}>
+        <Tooltip key={c.id ?? c.room}>
           <TooltipTrigger asChild>
             <span
               className={cn("h-full min-w-1.5 flex-1 rounded-[3px] transition-opacity hover:opacity-70", c.p50 === null ? "bg-muted-foreground/20" : c.p50 > budget ? "bg-destructive" : c.p50 > budget * 0.67 ? "bg-amber-500" : "bg-good")}
