@@ -177,3 +177,7 @@ Overview no longer reads any fixture. `CallStats` adds `chain` (every stage of a
 ### 2026-10-17: mock API, part 4b-3 (#323): Live, room links by room SID
 
 The Live page reads `getMediaServer` and replays its rooms as before. A room opens its call by the room's SID (`callInRoomQuery`: `listCalls` filtered by room name, then the summary whose `roomSid` matches), so a reused room name never opens another room's call; a room with no matching call, or a lookup that fails, opens the room drawer. The room drawer's "Open call" link uses the same lookup and says "Not in Calls" when nothing matches, instead of assuming a call exists. `RoomDrawer` now requires the media server read, and the call view's path strip reads it instead of the fixture (it says it is loading, or that the read failed, rather than showing a room as not watched). On the captures, the rooms that open calls are the same two as before. Next, part 4b-4: settings reads, then removing the remaining legacy fixture paths (`data` in room-drawer, `agents()`, `issues()`, `rules()`, `listCalls`/`getCall`).
+
+### 2026-10-17: phase 04b spec drafted
+
+`docs/specs/phase04b-turns.md`: turns, per-stage latencies and usage built at read time from the spans and session report 04a stores (`internal/turn`, `chstore.CallTurns`), with the console capture as the parity fixture. Open: read-time versus a stored turns table, and STT audio seconds, which LiveKit Agents 1.8.7 does not send.
