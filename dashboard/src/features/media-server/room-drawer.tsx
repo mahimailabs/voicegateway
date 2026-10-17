@@ -8,7 +8,6 @@ import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { cn } from "@/lib/utils"
 import type { MediaServer } from "@/lib/api-types"
-import { mediaServer } from "@/mocks/livekit"
 import { useEmbedded } from "@/lib/url-state"
 import { useQuery } from "@tanstack/react-query"
 import { callInRoomQuery } from "@/lib/api"
@@ -72,9 +71,6 @@ export function fromContract(m: Contract): MediaServerData {
   }
 }
 
-// Pages not yet reading getMediaServer use the mock's answer directly; #323 removes this.
-export const data = fromContract(mediaServer())
-
 // The call a room's recording belongs to, matched by the room's SID: a reused room name never links
 // to another room's call, and a room with no stored call says so.
 function CallInRoom({ name, sid }: { name: string; sid: string }) {
@@ -109,10 +105,10 @@ export function roomOrigin(r: Room): Origin {
 
 // A room still listed at the last read of its watch was open when we stopped watching; its end is unknown.
 // Unknown when the room or the watch reported no time: the room is then not claimed to be open.
-export const openAtWatchEnd = (r: { lastSeen: number | null }, m: MediaServerData = data) =>
+export const openAtWatchEnd = (r: { lastSeen: number | null }, m: MediaServerData) =>
   r.lastSeen !== null && m.windows.some((w) => w.end !== null && r.lastSeen! >= w.end - 1 && r.lastSeen! <= w.end + 1)
 // The watch a time falls in, if the time and the watch's bounds are known.
-export const windowOf = (t: number | null, m: MediaServerData = data) => (t === null ? undefined : m.windows.find((w) => w.start !== null && w.end !== null && t >= w.start - 1 && t <= w.end + 1))
+export const windowOf = (t: number | null, m: MediaServerData) => (t === null ? undefined : m.windows.find((w) => w.start !== null && w.end !== null && t >= w.start - 1 && t <= w.end + 1))
 
 const clock = (ms: number) => new Date(ms).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })
 const plus = (ms: number) => `${ms < 0 ? "-" : "+"}${(Math.abs(ms) / 1000).toFixed(2)} s`
