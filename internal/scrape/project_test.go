@@ -75,3 +75,16 @@ func TestRoomNameMasksPhoneNumbers(t *testing.T) {
 		}
 	}
 }
+
+func TestTrackNameMasksPhoneNumbers(t *testing.T) {
+	tests := []struct{ in, want string }{
+		{"sip_+15551234567", "sip_•••• 4567"},
+		{"microphone", "microphone"},
+		{"", ""},
+	}
+	for _, tt := range tests {
+		if got := projectTrack(&livekit.TrackInfo{Name: tt.in}).Name; got != tt.want {
+			t.Errorf("track name %q stored as %q, want %q", tt.in, got, tt.want)
+		}
+	}
+}

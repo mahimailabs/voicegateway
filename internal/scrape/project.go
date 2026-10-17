@@ -18,7 +18,7 @@ import (
 func projectRoom(r *livekit.Room, dispatches []*livekit.AgentDispatch) store.Room {
 	out := store.Room{
 		SID:       r.GetSid(),
-		Name:      maskRoomName(r.GetName()),
+		Name:      maskPhoneNumbers(r.GetName()),
 		CreatedAt: secondsOrMillis(r.GetCreationTime(), r.GetCreationTimeMs()),
 		Settings: store.RoomSettings{
 			// LiveKit reports the room's effective settings, defaults applied, so each value is
@@ -141,9 +141,9 @@ const attrAgentState = "lk.agent.state"
 // dispatch puts the caller's number in the room name.
 var phoneDigits = regexp.MustCompile(`\+?\d{7,}`)
 
-// maskRoomName keeps a room name but masks any phone number in it to its last four digits, the same
-// way trunk numbers are masked.
-func maskRoomName(name string) string {
+// maskPhoneNumbers keeps a room or track name but masks any phone number in it to its last four
+// digits, the same way trunk numbers are masked. Apps name SIP tracks after the caller too.
+func maskPhoneNumbers(name string) string {
 	return phoneDigits.ReplaceAllStringFunc(name, maskNumber)
 }
 
@@ -153,7 +153,7 @@ func maskRoomName(name string) string {
 func projectTrack(t *livekit.TrackInfo) store.Track {
 	out := store.Track{
 		SID:        t.GetSid(),
-		Name:       t.GetName(),
+		Name:       maskPhoneNumbers(t.GetName()),
 		Type:       t.GetType().String(),
 		Source:     t.GetSource().String(),
 		Mime:       nonEmpty(t.GetMimeType()),
