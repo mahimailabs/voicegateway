@@ -185,10 +185,12 @@ export function AgentsPage() {
   const ms = useMemo(() => (media.data ? fromContract(media.data) : null), [media.data])
   if (!cloud.data) return <QueryState icon={Robot} what="the agents" query={cloud} />
   if (!ms) return <QueryState icon={Robot} what="the agents' rooms" query={media} />
-  return <AgentsView cloud={cloud.data} ms={ms} run={run.isError ? undefined : (run.data ?? null)} />
+  // Only a read that answered can say "not measured"; while loading or after a failure the drawer says which.
+  const runNote = run.isError ? "The capacity run could not be loaded." : "Loading the capacity run."
+  return <AgentsView cloud={cloud.data} ms={ms} run={run.isSuccess ? run.data : undefined} runNote={runNote} />
 }
 
-function AgentsView({ cloud, ms, run }: { cloud: CloudAgents; ms: MediaServerData; run: AgentReads["run"] }) {
+function AgentsView({ cloud, ms, run, runNote }: { cloud: CloudAgents; ms: MediaServerData; run: AgentReads["run"]; runNote: string }) {
   const { source, readAt } = cloud
   const [tab, setTab] = useUrlState("tab", "fleet")
   const list = useMemo(() => agentsFrom(cloud, ms), [cloud, ms])
@@ -298,7 +300,7 @@ function AgentsView({ cloud, ms, run }: { cloud: CloudAgents; ms: MediaServerDat
         </TabsContent>
       </Tabs>
 
-      <AgentDrawer agent={openAgent} reads={{ ms, readAt, run }} onOpenChange={(o) => !o && setOpenAgent(null)} onTest={(a) => (setOpenAgent(null), setTesting(a))} />
+      <AgentDrawer agent={openAgent} reads={{ ms, readAt, run, runNote }} onOpenChange={(o) => !o && setOpenAgent(null)} onTest={(a) => (setOpenAgent(null), setTesting(a))} />
       <CapacityDialog agent={testing} ms={ms} onOpenChange={(o) => !o && setTesting(null)} />
       <RoomDrawer room={openRoom} ms={ms} open={openRoom !== null} onOpenChange={(o) => !o && setOpenRoom(null)} />
     </div>

@@ -264,10 +264,11 @@ function CapacityChart({ steps, all, ceiling }: { steps: Step[]; all: number[]; 
     const s = steps.find((x) => x.step === n)
     if (!s) return { step: String(n) }
     const late = known(s.joinSeconds).filter((j) => j * 1000 > JOIN_MS).length
-    // An unreported joined count leaves the bar out rather than drawing it at zero.
-    return { step: String(n), inTime: s.joined === null ? null : s.joined - late, late, refused: s.pending, answer: median(s.answerSeconds) }
+    // The in-time bar needs every join time; with any unreported, or the joined count unknown, it is left out.
+    const allJoins = s.joinSeconds.every((j) => j !== null)
+    return { step: String(n), inTime: s.joined === null || !allJoins ? null : s.joined - late, late, refused: s.pending, answer: median(s.answerSeconds) }
   })
-  const top = Math.max(...all)
+  const top = Math.max(1, ...all)
   return (
     <ChartContainer config={chartConfig} className="h-56 w-full">
       <ComposedChart data={rows} margin={{ top: 12, right: 4, left: -18, bottom: 0 }} barCategoryGap="22%">
@@ -313,6 +314,8 @@ export function CapacityResult({ run: r, bare }: { run: Run; bare?: boolean }) {
   // The total is known only when every step reported how many joined.
   const joined = r.steps.every((x) => x.joined !== null) ? r.steps.reduce((n, x) => n + x.joined!, 0) : null
   const late = r.steps.reduce((n, x) => n + known(x.joinSeconds).filter((j) => j * 1000 > JOIN_MS).length, 0)
+  // With any join time unreported, the late count is a floor.
+  const lateFloor = r.steps.some((x) => x.joinSeconds.some((j) => j === null))
   return (
     <div className={cn("space-y-4", !bare && "rounded-xl border p-4")}>
       <div className="grid grid-cols-3 divide-x rounded-xl border bg-muted/30">
@@ -334,7 +337,7 @@ export function CapacityResult({ run: r, bare }: { run: Run; bare?: boolean }) {
           </span>
         </Tile>
         <Tile label="Late joins" foot={`of ${joined ?? "an unknown number"}, new process started`}>
-          <span className="text-[28px] leading-none font-semibold tracking-[-0.03em] tnum">{late}</span>
+          <span className="text-[28px] leading-none font-semibold tracking-[-0.03em] tnum">{lateFloor ? `≥${late}` : late}</span>
         </Tile>
       </div>
       <CapacityChart steps={r.steps} all={known(r.steps.map((x) => x.step))} ceiling={value} />

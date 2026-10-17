@@ -87,7 +87,7 @@ function Section({ title, note, children }: { title: string; note?: string; chil
 // A room opens in place of the agent, with a way back, rather than as a second drawer on top.
 // reads: the media server view, when the CloudAgent API was read, and the project's capacity run
 // (undefined when it could not be read, so "not measured" is never claimed for it).
-export type AgentReads = { ms: MediaServerData; readAt: string; run: CapacityRun | null | undefined }
+export type AgentReads = { ms: MediaServerData; readAt: string; run: CapacityRun | null | undefined; runNote: string }
 export function AgentDrawer({ agent: a, reads, onOpenChange, onTest }: { agent: Agent | null; reads: AgentReads; onOpenChange: (o: boolean) => void; onTest: (a: Agent) => void }) {
   const [room, setRoom] = useState<Room | null>(null)
   return (
@@ -117,7 +117,7 @@ export function AgentDrawer({ agent: a, reads, onOpenChange, onTest }: { agent: 
 }
 
 function Body({ a, reads, onRoom, onTest }: { a: Agent; reads: AgentReads; onRoom: (r: Room) => void; onTest: () => void }) {
-  const { ms: data, readAt, run } = reads
+  const { ms: data, readAt, run, runNote } = reads
   const d = a.cloud?.deployment ?? null
   const list = spans(a, data)
   const ws = windows(list, data)
@@ -156,7 +156,7 @@ function Body({ a, reads, onRoom, onTest }: { a: Agent; reads: AgentReads; onRoo
 
         <Section title="Capacity" note="How many calls the agent carries at once before it refuses one, measured with synthetic calls.">
           {run === undefined ? (
-            <p className="rounded-xl border border-dashed px-4 py-4 text-[13px] text-muted-foreground">The capacity run could not be loaded.</p>
+            <p className="rounded-xl border border-dashed px-4 py-4 text-[13px] text-muted-foreground">{runNote}</p>
           ) : capacityRun(a, run) ? (
             <CapacityResult run={capacityRun(a, run)!} />
           ) : (

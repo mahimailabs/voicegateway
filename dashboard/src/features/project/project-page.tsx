@@ -110,7 +110,7 @@ function ProjectView({ snap }: { snap: ProjectSnapshot }) {
         <Branch icon={Phone} title="Phone bridge (SIP)" meta={`${snap.sip.inbound.length} inbound, ${snap.sip.outbound.length} outbound, ${snap.sip.rules.length} dispatch ${snap.sip.rules.length === 1 ? "rule" : "rules"}`}>
           <Rows>
             {snap.sip.inbound.map((t) => (
-              <Row key={t.id} title={t.name} sub={`Inbound · ${t.numbers.join(", ")}`} right={<Badge variant="outline" className="font-normal">{t.krispEnabled ? "Krisp noise cancellation on" : "Krisp off"}</Badge>} />
+              <Row key={t.id} title={t.name} sub={`Inbound · ${t.numbers.join(", ")}`} right={<Badge variant="outline" className="font-normal">{t.krispEnabled === null ? "Krisp unknown" : t.krispEnabled ? "Krisp noise cancellation on" : "Krisp off"}</Badge>} />
             ))}
             {snap.sip.outbound.map((t) => (
               <Row key={t.id} title={t.name} sub={`Outbound via ${t.address} · ${t.numbers.join(", ")}`} />
@@ -121,7 +121,7 @@ function ProjectView({ snap }: { snap: ProjectSnapshot }) {
           </Rows>
         </Branch>
 
-        <Branch icon={Robot} title="Agents" meta={`${agentsInRooms.length} in a live room, ${ruleAgents.length} named by a dispatch rule, 1 observed`}>
+        <Branch icon={Robot} title="Agents" meta={`${agentsInRooms.length} in a live room, ${ruleAgents.length} named by a dispatch rule, ${obs ? 1 : 0} observed`}>
           <Rows>
             {agentsInRooms.map((a) => (
               <Row
@@ -180,8 +180,8 @@ function ProjectView({ snap }: { snap: ProjectSnapshot }) {
           <Branch icon={Brain} title="Models" meta="no agent observed" />
         )}
 
-        <Branch icon={ArrowUpFromLine} title="Egress" meta={snap.egress === 0 ? "none" : `${snap.egress}`} />
-        <Branch icon={ArrowDownToLine} title="Ingress" meta={snap.ingress === 0 ? "none" : `${snap.ingress}`} last />
+        <Branch icon={ArrowUpFromLine} title="Egress" meta={snap.egress === null ? "unknown" : snap.egress === 0 ? "none" : `${snap.egress}`} />
+        <Branch icon={ArrowDownToLine} title="Ingress" meta={snap.ingress === null ? "unknown" : snap.ingress === 0 ? "none" : `${snap.ingress}`} last />
       </ul>
     </div>
   )
