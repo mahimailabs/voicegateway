@@ -9,7 +9,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, test, vi } from "vite
 import { parse } from "yaml"
 import { handlers } from "../src/mocks/handlers.ts"
 import { capturedCalls } from "../src/mocks/fixtures.ts"
-import { buildModel } from "../src/features/call/call-model.ts"
+import { buildModel, turnCount } from "../src/features/call/call-model.ts"
 import { QueryClient } from "@tanstack/react-query"
 import type { AlertSetup } from "../src/lib/api-types"
 import { localSave, writeLocal } from "../src/lib/local-store.ts"
@@ -187,10 +187,8 @@ describe("getCall", () => {
     expect(list.length).toBe(capturedCalls().length)
     for (const row of list) {
       const call = await (await fetch(`${base}/calls/${encodeURIComponent(row.id)}`)).json()
-      const shown = buildModel(call).turns.length
-      // A known count is exactly what the call shows; unknown only when the call shows no turns either.
-      if (row.turnCount === null) expect(shown, row.id).toBe(0)
-      else expect(row.turnCount, row.id).toBe(shown)
+      // The drawer's count: a known count is the same number, and unknown is unknown on both sides.
+      expect(turnCount(call, buildModel(call)), row.id).toBe(row.turnCount)
     }
     // The phone test call has four agent_turn spans, but only two of them spoke.
     expect(list.find((r) => r.id.includes("937b5111"))?.turnCount).toBe(2)
