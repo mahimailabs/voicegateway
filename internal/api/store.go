@@ -16,6 +16,9 @@ type Projects interface {
 // Calls reads the call index.
 type Calls interface {
 	Call(ctx context.Context, organisationID, projectID, callID string) (store.Call, error)
+	ListCalls(ctx context.Context, f store.CallFilter, after *store.CallCursor, limit int, withTotals bool, maxValues int) ([]store.CallListRow, *store.CallTotals, time.Time, error)
+	PutListSnapshot(ctx context.Context, snap store.ListSnapshot) error
+	ListSnapshot(ctx context.Context, id string) (store.ListSnapshot, error)
 }
 
 // Traces reads what the agent uploaded for a call: its spans, and the turns and usage built from

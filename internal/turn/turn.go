@@ -95,6 +95,9 @@ type CallUsage struct {
 type Result struct {
 	Turns []Turn
 	Usage CallUsage
+	// NoReply is true when a session report's chat_history.json was read and holds no assistant
+	// message: then a call with no agent_turn span is known to have had no turn.
+	NoReply bool
 }
 
 // Build builds the turns of one call from its spans and, when it has one, its session report's
@@ -132,7 +135,9 @@ func Build(spans []store.Span, history []byte) Result {
 		}
 		res.Turns = append(res.Turns, build(at, descendants(at.SpanID, children), userTurnOf(at, prevStart, userTurns)))
 	}
-	pairText(res.Turns, messages(history))
+	msgs, reported := messages(history)
+	res.NoReply = reported && !slices.ContainsFunc(msgs, func(m message) bool { return m.role == "assistant" })
+	pairText(res.Turns, msgs)
 	return res
 }
 
@@ -370,8 +375,9 @@ type message struct {
 	created time.Time
 }
 
-// messages reads the chat messages of a chat_history.json, in order; nil when there is none.
-func messages(history []byte) []message {
+// messages reads the chat messages of a chat_history.json, in order, and whether there was a
+// history to read.
+func messages(history []byte) ([]message, bool) {
 	var doc struct {
 		Items []struct {
 			Type      string            `json:"type"`
@@ -380,8 +386,8 @@ func messages(history []byte) []message {
 			CreatedAt float64           `json:"created_at"`
 		} `json:"items"`
 	}
-	if len(history) == 0 || json.Unmarshal(history, &doc) != nil {
-		return nil
+	if t := strings.TrimSpace(string(history)); t == "" || t == "null" || json.Unmarshal(history, &doc) != nil {
+		return nil, false
 	}
 	var out []message
 	for _, it := range doc.Items {
@@ -398,7 +404,7 @@ func messages(history []byte) []message {
 		sec, frac := math.Modf(it.CreatedAt)
 		out = append(out, message{role: it.Role, text: strings.Join(parts, " "), created: time.Unix(int64(sec), int64(frac*1e9)).UTC()})
 	}
-	return out
+	return out, true
 }
 
 // pairText gives each turn the assistant messages created inside its agent_turn, joined in order (a

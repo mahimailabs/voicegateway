@@ -229,3 +229,35 @@ Manual check (curl half), on the stack still holding the two real calls:
 `sttSeconds` reads null on that stack, because its metric exports were stored before 04b extracted usage points, and nothing backfills them. The tests, which store the same exports through the current worker, read 33.25 s.
 
 The console half waits on the sign-in decision: the console does not send a token yet. 04c is not done until that half runs. Next: 04d, `listCalls`.
+
+### 2026-10-17: phase 04d, listCalls from storage
+
+`listCalls` is served from Postgres alone (spec `docs/specs/phase04d-list-calls.md`).
+
+What the worker keeps:
+- A `call_summaries` row per call: turn count, answer times and their median, models, pipeline and agent key, built with `turn.Build` from the stored spans.
+- Every join marks a call's summary stale, and a sweep every 10 s rebuilds up to 200. A join during a rebuild leaves the call stale for the next sweep.
+- `first_seen_at` and the span-reported room name on the call. The sweep fills both for calls stored before this phase.
+- One rule, `api.Servable` and the `call_list` view, decides which calls `getCall` answers and the list shows.
+
+How the list reads:
+- A page and its totals are read in one `REPEATABLE READ READ ONLY` transaction.
+- The opaque snapshot fixes membership and carries page 1's totals. The opaque cursor is bound to the filters, sort, order and snapshot, and misuse is 400.
+- Unknowns sort last in both orders, and ties break by id.
+- `issues`, `tag`, `archived=true` and `recorded=true` match nothing until each has a stored source.
+
+Medians use the console's rule, the upper middle value, now written into the contract.
+
+From the pair review:
+- A summary is marked stale only after its rows reach ClickHouse, so a sweep between the join and the insert cannot lose them.
+- A failing rebuild is skipped and moved to the back of the queue.
+- The servable rule lives only in the `call_list` view.
+- Snapshots are kept server-side under a short id, timed by the Postgres clock and bound to their scope and filters.
+- NaN and infinite bounds are refused. Checks 1 to 10 pass on real Postgres, ClickHouse and Redis. Mutations fail them: dropping the snapshot cut, or dropping unknowns-last.
+
+Manual check, on the stack holding the two real calls:
+- The migration applied over the stored data, and the sweep rebuilt both summaries, healing the agent-only call's room and start from its spans.
+- `listCalls` with the token lists both, newest first: the webhook call `web`, 3 turns, answers 956.5 and 844.6 ms; the agent-only call `unknown`, 3 turns.
+- Totals: 2 calls, 4 measured answers, `p50Ms` by the console's rule.
+- Without the token: 401.
+- Each row's id opens the same call through `getCall`.

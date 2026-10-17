@@ -9,17 +9,47 @@ import (
 )
 
 type Call struct {
-	ID             pgtype.UUID
-	OrganisationID string
-	ProjectID      string
-	RoomName       pgtype.Text
-	RoomSid        pgtype.Text
-	JobID          pgtype.Text
-	StartedAt      pgtype.Timestamptz
-	EndedAt        pgtype.Timestamptz
-	EndState       string
-	LastActivityAt pgtype.Timestamptz
-	UpdatedAt      pgtype.Timestamptz
+	ID              pgtype.UUID
+	OrganisationID  string
+	ProjectID       string
+	RoomName        pgtype.Text
+	RoomSid         pgtype.Text
+	JobID           pgtype.Text
+	StartedAt       pgtype.Timestamptz
+	EndedAt         pgtype.Timestamptz
+	EndState        string
+	LastActivityAt  pgtype.Timestamptz
+	UpdatedAt       pgtype.Timestamptz
+	FirstSeenAt     pgtype.Timestamptz
+	CreatedAt       pgtype.Timestamptz
+	SummaryStaleAt  pgtype.Timestamptz
+	SummaryFailures int32
+}
+
+type CallList struct {
+	OrganisationID  string
+	ProjectID       string
+	ID              pgtype.UUID
+	RoomName        pgtype.Text
+	RoomSid         pgtype.Text
+	JobID           pgtype.Text
+	StartedAt       pgtype.Timestamptz
+	EndedAt         pgtype.Timestamptz
+	EndState        string
+	CreatedAt       pgtype.Timestamptz
+	FirstSeenAt     pgtype.Timestamptz
+	Servable        pgtype.Bool
+	Summarized      interface{}
+	StartAt         pgtype.Timestamptz
+	DurationSeconds interface{}
+	Participants    int64
+	Channel         string
+	TurnCount       pgtype.Int4
+	AnswerMs        []float64
+	AnswerMsMedian  pgtype.Float8
+	Models          []string
+	Pipeline        string
+	AgentKey        pgtype.Text
 }
 
 type CallParticipant struct {
@@ -29,6 +59,27 @@ type CallParticipant struct {
 	Kind           string
 	JoinedAt       pgtype.Timestamptz
 	LeftAt         pgtype.Timestamptz
+}
+
+type CallSummary struct {
+	CallID         pgtype.UUID
+	TurnCount      pgtype.Int4
+	AnswerMs       []float64
+	AnswerMsMedian pgtype.Float8
+	Models         []string
+	Pipeline       string
+	AgentKey       pgtype.Text
+	ComputedAt     pgtype.Timestamptz
+}
+
+type ListSnapshot struct {
+	ID             string
+	OrganisationID string
+	ProjectID      string
+	Filters        string
+	At             pgtype.Timestamptz
+	Totals         []byte
+	CreatedAt      pgtype.Timestamptz
 }
 
 type Organisation struct {

@@ -51,7 +51,7 @@ paths:
             type: string
         - name: snapshot
           in: query
-          description: Snapshot from prior response; required with cursor.
+          description: Snapshot from prior response; required with cursor. It expires a day after the first page; an expired, unknown or malformed snapshot, or one sent for another project or other filters, is 400 invalid_request.
           schema:
             type: string
         - name: from
@@ -2954,8 +2954,8 @@ components:
           x-null-reason: Opaque next-page cursor; null only after the final page. Bound to caller, scope, filters and snapshot.
         snapshot:
           type: string
-          description: Opaque stable read snapshot. Reuse it with each nextCursor; never aggregate a partial page as a whole-project result.
-          x-source: { kind: computed, file: docs/api/coverage.md, pointer: null, detail: Opaque stable read snapshot. Reuse it with each nextCursor; never aggregate a partial page as a whole-project result. }
+          description: Opaque stable read snapshot. Reuse it with each nextCursor; never aggregate a partial page as a whole-project result. It expires a day after the first page; an expired, unknown or malformed snapshot, or one sent for another project or other filters, is 400 invalid_request.
+          x-source: { kind: computed, file: docs/api/coverage.md, pointer: null, detail: Opaque stable read snapshot. Reuse it with each nextCursor; never aggregate a partial page as a whole-project result. It expires a day after the first page; an expired, unknown or malformed snapshot, or one sent for another project or other filters, is 400 invalid_request. }
     CallPage:
       type: object
       additionalProperties: false
@@ -3057,10 +3057,10 @@ components:
             p50Ms:
               type: [ number, "null" ]
               minimum: 0
-              description: "Median of the measured answer times."
+              description: "Median of the measured answer times: the middle value, the upper of the two middle values for an even count."
               x-unit: milliseconds
               x-null-reason: "No turn reported an answer time."
-              x-source: { kind: computed, file: dashboard/src/mocks/summaries.ts, pointer: null, detail: "Median of the measured answer times." }
+              x-source: { kind: computed, file: dashboard/src/mocks/summaries.ts, pointer: null, detail: "Median of the measured answer times: the middle value, the upper of the two middle values for an even count." }
             valuesMs:
               type: array
               description: "The measured answer times, for the distribution strip; at most 1000, oldest calls dropped first."
@@ -3200,10 +3200,10 @@ components:
             minimum: 0
         answerMsMedian:
           type: [ number, "null" ]
-          description: "Median of answerMs."
+          description: "Median of answerMs: the middle value, the upper of the two middle values for an even count."
           x-unit: milliseconds
           x-null-reason: "No turn in scope reported this value. Unknown, not zero."
-          x-source: { kind: computed, file: dashboard/src/features/calls/calls-page.tsx, pointer: null, detail: "Median of answerMs." }
+          x-source: { kind: computed, file: dashboard/src/features/calls/calls-page.tsx, pointer: null, detail: "Median of answerMs: the middle value, the upper of the two middle values for an even count." }
         issues:
           type: object
           additionalProperties: false

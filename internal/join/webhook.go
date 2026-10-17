@@ -44,7 +44,7 @@ func (j *Joiner) webhook(ctx context.Context, r *store.Event) error {
 			return err
 		}
 		r.CallID = id
-		return j.Calls.TouchCall(ctx, id, "", nil, at)
+		return j.Calls.TouchCall(ctx, id, "", nil, at, at)
 	}
 
 	id, err := j.Calls.UpsertCall(ctx, store.CallUpsert{
@@ -55,6 +55,7 @@ func (j *Joiner) webhook(ctx context.Context, r *store.Event) error {
 		JobID:          ev.GetJob().GetId(),
 		StartedAt:      ptr(millisOrSeconds(room.GetCreationTimeMs(), room.GetCreationTime())),
 		LastActivityAt: at,
+		FirstSeenAt:    earliest(ptr(millisOrSeconds(room.GetCreationTimeMs(), room.GetCreationTime())), at),
 	})
 	if err != nil {
 		return err

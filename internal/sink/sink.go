@@ -38,6 +38,10 @@ type Events interface {
 // values were refused; any other error is transient. It bounds its own calls per row.
 type Joiner interface {
 	Join(ctx context.Context, rows []store.Event) error
+	// Stored is told about rows once they are in ClickHouse, before they are acknowledged; it
+	// marks their calls' summaries stale, so a summary is never rebuilt from a store that lacks
+	// them. It may be called again with the same rows.
+	Stored(ctx context.Context, rows []store.Event) error
 }
 
 // Sink moves envelopes from the stream into Events.
@@ -108,7 +112,12 @@ func (s *Sink) store(ctx context.Context, msgs []stream.Message) {
 		return
 	}
 
-	var fresh []store.Event
+	// Each distinct row, and which of them are already stored: a redelivered entry, or one a worker
+	// stored and died before acknowledging.
+	var (
+		unique []store.Event
+		stored map[store.EventKey]bool
+	)
 	err := s.retry(ctx, "find stored events", func(ctx context.Context) error {
 		keys := make([]store.EventKey, len(rows))
 		for i, r := range rows {
@@ -116,37 +125,51 @@ func (s *Sink) store(ctx context.Context, msgs []stream.Message) {
 		}
 		cctx, cancel := context.WithTimeout(ctx, s.Timeout)
 		defer cancel()
-		stored, err := s.Events.Existing(cctx, keys)
-		if err != nil {
+		var err error
+		if stored, err = s.Events.Existing(cctx, keys); err != nil {
 			return err
 		}
-		fresh = fresh[:0]
+		unique = unique[:0]
 		seen := map[store.EventKey]bool{}
 		for _, r := range rows {
-			if stored[r.Key()] || seen[r.Key()] {
-				continue
+			if !seen[r.Key()] {
+				seen[r.Key()] = true
+				unique = append(unique, r)
 			}
-			seen[r.Key()] = true
-			fresh = append(fresh, r)
 		}
 		return nil
 	})
 	if err != nil {
 		return
 	}
-	if skipped := len(rows) - len(fresh); skipped > 0 {
-		s.Log.Info("sink: skipped events already stored", "count", skipped)
-	}
 	msgsByID := byID(msgs)
-	// Joined before inserting: an event row that carries a call id always has its call.
-	fresh, err = s.join(ctx, fresh, msgsByID)
+	// Every row is joined, the stored ones too: joining is idempotent, and it tells Stored which
+	// calls a row touched, so a worker that died between the insert and the stale mark loses no
+	// mark when the entry is redelivered. An event row that carries a call id always has its call.
+	joined, err := s.join(ctx, unique, msgsByID)
 	if err != nil {
 		return
+	}
+	var fresh []store.Event
+	for _, r := range joined {
+		if !stored[r.Key()] {
+			fresh = append(fresh, r)
+		}
+	}
+	if skipped := len(joined) - len(fresh); skipped > 0 {
+		s.Log.Info("sink: skipped events already stored", "count", skipped)
 	}
 	for _, chunk := range chunks(fresh, maxBatchBytes) {
 		if err := s.insert(ctx, chunk, msgsByID); err != nil {
 			return
 		}
+	}
+	if err := s.retry(ctx, "mark summaries stale", func(ctx context.Context) error {
+		cctx, cancel := context.WithTimeout(ctx, s.Timeout)
+		defer cancel()
+		return s.Join.Stored(cctx, joined)
+	}); err != nil {
+		return
 	}
 	if err := s.retry(ctx, "acknowledge", func(ctx context.Context) error { return s.Stream.Ack(ctx, ids...) }); err != nil {
 		return

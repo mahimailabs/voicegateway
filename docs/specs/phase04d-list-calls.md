@@ -7,7 +7,7 @@ The console's Calls page reads real stored calls through web's API: `listCalls` 
 ## Context
 
 - PRODUCT.md: principles 2 (unknown stays unknown) and 5 (measured, not claimed).
-- ARCHITECTURE.md: Boundaries (worker owns every write; web reads only). Data Flow step 6 (the worker settles calls on a timer).
+- ARCHITECTURE.md: the Components table (the worker owns every telemetry and call-index write; web writes configuration and request state to Postgres, such as this phase's list snapshots, and never ClickHouse). Data Flow step 6 (the worker settles calls on a timer).
 - `docs/api/openapi.yaml`: operation `listCalls` (line 16), schemas `CallPage`, `Page`, `CallTotals`, `CallSummary` (2916 to 3219), `Error`.
 - `docs/specs/phase04c-get-call.md`: the `/api/v1` router, its gate, and the room and start fallbacks, which this list must agree with.
 - The 04b spec's open question: turns are built at read time, and `listCalls` may need rollups. It does: a range filter or sort on answer time or turn count reads every call in the range, so per-call figures must be stored, not rebuilt per request.
@@ -15,9 +15,9 @@ The console's Calls page reads real stored calls through web's API: `listCalls` 
 ## In Scope
 
 - **Call summaries, kept by the worker.** A Postgres `call_summaries` row per call (call id, turn count, answer times in turn order, their median, models most used first, pipeline, agent key, computed at), built with `turn.Build` from the same stored spans 04c serves.
-  - The join marks a call's summary stale whenever it links a span, a session report or a usage point to it.
-  - A worker sweep rebuilds stale summaries every 10 s, oldest first, at most 200 per sweep. It clears the mark only if nothing joined after the rebuild began, so a late span is never lost to a race.
-  - A call with no spans has a summary of unknowns.
+  - A call's summary is marked stale once a span, session report or usage point joined to it has reached ClickHouse, just before the entry is acknowledged. Marking it at the join, before the insert, would let a sweep in between rebuild from a store that lacks the new rows and clear the mark.
+  - A worker sweep rebuilds stale summaries every 10 s, oldest first, at most 200 per sweep. It clears the mark only if nothing joined after the rebuild began, so a late span is never lost to a race. A call whose rebuild fails is skipped, counted and backed off (10 s, doubling with each failure in a row, at most an hour), so it cannot hold up the others. NUL characters in span values are stripped before Postgres. A redelivered entry is joined again, though its rows are already stored, so a worker that died between the insert and the stale mark loses no mark.
+  - A call with no turn has a summary of unknowns: `turnCount` is null, and 0 only when a session report shows the call had no turn.
 - **Columns the list needs, written by the worker:**
   - `calls.first_seen_at`: the earliest reported time of anything joined to the call (a webhook's `created_at`, a span's start, a session report's start), the same value 04c falls back to for `startedAt`.
   - `calls.room_name`: filled from the agent's `lk.pii.room_name` span attribute when no webhook named the room.
@@ -25,8 +25,8 @@ The console's Calls page reads real stored calls through web's API: `listCalls` 
   - 04c's `getCall` reads the same columns, so a list row and its drawer name the same room and start. `first_seen_at` widens 04c's `startedAt` fallback: the earliest reported time of any joined source, not only the earliest span. The turn figures can differ for up to the summary lag (about 10 s, longer under a burst, since a sweep rebuilds at most 200), because the drawer builds turns at once and the list reads the stored summary.
 - **`listCalls`** in `internal/api` (`listcalls.go`), one Postgres query plus one totals query, behind the 04c gate:
   - **Paging:** `limit` (1 to 100, default 25), and an opaque `cursor` that carries the last row's sort key and id plus the snapshot, the filters, sort and order it was issued for.
-  - **Snapshot:** the time of the first page. It fixes which calls belong to the list (rows created after it are left out of every later page), not their values: a call's end, turns or answer times can change between pages, and it keeps its place by `id` while its sort key stays put. The console de-duplicates rows by `id`. Each page's rows and totals are read in one `REPEATABLE READ READ ONLY` transaction. The first page's totals travel inside the snapshot, so every later page reports the same totals as the first.
-  - **Cursor misuse:** a cursor sent with different filters, sort or order, or without its `snapshot`, is `400 invalid_request`. So is any value outside its schema.
+  - **Snapshot:** kept server-side in Postgres under a short random id, so the token in the console's URL stays small; it holds the scope and filters it was taken for and expires after a day by the Postgres clock. A malformed id is 400. Its time is the first page's, read from the Postgres clock that writes `created_at`. It fixes which calls belong to the list (rows created after it are left out of every later page), not their values: a call's end, turns or answer times can change between pages, and it keeps its place by `id` while its sort key stays put. The console de-duplicates rows by `id`. Each page's rows and totals are read in one `REPEATABLE READ READ ONLY` transaction. The first page's totals travel inside the snapshot, so every later page reports the same totals as the first.
+  - **Cursor misuse:** a cursor sent with different filters, sort or order, or without its `snapshot`, is `400 invalid_request`. So is a snapshot used under another project or other filters, and any value outside its schema, including a bound that is not a finite number.
   - **Sort:** `startedAt`, `durationSeconds`, `turnCount`, `answerMs` (the median) and `issues`, `asc` or `desc`. Unknowns sort after known values in both orders, and ties break by `id`. `startedAt` here is `calls.started_at`, else `first_seen_at`, as in 04c.
   - **Filters served from storage:** `from`, `to`, `room`, `answerMsMin`/`answerMsMax`, `durationSecondsMin`/`durationSecondsMax`, `turnsMin`/`turnsMax` and `unknown`, each as the contract states. A call whose value is unknown never matches a bound.
   - **Filters with no stored source yet:** they keep the contract's meaning, so none silently does nothing.
@@ -39,7 +39,7 @@ The console's Calls page reads real stored calls through web's API: `listCalls` 
     - `web` when webhooks reported participants and none is SIP.
     - `unknown` when no webhook reported a participant.
     - `console` and `local` are never inferred, since nothing stored says so.
-  - **Calls left out:** a call whose room is unknown or whose start is unknown, after the fallbacks, is left out of the items and the totals. This is one predicate, shared with `getCall`, which answers 404 for exactly these calls, so no row opens a missing call.
+  - **Calls left out:** a call whose room is unknown or whose start is unknown, after the fallbacks, is left out of the items and the totals. The rule lives in one place, a `servable` column of the `call_list` view, which `getCall` reads too and answers 404 by. One exception: a call stored before this phase lacks the new columns until the sweep heals it, and until then `getCall` falls back to its spans as 04c did, rather than 404 it.
 - **`CallSummary`:** each field from the call and its summary.
   - `endState` is the call's.
   - `durationSeconds` comes only from an observed start, as in 04c.
@@ -51,7 +51,7 @@ The console's Calls page reads real stored calls through web's API: `listCalls` 
     - `realtime` when they hold `realtime_inference`.
     - `text` when they hold `llm_node` and no `tts_node`.
     - `unknown` otherwise.
-  - `agentKey`: the agent participant's registered name when a webhook reported one; else `lk.agent_name` on the call's spans, the value most spans carry; else null.
+  - `agentKey`: `lk.agent_name` on the call's spans, the value most spans carry; else null. The agent participant's registered name would come first, but no webhook field VoiceGateway stores carries it yet.
 - **`CallTotals`,** over every call matching the range and filters as of the snapshot:
   - `callCount` and `byChannel`.
   - `answers`: the turns with a measured answer, how many exceed `budgetMs`, their median, and `valuesMs` (at most 1000 values, oldest calls dropped first, with `valuesTruncated`).
@@ -82,9 +82,9 @@ The console's Calls page reads real stored calls through web's API: `listCalls` 
 5. Given calls with known and unknown answer medians, when sorted by `answerMs` `asc` and `desc`, then the unknowns come last both times, ties are ordered by `id`, and `answerMsMin` excludes every unknown (measured by `TestListCallsSortsUnknownLast`).
 6. Given a cursor, when it is sent with a changed filter, a changed order, or no `snapshot`, then each is 400 `invalid_request` and validates as `Error` (3 of 3). A `limit` of 0 or 101 is 400 too (measured by `TestListCallsRejectsMisusedCursor`).
 7. Given calls with a SIP participant, with only standard participants and with no webhooks, then their `channel` is `phone`, `web` and `unknown`, and `totals.byChannel` counts 1 of each. `issues=high`, `tag=x`, `archived=true` and `recorded=true` each return 0 items with `callCount` 0. `archived=false` returns all 3 (measured by `TestListCallsChannelsAndUnstoredFilters`).
-8. Given 4 calls with answer times 1000, 1400, 1600 and 2000 ms and one call with none, then `totals.answers.turns` is 4, `overBudget` 2 at `budgetMs` 1500, `p50Ms` 1500, and the unmeasured call adds nothing (measured by `TestListCallsTotals`).
+8. Given 4 calls with answer times 1000, 1400, 1600 and 2000 ms and one call with none, then `totals.answers.turns` is 4, `overBudget` 2 at `budgetMs` 1500, `p50Ms` 1600 (the console's median, the upper middle value, `dashboard/src/mocks/calls-query.ts`), and the unmeasured call adds nothing (measured by `TestListCallsTotals`).
 9. Given three calls, one with no room, one with no start and one with neither (after the fallbacks), then all three are left out of the items and out of `callCount`, and `getCall` answers 404 for each, through the same predicate (measured by `TestListCallsLeavesOutUnservableCalls`).
-10. Given `voicegateway migrate` run twice on the 04c schema with stored calls, then the new columns and `call_summaries` are added, existing calls remain, and the second run applies nothing (measured by `TestMigrateTwice`, extended).
+10. Given `voicegateway migrate` run twice on the 04c schema with stored calls, then the new columns and `call_summaries` are added, existing calls remain, and the second run applies nothing (measured by `TestMigrateKeepsCallsAndAddsSummaries`).
 
 ## Manual Check
 

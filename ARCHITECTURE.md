@@ -13,8 +13,8 @@ VoiceGateway is one Go binary, `voicegateway`, run in two roles (0013): `web` ta
 
 | Component | Responsibility | Owns |
 | --- | --- | --- |
-| web | Checks keys, accepts events, webhooks, OTLP spans and LiveKit agents' observability uploads (0014), appends them to the stream and answers fast. Serves the API, MCP and the dashboard files. | Nothing stored; reads Postgres and ClickHouse for queries |
-| worker | Reads the stream, joins events into calls, writes batches to ClickHouse, scrapes server metrics, closes stale calls, applies retention. | All writes to ClickHouse and the call index |
+| web | Checks keys, accepts events, webhooks, OTLP spans and LiveKit agents' observability uploads (0014), appends them to the stream and answers fast. Serves the API, MCP and the dashboard files. | Configuration and request state in Postgres only: list snapshots, and from 0027 accounts, sessions and sign-in counts. Reads Postgres and ClickHouse for queries; never writes ClickHouse |
+| worker | Reads the stream, joins events into calls, writes batches to ClickHouse, scrapes server metrics, closes stale calls, applies retention. | All telemetry writes to ClickHouse, and all writes to the call index and call summaries |
 | SDK (`sdk/python`) | `attach()` inside the agent, for frameworks without LiveKit's uploader and for data it lacks: sends turns, metrics and usage. Fails open. | Nothing |
 | Dashboard (`dashboard/`) | React app, built in its own Docker stage and served from disk by web (0011). | Nothing |
 | Postgres | Projects (each one LiveKit project, with its URL, key and encrypted secret, 0016), API keys, settings, the call index. | Configuration |
@@ -30,7 +30,7 @@ VoiceGateway is one Go binary, `voicegateway`, run in two roles (0013): `web` ta
 4. worker writes in batches to ClickHouse and acknowledges the stream entries only after the write lands. Entries that fail repeatedly go to a dead-letter stream.
 5. worker publishes call changes to Redis, and web pushes them to the live view.
 6. On a timer, worker scrapes SFU, SIP and node metrics, and closes calls whose end never arrived, marked as inferred.
-7. The dashboard and MCP query web, which reads Postgres and ClickHouse.
+7. The dashboard and MCP query web, which reads Postgres and ClickHouse. web writes configuration and request state, to Postgres only: a list's snapshot, and from 0027 accounts, sessions and sign-in counts.
 
 ## Boundaries
 

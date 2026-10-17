@@ -30,12 +30,13 @@ func (j *Joiner) sessionReport(ctx context.Context, r *store.Event) error {
 		j.unmatched(r, reasonUndecodable)
 		return nil
 	}
-	var started, activity *time.Time
+	var started, activity, reportStart *time.Time
 	if h.GetRoomStartTime() != nil {
 		started = ptr(h.GetRoomStartTime().AsTime())
 	}
 	if h.GetStartTime() != nil {
-		activity = ptr(h.GetStartTime().AsTime())
+		reportStart = ptr(h.GetStartTime().AsTime())
+		activity = reportStart
 		// A duration too long for time.Duration is no time anyone reported; the start stands.
 		if ms := h.GetDuration(); ms <= maxDurationMillis {
 			activity = ptr(h.GetStartTime().AsTime().Add(time.Duration(ms) * time.Millisecond)) //nolint:gosec // bounded above
@@ -47,7 +48,7 @@ func (j *Joiner) sessionReport(ctx context.Context, r *store.Event) error {
 		id, err := j.Calls.UpsertCall(ctx, store.CallUpsert{
 			OrganisationID: r.OrganisationID, ProjectID: r.ProjectID,
 			RoomSID: h.GetRoomId(), RoomName: h.GetRoomName(), JobID: h.GetJobId(),
-			StartedAt: started, LastActivityAt: activity,
+			StartedAt: started, LastActivityAt: activity, FirstSeenAt: earliest(started, reportStart),
 		})
 		if err != nil {
 			return err
@@ -64,7 +65,7 @@ func (j *Joiner) sessionReport(ctx context.Context, r *store.Event) error {
 			return err
 		}
 		r.CallID = c.ID
-		return j.Calls.TouchCall(ctx, c.ID, "", started, activity)
+		return j.Calls.TouchCall(ctx, c.ID, "", started, activity, earliest(started, reportStart))
 	}
 	j.unmatched(r, reasonNoRoom)
 	return nil

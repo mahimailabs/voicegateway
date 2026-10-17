@@ -1,6 +1,8 @@
 package api
 
 import (
+	"bytes"
+	"log/slog"
 	"math"
 	"net/http"
 	"strings"
@@ -13,6 +15,7 @@ import (
 	"github.com/mahimailabs/voicegateway/internal/event"
 	"github.com/mahimailabs/voicegateway/internal/store"
 	"github.com/mahimailabs/voicegateway/internal/store/chstore"
+	"github.com/mahimailabs/voicegateway/internal/turn"
 )
 
 func path(project, callID string) string {
@@ -195,11 +198,30 @@ func TestGetCallStorageDown(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = down.Close() })
+	var logged bytes.Buffer
+	a := f.api(down)
+	a.Log = slog.New(slog.NewJSONHandler(&logged, nil))
 	var e apiError
-	if code := f.get(f.api(down), path(f.project, f.callID("RM_DOWN")), &e); code != http.StatusInternalServerError || e.Code != codeInternal {
+	if code := f.get(a, path(f.project, f.callID("RM_DOWN")), &e); code != http.StatusInternalServerError || e.Code != codeInternal {
 		t.Errorf("status %d, body %+v; want 500 internal_error", code, e)
+	}
+	// The log line an operator searches for carries the request id the body gave.
+	if e.RequestID == "" || !strings.Contains(logged.String(), `"request_id":"`+e.RequestID+`"`) {
+		t.Errorf("log %q does not carry request id %q", logged.String(), e.RequestID)
 	}
 	if strings.Contains(e.Message, "127.0.0.1") || strings.Contains(e.Message, "refused") {
 		t.Errorf("error message leaks the storage error: %q", e.Message)
+	}
+}
+
+// Pair review of #376: getCall's span fallback is for calls not yet summarized. Once the sweep has
+// summarized a call, its stored columns are final, and a call with no room is not served.
+func TestGetCallFallbackOnlyBeforeSummary(t *testing.T) {
+	spans := []store.Span{{Name: "job_entrypoint", Start: listBase, End: listBase.Add(time.Second), Attributes: map[string]string{"lk.pii.room_name": "from-spans"}}}
+	if _, ok := buildCall(store.Call{ID: "c"}, spans, turn.Result{}); !ok {
+		t.Error("unsummarized call with a room in its spans is not served")
+	}
+	if _, ok := buildCall(store.Call{ID: "c", Summarized: true}, spans, turn.Result{}); ok {
+		t.Error("summarized call with no stored room is served from its spans")
 	}
 }

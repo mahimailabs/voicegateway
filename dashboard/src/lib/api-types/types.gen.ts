@@ -604,7 +604,7 @@ export type Page = {
      */
     nextCursor: string | null;
     /**
-     * Opaque stable read snapshot. Reuse it with each nextCursor; never aggregate a partial page as a whole-project result.
+     * Opaque stable read snapshot. Reuse it with each nextCursor; never aggregate a partial page as a whole-project result. It expires a day after the first page; an expired, unknown or malformed snapshot, or one sent for another project or other filters, is 400 invalid_request.
      */
     snapshot: string;
 };
@@ -659,7 +659,7 @@ export type CallTotals = {
          */
         budgetMs: number;
         /**
-         * Median of the measured answer times.
+         * Median of the measured answer times: the middle value, the upper of the two middle values for an even count.
          */
         p50Ms: number | null;
         /**
@@ -759,7 +759,7 @@ export type CallSummary = {
      */
     answerMs: Array<number> | null;
     /**
-     * Median of answerMs.
+     * Median of answerMs: the middle value, the upper of the two middle values for an even count.
      */
     answerMsMedian: number | null;
     /**
@@ -1525,7 +1525,7 @@ export type ListCallsData = {
          */
         cursor?: string;
         /**
-         * Snapshot from prior response; required with cursor.
+         * Snapshot from prior response; required with cursor. It expires a day after the first page; an expired, unknown or malformed snapshot, or one sent for another project or other filters, is 400 invalid_request.
          */
         snapshot?: string;
         /**

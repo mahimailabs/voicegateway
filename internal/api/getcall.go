@@ -91,10 +91,6 @@ const (
 	alignUnknown  = "unknown"
 )
 
-// The span attribute on which LiveKit Agents 1.8.7 reports the room's name, on job_entrypoint and
-// agent_session; "pii" because the agent can redact it.
-const attrRoomName = "lk.pii.room_name"
-
 // getCall serves operationId getCall.
 func (a *API) getCall(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
@@ -115,8 +111,7 @@ func (a *API) getCall(w http.ResponseWriter, r *http.Request) {
 	}
 	body, ok := buildCall(c, spans, built)
 	if !ok {
-		// Neither a webhook nor a span named the room or reported a start: the contract requires
-		// both, and nothing stored can fill them.
+		// No source named the room or reported a start: the contract requires both.
 		writeError(w, r, http.StatusNotFound, codeNotFound, "call not found")
 		return
 	}
@@ -134,17 +129,24 @@ func (a *API) fail(w http.ResponseWriter, r *http.Request, err error, notFound s
 	writeError(w, r, http.StatusInternalServerError, codeInternal, "the call could not be read")
 }
 
-// buildCall maps a stored call to the contract. It reports false when the call lacks a room or a
-// start that any source reported.
+// buildCall maps a stored call to the contract. A call the call_list view marks servable is
+// served from its stored columns, the rule listCalls shares. A call stored before phase 04d lacks
+// those columns until the summary sweep heals it from its spans; until it has a summary, the room
+// and start fall back to what its spans report, as in 04c. Once summarized, the stored columns are
+// final. It reports false when neither gives both.
 func buildCall(c store.Call, spans []store.Span, built turn.Result) (call, bool) {
-	room := c.RoomName
-	if room == "" {
-		room = spanRoomName(spans)
+	room, started, startObserved := c.RoomName, c.StartedAt, c.StartedAt != nil
+	if started == nil {
+		started = c.FirstSeenAt
 	}
 	traceStart := earliestStart(spans)
-	started, startObserved := c.StartedAt, c.StartedAt != nil
-	if started == nil {
-		started = traceStart
+	if !c.Servable && !c.Summarized {
+		if room == "" {
+			room = spanRoomName(spans)
+		}
+		if started == nil {
+			started = traceStart
+		}
 	}
 	if room == "" || started == nil {
 		return call{}, false
@@ -178,6 +180,19 @@ func buildCall(c store.Call, spans []store.Span, built turn.Result) (call, bool)
 	}
 	out.Usage = toUsage(built.Usage)
 	return out, true
+}
+
+// spanRoomName is the room name the agent's own spans report, on job_entrypoint or agent_session
+// ("pii" because the agent can redact it); empty when none does.
+func spanRoomName(spans []store.Span) string {
+	for _, s := range spans {
+		if s.Name == "job_entrypoint" || s.Name == "agent_session" {
+			if name := s.Attributes["lk.pii.room_name"]; name != "" {
+				return name
+			}
+		}
+	}
+	return ""
 }
 
 // clocks returns the call clock, anchored at startedAt, and the trace clock, anchored at the
@@ -299,18 +314,6 @@ func plural(n int, one, many string) string {
 		return one
 	}
 	return many
-}
-
-// spanRoomName is the room name the agent's own spans report, empty when none does.
-func spanRoomName(spans []store.Span) string {
-	for _, s := range spans {
-		if s.Name == "job_entrypoint" || s.Name == "agent_session" {
-			if name := s.Attributes[attrRoomName]; name != "" {
-				return name
-			}
-		}
-	}
-	return ""
 }
 
 // earliestStart is the earliest reported span start, nil when no span reported one.

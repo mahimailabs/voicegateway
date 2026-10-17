@@ -354,3 +354,30 @@ func TestTurnUsageAndTextEdges(t *testing.T) {
 		t.Errorf("turn with no times has text %q / %q", str(notime.UserText), str(notime.AgentText))
 	}
 }
+
+// Pair review of #376: turnCount is 0 only when a session report's history holds no assistant
+// message; a full conversation without agent_turn spans says nothing about the count.
+func TestTurnCountZeroOnlyWithNoReply(t *testing.T) {
+	spans := []store.Span{span("llm_node", "l", "x", 0, 100, nil)}
+	conversation := history(t, [3]string{"user", "hi", "0.5"}, [3]string{"assistant", "hello", "1.0"})
+	for _, tt := range []struct {
+		name    string
+		history []byte
+		want    string
+	}{
+		{"no report", nil, "null"},
+		{"a conversation", conversation, "null"},
+		{"an empty history", []byte(`{}`), "0"},
+		{"a null history", []byte(`null`), "null"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			got := "null"
+			if n := Summarize(spans, Build(spans, tt.history)).TurnCount; n != nil {
+				got = strconv.Itoa(*n)
+			}
+			if got != tt.want {
+				t.Errorf("turnCount = %s, want %s", got, tt.want)
+			}
+		})
+	}
+}

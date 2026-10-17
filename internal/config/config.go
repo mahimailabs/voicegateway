@@ -27,6 +27,9 @@ type Config struct {
 	SecretKey []byte
 	// LogLevel is debug, info, warn or error.
 	LogLevel slog.Level
+	// AnswerBudgetMs is the answer budget listCalls counts against; 0 is the console's default.
+	// Interim, until thresholds are stored per project.
+	AnswerBudgetMs int
 	// APIToken is the bearer token /api/v1 requires, until the sign-in decision replaces it. Empty
 	// means the API answers 401 to everything rather than run open.
 	APIToken string
@@ -86,6 +89,13 @@ func Load(getenv func(string) string) (Config, error) {
 
 	if c.APIToken != "" && len(c.APIToken) < minAPIToken {
 		errs = append(errs, fmt.Errorf("VOICEGATEWAY_API_TOKEN must be at least %d characters (openssl rand -hex 32)", minAPIToken))
+	}
+	if v := optional("VOICEGATEWAY_ANSWER_BUDGET_MS", ""); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil || n < 1 {
+			errs = append(errs, errors.New("VOICEGATEWAY_ANSWER_BUDGET_MS must be a whole number of milliseconds, at least 1"))
+		}
+		c.AnswerBudgetMs = n
 	}
 	ssl, err := strconv.ParseBool(optional("VOICEGATEWAY_S3_USE_SSL", "false"))
 	if err != nil {

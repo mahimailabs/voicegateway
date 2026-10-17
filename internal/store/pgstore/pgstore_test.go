@@ -4,16 +4,20 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"io/fs"
 	"os"
 	"strings"
 	"testing"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/jackc/pgx/v5/stdlib"
+	"github.com/pressly/goose/v3"
 	"github.com/testcontainers/testcontainers-go"
 	tcpostgres "github.com/testcontainers/testcontainers-go/modules/postgres"
 
 	"github.com/mahimailabs/voicegateway/internal/seal"
 	"github.com/mahimailabs/voicegateway/internal/store"
+	"github.com/mahimailabs/voicegateway/migrations"
 )
 
 // The same image, tag and digest as deploy/compose.yaml.
@@ -164,5 +168,49 @@ func TestProjectDuplicateLiveKitKey(t *testing.T) {
 	}
 	if n != 1 {
 		t.Errorf("projects = %d after refused creates, want 1", n)
+	}
+}
+
+// Acceptance check 10 of phase 04d: on the 04c schema with a stored call, migrate adds the summary
+// table and columns, keeps the call and marks it for a summary, and a second run applies nothing.
+func TestMigrateKeepsCallsAndAddsSummaries(t *testing.T) {
+	pool := startPostgres(t)
+	ctx := context.Background()
+	fsys, err := fs.Sub(migrations.Postgres, "postgres")
+	if err != nil {
+		t.Fatal(err)
+	}
+	db := stdlib.OpenDBFromPool(pool)
+	t.Cleanup(func() { _ = db.Close() })
+	provider, err := goose.NewProvider(goose.DialectPostgres, db, fsys)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := provider.UpTo(ctx, 2); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO projects (organisation_id, id, name, livekit_url, livekit_api_key, livekit_api_secret_sealed)
+		VALUES ('default', 'p', 'P', 'wss://x', 'APIp', '\x00')`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO calls (organisation_id, project_id, room_sid, room_name) VALUES ('default', 'p', 'RM_OLD', 'old')`); err != nil {
+		t.Fatal(err)
+	}
+
+	if n, err := Migrate(ctx, pool); err != nil || n == 0 {
+		t.Fatalf("first migrate = %d, %v; want some applied", n, err)
+	}
+	if n, err := Migrate(ctx, pool); err != nil || n != 0 {
+		t.Fatalf("second migrate = %d, %v; want 0", n, err)
+	}
+	var stale bool
+	if err := pool.QueryRow(ctx, `SELECT summary_stale_at IS NOT NULL FROM calls WHERE room_sid = 'RM_OLD'`).Scan(&stale); err != nil || !stale {
+		t.Fatalf("old call stale = %v, %v; want it kept and marked for a summary", stale, err)
+	}
+	if _, err := pool.Exec(ctx, `SELECT count(*) FROM call_summaries`); err != nil {
+		t.Errorf("call_summaries: %v", err)
+	}
+	if _, err := pool.Exec(ctx, `SELECT count(*) FROM call_list`); err != nil {
+		t.Errorf("call_list: %v", err)
 	}
 }

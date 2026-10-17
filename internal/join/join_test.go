@@ -281,7 +281,9 @@ func TestOpenCallClosesAsInferred(t *testing.T) {
 	f.appendWebhook(&livekit.WebhookEvent{Event: "room_finished", Room: room("RM_DONE", "d", base), Id: "EV_5", CreatedAt: at(base.Add(time.Hour))})
 	f.store("w1")
 
-	if err := f.joiner.Sweep(context.Background(), base.Add(join.IdleTimeout+time.Minute)); err != nil {
+	// Two hours on from now, not from base: the idle rule also needs nothing joined since, and base
+	// is fixed when the package starts, minutes before this test may run.
+	if err := f.joiner.Sweep(context.Background(), time.Now().Add(join.IdleTimeout+time.Minute)); err != nil {
 		t.Fatal(err)
 	}
 	calls := f.calls()

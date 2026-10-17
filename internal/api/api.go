@@ -19,7 +19,10 @@ type API struct {
 	Traces   Traces
 	Layers   Layers
 	Log      *slog.Logger
-	Now      func() time.Time
+	// AnswerBudgetMs is the answer budget listCalls' totals count against; 0 is the console's
+	// default, 1500 ms. Interim, until thresholds are stored per project.
+	AnswerBudgetMs int
+	Now            func() time.Time
 	// Gate runs before every /api/v1 route: BearerToken until the sign-in decision (0027) lands.
 	// Nil denies every request, so a router wired without a gate never serves openly.
 	Gate func(http.Handler) http.Handler
@@ -43,6 +46,7 @@ func (a *API) Routes() http.Handler {
 		writeError(w, r, http.StatusMethodNotAllowed, codeInvalidRequest, "method not allowed")
 	})
 	r.Route("/api/v1/org/{orgId}/project/{projectId}", func(r chi.Router) {
+		r.Get("/calls", a.listCalls)
 		r.Get("/calls/{callId}", a.getCall)
 		r.Get("/media-server", a.mediaServer)
 		r.Get("/sip", a.sip)
@@ -63,7 +67,7 @@ func requestID(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var b [12]byte
 		if _, err := rand.Read(b[:]); err != nil {
-			http.Error(w, `{"code":"internal_error","message":"no request id","requestId":""}`, http.StatusInternalServerError)
+			writeJSON(w, http.StatusInternalServerError, apiError{Code: codeInternal, Message: "no request id"})
 			return
 		}
 		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), middleware.RequestIDKey, hex.EncodeToString(b[:]))))
