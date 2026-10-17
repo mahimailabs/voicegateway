@@ -60,7 +60,7 @@ func (j *Joiner) Join(ctx context.Context, rows []store.Event) error {
 }
 
 func (j *Joiner) row(ctx context.Context, r *store.Event) error {
-	r.CallID, r.Spans, r.TraceCalls, r.Unmatched = "", nil, nil, nil
+	r.CallID, r.Spans, r.TraceCalls, r.Unmatched, r.MetricPoints = "", nil, nil, nil, nil
 	if j.Timeout > 0 {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, j.Timeout)
@@ -73,6 +73,8 @@ func (j *Joiner) row(ctx context.Context, r *store.Event) error {
 		return j.sessionReport(ctx, r)
 	case event.KindAgentTraces:
 		return j.traces(ctx, r)
+	case event.KindAgentMetrics:
+		return j.metrics(ctx, r)
 	}
 	return nil
 }

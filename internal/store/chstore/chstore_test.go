@@ -17,9 +17,10 @@ import (
 // The same image, tag and digest as deploy/compose.yaml.
 const clickhouseImage = "clickhouse/clickhouse-server:26.1.12.23-alpine@sha256:369bd68942569e0effdf0aa68b4f844a74d97b73e281cf8012ce90e9865cc411"
 
-// Acceptance check 11 of phase 04a: on the phase 03 schema with stored events, migrate adds the
-// call tables and the call_id column, keeps the rows, and a second run applies nothing.
-func TestMigrateTwice(t *testing.T) {
+// startClickHouse runs an empty ClickHouse and returns its URL. It skips with -short or without
+// Docker on a laptop; in CI a missing Docker fails the test.
+func startClickHouse(t *testing.T) string {
+	t.Helper()
 	if os.Getenv("CI") == "" {
 		if testing.Short() {
 			t.Skip("needs Docker; runs in CI")
@@ -37,6 +38,14 @@ func TestMigrateTwice(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	return url
+}
+
+// Acceptance check 11 of phase 04a: on the phase 03 schema with stored events, migrate adds the
+// call tables and the call_id column, keeps the rows, and a second run applies nothing.
+func TestMigrateTwice(t *testing.T) {
+	ctx := context.Background()
+	url := startClickHouse(t)
 	opts, err := clickhouse.ParseDSN(url)
 	if err != nil {
 		t.Fatal(err)
