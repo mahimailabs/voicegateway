@@ -1,6 +1,6 @@
 # 0027: Built-in accounts, sessions and project keys for sign-in and access
 
-- Status: accepted
+- Status: proposed
 - Date: 2026-10-17
 
 ## Context
@@ -57,7 +57,7 @@ Option 1: built-in accounts with server-side sessions for people, and hashed pro
 - They need their own tests: a session cookie that cannot be read by script, a cross-origin write refused, an invitation used twice refused, and a Viewer refused a write.
 - Cloud has two sign-ins. A customer signs up in Clerk for billing, then gets an invitation to set a product password. That is the cost of one image. The instance API that sends the invitation is in 0017's Enterprise row ("Organisation and instance management API"), so Cloud needs it in V1, though `ee/` is otherwise empty.
 
-**Rules added to CLAUDE.md:**
+**Rules for CLAUDE.md, once accepted:**
 - Never log a password, a session id, an invitation token or an API key secret.
 - Every `/api/v1` route goes through the one access gate.
 - Credentials are compared in constant time.

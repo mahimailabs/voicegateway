@@ -71,9 +71,6 @@ Every task goes through the root Makefile.
 - Never show a missing value as zero. Unknown stays unknown; inferred values say so.
 - Never log raw webhook or request bodies.
 - Never panic in the pipeline; return wrapped errors.
-- Never log a password, a session id, an invitation token or an API key secret (decision 0027).
-- Never add an `/api/v1` route outside the one access gate (decision 0027).
-- Never compare a credential except in constant time (decision 0027).
 
 ## How to ask me
 
