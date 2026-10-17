@@ -264,11 +264,43 @@ describe("issues and alert events", () => {
     expect(titles("agent_workers").length + titles("phone_bridge").length).toBeGreaterThan(0)
   })
 
-  test("a range before every capture drops every timed hit and keeps the standing ones, which have no time", async () => {
-    const body = await (await fetch(`${base}/issues?from=2000-01-01T00:00:00Z&to=2000-01-02T00:00:00Z`)).json()
-    expect(body.items.length).toBeGreaterThan(0)
-    expect(body.items.every((i: { hits: { at: string | null }[] }) => i.hits.every((h) => h.at === null))).toBe(true)
-    expect(body.items.every((i: { source: string }) => i.source !== "calls")).toBe(true)
+  type Listed = { id: string; kind: string; source: string; lastSeenAt: string | null; hits: { at: string | null }[] }
+  const list = async (q: string) => {
+    const body = await (await fetch(`${base}/issues?${q}`)).json()
+    expect(valid("IssueList", body)).toBe("")
+    return body.items as Listed[]
+  }
+
+  test("standing issues come back in any range, marked standing, with no time", async () => {
+    const everything = await list(all)
+    const before = await list("from=2000-01-01T00:00:00Z&to=2000-01-02T00:00:00Z")
+    const standing = (items: Listed[]) => items.filter((i) => i.kind === "standing")
+    expect(standing(everything).length).toBeGreaterThan(0)
+    expect(standing(before).map((i) => i.id)).toEqual(standing(everything).map((i) => i.id))
+    expect(before.every((i) => i.kind === "standing")).toBe(true)
+    for (const i of standing(everything)) {
+      expect(i.source).not.toBe("calls")
+      expect(i.lastSeenAt).toBeNull()
+      expect(i.hits.length).toBeGreaterThan(0)
+      expect(i.hits.every((h) => h.at === null)).toBe(true)
+    }
+  })
+
+  test("event issues keep only the dated hits inside the range, from inclusive and to exclusive", async () => {
+    const events = (await list(all)).filter((i) => i.kind === "event")
+    const at = events.flatMap((i) => i.hits.map((h) => h.at))
+    expect(at.length).toBeGreaterThan(1)
+    expect(at.every((t) => t !== null)).toBe(true)
+    // Split at one hit's time: that hit is in the later half only, and no hit is in both.
+    const cut = [...new Set(at as string[])].sort()[1]
+    const early = (await list(`from=${new Date(0).toISOString()}&to=${cut}`)).filter((i) => i.kind === "event")
+    const late = (await list(`from=${cut}&to=${new Date("2100-01-01").toISOString()}`)).filter((i) => i.kind === "event")
+    const times = (items: Listed[]) => items.flatMap((i) => i.hits.map((h) => Date.parse(h.at!)))
+    expect(times(early).every((t) => t < Date.parse(cut))).toBe(true)
+    expect(times(late).every((t) => t >= Date.parse(cut))).toBe(true)
+    expect(times(late)).toContain(Date.parse(cut))
+    expect(times(early).length + times(late).length).toBe(at.length)
+    for (const i of [...early, ...late]) expect(i.lastSeenAt).toBe(i.hits[0].at)
   })
 })
 
@@ -325,9 +357,16 @@ describe("getCallStats", () => {
     for (const c of unmeasured) expect(strips.find((x: { callId: string }) => x.callId === c.id).answerP50Ms).toBeNull()
   })
 
-  test("the issue counts are the Issues list's groups for the same range, by severity", async () => {
-    const [s, list] = await Promise.all([stats(), (await fetch(`${base}/issues?${range}`)).json()])
-    for (const sev of ["high", "medium", "low", "info"]) expect(s.issueCounts[sev]).toBe(list.items.filter((i: { severity: string }) => i.severity === sev).length)
+  test("the issue counts are the Issues list's event groups for the same range, by severity, and leave standing ones out", async () => {
+    const empty = "from=2000-01-01T00:00:00Z&to=2000-01-02T00:00:00Z"
+    for (const q of [range, empty]) {
+      const [s, list] = await Promise.all([(await fetch(`${base}/call-stats?${q}`)).json(), (await fetch(`${base}/issues?${q}`)).json()])
+      expect(valid("CallStats", s)).toBe("")
+      expect(valid("IssueList", list)).toBe("")
+      expect(list.items.some((i: { kind: string }) => i.kind === "standing")).toBe(true)
+      const events = list.items.filter((i: { kind: string }) => i.kind === "event")
+      for (const sev of ["high", "medium", "low", "info"]) expect(s.issueCounts[sev]).toBe(events.filter((i: { severity: string }) => i.severity === sev).length)
+    }
   })
 
   test("a stage is reported by no more turns than Turn anatomy counts, and a range with no calls has no stages", async () => {
