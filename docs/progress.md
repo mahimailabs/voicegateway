@@ -268,8 +268,8 @@ People sign in with email and password (spec `docs/specs/phase06a-sign-in.md`, d
 
 What changed:
 - **Passwords:** argon2id (t=3, 64 MiB, p=4) in PHC strings, compared in constant time, with concurrent hashes capped at the CPU count.
-- **Sessions:** in Postgres through `scs/pgxstore`, behind an HttpOnly, SameSite=Lax cookie. The cookie is Secure whenever the request came over HTTPS (`VOICEGATEWAY_PUBLIC_URL`, or a proxy in `VOICEGATEWAY_TRUSTED_PROXIES`). Plain HTTP away from localhost answers `https_required`.
-- **Sign-in limits:** counted in Postgres, 10 per email and 50 per client address in 15 minutes. Behind a trusted proxy the client address is the right-most untrusted `X-Forwarded-For` hop.
+- **Sessions:** in Postgres through `scs/pgxstore`, behind an HttpOnly, SameSite=Lax cookie. The cookie is Secure whenever the public URL is https or the request came over HTTPS through a trusted proxy. A password over plain HTTP is accepted only when the request is addressed to localhost, judged by its Host header, so it works behind Docker's port forwarding; anything else answers `https_required`, whatever the public URL.
+- **Sign-in limits:** 10 per email and 50 per client address in 15 minutes, with IPv6 counted by its /64. Each attempt is reserved atomically in Postgres before the password is checked, so a parallel burst cannot pass together, and a successful sign-in gives its reservation back. Behind a trusted proxy the client address is the right-most untrusted `X-Forwarded-For` hop, and an untrusted proxy on the same host is warned about once.
 - **Failures look alike:** an unknown email and a wrong password answer alike and take the same time.
 - **Cross-origin writes:** `CrossOriginProtection` wraps web's whole mux.
 - **The gate:** `/api/v1` accepts a session, scoped by membership (403 outside the organisation), or the interim token until 06c. The API router answers any request without a principal 401.

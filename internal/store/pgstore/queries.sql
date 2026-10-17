@@ -276,11 +276,30 @@ SELECT organisation_id, role FROM memberships WHERE user_id = @user_id ORDER BY 
 -- name: Membership :one
 SELECT role FROM memberships WHERE user_id = @user_id AND organisation_id = @organisation_id;
 
--- name: RecordFailedSignIn :exec
-INSERT INTO sign_in_attempts (kind, key) VALUES (@kind, @key);
+-- name: LockSignInKey :exec
+-- Serialises reservations for one key until the transaction ends.
+SELECT pg_advisory_xact_lock(hashtext(concat(sqlc.arg(lock_kind)::text, '/', sqlc.arg(lock_key)::text)));
+
+-- name: SignInAttemptsSince :one
+-- Attempts for one key in the window.
+SELECT count(*) FROM sign_in_attempts WHERE kind = @kind AND key = @key AND at >= @since;
+
+-- name: LimitingSignInAttempt :one
+-- The attempt that keeps a key at its limit: the limit-th newest in the window. When it leaves
+-- the window, the key is under the limit again.
+SELECT at FROM sign_in_attempts
+WHERE kind = @kind AND key = @key AND at >= @since
+ORDER BY at DESC
+LIMIT 1 OFFSET @skip;
+
+-- name: RecordSignInAttempt :one
+INSERT INTO sign_in_attempts (kind, key) VALUES (@kind, @key) RETURNING id;
+
+-- name: ForgetSignInAttempts :exec
+DELETE FROM sign_in_attempts WHERE id = ANY(@ids::bigint[]);
 
 -- name: FailedSignIns :one
--- Failures for one key since a time, and the oldest of them, for Retry-After.
+-- Attempts for one key since a time, and the oldest of them.
 SELECT count(*) AS failures, min(at)::timestamptz AS oldest
 FROM sign_in_attempts WHERE kind = @kind AND key = @key AND at >= @since;
 

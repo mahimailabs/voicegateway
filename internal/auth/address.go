@@ -83,3 +83,28 @@ func ParseTrusted(list string) ([]netip.Prefix, error) {
 	}
 	return out, nil
 }
+
+// localHost reports whether a Host header names this machine: localhost or a loopback address,
+// with or without a port.
+func localHost(host string) bool {
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		host = h
+	}
+	host = strings.Trim(host, "[]")
+	if strings.EqualFold(host, "localhost") {
+		return true
+	}
+	a, err := netip.ParseAddr(host)
+	return err == nil && a.IsLoopback()
+}
+
+// addressKey is the key sign-in limits count a client under: its IPv4 address, or its IPv6 /64,
+// since one IPv6 client usually holds a whole /64 and could otherwise rotate within it.
+func addressKey(a netip.Addr) string {
+	if a.Is6() && !a.Is4In6() {
+		if p, err := a.Prefix(64); err == nil {
+			return p.String()
+		}
+	}
+	return a.String()
+}

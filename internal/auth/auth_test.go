@@ -13,6 +13,7 @@ import (
 	"os"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -106,6 +107,7 @@ func (f *fixture) addUser(email, org, role string) {
 // request is how a test request reaches web: from an address, over TLS or not, with headers.
 type request struct {
 	from    string
+	host    string
 	tls     bool
 	headers map[string]string
 	cookies []*http.Cookie
@@ -115,6 +117,9 @@ func (f *fixture) do(h http.Handler, method, path, body string, rq request) *htt
 	f.t.Helper()
 	req := httptest.NewRequest(method, "http://voicegateway.example"+path, strings.NewReader(body))
 	req.RemoteAddr = cmpOr(rq.from, "127.0.0.1") + ":40000"
+	if rq.host != "" {
+		req.Host = rq.host
+	}
 	if rq.tls {
 		req.TLS = &tls.ConnectionState{}
 	}
@@ -265,7 +270,8 @@ func TestSessionCookieFollowsHTTPS(t *testing.T) {
 		wantSecure bool
 	}{
 		{"plain HTTP by IP", request{from: "10.0.0.5"}, http.StatusBadRequest, false},
-		{"plain HTTP on localhost", request{from: "127.0.0.1"}, http.StatusNoContent, false},
+		{"plain HTTP to localhost", request{from: "127.0.0.1", host: "localhost:8080"}, http.StatusNoContent, false},
+		{"plain HTTP to localhost through Docker's port forwarding", request{from: "172.17.0.1", host: "localhost:5180"}, http.StatusNoContent, false},
 		{"trusted proxy over HTTPS", request{from: "10.0.0.1", headers: map[string]string{"X-Forwarded-Proto": "https", "X-Forwarded-For": "203.0.113.7"}}, http.StatusNoContent, true},
 		{"untrusted peer claiming HTTPS", request{from: "10.0.0.9", headers: map[string]string{"X-Forwarded-Proto": "https"}}, http.StatusBadRequest, false},
 	}
@@ -491,8 +497,7 @@ func TestNoSecretInLogs(t *testing.T) {
 	f.do(routes, http.MethodPost, "/auth/sign-in", signIn("ada@example.com", "a wrong one"), request{tls: true})
 	f.do(f.apiWith(s), http.MethodGet, "/api/v1/workspaces", "", request{tls: true, headers: map[string]string{"Authorization": "Bearer " + s.Token}})
 	// An error path, which logs: the account store fails during a sign-in.
-	broken := *s
-	broken.Users = failingUsers{Users: f.pg}
+	broken := &auth.Service{Users: failingUsers{Users: f.pg}, Secure: s.Secure, Plain: s.Plain, Token: s.Token, Log: s.Log, Now: time.Now}
 	f.do(broken.Routes(), http.MethodPost, "/auth/sign-in", signIn("ada@example.com", password), request{tls: true})
 	logs := f.logs.String()
 	if logs == "" {
@@ -501,6 +506,68 @@ func TestNoSecretInLogs(t *testing.T) {
 	for _, secret := range []string{password, "a wrong one", c.Value, s.Token} {
 		if strings.Contains(logs, secret) {
 			t.Errorf("a log line holds a secret %q", secret)
+		}
+	}
+}
+
+// Security review of 06a: a burst of parallel sign-ins cannot pass the limit together; the attempt
+// is reserved before the password is checked, so at most 10 are checked for one email.
+func TestParallelSignInsCannotPassTheLimit(t *testing.T) {
+	f := newFixture(t)
+	f.addUser("ada@example.com", "default", "admin")
+	routes := f.service().Routes()
+	statuses := make(chan int, 30)
+	var wg sync.WaitGroup
+	for i := range 30 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			res := f.do(routes, http.MethodPost, "/auth/sign-in", signIn("ada@example.com", fmt.Sprintf("guess %d", i)), request{tls: true, from: fmt.Sprintf("203.0.113.%d", i+1)})
+			statuses <- res.StatusCode
+		}()
+	}
+	wg.Wait()
+	close(statuses)
+	counts := map[int]int{}
+	for s := range statuses {
+		counts[s]++
+	}
+	if counts[http.StatusUnauthorized] != 10 || counts[http.StatusTooManyRequests] != 20 {
+		t.Errorf("statuses = %v, want 10 checked (401) and 20 refused (429)", counts)
+	}
+}
+
+// Security review of 06a: an https public URL makes the cookie Secure, but a password sent over
+// plain HTTP to a non-local address is still refused.
+func TestPublicHTTPSDoesNotLiftHTTPSRequired(t *testing.T) {
+	f := newFixture(t)
+	f.addUser("ada@example.com", "default", "admin")
+	s := f.service()
+	s.PublicHTTPS = true
+	res := f.do(s.Routes(), http.MethodPost, "/auth/sign-in", signIn("ada@example.com", password), request{from: "10.0.0.5", host: "10.0.0.5:8080"})
+	if res.StatusCode != http.StatusBadRequest || code(t, res) != "https_required" {
+		t.Errorf("plain HTTP by IP with an https public URL = %d, want 400 https_required", res.StatusCode)
+	}
+}
+
+// Security review of 06a: IPv6 clients are counted by their /64, so rotating within it does not
+// buy more attempts; successful sign-ins do not use up the limit.
+func TestAddressLimitsByIPv6PrefixAndSuccessesAreFree(t *testing.T) {
+	f := newFixture(t)
+	f.addUser("ada@example.com", "default", "admin")
+	routes := f.service().Routes()
+	for i := range 50 {
+		from := fmt.Sprintf("2001:db8:1:2::%x", i+1)
+		if res := f.do(routes, http.MethodPost, "/auth/sign-in", signIn(fmt.Sprintf("u%d@example.com", i), "wrong"), request{tls: true, from: from}); res.StatusCode != http.StatusUnauthorized {
+			t.Fatalf("failure %d = %d", i+1, res.StatusCode)
+		}
+	}
+	if res := f.do(routes, http.MethodPost, "/auth/sign-in", signIn("next@example.com", "wrong"), request{tls: true, from: "2001:db8:1:2::ffff"}); res.StatusCode != http.StatusTooManyRequests {
+		t.Errorf("another address in the same /64 = %d, want 429", res.StatusCode)
+	}
+	for i := range 12 {
+		if res := f.do(routes, http.MethodPost, "/auth/sign-in", signIn("ada@example.com", password), request{tls: true, from: "198.51.100.20"}); res.StatusCode != http.StatusNoContent {
+			t.Fatalf("successful sign-in %d = %d, want 204 every time", i+1, res.StatusCode)
 		}
 	}
 }

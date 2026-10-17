@@ -13,6 +13,7 @@ import (
 	"net/netip"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/alexedwards/scs/v2"
@@ -25,8 +26,8 @@ type Users interface {
 	CountUsers(ctx context.Context) (int64, error)
 	UserByEmail(ctx context.Context, email string) (store.User, error)
 	Principal(ctx context.Context, userID string) (store.Principal, error)
-	RecordFailedSignIn(ctx context.Context, email, address string) error
-	FailedSignIns(ctx context.Context, kind, key string, since time.Time) (int64, time.Time, error)
+	ReserveSignIn(ctx context.Context, keys []store.SignInKey, since time.Time) (ids []int64, limitedSince time.Time, err error)
+	ForgetSignInAttempts(ctx context.Context, ids []int64) error
 	ForgetSignIns(ctx context.Context, before time.Time) error
 }
 
@@ -49,13 +50,15 @@ type Service struct {
 	Secure, Plain *scs.SessionManager
 	// Trusted are the proxies whose X-Forwarded-For and X-Forwarded-Proto are believed.
 	Trusted []netip.Prefix
-	// PublicHTTPS is true when VOICEGATEWAY_PUBLIC_URL is https: every request is then treated
-	// as having come over HTTPS.
+	// PublicHTTPS is true when VOICEGATEWAY_PUBLIC_URL is https: every session cookie is then
+	// Secure. It says nothing of how a request arrived, so it never lifts https_required.
 	PublicHTTPS bool
 	// Token is the interim API token, empty when unset.
 	Token string
 	Log   *slog.Logger
 	Now   func() time.Time
+
+	proxyWarning sync.Once
 }
 
 // NewSessions returns the Secure and Plain managers over one store: HttpOnly, SameSite=Lax, a
@@ -79,7 +82,8 @@ func NewSessions(st scs.Store) (secure, plain *scs.SessionManager) {
 	return mk(true), mk(false)
 }
 
-// https reports whether the request is treated as having come over HTTPS.
+// https reports whether the request's session cookie is Secure: the console's public address is
+// https, or the request itself came over HTTPS.
 func (s *Service) https(r *http.Request) bool {
 	return s.PublicHTTPS || overHTTPS(r, s.Trusted)
 }
@@ -89,6 +93,14 @@ func (s *Service) manager(r *http.Request) *scs.SessionManager {
 		return s.Secure
 	}
 	return s.Plain
+}
+
+// passwordMayTravel reports whether a password may be sent on this request: it came over HTTPS,
+// or it was addressed to localhost, where a browser keeps a session cookie over plain HTTP. The
+// Host header decides localhost, not the peer: behind Docker's port forwarding the peer is a
+// bridge address, and a client lying about Host only exposes its own password.
+func (s *Service) passwordMayTravel(r *http.Request) bool {
+	return overHTTPS(r, s.Trusted) || localHost(r.Host)
 }
 
 // Sessions loads and saves the session of every request through h, with the manager the
@@ -104,8 +116,12 @@ func (s *Service) Sessions(h http.Handler) http.Handler {
 	})
 }
 
-// Routes returns /auth/sign-in, /auth/sign-out and /auth/session, with sessions loaded.
+// Routes returns /auth/sign-in, /auth/sign-out and /auth/session, with sessions loaded. It builds
+// the dummy hash first, so the first unknown email takes no longer than the rest.
 func (s *Service) Routes() http.Handler {
+	if _, err := dummyHash(); err != nil {
+		s.Log.Error("auth: could not build the dummy password hash", "err", err)
+	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /auth/sign-in", s.signIn)
 	mux.HandleFunc("POST /auth/sign-out", s.signOut)
@@ -120,10 +136,10 @@ type credentials struct {
 
 func (s *Service) signIn(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	address := clientAddress(r, s.Trusted)
 	// A Secure cookie set over plain HTTP is dropped by the browser, so sign-in would loop
-	// silently; away from localhost, say HTTPS is required instead.
-	if !s.https(r) && !address.IsLoopback() {
+	// silently, and the password would cross the network in clear; away from localhost, say HTTPS
+	// is required instead.
+	if !s.passwordMayTravel(r) {
 		writeError(w, http.StatusBadRequest, "https_required", "sign-in needs HTTPS when the console is not on localhost")
 		return
 	}
@@ -132,11 +148,25 @@ func (s *Service) signIn(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_request", "email and password are required")
 		return
 	}
+	s.warnUntrustedProxy(r)
 	now := s.Now()
-	if retry, err := s.limited(ctx, c.Email, address.String(), now); err != nil {
+	since := now.Add(-limitWindow)
+	if err := s.Users.ForgetSignIns(ctx, since); err != nil {
 		s.fail(w, err)
 		return
-	} else if retry > 0 {
+	}
+	// The attempt is reserved before the password is checked, atomically, so a burst of requests
+	// cannot all pass the limit while the count is still low.
+	ids, limitedSince, err := s.Users.ReserveSignIn(ctx, []store.SignInKey{
+		{Kind: "email", Key: c.Email, Max: limitPerEmail},
+		{Kind: "address", Key: addressKey(clientAddress(r, s.Trusted)), Max: limitPerAddress},
+	}, since)
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	if !limitedSince.IsZero() {
+		retry := max(limitedSince.Add(limitWindow).Sub(now), time.Second)
 		w.Header().Set("Retry-After", strconv.Itoa(int(math.Ceil(retry.Seconds()))))
 		writeError(w, http.StatusTooManyRequests, "too_many_attempts", "too many failed sign-ins; try again later")
 		return
@@ -161,11 +191,12 @@ func (s *Service) signIn(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !known || !ok {
-		if err := s.Users.RecordFailedSignIn(ctx, c.Email, address.String()); err != nil {
-			s.fail(w, err)
-			return
-		}
+		// The reserved attempt stays counted.
 		writeError(w, http.StatusUnauthorized, "unauthenticated", "email or password is wrong")
+		return
+	}
+	if err := s.Users.ForgetSignInAttempts(ctx, ids); err != nil {
+		s.fail(w, err)
 		return
 	}
 	m := s.manager(r)
@@ -177,26 +208,20 @@ func (s *Service) signIn(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// limited returns how long sign-in must wait for an email or a client address, 0 when it need not.
-func (s *Service) limited(ctx context.Context, email, address string, now time.Time) (time.Duration, error) {
-	since := now.Add(-limitWindow)
-	if err := s.Users.ForgetSignIns(ctx, since); err != nil {
-		return 0, err
+// warnUntrustedProxy logs once when a request comes from a loopback peer that is not a trusted
+// proxy but forwards for someone: a reverse proxy on the same host that VOICEGATEWAY_TRUSTED_PROXIES
+// does not name, which makes every client share the proxy's address for sign-in limits.
+func (s *Service) warnUntrustedProxy(r *http.Request) {
+	peer := peerAddress(r)
+	if !peer.IsLoopback() || isTrusted(peer, s.Trusted) {
+		return
 	}
-	var wait time.Duration
-	for _, l := range []struct {
-		kind, key string
-		max       int64
-	}{{"email", email, limitPerEmail}, {"address", address, limitPerAddress}} {
-		n, oldest, err := s.Users.FailedSignIns(ctx, l.kind, l.key, since)
-		if err != nil {
-			return 0, err
-		}
-		if n >= l.max {
-			wait = max(wait, oldest.Add(limitWindow).Sub(now), time.Second)
-		}
+	if r.Header.Get("X-Forwarded-For") == "" && r.Header.Get("Forwarded") == "" {
+		return
 	}
-	return wait, nil
+	s.proxyWarning.Do(func() {
+		s.Log.Warn("auth: a proxy on this host forwards requests but is not trusted; set VOICEGATEWAY_TRUSTED_PROXIES so each client is counted on its own address")
+	})
 }
 
 func (s *Service) signOut(w http.ResponseWriter, r *http.Request) {

@@ -364,7 +364,7 @@ type FailedSignInsRow struct {
 	Oldest   pgtype.Timestamptz
 }
 
-// Failures for one key since a time, and the oldest of them, for Retry-After.
+// Attempts for one key since a time, and the oldest of them.
 func (q *Queries) FailedSignIns(ctx context.Context, arg FailedSignInsParams) (FailedSignInsRow, error) {
 	row := q.db.QueryRow(ctx, failedSignIns, arg.Kind, arg.Key, arg.Since)
 	var i FailedSignInsRow
@@ -402,6 +402,15 @@ func (q *Queries) ForgetListSnapshots(ctx context.Context) error {
 	return err
 }
 
+const forgetSignInAttempts = `-- name: ForgetSignInAttempts :exec
+DELETE FROM sign_in_attempts WHERE id = ANY($1::bigint[])
+`
+
+func (q *Queries) ForgetSignInAttempts(ctx context.Context, ids []int64) error {
+	_, err := q.db.Exec(ctx, forgetSignInAttempts, ids)
+	return err
+}
+
 const forgetSignIns = `-- name: ForgetSignIns :exec
 DELETE FROM sign_in_attempts WHERE at < $1
 `
@@ -429,6 +438,34 @@ type HealCallParams struct {
 func (q *Queries) HealCall(ctx context.Context, arg HealCallParams) error {
 	_, err := q.db.Exec(ctx, healCall, arg.RoomName, arg.FirstSeenAt, arg.ID)
 	return err
+}
+
+const limitingSignInAttempt = `-- name: LimitingSignInAttempt :one
+SELECT at FROM sign_in_attempts
+WHERE kind = $1 AND key = $2 AND at >= $3
+ORDER BY at DESC
+LIMIT 1 OFFSET $4
+`
+
+type LimitingSignInAttemptParams struct {
+	Kind  string
+	Key   string
+	Since pgtype.Timestamptz
+	Skip  int32
+}
+
+// The attempt that keeps a key at its limit: the limit-th newest in the window. When it leaves
+// the window, the key is under the limit again.
+func (q *Queries) LimitingSignInAttempt(ctx context.Context, arg LimitingSignInAttemptParams) (pgtype.Timestamptz, error) {
+	row := q.db.QueryRow(ctx, limitingSignInAttempt,
+		arg.Kind,
+		arg.Key,
+		arg.Since,
+		arg.Skip,
+	)
+	var at pgtype.Timestamptz
+	err := row.Scan(&at)
+	return at, err
 }
 
 const listCalls = `-- name: ListCalls :many
@@ -649,6 +686,21 @@ func (q *Queries) ListSnapshot(ctx context.Context, id string) (ListSnapshotRow,
 		&i.Totals,
 	)
 	return i, err
+}
+
+const lockSignInKey = `-- name: LockSignInKey :exec
+SELECT pg_advisory_xact_lock(hashtext(concat($1::text, '/', $2::text)))
+`
+
+type LockSignInKeyParams struct {
+	LockKind string
+	LockKey  string
+}
+
+// Serialises reservations for one key until the transaction ends.
+func (q *Queries) LockSignInKey(ctx context.Context, arg LockSignInKeyParams) error {
+	_, err := q.db.Exec(ctx, lockSignInKey, arg.LockKind, arg.LockKey)
+	return err
 }
 
 const markStale = `-- name: MarkStale :exec
@@ -877,18 +929,20 @@ func (q *Queries) PutSummary(ctx context.Context, arg PutSummaryParams) error {
 	return err
 }
 
-const recordFailedSignIn = `-- name: RecordFailedSignIn :exec
-INSERT INTO sign_in_attempts (kind, key) VALUES ($1, $2)
+const recordSignInAttempt = `-- name: RecordSignInAttempt :one
+INSERT INTO sign_in_attempts (kind, key) VALUES ($1, $2) RETURNING id
 `
 
-type RecordFailedSignInParams struct {
+type RecordSignInAttemptParams struct {
 	Kind string
 	Key  string
 }
 
-func (q *Queries) RecordFailedSignIn(ctx context.Context, arg RecordFailedSignInParams) error {
-	_, err := q.db.Exec(ctx, recordFailedSignIn, arg.Kind, arg.Key)
-	return err
+func (q *Queries) RecordSignInAttempt(ctx context.Context, arg RecordSignInAttemptParams) (int64, error) {
+	row := q.db.QueryRow(ctx, recordSignInAttempt, arg.Kind, arg.Key)
+	var id int64
+	err := row.Scan(&id)
+	return id, err
 }
 
 const sealedLiveKitSecret = `-- name: SealedLiveKitSecret :one
@@ -907,6 +961,24 @@ func (q *Queries) SealedLiveKitSecret(ctx context.Context, arg SealedLiveKitSecr
 	var livekit_api_secret_sealed []byte
 	err := row.Scan(&livekit_api_secret_sealed)
 	return livekit_api_secret_sealed, err
+}
+
+const signInAttemptsSince = `-- name: SignInAttemptsSince :one
+SELECT count(*) FROM sign_in_attempts WHERE kind = $1 AND key = $2 AND at >= $3
+`
+
+type SignInAttemptsSinceParams struct {
+	Kind  string
+	Key   string
+	Since pgtype.Timestamptz
+}
+
+// Attempts for one key in the window.
+func (q *Queries) SignInAttemptsSince(ctx context.Context, arg SignInAttemptsSinceParams) (int64, error) {
+	row := q.db.QueryRow(ctx, signInAttemptsSince, arg.Kind, arg.Key, arg.Since)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
 }
 
 const staleCalls = `-- name: StaleCalls :many

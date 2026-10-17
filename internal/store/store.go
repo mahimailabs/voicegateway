@@ -283,3 +283,10 @@ type Workspace struct {
 
 // WorkspaceProject is one project of a Workspace.
 type WorkspaceProject struct{ ID, Name string }
+
+// SignInKey is one key sign-in attempts are counted under: an email or a client address, with how
+// many attempts it may have in the window.
+type SignInKey struct {
+	Kind, Key string
+	Max       int
+}

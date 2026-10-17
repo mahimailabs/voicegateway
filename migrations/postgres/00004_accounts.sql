@@ -26,9 +26,12 @@ CREATE TABLE sessions (
 );
 CREATE INDEX sessions_expiry_idx ON sessions (expiry);
 
--- One row per failed sign-in. kind is email or address; key the case-folded email or the client
--- address. Old rows are deleted as the window moves.
+-- One row per sign-in attempt, reserved before the password is checked so a burst cannot pass
+-- the limit together; a successful sign-in deletes its own rows. kind is email or address; key the
+-- case-folded email or the client address (an IPv6 address by its /64). Old rows are deleted as
+-- the window moves.
 CREATE TABLE sign_in_attempts (
+    id   bigint      GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     kind text        NOT NULL CHECK (kind IN ('email', 'address')),
     key  text        NOT NULL,
     at   timestamptz NOT NULL DEFAULT now()

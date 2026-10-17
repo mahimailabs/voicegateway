@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
+	"slices"
 	"strings"
 	"time"
 
@@ -94,12 +96,66 @@ func (s *Store) Principal(ctx context.Context, userID string) (store.Principal, 
 	return p, nil
 }
 
-// RecordFailedSignIn counts one failed sign-in under an email and under a client address.
-func (s *Store) RecordFailedSignIn(ctx context.Context, email, address string) error {
-	for kind, key := range map[string]string{"email": foldEmail(email), "address": address} {
-		if err := s.q.RecordFailedSignIn(ctx, RecordFailedSignInParams{Kind: kind, Key: key}); err != nil {
-			return fmt.Errorf("record sign-in failure: %w", err)
+// ReserveSignIn reserves one sign-in attempt under every key, atomically: in one transaction,
+// each key's advisory lock is taken in a fixed order, its attempts since a time are counted, and
+// when any key is at its limit nothing is recorded and the call reports when the attempt that keeps
+// it there leaves the window (retryAfter is the latest such time). Otherwise one attempt is
+// recorded per key and their ids returned, for a successful sign-in to forget.
+func (s *Store) ReserveSignIn(ctx context.Context, keys []store.SignInKey, since time.Time) (ids []int64, limitedSince time.Time, err error) {
+	keys = slices.Clone(keys)
+	for i := range keys {
+		if keys[i].Kind == "email" {
+			keys[i].Key = foldEmail(keys[i].Key)
 		}
+	}
+	slices.SortFunc(keys, func(a, b store.SignInKey) int { return strings.Compare(a.Kind+"/"+a.Key, b.Kind+"/"+b.Key) })
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return nil, time.Time{}, fmt.Errorf("reserve sign-in: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	q := s.q.WithTx(tx)
+	for _, k := range keys {
+		if err := q.LockSignInKey(ctx, LockSignInKeyParams{LockKind: k.Kind, LockKey: k.Key}); err != nil {
+			return nil, time.Time{}, fmt.Errorf("reserve sign-in: %w", err)
+		}
+	}
+	for _, k := range keys {
+		n, err := q.SignInAttemptsSince(ctx, SignInAttemptsSinceParams{Kind: k.Kind, Key: k.Key, Since: timestamp(&since)})
+		if err != nil {
+			return nil, time.Time{}, fmt.Errorf("reserve sign-in: %w", err)
+		}
+		if n < int64(k.Max) {
+			continue
+		}
+		at, err := q.LimitingSignInAttempt(ctx, LimitingSignInAttemptParams{Kind: k.Kind, Key: k.Key, Since: timestamp(&since), Skip: int32(min(k.Max-1, math.MaxInt32))}) //nolint:gosec // bounded above
+		if err != nil {
+			return nil, time.Time{}, fmt.Errorf("reserve sign-in: %w", err)
+		}
+		if at.Time.After(limitedSince) {
+			limitedSince = at.Time
+		}
+	}
+	if !limitedSince.IsZero() {
+		return nil, limitedSince, nil
+	}
+	for _, k := range keys {
+		id, err := q.RecordSignInAttempt(ctx, RecordSignInAttemptParams{Kind: k.Kind, Key: k.Key})
+		if err != nil {
+			return nil, time.Time{}, fmt.Errorf("reserve sign-in: %w", err)
+		}
+		ids = append(ids, id)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return nil, time.Time{}, fmt.Errorf("reserve sign-in: %w", err)
+	}
+	return ids, time.Time{}, nil
+}
+
+// ForgetSignInAttempts deletes the attempts a successful sign-in reserved.
+func (s *Store) ForgetSignInAttempts(ctx context.Context, ids []int64) error {
+	if err := s.q.ForgetSignInAttempts(ctx, ids); err != nil {
+		return fmt.Errorf("forget sign-in attempts: %w", err)
 	}
 	return nil
 }

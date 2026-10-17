@@ -111,6 +111,7 @@ type Session struct {
 }
 
 type SignInAttempt struct {
+	ID   int64
 	Kind string
 	Key  string
 	At   pgtype.Timestamptz
