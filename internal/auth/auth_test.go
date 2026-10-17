@@ -274,6 +274,8 @@ func TestSessionCookieFollowsHTTPS(t *testing.T) {
 		{"plain HTTP to localhost through Docker's port forwarding", request{from: "172.17.0.1", host: "localhost:5180"}, http.StatusNoContent, false},
 		{"trusted proxy over HTTPS", request{from: "10.0.0.1", headers: map[string]string{"X-Forwarded-Proto": "https", "X-Forwarded-For": "203.0.113.7"}}, http.StatusNoContent, true},
 		{"untrusted peer claiming HTTPS", request{from: "10.0.0.9", headers: map[string]string{"X-Forwarded-Proto": "https"}}, http.StatusBadRequest, false},
+		{"proxy passing plain HTTP on to localhost", request{from: "127.0.0.1", host: "localhost:8080", headers: map[string]string{"X-Forwarded-For": "203.0.113.9"}}, http.StatusBadRequest, false},
+		{"trusted proxy saying plain HTTP, to localhost", request{from: "10.0.0.1", host: "localhost:8080", headers: map[string]string{"X-Forwarded-Proto": "http", "X-Forwarded-For": "203.0.113.9"}}, http.StatusBadRequest, false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -569,5 +571,19 @@ func TestAddressLimitsByIPv6PrefixAndSuccessesAreFree(t *testing.T) {
 		if res := f.do(routes, http.MethodPost, "/auth/sign-in", signIn("ada@example.com", password), request{tls: true, from: "198.51.100.20"}); res.StatusCode != http.StatusNoContent {
 			t.Fatalf("successful sign-in %d = %d, want 204 every time", i+1, res.StatusCode)
 		}
+	}
+}
+
+// Pair review of #378: a proxy web does not trust is warned about once whatever its address, also
+// under Docker, where a proxy on the host arrives from the bridge gateway.
+func TestUntrustedProxyIsWarnedAboutOnce(t *testing.T) {
+	f := newFixture(t)
+	routes := f.service().Routes()
+	for range 2 {
+		f.do(routes, http.MethodPost, "/auth/sign-in", signIn("ada@example.com", "wrong"),
+			request{from: "172.18.0.1", tls: true, headers: map[string]string{"X-Forwarded-For": "203.0.113.9"}})
+	}
+	if n := strings.Count(f.logs.String(), "VOICEGATEWAY_TRUSTED_PROXIES"); n != 1 {
+		t.Errorf("warnings = %d, want 1", n)
 	}
 }

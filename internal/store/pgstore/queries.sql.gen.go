@@ -412,11 +412,12 @@ func (q *Queries) ForgetSignInAttempts(ctx context.Context, ids []int64) error {
 }
 
 const forgetSignIns = `-- name: ForgetSignIns :exec
-DELETE FROM sign_in_attempts WHERE at < $1
+DELETE FROM sign_in_attempts WHERE at < now() - interval '15 minutes'
 `
 
-func (q *Queries) ForgetSignIns(ctx context.Context, before pgtype.Timestamptz) error {
-	_, err := q.db.Exec(ctx, forgetSignIns, before)
+// Deletes attempts past the 15-minute window, by the Postgres clock.
+func (q *Queries) ForgetSignIns(ctx context.Context) error {
+	_, err := q.db.Exec(ctx, forgetSignIns)
 	return err
 }
 
@@ -441,31 +442,26 @@ func (q *Queries) HealCall(ctx context.Context, arg HealCallParams) error {
 }
 
 const limitingSignInAttempt = `-- name: LimitingSignInAttempt :one
-SELECT at FROM sign_in_attempts
-WHERE kind = $1 AND key = $2 AND at >= $3
+SELECT EXTRACT(EPOCH FROM at + interval '15 minutes' - now())::double precision AS wait_seconds
+FROM sign_in_attempts
+WHERE kind = $1 AND key = $2 AND at >= now() - interval '15 minutes'
 ORDER BY at DESC
-LIMIT 1 OFFSET $4
+LIMIT 1 OFFSET $3
 `
 
 type LimitingSignInAttemptParams struct {
-	Kind  string
-	Key   string
-	Since pgtype.Timestamptz
-	Skip  int32
+	Kind string
+	Key  string
+	Skip int32
 }
 
-// The attempt that keeps a key at its limit: the limit-th newest in the window. When it leaves
-// the window, the key is under the limit again.
-func (q *Queries) LimitingSignInAttempt(ctx context.Context, arg LimitingSignInAttemptParams) (pgtype.Timestamptz, error) {
-	row := q.db.QueryRow(ctx, limitingSignInAttempt,
-		arg.Kind,
-		arg.Key,
-		arg.Since,
-		arg.Skip,
-	)
-	var at pgtype.Timestamptz
-	err := row.Scan(&at)
-	return at, err
+// How long until the attempt that keeps a key at its limit, the limit-th newest in the window,
+// leaves it; then the key is under the limit again.
+func (q *Queries) LimitingSignInAttempt(ctx context.Context, arg LimitingSignInAttemptParams) (float64, error) {
+	row := q.db.QueryRow(ctx, limitingSignInAttempt, arg.Kind, arg.Key, arg.Skip)
+	var wait_seconds float64
+	err := row.Scan(&wait_seconds)
+	return wait_seconds, err
 }
 
 const listCalls = `-- name: ListCalls :many
@@ -964,18 +960,17 @@ func (q *Queries) SealedLiveKitSecret(ctx context.Context, arg SealedLiveKitSecr
 }
 
 const signInAttemptsSince = `-- name: SignInAttemptsSince :one
-SELECT count(*) FROM sign_in_attempts WHERE kind = $1 AND key = $2 AND at >= $3
+SELECT count(*) FROM sign_in_attempts WHERE kind = $1 AND key = $2 AND at >= now() - interval '15 minutes'
 `
 
 type SignInAttemptsSinceParams struct {
-	Kind  string
-	Key   string
-	Since pgtype.Timestamptz
+	Kind string
+	Key  string
 }
 
-// Attempts for one key in the window.
+// Attempts for one key in the 15-minute window, by the Postgres clock.
 func (q *Queries) SignInAttemptsSince(ctx context.Context, arg SignInAttemptsSinceParams) (int64, error) {
-	row := q.db.QueryRow(ctx, signInAttemptsSince, arg.Kind, arg.Key, arg.Since)
+	row := q.db.QueryRow(ctx, signInAttemptsSince, arg.Kind, arg.Key)
 	var count int64
 	err := row.Scan(&count)
 	return count, err

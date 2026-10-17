@@ -26,7 +26,8 @@ type API struct {
 	// default, 1500 ms. Interim, until thresholds are stored per project.
 	AnswerBudgetMs int
 	Now            func() time.Time
-	// Gate runs before every /api/v1 route: BearerToken until the sign-in decision (0027) lands.
+	// Gate runs before every /api/v1 route: auth.Service.Gate, which identifies a signed-in user or
+	// the interim token (decision 0027).
 	// Nil denies every request, so a router wired without a gate never serves openly.
 	Gate func(http.Handler) http.Handler
 }

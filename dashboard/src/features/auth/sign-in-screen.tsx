@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from "react"
+import { CopyCommand } from "@/components/copy-command"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field"
@@ -57,19 +58,39 @@ export function SignInScreen({ needsAdmin, onSignedIn }: { needsAdmin: boolean; 
         </CardHeader>
         <CardContent>
           {needsAdmin && (
-            <pre className="mb-4 overflow-x-auto rounded-md bg-muted p-3 font-mono text-xs" aria-label="First admin command">
-              {FIRST_ADMIN_COMMAND}
-            </pre>
+            <div className="mb-4">
+              <CopyCommand text={FIRST_ADMIN_COMMAND} label="First admin command" />
+            </div>
           )}
           <form onSubmit={submit}>
             <FieldGroup>
               <Field>
                 <FieldLabel htmlFor="email">Email</FieldLabel>
-                <Input id="email" type="email" autoComplete="username" required value={email} onChange={(e) => setEmail(e.target.value)} />
+                <Input
+                  id="email"
+                  type="email"
+                  autoComplete="username"
+                  required
+                  value={email}
+                  onChange={(e) => {
+                    setEmail(e.target.value)
+                    setError(null)
+                  }}
+                />
               </Field>
               <Field>
                 <FieldLabel htmlFor="password">Password</FieldLabel>
-                <Input id="password" type="password" autoComplete="current-password" required value={password} onChange={(e) => setPassword(e.target.value)} />
+                <Input
+                  id="password"
+                  type="password"
+                  autoComplete="current-password"
+                  required
+                  value={password}
+                  onChange={(e) => {
+                    setPassword(e.target.value)
+                    setError(null)
+                  }}
+                />
               </Field>
               {error && (
                 <p role="alert" className="text-sm text-destructive">

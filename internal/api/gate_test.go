@@ -2,14 +2,18 @@ package api
 
 import (
 	"encoding/json"
+	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/alexedwards/scs/v2/memstore"
 	"github.com/livekit/protocol/livekit"
 
+	"github.com/mahimailabs/voicegateway/internal/auth"
 	"github.com/mahimailabs/voicegateway/internal/event"
 )
 
@@ -28,7 +32,7 @@ func TestAPIRequiresToken(t *testing.T) {
 
 	gated := func(configured string) *API {
 		a := f.api(nil)
-		a.Gate = BearerToken(configured)
+		a.Gate = TokenGate(configured)
 		return a
 	}
 	for _, tt := range []struct {
@@ -57,7 +61,7 @@ func TestAPIRequiresToken(t *testing.T) {
 
 // Paths outside the call routes are gated as well, and answer in the contract's Error shape.
 func TestUnknownAPIPathIsGated(t *testing.T) {
-	a := &API{Gate: BearerToken("0123456789abcdef0123456789abcdef")}
+	a := &API{Gate: TokenGate("0123456789abcdef0123456789abcdef")}
 	for _, tt := range []struct {
 		auth string
 		want int
@@ -82,7 +86,7 @@ func TestUnknownAPIPathIsGated(t *testing.T) {
 // contract's Error shape before any store is read.
 func TestLayerRoutesAreGated(t *testing.T) {
 	const token = "0123456789abcdef0123456789abcdef"
-	a := &API{Gate: BearerToken(token)}
+	a := &API{Gate: TokenGate(token)}
 	for _, route := range []string{"/media-server", "/sip"} {
 		for _, auth := range []string{"", "Bearer 0123456789abcdef0123456789abcdee", token} {
 			t.Run(route+" "+auth, func(t *testing.T) {
@@ -122,4 +126,12 @@ func TestNoGateDeniesAndRequestIDIsServers(t *testing.T) {
 	if e.RequestID == "" || e.RequestID == "chosen-by-the-client" {
 		t.Errorf("requestId = %q, want one the server made", e.RequestID)
 	}
+}
+
+// TokenGate is the production gate, auth.Service.Gate, over an in-memory session store with only
+// the interim token configured: for tests of the API behind it. Exported for the package's external
+// tests.
+func TokenGate(token string) func(http.Handler) http.Handler {
+	secure, plain := auth.NewSessions(memstore.New())
+	return (&auth.Service{Secure: secure, Plain: plain, Token: token, Log: slog.New(slog.NewTextHandler(io.Discard, nil)), Now: time.Now}).Gate
 }

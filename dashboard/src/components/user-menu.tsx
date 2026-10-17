@@ -8,11 +8,13 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
+import { useSidebar } from "@/components/ui/sidebar"
 import { currentSession, signOut } from "@/lib/session"
 
 // The account row at the foot of the sidebar. Settings live one row above, never duplicated here.
 // With the mock API there is no account, and the row says so.
 export function UserMenu() {
+  const { isMobile } = useSidebar()
   const session = currentSession()
   const name = session?.email ?? "Not signed in"
   const detail = session ? (session.organisations[0]?.role ?? "No organisation") : "Accounts arrive with sign-in"
@@ -29,10 +31,10 @@ export function UserMenu() {
           <span className="block truncate text-[11px] text-muted-foreground">{detail}</span>
         </span>
       </DropdownMenuTrigger>
-      <DropdownMenuContent side="right" align="end" className="min-w-56">
+      <DropdownMenuContent side={isMobile ? "top" : "right"} align="end" className="w-56 max-w-[calc(100vw-2rem)]">
         <DropdownMenuLabel className="font-normal">
-          <p className="text-sm font-medium">{name}</p>
-          <p className="text-xs text-muted-foreground">{detail}</p>
+          <p className="truncate text-sm font-medium">{name}</p>
+          <p className="truncate text-xs text-muted-foreground">{detail}</p>
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
         <DropdownMenuItem disabled={!session} onSelect={() => void signOut().finally(() => window.location.reload())}>

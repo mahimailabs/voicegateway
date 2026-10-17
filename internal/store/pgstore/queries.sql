@@ -281,14 +281,15 @@ SELECT role FROM memberships WHERE user_id = @user_id AND organisation_id = @org
 SELECT pg_advisory_xact_lock(hashtext(concat(sqlc.arg(lock_kind)::text, '/', sqlc.arg(lock_key)::text)));
 
 -- name: SignInAttemptsSince :one
--- Attempts for one key in the window.
-SELECT count(*) FROM sign_in_attempts WHERE kind = @kind AND key = @key AND at >= @since;
+-- Attempts for one key in the 15-minute window, by the Postgres clock.
+SELECT count(*) FROM sign_in_attempts WHERE kind = @kind AND key = @key AND at >= now() - interval '15 minutes';
 
 -- name: LimitingSignInAttempt :one
--- The attempt that keeps a key at its limit: the limit-th newest in the window. When it leaves
--- the window, the key is under the limit again.
-SELECT at FROM sign_in_attempts
-WHERE kind = @kind AND key = @key AND at >= @since
+-- How long until the attempt that keeps a key at its limit, the limit-th newest in the window,
+-- leaves it; then the key is under the limit again.
+SELECT EXTRACT(EPOCH FROM at + interval '15 minutes' - now())::double precision AS wait_seconds
+FROM sign_in_attempts
+WHERE kind = @kind AND key = @key AND at >= now() - interval '15 minutes'
 ORDER BY at DESC
 LIMIT 1 OFFSET @skip;
 
@@ -304,7 +305,8 @@ SELECT count(*) AS failures, min(at)::timestamptz AS oldest
 FROM sign_in_attempts WHERE kind = @kind AND key = @key AND at >= @since;
 
 -- name: ForgetSignIns :exec
-DELETE FROM sign_in_attempts WHERE at < @before;
+-- Deletes attempts past the 15-minute window, by the Postgres clock.
+DELETE FROM sign_in_attempts WHERE at < now() - interval '15 minutes';
 
 -- name: WorkspaceProjects :many
 -- The projects of the organisations a user belongs to.

@@ -37,3 +37,5 @@ CREATE TABLE sign_in_attempts (
     at   timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX sign_in_attempts_key ON sign_in_attempts (kind, key, at);
+-- For deleting attempts past the window.
+CREATE INDEX sign_in_attempts_at ON sign_in_attempts (at);

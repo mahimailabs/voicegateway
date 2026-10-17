@@ -26,14 +26,14 @@ type Users interface {
 	CountUsers(ctx context.Context) (int64, error)
 	UserByEmail(ctx context.Context, email string) (store.User, error)
 	Principal(ctx context.Context, userID string) (store.Principal, error)
-	ReserveSignIn(ctx context.Context, keys []store.SignInKey, since time.Time) (ids []int64, limitedSince time.Time, err error)
+	ReserveSignIn(ctx context.Context, keys []store.SignInKey) (ids []int64, wait time.Duration, err error)
 	ForgetSignInAttempts(ctx context.Context, ids []int64) error
-	ForgetSignIns(ctx context.Context, before time.Time) error
+	ForgetSignIns(ctx context.Context) error
 }
 
-// Sign-in limits (spec 06a): failures counted per email and per client address over a window.
+// Sign-in limits (spec 06a): attempts counted per email and per client address over a 15-minute
+// window, which the store keeps by the Postgres clock.
 const (
-	limitWindow     = 15 * time.Minute
 	limitPerEmail   = 10
 	limitPerAddress = 50
 	maxSignInBody   = 4 << 10
@@ -96,11 +96,13 @@ func (s *Service) manager(r *http.Request) *scs.SessionManager {
 }
 
 // passwordMayTravel reports whether a password may be sent on this request: it came over HTTPS,
-// or it was addressed to localhost, where a browser keeps a session cookie over plain HTTP. The
-// Host header decides localhost, not the peer: behind Docker's port forwarding the peer is a
-// bridge address, and a client lying about Host only exposes its own password.
+// or it was addressed to localhost by a browser on this machine, where a session cookie survives
+// plain HTTP. The Host header decides localhost, not the peer: behind Docker's port forwarding the
+// peer is a bridge address, and a client lying about Host only exposes its own password. A
+// forwarded request is never local, whatever its Host: a proxy that passes plain HTTP on to
+// 127.0.0.1 would otherwise let any client sign in without HTTPS.
 func (s *Service) passwordMayTravel(r *http.Request) bool {
-	return overHTTPS(r, s.Trusted) || localHost(r.Host)
+	return overHTTPS(r, s.Trusted) || (localHost(r.Host) && !forwarded(r))
 }
 
 // Sessions loads and saves the session of every request through h, with the manager the
@@ -116,12 +118,15 @@ func (s *Service) Sessions(h http.Handler) http.Handler {
 	})
 }
 
-// Routes returns /auth/sign-in, /auth/sign-out and /auth/session, with sessions loaded. It builds
-// the dummy hash first, so the first unknown email takes no longer than the rest.
+// Routes returns /auth/sign-in, /auth/sign-out and /auth/session, with sessions loaded. It starts
+// building the dummy hash in the background, so web listens at once and the first unknown email
+// takes no longer than the rest; a sign-in that comes first waits for the same hash.
 func (s *Service) Routes() http.Handler {
-	if _, err := dummyHash(); err != nil {
-		s.Log.Error("auth: could not build the dummy password hash", "err", err)
-	}
+	go func() {
+		if _, err := dummyHash(); err != nil {
+			s.Log.Error("auth: could not build the dummy password hash", "err", err)
+		}
+	}()
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /auth/sign-in", s.signIn)
 	mux.HandleFunc("POST /auth/sign-out", s.signOut)
@@ -149,25 +154,22 @@ func (s *Service) signIn(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.warnUntrustedProxy(r)
-	now := s.Now()
-	since := now.Add(-limitWindow)
-	if err := s.Users.ForgetSignIns(ctx, since); err != nil {
+	if err := s.Users.ForgetSignIns(ctx); err != nil {
 		s.fail(w, err)
 		return
 	}
 	// The attempt is reserved before the password is checked, atomically, so a burst of requests
 	// cannot all pass the limit while the count is still low.
-	ids, limitedSince, err := s.Users.ReserveSignIn(ctx, []store.SignInKey{
+	ids, wait, err := s.Users.ReserveSignIn(ctx, []store.SignInKey{
 		{Kind: "email", Key: c.Email, Max: limitPerEmail},
 		{Kind: "address", Key: addressKey(clientAddress(r, s.Trusted)), Max: limitPerAddress},
-	}, since)
+	})
 	if err != nil {
 		s.fail(w, err)
 		return
 	}
-	if !limitedSince.IsZero() {
-		retry := max(limitedSince.Add(limitWindow).Sub(now), time.Second)
-		w.Header().Set("Retry-After", strconv.Itoa(int(math.Ceil(retry.Seconds()))))
+	if wait > 0 {
+		w.Header().Set("Retry-After", strconv.Itoa(int(math.Ceil(wait.Seconds()))))
 		writeError(w, http.StatusTooManyRequests, "too_many_attempts", "too many failed sign-ins; try again later")
 		return
 	}
@@ -208,12 +210,12 @@ func (s *Service) signIn(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// warnUntrustedProxy logs once when a request comes from a loopback peer that is not a trusted
-// proxy but forwards for someone: a reverse proxy on the same host that VOICEGATEWAY_TRUSTED_PROXIES
-// does not name, which makes every client share the proxy's address for sign-in limits.
+// warnUntrustedProxy logs once when a request forwards for someone from a peer that is not a
+// trusted proxy: a reverse proxy VOICEGATEWAY_TRUSTED_PROXIES does not name, on the same host or,
+// under Docker, arriving from the bridge gateway. Every client behind it then shares the proxy's
+// address for sign-in limits.
 func (s *Service) warnUntrustedProxy(r *http.Request) {
-	peer := peerAddress(r)
-	if !peer.IsLoopback() || isTrusted(peer, s.Trusted) {
+	if isTrusted(peerAddress(r), s.Trusted) {
 		return
 	}
 	if r.Header.Get("X-Forwarded-For") == "" && r.Header.Get("Forwarded") == "" {

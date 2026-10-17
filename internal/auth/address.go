@@ -108,3 +108,13 @@ func addressKey(a netip.Addr) string {
 	}
 	return a.String()
 }
+
+// forwarded reports whether a proxy passed the request on: it carries any forwarding header.
+func forwarded(r *http.Request) bool {
+	for _, h := range []string{"X-Forwarded-For", "X-Forwarded-Proto", "X-Forwarded-Host", "Forwarded"} {
+		if r.Header.Get(h) != "" {
+			return true
+		}
+	}
+	return false
+}

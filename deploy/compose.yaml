@@ -11,7 +11,8 @@ x-voicegateway-env: &voicegateway-env
   VOICEGATEWAY_S3_ACCESS_KEY: ${S3_ACCESS_KEY:?set it in deploy/.env}
   VOICEGATEWAY_S3_SECRET_KEY: ${S3_SECRET_KEY:?set it in deploy/.env}
   VOICEGATEWAY_SECRET_KEY: ${VOICEGATEWAY_SECRET_KEY:?set it in deploy/.env}
-  # The bearer token /api/v1 requires; unset, the API answers 401 to everything.
+  # The interim bearer token for programs on /api/v1 until project API keys (phase 06c); people
+  # sign in instead (decision 0027). Unset, only signed-in sessions are accepted.
   VOICEGATEWAY_API_TOKEN: ${VOICEGATEWAY_API_TOKEN:-}
   # Where people open the console; https makes the session cookie Secure (decision 0027).
   VOICEGATEWAY_PUBLIC_URL: ${VOICEGATEWAY_PUBLIC_URL:-}

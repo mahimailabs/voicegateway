@@ -11,9 +11,11 @@ export default defineConfig({
   server: {
     port: 5180,
     strictPort: true,
+    // changeOrigin stays false, so web sees the browser's Host (localhost:5180) and treats the
+    // dev console as local; xfwd stays off, so no forwarding header marks it as proxied.
     proxy: {
-      "/api": process.env.VITE_API_TARGET ?? "http://localhost:8080",
-      "/auth": process.env.VITE_API_TARGET ?? "http://localhost:8080",
+      "/api": { target: process.env.VITE_API_TARGET ?? "http://localhost:8080", changeOrigin: false },
+      "/auth": { target: process.env.VITE_API_TARGET ?? "http://localhost:8080", changeOrigin: false },
     },
   },
 })

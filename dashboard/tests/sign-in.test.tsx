@@ -54,3 +54,12 @@ test("no account yet shows the first-admin command", () => {
   render(<SignInScreen needsAdmin onSignedIn={vi.fn()} />)
   expect(screen.getByLabelText("First admin command").textContent).toBe(FIRST_ADMIN_COMMAND)
 })
+
+test("retyping clears the error", async () => {
+  answer(401, '{"code":"unauthenticated"}')
+  render(<SignInScreen needsAdmin={false} onSignedIn={vi.fn()} />)
+  await submit()
+  await screen.findByRole("alert")
+  await userEvent.setup().type(screen.getByLabelText("Password"), "x")
+  expect(screen.queryByRole("alert")).toBeNull()
+})
