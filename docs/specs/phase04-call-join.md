@@ -1,0 +1,77 @@
+# Phase 04: Join stored events into calls
+
+## Goal
+
+A real LiveKit call that reaches VoiceGateway through its webhooks, the agent's session upload and the agent's spans is stored as one call, with its participants and every span linked to it, even when the room name is reused. Together with phase 03 this meets the plan task "Capture the first real call": stored once, its events correctly correlated, unknown fields left unknown.
+
+The whole join does not fit one session, so the phase is split. **This spec is 04a**: calls, participants and span links. **04b** (next spec) decodes turns, their latencies and usage from the session report and the spans. **04c** serves `listCalls` and `getCall` from storage, which is "Connect the console".
+
+## Context
+
+- PRODUCT.md principles 2 (unknown stays unknown) and 3 (never lose data quietly).
+- ARCHITECTURE.md: Data Flow step 3, Data Model (Call, Participant, Span), Boundaries (worker owns every write; the Redis stream is web's only link to it). Postgres holds the call index; ClickHouse holds events and spans.
+- Decision 0012: a call is a room and its time window, or a job id; spans join through their trace id; an event that matches no call waits briefly, then is stored as unmatched and counted; a call whose end never arrives is closed by a timeout and marked inferred; SIP legs are participants of kind SIP.
+- Decision 0014: what the Agents uploads carry. Decision 0007: ack only after the write.
+- `docs/specs/phase03-first-call.md`: the events table and the sink this phase extends.
+
+How the sources identify a room, from LiveKit's own types (livekit/protocol v1.52.1) and the captured traces:
+
+| Source | Room instance | Job | Other |
+| --- | --- | --- | --- |
+| Webhook (`WebhookEvent`) | `room.sid`, `room.name`, `room.creation_time` | none on open-source LiveKit | `participant.sid`, `identity`, `kind`, event `created_at` |
+| Session report header (`MetricsRecordingHeader`) | `room_id` (the room SID), `room_name`, `room_start_time` | `job_id` | `start_time`, `duration` |
+| OTLP spans | `lk.room_sid` and `lk.job_id` on the job's root spans only (3 of 126 spans in `capture-session.json`) | `lk.job_id` | every span carries its `trace_id`; the rest join through it |
+
+A room's SID names one room instance, from its start to its end, so it is the room-and-time-window of 0012 without a window to guess. The worker keys a call on the room SID; the job id joins a session report or a trace whose room SID is missing; room name plus time window is used only when neither is present. This applies 0012; it does not change it.
+
+## In Scope
+
+- **Postgres** (`migrations/postgres`, sqlc): `calls` (id, organisation, project, room name, room SID, job id, started at, ended at, end state `observed | inferred | open`, last activity) with one call per project and room SID; `call_participants` (call, participant SID, identity, kind as LiveKit's `ParticipantInfo.Kind` names it (`standard`, `ingress`, `egress`, `sip`, `agent`, `connector`, `bridge`; proto3 sends no value for `standard`, so it is stored as reported, not guessed), joined at, left at). Every time column is nullable: a time no source reported stays null.
+- **ClickHouse** (`migrations/clickhouse`): a `spans` table (one row per span, decoded from the OTLP trace exports, deduplicated on trace id and span id) and a `trace_calls` table (trace id to call id). `events` gains `call_id`, empty when unmatched.
+- **Worker, joining:**
+  - A webhook with a room SID upserts that room's call: `room_started` opens it and sets its start; `participant_joined` and `participant_left` upsert the participant; `room_finished` sets the end and `observed`.
+  - A session report upserts the call for its `room_id`, and sets the job id and, when no webhook did, the start from `room_start_time`.
+  - An OTLP trace export is decoded into spans. A span carrying `lk.room_sid` or `lk.job_id` links its trace to that call (creating the call if no webhook has); spans of a trace not yet linked are stored and linked when its root arrives, at read time through `trace_calls`.
+  - Each stored event row carries the call id it resolved to.
+- **Unmatched, counted:** a webhook or session report that names no room SID and no job id is stored with an empty call id and counted (`voicegateway_events_unmatched_total`, a log line at WARN with kind and project, never the body). A trace that no root links within 15 minutes of its last span is counted the same way.
+- **Inferred end:** a call still open with no event for 2 hours is closed at its last activity and marked `inferred`.
+- **Acknowledgement:** an entry is acknowledged only after its event row, its span rows and its call and participant writes all land. A failure in any of them leaves it pending (0007).
+
+## Out of Scope
+
+- Turns, their latencies, tokens and audio seconds (04b). Spans are stored and linked, not interpreted.
+- `listCalls`, `getCall`, `getCallStats` from storage, and the console (04c).
+- OTLP logs and metrics exports: still stored whole as events, not decoded.
+- Recordings and Egress (0015), scraped metrics, SIP trunk reads.
+- Merging two calls that turn out to be one, and splitting one that is two. A call is decided once by its room SID.
+
+## Constraints
+
+- OTLP decoding with `go.opentelemetry.io/proto/otlp` (collector trace v1), the protobuf types OTLP over HTTP defines; no hand-written OTLP parsing. Webhook and header types from livekit/protocol, as in phase 03.
+- pgx v5 with sqlc for the call index; clickhouse-go v2 for spans. Migrations only add.
+- Calls are written by the worker only; web never writes them (Boundaries).
+- Never log a raw body, a span attribute value or a participant identity; ids, kinds and counts only.
+- A call or participant time is set only from a reported value; never from the time the worker processed it.
+- Run the real thing in tests (testcontainers-go for Postgres, Redis and ClickHouse; `testing/synctest` for the 15-minute and 2-hour timers).
+
+## Acceptance Checks
+
+1. Given `room_started`, `participant_joined` (agent and standard), `participant_left` and `room_finished` webhooks for one room SID, when the worker stores them, then there is exactly 1 call with that SID, start and end from the webhooks, end state `observed`, 2 participants with their kinds, and all 5 event rows carry its call id (measured by `TestJoinWebhooksIntoCall`).
+2. Given two rooms with the same name and different SIDs, when their webhooks are stored interleaved, then there are 2 calls and no event row carries the other room's call id (measured by `TestReusedRoomNameIsTwoCalls`).
+3. Given a session report whose header names a room SID that webhooks already opened, then it joins that call and sets its job id; given one whose room SID no webhook named, then 1 new call is created with start from `room_start_time` and end state `open` (measured by `TestSessionReportJoinsCall`).
+4. Given an OTLP trace export whose child spans arrive in a batch before the batch with the root span carrying `lk.room_sid`, when both are stored, then every span of the trace resolves to that call through `trace_calls`, 0 spans are counted unmatched, and each span is stored once even when the export is delivered twice (measured by `TestSpansJoinThroughTraceID`).
+5. Given a trace whose root never arrives, when 15 minutes pass after its last span, then its spans stay stored, `voicegateway_events_unmatched_total` rises by 1 for that trace, and none is dropped (measured by `TestUnlinkedTraceIsCountedNotDropped`, with synctest).
+6. Given a webhook with no room SID (an egress or ingress event), then it is stored with an empty call id and counted unmatched, and no call is created (measured by `TestEventWithoutRoomIsUnmatched`).
+7. Given a call with `room_started` and no further event, when 2 hours pass, then it is closed at its last activity with end state `inferred`; a call that receives `room_finished` within that time is `observed` (measured by `TestOpenCallClosesAsInferred`, with synctest).
+8. Given a room whose webhooks report no creation time and no session report, then the call's start is null, never the processing time or zero; a participant with no reported join time has a null joined at (measured by `TestUnreportedTimesStayNull`).
+9. Given the same webhooks delivered twice and the worker restarted between them, then 1 call, 1 row per participant and 1 row per event remain (measured by `TestJoinIsIdempotentAcrossRestart`).
+10. Given Postgres unreachable while ClickHouse answers, when entries are read, then none is acknowledged, no event row is left with a call id that has no call, and once Postgres answers every entry is joined (measured by `TestJoinAcksOnlyAfterEveryWrite`).
+11. Given `voicegateway migrate` run twice on the phase 03 schema with stored events, then the new tables and the `call_id` column are added, the existing event rows remain, and the second run applies nothing (measured by `TestMigrateTwice`, extended).
+
+## Manual Check
+
+One real call on the LiveKit Cloud test project, with its webhook pointed at the stack and an agent run with `LIVEKIT_OBSERVABILITY_URL` set to it. Afterwards: one `calls` row with the room SID, job id, start, end and `observed`; the caller and the agent in `call_participants`; every stored span of that job resolving to the call; `voicegateway_events_unmatched_total` at 0 for that call. Then `make down` and `make up`, and the same rows, with no duplicates.
+
+## Open Questions
+
+- The 15-minute link window and the 2-hour inferred-end timeout are recommendations, sized so a long call's root span (which ends with the job) still links and a crashed room closes the same day. Change either before building if you want different numbers.
