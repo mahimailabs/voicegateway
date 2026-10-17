@@ -1,7 +1,7 @@
 import { infiniteQueryOptions } from "@tanstack/react-query"
 import { capturedCalls } from "@/mocks/fixtures"
 import { currentScope } from "@/lib/url-state"
-import type { AlertEvents, CapacityRun, Call as GeneratedCall, CallPage, CallStats, ProviderProbes, Workers, CloudAgents, CallSummary, CallTotals, Egress, EndOfTurnEvent, Ingress, IssueList, MediaServer, ProjectSnapshot, Sip, ItemEvent, OverlapEvent, RecordingSegment, Span, StateEvent, TranscriptEvent, Turn } from "@/lib/api-types"
+import type { AlertEvents, AlertSetup, CapacityRun, Invitations, IssueDispositions, ProjectSettings, Workspaces, Call as GeneratedCall, CallPage, CallStats, ProviderProbes, Workers, CloudAgents, CallSummary, CallTotals, Egress, EndOfTurnEvent, Ingress, IssueList, MediaServer, ProjectSnapshot, Sip, ItemEvent, OverlapEvent, RecordingSegment, Span, StateEvent, TranscriptEvent, Turn } from "@/lib/api-types"
 
 export type { CallSummary, CallTotals, RecordingSegment, Span, Turn }
 export type SessionEvent = StateEvent | TranscriptEvent | EndOfTurnEvent | OverlapEvent | ItemEvent
@@ -133,3 +133,11 @@ export const callStatsQuery = (from: Date, to: Date) => ({
   queryKey: ["call-stats", currentScope(), from.toISOString(), to.toISOString()],
   queryFn: () => getJSON<CallStats>(`${projectApi()}/call-stats?${new URLSearchParams({ from: from.toISOString(), to: to.toISOString() })}`),
 })
+
+// Settings. Until web stores them the console saves them in this browser (lib/local-store.ts) and
+// these reads return them; after a save the console invalidates the read it changed.
+export const projectSettingsQuery = () => ({ queryKey: ["settings", currentScope()], queryFn: () => getJSON<ProjectSettings>(`${projectApi()}/settings`) })
+export const issueDispositionsQuery = () => ({ queryKey: ["issue-dispositions", currentScope()], queryFn: () => getJSON<IssueDispositions>(`${projectApi()}/issue-dispositions`) })
+export const alertSetupQuery = () => ({ queryKey: ["alert-setup", currentScope()], queryFn: () => getJSON<AlertSetup>(`${projectApi()}/alert-setup`) })
+export const invitationsQuery = () => ({ queryKey: ["invitations", currentScope().org], queryFn: () => getJSON<Invitations>(`/api/v1/org/${currentScope().org}/invitations`) })
+export const fetchWorkspaces = () => getJSON<Workspaces>("/api/v1/workspaces")

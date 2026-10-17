@@ -1,6 +1,6 @@
 import type { CallStats, ChainStage, ProviderUse, StageTiming } from "@/lib/api-types"
 import type { Call } from "@/lib/api"
-import { BUDGET_MS } from "@/lib/thresholds"
+import { storedThresholds } from "./settings"
 import { providerOfModel } from "@/components/provider-logo"
 import { buildModel, median, placed } from "@/features/call/call-model"
 import { stageDefs } from "@/features/overview/visuals"
@@ -189,6 +189,7 @@ export function callStats(from: Date, to: Date): CallStats {
     })
     .sort((a, b) => (b.callCount ?? 0) - (a.callCount ?? 0))
 
+  const budget = storedThresholds().answerMs
   return {
     from: from.toISOString(),
     to: to.toISOString(),
@@ -197,7 +198,7 @@ export function callStats(from: Date, to: Date): CallStats {
     byChannel: Object.fromEntries(CHANNELS.map((ch) => [ch, rows.filter(({ s }) => s.channel === ch).length])) as CallStats["byChannel"],
     byDay: days,
     byHour: hours,
-    answers: { turns: all.length, overBudget: all.filter((a) => a > BUDGET_MS).length, budgetMs: BUDGET_MS, p50Ms: median(all), p90Ms: p90(all), values: values.slice(0, MAX_VALUES), valuesTruncated: values.length > MAX_VALUES },
+    answers: { turns: all.length, overBudget: all.filter((a) => a > budget).length, budgetMs: budget, p50Ms: median(all), p90Ms: p90(all), values: values.slice(0, MAX_VALUES), valuesTruncated: values.length > MAX_VALUES },
     issueCounts: { high: count("high"), medium: count("medium"), low: count("low"), info: count("info") },
     anatomyTurns: overall.turns,
     stages: overall.stages,

@@ -1,11 +1,11 @@
 import { useState } from "react"
 import { Link, useRouter, useRouterState } from "@tanstack/react-router"
-import { currentScope } from "@/lib/url-state"
+import { currentOrg, currentScope } from "@/lib/url-state"
 import { CaretUpDown, Check, Gear, Info, Lock, Plus, TreeStructure } from "@phosphor-icons/react"
 import { NewProjectDialog } from "@/components/new-project-dialog"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
-import { orgs } from "@/components/workspace-switcher"
+import { workspaces } from "@/lib/workspaces"
 import { data as media } from "@/features/media-server/room-drawer"
 
 // Organisation and project as two switchers in the top bar, the way the LiveKit and Vercel consoles
@@ -26,8 +26,10 @@ const keepFocus = (e: Event) => {
 const trigger = "flex h-8 min-w-0 items-center gap-2 rounded-lg whitespace-nowrap px-2 text-[13px] font-medium transition-colors hover:bg-muted data-[state=open]:bg-muted"
 const initials = (s: string) => s.trim()[0]?.toUpperCase() ?? "?"
 
+// Without an organisation from getWorkspaces there is nothing to switch, so neither switcher shows.
 export function OrgSwitcher({ onSettings }: { onSettings: () => void }) {
-  const org = orgs[0]
+  const org = currentOrg()
+  if (!org) return null
   return (
     <DropdownMenu>
       <DropdownMenuTrigger className={trigger}>
@@ -37,11 +39,11 @@ export function OrgSwitcher({ onSettings }: { onSettings: () => void }) {
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="min-w-64 rounded-xl" onCloseAutoFocus={keepFocus}>
         <DropdownMenuLabel className="text-xs text-muted-foreground">Organisations</DropdownMenuLabel>
-        {orgs.map((o) => (
+        {workspaces().map((o) => (
           <DropdownMenuItem key={o.name} className="gap-2">
             <span className="flex size-5 items-center justify-center rounded-md bg-foreground text-[10px] font-semibold text-background">{initials(o.name)}</span>
             {o.name}
-            <Check className="ml-auto size-4" />
+            {o.id === org.id && <Check className="ml-auto size-4" />}
           </DropdownMenuItem>
         ))}
         <DropdownMenuSeparator />
@@ -67,13 +69,14 @@ export function OrgSwitcher({ onSettings }: { onSettings: () => void }) {
 }
 
 export function ProjectSwitcher({ onManage }: { onManage: () => void }) {
-  const org = orgs[0]
+  const org = currentOrg()
   const router = useRouter()
   const path = useRouterState({ select: (s) => s.location.pathname })
-  const current = org.projects.find((p) => p.id === currentScope().project) ?? org.projects[0]
+  const [adding, setAdding] = useState(false)
+  const current = org?.projects.find((p) => p.id === currentScope().project) ?? org?.projects[0]
+  if (!org || !current) return null
   // Switching project keeps the page and moves the URL to the other project's scope.
   const open = (id: string) => id !== current.id && router.history.push(`/org/${org.id}/project/${id}${path}`)
-  const [adding, setAdding] = useState(false)
   const host = media.server?.url.replace(/^wss?:\/\//, "") ?? "server not reported"
   return (
     <>

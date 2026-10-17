@@ -7,6 +7,7 @@ import consoleSession from "@/mocks/console-session.json"
 import consoleRealtime from "@/mocks/console-realtime.json"
 
 import type { Clock } from "@/lib/api-types"
+import { recordingId } from "./recordings"
 import type { Call, Recording, SessionEvent, Span, Turn } from "@/lib/api"
 
 // The captured calls the mock API serves, adapted to the contract. Only the mock layer reads these.
@@ -39,8 +40,8 @@ export function fromCapture(raw: RawCall): Call {
     spans: raw.spans?.map((s) => ({ ...s, clockId: s.clockId ?? "trace" })) ?? null,
     turns: raw.turns?.map((t) => ({ ...t, clockId: t.clockId ?? "session" })) ?? null,
     events: raw.events?.map((e) => ({ ...e, clockId: e.clockId ?? "session" })),
-    // Captured recordings carry no media id; the playback url is the only identifier they have.
-    recording: raw.recording && { ...raw.recording, id: raw.recording.id ?? raw.recording.url, clockId: raw.recording.clockId ?? "recording" },
+    // Captured recordings carry no media id; the file name (the room SID) stands in for one.
+    recording: raw.recording && { ...raw.recording, id: raw.recording.id ?? recordingId(raw.recording.url), clockId: raw.recording.clockId ?? "recording" },
   }
 }
 
