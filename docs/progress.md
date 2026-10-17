@@ -65,7 +65,7 @@ Plan agreed 2026-10-15: a team builds V1 with Cloud (decision 0024) over 30 days
 
 - The old Python code in src/ no longer matches the docs. It stays until Phase 0.
 - Docker Desktop on the dev Mac stopped starting new containers during the spike; it needs a restart.
-- Project MCP servers (gopls, shadcn, magicui) need a one-time approval in Claude Code.
+- Project MCP servers (shadcn, magicui) need a one-time approval in Claude Code. The gopls MCP server was removed on 2026-10-17: its fsnotify watcher opened one file handle per file in the tree (about 61,000) and exhausted the system file table.
 
 ### 2026-10-15: landing consolidated into the product repository
 

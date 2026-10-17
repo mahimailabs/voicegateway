@@ -1,13 +1,5 @@
 {
   "mcpServers": {
-    "gopls": {
-      "type": "stdio",
-      "command": "gopls",
-      "args": [
-        "mcp"
-      ],
-      "env": {}
-    },
     "shadcn": {
       "type": "stdio",
       "command": "npx",
