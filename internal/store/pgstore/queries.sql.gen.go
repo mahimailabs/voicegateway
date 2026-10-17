@@ -13,7 +13,7 @@ import (
 
 const callByID = `-- name: CallByID :one
 SELECT l.id, l.room_name, l.room_sid, l.job_id, l.started_at, l.ended_at, l.end_state, l.first_seen_at,
-       l.participants, l.servable, l.summarized
+       l.participants, l.servable, l.summarized::boolean AS summarized
 FROM call_list l
 WHERE l.organisation_id = $1 AND l.project_id = $2 AND l.id = $3
 `
@@ -35,7 +35,7 @@ type CallByIDRow struct {
 	FirstSeenAt  pgtype.Timestamptz
 	Participants int64
 	Servable     pgtype.Bool
-	Summarized   interface{}
+	Summarized   bool
 }
 
 // One call of a project as the API reads it, with the servable rule listCalls shares.
@@ -294,12 +294,13 @@ func (q *Queries) CreateProject(ctx context.Context, arg CreateProjectParams) (C
 const deferStale = `-- name: DeferStale :exec
 UPDATE calls SET
     summary_failures = summary_failures + 1,
-    summary_stale_at = now() + LEAST(interval '10 seconds' * power(2, summary_failures), interval '1 hour')
+    summary_stale_at = now() + LEAST(interval '10 seconds' * power(2, LEAST(summary_failures, 9)), interval '1 hour')
 WHERE id = $1 AND summary_stale_at IS NOT NULL
 `
 
 // Moves a call whose rebuild failed behind the others, and backs it off: 10 s, doubling with each
-// failure in a row, at most an hour.
+// failure in a row, at most an hour. The exponent stops at 9 (10 s x 512, past the hour) before
+// the cap, so a long run of failures never overflows the interval.
 func (q *Queries) DeferStale(ctx context.Context, id pgtype.UUID) error {
 	_, err := q.db.Exec(ctx, deferStale, id)
 	return err
@@ -326,11 +327,12 @@ func (q *Queries) FinishCall(ctx context.Context, arg FinishCallParams) error {
 }
 
 const forgetListSnapshots = `-- name: ForgetListSnapshots :exec
-DELETE FROM list_snapshots WHERE created_at < $1
+DELETE FROM list_snapshots WHERE created_at < now() - interval '1 day'
 `
 
-func (q *Queries) ForgetListSnapshots(ctx context.Context, before pgtype.Timestamptz) error {
-	_, err := q.db.Exec(ctx, forgetListSnapshots, before)
+// Deletes snapshots past their day, by the Postgres clock that wrote them.
+func (q *Queries) ForgetListSnapshots(ctx context.Context) error {
+	_, err := q.db.Exec(ctx, forgetListSnapshots)
 	return err
 }
 
@@ -494,6 +496,48 @@ func (q *Queries) ListCalls(ctx context.Context, arg ListCallsParams) ([]ListCal
 			&i.AgentKey,
 			&i.KeyUnknown,
 			&i.SortValue,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listProjects = `-- name: ListProjects :many
+SELECT organisation_id, id, name, livekit_url, livekit_api_key, created_at
+FROM projects
+ORDER BY organisation_id, id
+`
+
+type ListProjectsRow struct {
+	OrganisationID string
+	ID             string
+	Name           string
+	LivekitUrl     string
+	LivekitApiKey  string
+	CreatedAt      pgtype.Timestamptz
+}
+
+func (q *Queries) ListProjects(ctx context.Context) ([]ListProjectsRow, error) {
+	rows, err := q.db.Query(ctx, listProjects)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListProjectsRow
+	for rows.Next() {
+		var i ListProjectsRow
+		if err := rows.Scan(
+			&i.OrganisationID,
+			&i.ID,
+			&i.Name,
+			&i.LivekitUrl,
+			&i.LivekitApiKey,
+			&i.CreatedAt,
 		); err != nil {
 			return nil, err
 		}

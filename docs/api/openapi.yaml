@@ -51,7 +51,7 @@ paths:
             type: string
         - name: snapshot
           in: query
-          description: Snapshot from prior response; required with cursor.
+          description: Snapshot from prior response; required with cursor. It expires a day after the first page; an expired, unknown or malformed snapshot, or one sent for another project or other filters, is 400 invalid_request.
           schema:
             type: string
         - name: from
@@ -1450,6 +1450,28 @@ components:
           x-source: { kind: livekit_api, file: dashboard/src/mocks/agents.json, pointer: /agents, detail: LiveKit CloudAgent ListAgents/ListAgentVersions; normalised captured response }
       required: [ readAt, source, agents ]
       x-source: { kind: livekit_api, file: dashboard/src/mocks/agents.json, pointer: "", detail: LiveKit CloudAgent ListAgents/ListAgentVersions; normalised captured response }
+    SourceStatus:
+      type: object
+      additionalProperties: false
+      description: How fresh a sampled read is. Present when the worker samples the layer; a layer never read successfully answers 503 source_unavailable instead.
+      properties:
+        lastReadAt:
+          type: [ string, "null" ]
+          format: date-time
+          x-null-reason: The worker has not read this layer yet.
+          x-source: { kind: computed, file: internal/api/mediaserver.go, pointer: null, detail: "Latest read_at in ClickHouse layer_reads for this project and layer." }
+        lastGoodReadAt:
+          type: [ string, "null" ]
+          format: date-time
+          x-null-reason: No read of this layer has succeeded yet.
+          x-source: { kind: computed, file: internal/api/mediaserver.go, pointer: null, detail: "Latest read_at of a successful read in layer_reads." }
+        errorClass:
+          type: [ string, "null" ]
+          enum: [ unauthenticated, permission_denied, unreachable, not_supported, error, null ]
+          x-null-reason: The last read succeeded.
+          x-source: { kind: computed, file: internal/api/mediaserver.go, pointer: null, detail: "Error class of the latest read in layer_reads, classified from the LiveKit Twirp error code; LiveKit's own error text is never stored." }
+      required: [ lastReadAt, lastGoodReadAt, errorClass ]
+      x-source: { kind: computed, file: internal/api/mediaserver.go, pointer: null, detail: "Summed from ClickHouse layer_reads, written by the worker on every read of the layer." }
     MediaServer:
       type: object
       additionalProperties: false
@@ -1896,6 +1918,9 @@ components:
             required: [ name, direction, mediaEncryption, krispEnabled, numbers, auth, source ]
             x-source: { kind: livekit_api, file: dashboard/src/mocks/media-server.json, pointer: /sipTrunks/ST_7pughNvcmefm, detail: "RoomService/AgentDispatchService reads and ServerInfo; sampled watch, normalised captured response" }
           x-source: { kind: livekit_api, file: dashboard/src/mocks/media-server.json, pointer: /sipTrunks, detail: "RoomService/AgentDispatchService reads and ServerInfo; sampled watch, normalised captured response" }
+        sourceStatus:
+          $ref: "#/components/schemas/SourceStatus"
+          x-source: { kind: computed, file: internal/api/mediaserver.go, pointer: null, detail: "Freshness of the media server samples, from ClickHouse layer_reads." }
       required: [ source, server, rooms, windows, sipTrunks ]
       x-source: { kind: livekit_api, file: dashboard/src/mocks/media-server.json, pointer: "", detail: "RoomService/AgentDispatchService reads and ServerInfo; sampled watch, normalised captured response" }
     Sip:
@@ -2097,6 +2122,9 @@ components:
             required: [ id, type, prefixSet, pin, trunkIds, hidePhoneNumber, inboundNumbers, agents, media ]
             x-source: { kind: livekit_api, file: dashboard/src/mocks/sip.json, pointer: /rules/0, detail: SIP ListSIPInboundTrunk/ListSIPOutboundTrunk/ListSIPDispatchRule/ListPhoneNumbers; redacted captured response }
           x-source: { kind: livekit_api, file: dashboard/src/mocks/sip.json, pointer: /rules, detail: SIP ListSIPInboundTrunk/ListSIPOutboundTrunk/ListSIPDispatchRule/ListPhoneNumbers; redacted captured response }
+        sourceStatus:
+          $ref: "#/components/schemas/SourceStatus"
+          x-source: { kind: computed, file: internal/api/sip.go, pointer: null, detail: "Freshness of the SIP configuration read, from ClickHouse layer_reads." }
       required: [ readAt, source, livekitNumbers, inbound, outbound, rules ]
       x-source: { kind: livekit_api, file: dashboard/src/mocks/sip.json, pointer: "", detail: SIP ListSIPInboundTrunk/ListSIPOutboundTrunk/ListSIPDispatchRule/ListPhoneNumbers; redacted captured response }
     Egress:
@@ -2926,8 +2954,8 @@ components:
           x-null-reason: Opaque next-page cursor; null only after the final page. Bound to caller, scope, filters and snapshot.
         snapshot:
           type: string
-          description: Opaque stable read snapshot. Reuse it with each nextCursor; never aggregate a partial page as a whole-project result.
-          x-source: { kind: computed, file: docs/api/coverage.md, pointer: null, detail: Opaque stable read snapshot. Reuse it with each nextCursor; never aggregate a partial page as a whole-project result. }
+          description: Opaque stable read snapshot. Reuse it with each nextCursor; never aggregate a partial page as a whole-project result. It expires a day after the first page; an expired, unknown or malformed snapshot, or one sent for another project or other filters, is 400 invalid_request.
+          x-source: { kind: computed, file: docs/api/coverage.md, pointer: null, detail: Opaque stable read snapshot. Reuse it with each nextCursor; never aggregate a partial page as a whole-project result. It expires a day after the first page; an expired, unknown or malformed snapshot, or one sent for another project or other filters, is 400 invalid_request. }
     CallPage:
       type: object
       additionalProperties: false
@@ -3421,8 +3449,8 @@ components:
           type: object
           additionalProperties: false
           required: [ high, medium, low, info ]
-          description: "Issues in the range by severity, the same groups listIssues returns."
-          x-source: { kind: computed, file: dashboard/src/features/issues/issues-model.ts, pointer: null, detail: "Issues in the range by severity, the same groups listIssues returns." }
+          description: "Event issues with a hit in the range by severity, the same groups listIssues returns with kind event. Standing issues are current state, not problems in the range, and are not counted."
+          x-source: { kind: computed, file: dashboard/src/features/issues/issues-model.ts, pointer: null, detail: "Event issues with a hit in the range by severity, the same groups listIssues returns with kind event. Standing issues are not counted." }
           properties:
             high:
               type: [ integer, "null" ]
@@ -3711,12 +3739,12 @@ components:
           x-source: { kind: computed, file: docs/api/coverage.md, pointer: null, detail: "false when part of the range is not stored, so an issue may have more hits than listed." }
         items:
           type: array
-          description: "Issues in the range, high severity first, then by hits. Grouping, titles and severities are the ones in issues-model.ts."
-          x-source: { kind: computed, file: dashboard/src/features/issues/issues-model.ts, pointer: null, detail: "Issues in the range, high severity first, then by hits. Grouping, titles and severities are the ones in issues-model.ts." }
+          description: "Event issues with a hit in the range, and every standing issue whatever the range, high severity first, then by hits. Grouping, titles and severities are the ones in issues-model.ts."
+          x-source: { kind: computed, file: dashboard/src/features/issues/issues-model.ts, pointer: null, detail: "Event issues with a hit in the range, and every standing issue whatever the range, high severity first, then by hits. Grouping, titles and severities are the ones in issues-model.ts." }
           items:
             type: object
             additionalProperties: false
-            required: [ id, title, severity, source, lastSeenAt, hits ]
+            required: [ id, title, kind, severity, source, lastSeenAt, hits ]
             properties:
               id:
                 type: string
@@ -3726,6 +3754,11 @@ components:
                 type: string
                 description: "Issue title."
                 x-source: { kind: computed, file: dashboard/src/features/issues/issues-model.ts, pointer: null, detail: "Issue title." }
+              kind:
+                type: string
+                enum: [ event, standing ]
+                description: "event: something that happened, each hit dated and kept only when from <= at < to. standing: a state true of the latest read (an agent worker or phone bridge check over what LiveKit lists now), listed in every range with undated hits and never counted as a problem in the range."
+                x-source: { kind: computed, file: dashboard/src/features/issues/issues-model.ts, pointer: null, detail: "Call findings are events dated by the call's start; Agent workers and Phone bridge checks run over the current read, so they are standing." }
               severity:
                 type: string
                 enum: [ high, medium, low, info ]
@@ -3740,12 +3773,12 @@ components:
                 type: [ string, "null" ]
                 format: date-time
                 description: "Most recent hit, UTC. Compared with a disposition's time to mark a resolved issue as regressed."
-                x-null-reason: "No hit carries a time, for example a configuration check."
+                x-null-reason: "A standing issue, whose hits carry no time because it is true now."
                 x-source: { kind: computed, file: dashboard/src/features/issues/issues-model.ts, pointer: null, detail: "Most recent hit, UTC. Compared with a disposition's time to mark a resolved issue as regressed." }
               hits:
                 type: array
-                description: "Where the issue was found, most recent first."
-                x-source: { kind: computed, file: dashboard/src/features/issues/issues-model.ts, pointer: null, detail: "Where the issue was found, most recent first." }
+                description: "Where the issue was found, most recent first. Never empty."
+                x-source: { kind: computed, file: dashboard/src/features/issues/issues-model.ts, pointer: null, detail: "Where the issue was found, most recent first. Never empty." }
                 items:
                   type: object
                   additionalProperties: false
@@ -3755,7 +3788,7 @@ components:
                       type: [ string, "null" ]
                       format: date-time
                       description: "When the hit happened, UTC."
-                      x-null-reason: "The check has no event time, for example a trunk setting."
+                      x-null-reason: "Always null on a standing issue, for example a trunk setting. An event hit always has a time; one whose time was not captured is in no range and is not listed."
                       x-source: { kind: computed, file: dashboard/src/features/issues/issues-model.ts, pointer: null, detail: "When the hit happened, UTC." }
                     where:
                       type: string

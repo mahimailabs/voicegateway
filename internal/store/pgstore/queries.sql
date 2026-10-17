@@ -16,6 +16,11 @@ WHERE organisation_id = $1 AND id = $2;
 -- name: OrganisationExists :one
 SELECT EXISTS (SELECT 1 FROM organisations WHERE id = $1);
 
+-- name: ListProjects :many
+SELECT organisation_id, id, name, livekit_url, livekit_api_key, created_at
+FROM projects
+ORDER BY organisation_id, id;
+
 -- name: UpsertCallByRoomSID :one
 -- Opens the call of one room instance or adds to it. A value already set is kept; the latest
 -- reported activity wins. GREATEST and COALESCE skip nulls, so an unreported time changes nothing.
@@ -105,7 +110,7 @@ WHERE organisation_id = $1 AND id = $2;
 -- name: CallByID :one
 -- One call of a project as the API reads it, with the servable rule listCalls shares.
 SELECT l.id, l.room_name, l.room_sid, l.job_id, l.started_at, l.ended_at, l.end_state, l.first_seen_at,
-       l.participants, l.servable, l.summarized
+       l.participants, l.servable, l.summarized::boolean AS summarized
 FROM call_list l
 WHERE l.organisation_id = @organisation_id AND l.project_id = @project_id AND l.id = @id;
 
@@ -226,10 +231,11 @@ UPDATE calls SET summary_stale_at = now() WHERE id = ANY(@ids::uuid[]);
 
 -- name: DeferStale :exec
 -- Moves a call whose rebuild failed behind the others, and backs it off: 10 s, doubling with each
--- failure in a row, at most an hour.
+-- failure in a row, at most an hour. The exponent stops at 9 (10 s x 512, past the hour) before
+-- the cap, so a long run of failures never overflows the interval.
 UPDATE calls SET
     summary_failures = summary_failures + 1,
-    summary_stale_at = now() + LEAST(interval '10 seconds' * power(2, summary_failures), interval '1 hour')
+    summary_stale_at = now() + LEAST(interval '10 seconds' * power(2, LEAST(summary_failures, 9)), interval '1 hour')
 WHERE id = @id AND summary_stale_at IS NOT NULL;
 
 -- name: TransactionTime :one
@@ -241,7 +247,8 @@ INSERT INTO list_snapshots (id, organisation_id, project_id, filters, at, totals
 VALUES (@id, @organisation_id, @project_id, @filters, @at, @totals);
 
 -- name: ForgetListSnapshots :exec
-DELETE FROM list_snapshots WHERE created_at < @before;
+-- Deletes snapshots past their day, by the Postgres clock that wrote them.
+DELETE FROM list_snapshots WHERE created_at < now() - interval '1 day';
 
 -- name: ListSnapshot :one
 -- A snapshot not yet expired, judged by the Postgres clock that wrote created_at.

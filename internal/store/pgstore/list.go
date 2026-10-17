@@ -158,12 +158,9 @@ func nonNilStrings(v []string) []string {
 	return v
 }
 
-// snapshotTTL is how long a listCalls snapshot is kept: a console session paging a list.
-const snapshotTTL = 24 * time.Hour
-
 // PutListSnapshot stores a listCalls snapshot, deleting those older than a day.
 func (s *Store) PutListSnapshot(ctx context.Context, snap store.ListSnapshot) error {
-	if err := s.q.ForgetListSnapshots(ctx, timestamp(ptrTime(time.Now().Add(-snapshotTTL)))); err != nil {
+	if err := s.q.ForgetListSnapshots(ctx); err != nil {
 		return fmt.Errorf("forget list snapshots: %w", err)
 	}
 	err := s.q.PutListSnapshot(ctx, PutListSnapshotParams{
@@ -187,5 +184,3 @@ func (s *Store) ListSnapshot(ctx context.Context, id string) (store.ListSnapshot
 	}
 	return store.ListSnapshot{ID: id, OrganisationID: row.OrganisationID, ProjectID: row.ProjectID, Filters: row.Filters, At: row.At.Time.UTC(), Totals: row.Totals}, nil
 }
-
-func ptrTime(t time.Time) *time.Time { return &t }

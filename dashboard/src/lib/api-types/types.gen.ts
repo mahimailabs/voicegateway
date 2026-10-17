@@ -175,6 +175,15 @@ export type CloudAgents = {
     }>;
 };
 
+/**
+ * How fresh a sampled read is. Present when the worker samples the layer; a layer never read successfully answers 503 source_unavailable instead.
+ */
+export type SourceStatus = {
+    lastReadAt: string | null;
+    lastGoodReadAt: string | null;
+    errorClass: 'unauthenticated' | 'permission_denied' | 'unreachable' | 'not_supported' | 'error' | null;
+};
+
 export type MediaServer = {
     source: string;
     server: {
@@ -296,6 +305,7 @@ export type MediaServer = {
             source: string;
         };
     };
+    sourceStatus?: SourceStatus;
 };
 
 export type Sip = {
@@ -347,6 +357,7 @@ export type Sip = {
             mediaTimeout: string | null;
         };
     }>;
+    sourceStatus?: SourceStatus;
 };
 
 export type Egress = {
@@ -593,7 +604,7 @@ export type Page = {
      */
     nextCursor: string | null;
     /**
-     * Opaque stable read snapshot. Reuse it with each nextCursor; never aggregate a partial page as a whole-project result.
+     * Opaque stable read snapshot. Reuse it with each nextCursor; never aggregate a partial page as a whole-project result. It expires a day after the first page; an expired, unknown or malformed snapshot, or one sent for another project or other filters, is 400 invalid_request.
      */
     snapshot: string;
 };
@@ -912,7 +923,7 @@ export type CallStats = {
         valuesTruncated: boolean;
     };
     /**
-     * Issues in the range by severity, the same groups listIssues returns.
+     * Event issues with a hit in the range by severity, the same groups listIssues returns with kind event. Standing issues are current state, not problems in the range, and are not counted.
      */
     issueCounts: {
         /**
@@ -1113,7 +1124,7 @@ export type IssueList = {
      */
     complete: boolean;
     /**
-     * Issues in the range, high severity first, then by hits. Grouping, titles and severities are the ones in issues-model.ts.
+     * Event issues with a hit in the range, and every standing issue whatever the range, high severity first, then by hits. Grouping, titles and severities are the ones in issues-model.ts.
      */
     items: Array<{
         /**
@@ -1124,6 +1135,10 @@ export type IssueList = {
          * Issue title.
          */
         title: string;
+        /**
+         * event: something that happened, each hit dated and kept only when from <= at < to. standing: a state true of the latest read (an agent worker or phone bridge check over what LiveKit lists now), listed in every range with undated hits and never counted as a problem in the range.
+         */
+        kind: 'event' | 'standing';
         /**
          * Severity of the underlying check.
          */
@@ -1137,7 +1152,7 @@ export type IssueList = {
          */
         lastSeenAt: string | null;
         /**
-         * Where the issue was found, most recent first.
+         * Where the issue was found, most recent first. Never empty.
          */
         hits: Array<{
             /**
@@ -1510,7 +1525,7 @@ export type ListCallsData = {
          */
         cursor?: string;
         /**
-         * Snapshot from prior response; required with cursor.
+         * Snapshot from prior response; required with cursor. It expires a day after the first page; an expired, unknown or malformed snapshot, or one sent for another project or other filters, is 400 invalid_request.
          */
         snapshot?: string;
         /**

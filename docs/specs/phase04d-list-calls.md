@@ -7,7 +7,7 @@ The console's Calls page reads real stored calls through web's API: `listCalls` 
 ## Context
 
 - PRODUCT.md: principles 2 (unknown stays unknown) and 5 (measured, not claimed).
-- ARCHITECTURE.md: Boundaries (the worker owns every telemetry and call-index write; web writes only request-scoped Postgres state, such as this phase's list snapshots, and never ClickHouse). Data Flow step 6 (the worker settles calls on a timer).
+- ARCHITECTURE.md: the Components table (the worker owns every telemetry and call-index write; web writes configuration and request state to Postgres, such as this phase's list snapshots, and never ClickHouse). Data Flow step 6 (the worker settles calls on a timer).
 - `docs/api/openapi.yaml`: operation `listCalls` (line 16), schemas `CallPage`, `Page`, `CallTotals`, `CallSummary` (2916 to 3219), `Error`.
 - `docs/specs/phase04c-get-call.md`: the `/api/v1` router, its gate, and the room and start fallbacks, which this list must agree with.
 - The 04b spec's open question: turns are built at read time, and `listCalls` may need rollups. It does: a range filter or sort on answer time or turn count reads every call in the range, so per-call figures must be stored, not rebuilt per request.

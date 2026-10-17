@@ -585,3 +585,25 @@ func TestRedeliveryAfterCrashMarksStale(t *testing.T) {
 		t.Fatalf("turns after redelivery = %v, want 1", p.Items[0].TurnCount)
 	}
 }
+
+// Pair review of #376: a call that has failed many times in a row still backs off by at most an
+// hour; the interval never overflows and the sweep goes on.
+func TestDeferStaleAfterManyFailures(t *testing.T) {
+	f := newFixture(t)
+	f.roomCall("RM_OFTEN", listBase, nil)
+	f.store()
+	id := f.callID("RM_OFTEN")
+	if _, err := f.pool.Exec(context.Background(), `UPDATE calls SET summary_failures = 1000, summary_stale_at = now() WHERE id = $1::uuid`, id); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.pg.DeferStale(context.Background(), id); err != nil {
+		t.Fatalf("DeferStale after 1000 failures = %v", err)
+	}
+	var wait float64
+	if err := f.pool.QueryRow(context.Background(), `SELECT EXTRACT(EPOCH FROM summary_stale_at - now()) FROM calls WHERE id = $1::uuid`, id).Scan(&wait); err != nil {
+		t.Fatal(err)
+	}
+	if wait < 3500 || wait > 3601 {
+		t.Errorf("backed off by %.0f s, want about an hour", wait)
+	}
+}

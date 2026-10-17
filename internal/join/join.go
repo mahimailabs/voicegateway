@@ -157,7 +157,7 @@ func (j *Joiner) Summarize(ctx context.Context, now time.Time) error {
 			failed++
 			j.Log.Error("join: call summary failed, retrying it after the others", "call", c.ID, "err", err)
 			if err := j.Calls.DeferStale(ctx, c.ID); err != nil {
-				return err
+				j.Log.Error("join: could not back off a failed summary", "call", c.ID, "err", err)
 			}
 		}
 	}
