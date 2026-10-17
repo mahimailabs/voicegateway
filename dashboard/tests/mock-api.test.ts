@@ -197,6 +197,9 @@ describe("LiveKit reads", () => {
     ["ingress", "Ingress"],
     ["sip", "Sip"],
     ["media-server", "MediaServer"],
+    ["agents", "CloudAgents"],
+    ["capacity", "CapacityRun"],
+    ["snapshot", "ProjectSnapshot"],
   ])("%s answers in the contract shape, and 404 for another project", async (path, schema) => {
     const res = await fetch(`${base}/${path}`)
     expect(res.status).toBe(200)

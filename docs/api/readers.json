@@ -23,26 +23,15 @@
   {
     "file": "dashboard/src/features/agents/agents-model.ts",
     "fixtures": [
-      "agents.json"
+      "livekit"
     ],
     "assets": [],
     "browserStorage": false,
     "operations": [
       "getCloudAgents"
     ],
-    "assetNotes": {}
-  },
-  {
-    "file": "dashboard/src/features/agents/capacity.tsx",
-    "fixtures": [
-      "capacity.json"
-    ],
-    "assets": [],
-    "browserStorage": false,
-    "operations": [
-      "getCapacity"
-    ],
-    "assetNotes": {}
+    "assetNotes": {},
+    "exclusion": "agentsFrom builds the list from getCloudAgents and getMediaServer; the legacy agents() reads the mock directly for pages not yet moved (#323)."
   },
   {
     "file": "dashboard/src/features/alerts/alerts-model.ts",
@@ -206,18 +195,6 @@
     "assetNotes": {}
   },
   {
-    "file": "dashboard/src/features/project/project-page.tsx",
-    "fixtures": [
-      "project-snapshot.json"
-    ],
-    "assets": [],
-    "browserStorage": false,
-    "operations": [
-      "getProjectSnapshot"
-    ],
-    "assetNotes": {}
-  },
-  {
     "file": "dashboard/src/features/settings/settings-dialog.tsx",
     "fixtures": [],
     "assets": [],
@@ -316,8 +293,12 @@
     "browserStorage": false,
     "operations": [
       "getCall",
+      "getCapacity",
+      "getCloudAgents",
       "getEgress",
       "getIngress",
+      "getMediaServer",
+      "getProjectSnapshot",
       "getSip",
       "listCalls"
     ],
@@ -370,17 +351,23 @@
   {
     "file": "dashboard/src/mocks/livekit.ts",
     "fixtures": [
+      "agents.json",
+      "capacity.json",
       "egress.json",
       "ingress.json",
       "media-server.json",
+      "project-snapshot.json",
       "sip.json"
     ],
     "assets": [],
     "browserStorage": false,
     "operations": [
+      "getCapacity",
+      "getCloudAgents",
       "getEgress",
       "getIngress",
       "getMediaServer",
+      "getProjectSnapshot",
       "getSip"
     ],
     "assetNotes": {},

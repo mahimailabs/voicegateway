@@ -9,28 +9,33 @@ import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { JOIN_MS } from "@/lib/thresholds"
 import { cn } from "@/lib/utils"
-import raw from "@/mocks/capacity.json"
-import { data, openAtWatchEnd } from "../media-server/room-drawer"
+import type { CapacityRun } from "@/lib/api-types"
+import { type MediaServerData, openAtWatchEnd } from "../media-server/room-drawer"
 import type { Agent } from "./agents-model"
 
 // Capacity test (decision 0022): VoiceGateway ramps synthetic calls at an idle agent until a job stays
 // pending, and reports the last step every call got the agent. The run itself needs the Phase 2
 // server; the console shows the idle check, the plan and the one real run we have.
 
-type Step = { step: number; joined: number; pending: number; join_s: number[]; answer_s: number[]; host_load_1m: number[]; host_cores: number }
-type Run = { source: string; agent: string; ranAt: string; limitedBy: "tester" | "agent"; workerLog: string; steps: Step[] }
-const run = raw as Run
-export const capacityRun = (a: Agent): Run | null => (a.name === run.agent ? run : null)
+type Run = CapacityRun
+type Step = Run["steps"][number]
+// The project's capacity run (getCapacity), when it was for this agent.
+export const capacityRun = (a: Agent, run: Run | null): Run | null => (run && a.name === run.agent ? run : null)
+// Reported values only: an unreported join or answer time is left out, never counted as zero.
+const known = (xs: (number | null)[]) => xs.filter((x): x is number => x !== null)
 
 const STEP_SECONDS = 60
 const ladder = (max: number) => Array.from({ length: Math.log2(max) + 1 }, (_, i) => 2 ** i)
-const median = (xs: number[]) => (xs.length ? [...xs].sort((a, b) => a - b)[Math.floor(xs.length / 2)] : null)
+const median = (xs: (number | null)[]) => {
+  const k = known(xs)
+  return k.length ? [...k].sort((a, b) => a - b)[Math.floor(k.length / 2)] : null
+}
 
 // Idle as far as the captured data can tell: no watched room still had this agent in it when its watch
 // ended. The server checks again, live, just before it starts.
-function idleNow(a: Agent) {
+function idleNow(a: Agent, data: MediaServerData) {
   const name = a.name ?? "unnamed"
-  const busy = data.rooms.filter((r) => openAtWatchEnd(r) && r.participants.some((p) => p.kind === "agent" && (p.agentName ?? "unnamed") === name && openAtWatchEnd(p)))
+  const busy = data.rooms.filter((r) => openAtWatchEnd(r, data) && r.participants.some((p) => p.kind === "agent" && (p.agentName ?? "unnamed") === name && openAtWatchEnd(p, data)))
   // The last read: the latest known end of a watch (NaN when no watch reported one, shown as unknown).
   const ends = data.windows.flatMap((w) => (w.end === null ? [] : [w.end]))
   const lastRead = ends.length ? Math.max(...ends) : NaN
@@ -81,16 +86,16 @@ function demoRun(name: string, max: number): Run {
       step: n,
       joined,
       pending: n - joined,
-      join_s: Array.from({ length: joined }, (_, i) => (i < joined - slow ? 0.42 + (i % 5) * 0.09 : 2.4 + (i % 3) * 0.3)),
-      answer_s: Array.from({ length: joined }, (_, i) => 0.92 + Math.log2(n) * 0.05 + (i % 4) * 0.04),
-      host_load_1m: [0.8, 1.1],
-      host_cores: 16,
+      joinSeconds: Array.from({ length: joined }, (_, i) => (i < joined - slow ? 0.42 + (i % 5) * 0.09 : 2.4 + (i % 3) * 0.3)),
+      answerSeconds: Array.from({ length: joined }, (_, i) => 0.92 + Math.log2(n) * 0.05 + (i % 4) * 0.04),
+      hostLoad1m: [0.8, 1.1],
+      hostCores: 16,
     }
   })
   return { source: "", agent: name, ranAt: new Date().toISOString(), limitedBy: "agent", workerLog: "", steps }
 }
 
-export function CapacityDialog({ agent: a, onOpenChange }: { agent: Agent | null; onOpenChange: (o: boolean) => void }) {
+export function CapacityDialog({ agent: a, ms, onOpenChange }: { agent: Agent | null; ms: MediaServerData; onOpenChange: (o: boolean) => void }) {
   const [max, setMax] = useState("32")
   const [ok, setOk] = useState(false)
   const [phase, setPhase] = useState<"setup" | "running" | "done">("setup")
@@ -104,7 +109,7 @@ export function CapacityDialog({ agent: a, onOpenChange }: { agent: Agent | null
     onOpenChange(o)
   }
   if (!a) return <Dialog open={false} />
-  const idle = idleNow(a)
+  const idle = idleNow(a, ms)
   const steps = ladder(Number(max))
   const calls = steps.reduce((x, y) => x + y, 0)
   const cloud = Boolean(a.cloud)
@@ -193,7 +198,7 @@ export function CapacityDialog({ agent: a, onOpenChange }: { agent: Agent | null
                   </span>
                   {`Step ${Math.min(shown + 1, demo.steps.length)} of ${demo.steps.length}: ${demo.steps[Math.min(shown, demo.steps.length - 1)].step} calls at once`}
                 </p>
-                <CapacityChart steps={demo.steps.slice(0, shown)} all={demo.steps.map((x) => x.step)} />
+                <CapacityChart steps={demo.steps.slice(0, shown)} all={known(demo.steps.map((x) => x.step))} />
               </div>
             ) : (
               <CapacityResult run={demo} bare />
@@ -208,7 +213,7 @@ export function CapacityDialog({ agent: a, onOpenChange }: { agent: Agent | null
               Place real calls through my providers
             </label>
           ) : (
-            <span className="text-[12px] text-muted-foreground tnum">{phase === "done" ? `${calls - demo.steps.reduce((x, s) => x + s.pending, 0)} of ${calls} test calls connected` : "Rooms vg-capacity-*"}</span>
+            <span className="text-[12px] text-muted-foreground tnum">{phase === "done" ? `${calls - demo.steps.reduce((x, s) => x + (s.pending ?? 0), 0)} of ${calls} test calls connected` : "Rooms vg-capacity-*"}</span>
           )}
           <div className="flex gap-2">
             {phase === "setup" ? (
@@ -258,8 +263,9 @@ function CapacityChart({ steps, all, ceiling }: { steps: Step[]; all: number[]; 
   const rows = all.map((n) => {
     const s = steps.find((x) => x.step === n)
     if (!s) return { step: String(n) }
-    const late = s.join_s.filter((j) => j * 1000 > JOIN_MS).length
-    return { step: String(n), inTime: s.joined - late, late, refused: s.pending, answer: median(s.answer_s) }
+    const late = known(s.joinSeconds).filter((j) => j * 1000 > JOIN_MS).length
+    // An unreported joined count leaves the bar out rather than drawing it at zero.
+    return { step: String(n), inTime: s.joined === null ? null : s.joined - late, late, refused: s.pending, answer: median(s.answerSeconds) }
   })
   const top = Math.max(...all)
   return (
@@ -301,11 +307,12 @@ function Tile({ label, foot, warn, children }: { label: string; foot: string; wa
 export function CapacityResult({ run: r, bare }: { run: Run; bare?: boolean }) {
   const passed = r.steps.filter((s) => s.pending === 0)
   const best = passed.length ? passed[passed.length - 1].step : null
-  const failedAt = r.steps.find((s) => s.pending > 0)
+  const failedAt = r.steps.find((s) => s.pending !== null && s.pending > 0)
   const value = failedAt ? failedAt.joined : best
-  const answers = r.steps.map((x) => median(x.answer_s)).filter((v): v is number => v !== null)
-  const joined = r.steps.reduce((n, x) => n + x.joined, 0)
-  const late = r.steps.reduce((n, x) => n + x.join_s.filter((j) => j * 1000 > JOIN_MS).length, 0)
+  const answers = r.steps.map((x) => median(x.answerSeconds)).filter((v): v is number => v !== null)
+  // The total is known only when every step reported how many joined.
+  const joined = r.steps.every((x) => x.joined !== null) ? r.steps.reduce((n, x) => n + x.joined!, 0) : null
+  const late = r.steps.reduce((n, x) => n + known(x.joinSeconds).filter((j) => j * 1000 > JOIN_MS).length, 0)
   return (
     <div className={cn("space-y-4", !bare && "rounded-xl border p-4")}>
       <div className="grid grid-cols-3 divide-x rounded-xl border bg-muted/30">
@@ -326,11 +333,11 @@ export function CapacityResult({ run: r, bare }: { run: Run; bare?: boolean }) {
             )}
           </span>
         </Tile>
-        <Tile label="Late joins" foot={`of ${joined}, new process started`}>
+        <Tile label="Late joins" foot={`of ${joined ?? "an unknown number"}, new process started`}>
           <span className="text-[28px] leading-none font-semibold tracking-[-0.03em] tnum">{late}</span>
         </Tile>
       </div>
-      <CapacityChart steps={r.steps} all={r.steps.map((x) => x.step)} ceiling={value} />
+      <CapacityChart steps={r.steps} all={known(r.steps.map((x) => x.step))} ceiling={value} />
       {r.source && <p className="text-[11px] leading-relaxed text-muted-foreground">{`${r.source} The worker logged: ${r.workerLog}.`}</p>}
     </div>
   )
