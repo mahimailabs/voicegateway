@@ -1,0 +1,38 @@
+// VoiceGateway's components (ARCHITECTURE.md): one Go binary in two roles, web and worker, with a
+// Redis stream as their only link. Render: npm --prefix tools/readme-diagram ci && npm --prefix tools/readme-diagram run build
+// Brand marks are from Simple Icons (CC0). The S3 bucket uses reladraw's own package icon.
+icon postgres "./icons/postgres.svg"
+icon redis "./icons/redis.svg"
+icon clickhouse "./icons/clickhouse.svg"
+icon livekit "./icons/livekit.svg"
+icon golang "./icons/golang.svg"
+icon react "./icons/react.svg"
+icon python "./icons/python.svg"
+
+style quiet text: (color: theme-muted)
+style pink border: #ff2e88
+style cyan border: #00d1ff
+style lime border: #a3e635
+style orange border: #ff9f1c
+style violet border: #a855f7
+
+node vg "VoiceGateway / [quiet]one Go binary, two roles[/quiet]" (at: bottom-left) border: theme-border
+node vg.pg "Postgres / [quiet]projects, keys, call index[/quiet]" badge: postgres style: cyan
+node vg.s3 "S3 bucket / [quiet]recordings, opt-in[/quiet]" badge: package style: violet right of vg.pg
+node vg.redis "Redis / [quiet]ingest stream, live feed[/quiet]" badge: redis style: orange right of vg.s3
+node vg.ch "ClickHouse / [quiet]events, turns, spans[/quiet]" badge: clickhouse style: lime right of vg.redis
+node vg.web "web / [quiet]checks keys, ingests, serves the API[/quiet]" badge: golang style: pink above vg.pg and vg.s3 gap: wide
+node vg.worker "worker / [quiet]joins calls, writes batches[/quiet]" badge: golang style: pink above vg.redis and vg.ch gap: wide
+
+node agent "Voice agent / [quiet]LiveKit Agents, SDK[/quiet]" badge: python style: violet above vg.web gap: wide
+node livekit "LiveKit / [quiet]server, SIP, Egress[/quiet]" badge: livekit style: violet left of agent level with agent
+node dash "Dashboard + MCP / [quiet]reads only through web[/quiet]" badge: react style: cyan right of agent level with agent
+
+edge livekit -> vg.web "webhooks, metrics" from: bottom to: top
+edge agent -> vg.web "spans, uploads" from: bottom to: top
+edge dash -> vg.web "API" from: bottom to: right
+edge vg.web -> vg.redis "append" line: (pattern: dashed)
+edge vg.redis -> vg.worker "consume" from: top to: bottom line: (pattern: dashed)
+edge vg.worker -> vg.ch "batched writes" from: bottom to: top line: (pattern: dashed)
+edge vg.web -> vg.pg from: bottom to: top line: (pattern: dashed)
+edge vg.web -> vg.s3 from: bottom to: top line: (pattern: dashed)
