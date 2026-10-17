@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { Link, useNavigate, useParams } from "@tanstack/react-router"
 import { keepPreviousData, useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query"
 import type { SortingState } from "@tanstack/react-table"
@@ -18,7 +18,6 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { cn } from "@/lib/utils"
 import { ApiError, type Call, type CallSummary, type CallTotals, callCountQuery, callPagesQuery, callQuery, latestCallQuery } from "@/lib/api"
 import { serverOperators, toServerParams } from "./call-filters"
-import { usePreviewCall } from "@/mocks/preview"
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty"
 import { PageState, errorText } from "@/components/page-state"
 import { Spinner } from "@/components/ui/spinner"
@@ -105,6 +104,8 @@ const length = (s: number) => (s >= 60 ? `${Math.floor(s / 60)}m ${String(s % 60
 const right = { headerClassName: "[&>div]:w-full [&>div]:justify-end", cellClassName: "text-right" }
 
 // The columns the server can sort, by their listCalls sort key. The others do not sort.
+const startedText = (r: Row) => new Date(r.summary.startedAt).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })
+
 export const serverSort: Record<string, string> = { started: "startedAt", length: "durationSeconds", turns: "turnCount", answer: "answerMs", issues: "issues" }
 
 function AnswerCell({ r }: { r: Row }) {
@@ -148,7 +149,7 @@ const linkClass = "truncate rounded-sm font-mono text-[12px] outline-none hover:
 // Opening a call keeps the list's filters and range, not the previous call's drawer state.
 const keepListState = ({ turn: _t, pane: _p, events: _e, ...rest }: Record<string, unknown>) => rest
 const ConsoleCallLink: CallLink = ({ row, className, children }) => (
-  <Link to="/calls/$callId" params={{ callId: row.summary.id }} search={keepListState} onClick={(e) => e.stopPropagation()} className={className}>
+  <Link to="/calls/$callId" params={{ callId: row.summary.id }} search={keepListState} onClick={(e) => e.stopPropagation()} className={className} data-call-id={row.summary.id}>
     {children}
   </Link>
 )
@@ -171,8 +172,12 @@ export function columns(tagsOf: (room: string) => string[], CallName: CallLink =
             {r.preview && <span className="rounded-full bg-accent px-2 py-0.5 text-[11px] text-accent-foreground">Design preview</span>}
           </div>
           <div className="truncate text-[11px] text-muted-foreground">{r.label || "pipeline not reported"}</div>
-          {/* At phone width the other columns hide; the answer time and issues stack here instead. */}
+          {/* At phone width the other columns hide; when it started, its turns, the answer time and issues stack here instead. */}
           <div className="mt-1 flex flex-wrap items-center gap-3 sm:hidden">
+            <span className="text-[12px] text-muted-foreground tnum">{startedText(r)}</span>
+            <span className="text-[12px] text-muted-foreground tnum">
+              {r.summary.turnCount ?? "?"} {r.summary.turnCount === 1 ? "turn" : "turns"}
+            </span>
             <AnswerCell r={r} />
             <IssuesCell r={r} />
           </div>
@@ -206,7 +211,7 @@ export function columns(tagsOf: (room: string) => string[], CallName: CallLink =
       accessorFn: (r) => r.started,
       header: ({ column }) => <DataGridColumnHeader title="Started" column={column} />,
       size: 130,
-      cell: ({ row: { original: r } }) => <span className="text-[12px] text-muted-foreground tnum">{new Date(r.summary.startedAt).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}</span>,
+      cell: ({ row: { original: r } }) => <span className="text-[12px] text-muted-foreground tnum">{startedText(r)}</span>,
     },
     {
       id: "length",
@@ -277,12 +282,37 @@ function callFields(allTags: string[], tagsOf: (room: string) => string[]): Fiel
   ]
 }
 
+// The design preview (mocks/preview.ts) in development only. It is loaded with import() inside the DEV
+// check, so a production build leaves it and the captured calls it reads out of the bundle.
+function usePreviewCall() {
+  const [preview, setPreview] = useState<{ call: Call; summary: CallSummary } | null>(null)
+  useEffect(() => {
+    if (import.meta.env.DEV)
+      import("@/mocks/preview")
+        .then((m) => m.loadPreviewCall())
+        .then(setPreview)
+        .catch(() => setPreview(null))
+  }, [])
+  return preview
+}
+
 export function CallsPage() {
   const preview = usePreviewCall()
   // The open call lives in the URL, /calls/<call id>, so a call has a link to share.
   const { callId } = useParams({ strict: false }) as { callId?: string }
   const navigate = useNavigate()
   const queryClient = useQueryClient()
+  // The call last open, so closing its drawer puts focus back on its link and keyboard users keep their place.
+  const lastOpen = useRef<string | null>(null)
+  useEffect(() => {
+    if (callId) lastOpen.current = callId
+  }, [callId])
+  const refocus = (e: Event) => {
+    const link = lastOpen.current && document.querySelector<HTMLElement>(`[data-call-id="${CSS.escape(lastOpen.current)}"]`)
+    if (!link) return
+    e.preventDefault()
+    link.focus()
+  }
   const [query, setQuery] = useUrlState<FilterQuery>(
     "q",
     useMemo(() => createFilterQuery([]), []),
@@ -469,7 +499,7 @@ export function CallsPage() {
         <p className="text-[12px] text-muted-foreground">{`Answer time: caller stops talking to agent audio, per turn. The line marks the ${BUDGET_MS / 1000} s budget, a setting, not a measurement.`}</p>
       </section>
       <Sheet open={callId !== undefined} onOpenChange={(o) => !o && setOpen(null)}>
-        <SheetContent side="right" onOpenAutoFocus={(e) => e.preventDefault()} onPointerDownOutside={keepOpenOnInsidePress} className="gap-0 p-0 data-[side=right]:w-[80vw] data-[side=right]:sm:max-w-none">
+        <SheetContent side="right" onOpenAutoFocus={(e) => e.preventDefault()} onCloseAutoFocus={refocus} onPointerDownOutside={keepOpenOnInsidePress} className="gap-0 p-0 data-[side=right]:w-[80vw] data-[side=right]:sm:max-w-none">
           {callId !== undefined && <CallDrawer callId={callId} preview={preview?.call.id === callId ? preview.call : undefined} archived={archived} archive={archive} />}
         </SheetContent>
       </Sheet>
