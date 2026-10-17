@@ -60,7 +60,7 @@ A rule whose source is not connected for a project, such as no agent uploads or 
 
 ## Delivery
 
-- One delivery per incident change (firing, reminder, resolved) per channel. Each delivery has our own idempotency key of incident id, change and channel, so a retry never posts twice.
+- One delivery per incident change (firing, reminder, resolved) per channel. Each delivery has our own idempotency key of incident id, change and channel, so a change confirmed delivered is never sent again. Delivery is at least once: a retry after a timeout can post twice when the channel has no deduplication of its own. Webhook deliveries carry the key in a header so the receiver can drop the repeat.
 - PagerDuty (`dedup_key`) and Opsgenie (`alias`) get the incident id, the same for every change, so the resolve closes the page the firing opened.
 - **Recommended:** retry with exponential backoff (30 s, 1 min, 2 min, then doubling up to 30 min) for 24 hours. Retry 5xx, timeouts and 429 (honouring `Retry-After`). Do not retry other 4xx, which mark the channel broken.
 - Deliveries are durable: they survive a worker restart, like ingest entries.
