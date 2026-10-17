@@ -78,6 +78,30 @@ func TestUnknownAPIPathIsGated(t *testing.T) {
 	}
 }
 
+// The LiveKit layer reads sit behind the same gate: a missing or wrong token is 401 in the
+// contract's Error shape before any store is read.
+func TestLayerRoutesAreGated(t *testing.T) {
+	const token = "0123456789abcdef0123456789abcdef"
+	a := &API{Gate: BearerToken(token)}
+	for _, route := range []string{"/media-server"} {
+		for _, auth := range []string{"", "Bearer 0123456789abcdef0123456789abcdee", token} {
+			t.Run(route+" "+auth, func(t *testing.T) {
+				req := httptest.NewRequest(http.MethodGet, "/api/v1/org/org_1/project/prj_1"+route, nil)
+				if auth != "" {
+					req.Header.Set("Authorization", auth)
+				}
+				rec := httptest.NewRecorder()
+				a.Routes().ServeHTTP(rec, req)
+				var e apiError
+				if err := json.Unmarshal(rec.Body.Bytes(), &e); err != nil || rec.Code != http.StatusUnauthorized ||
+					e.Code != codeUnauthenticated || e.RequestID == "" {
+					t.Errorf("status %d, body %s; want 401 unauthenticated in the Error shape", rec.Code, rec.Body.String())
+				}
+			})
+		}
+	}
+}
+
 // A router wired without a gate denies every request, with the Bearer challenge, rather than serve
 // openly; and a client's X-Request-Id never becomes the id in the body.
 func TestNoGateDeniesAndRequestIDIsServers(t *testing.T) {

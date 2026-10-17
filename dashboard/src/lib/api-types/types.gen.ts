@@ -175,6 +175,15 @@ export type CloudAgents = {
     }>;
 };
 
+/**
+ * How fresh a sampled read is. Present when the worker samples the layer; a layer never read successfully answers 503 source_unavailable instead.
+ */
+export type SourceStatus = {
+    lastReadAt: string | null;
+    lastGoodReadAt: string | null;
+    errorClass: 'unauthenticated' | 'permission_denied' | 'unreachable' | 'not_supported' | 'error' | null;
+};
+
 export type MediaServer = {
     source: string;
     server: {
@@ -296,6 +305,7 @@ export type MediaServer = {
             source: string;
         };
     };
+    sourceStatus?: SourceStatus;
 };
 
 export type Sip = {

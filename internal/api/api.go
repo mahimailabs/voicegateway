@@ -17,6 +17,7 @@ type API struct {
 	Projects Projects
 	Calls    Calls
 	Traces   Traces
+	Layers   Layers
 	Log      *slog.Logger
 	Now      func() time.Time
 	// Gate runs before every /api/v1 route: BearerToken until the sign-in decision (0027) lands.
@@ -43,6 +44,7 @@ func (a *API) Routes() http.Handler {
 	})
 	r.Route("/api/v1/org/{orgId}/project/{projectId}", func(r chi.Router) {
 		r.Get("/calls/{callId}", a.getCall)
+		r.Get("/media-server", a.mediaServer)
 	})
 	return r
 }

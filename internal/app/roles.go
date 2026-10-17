@@ -14,6 +14,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/mahimailabs/voicegateway/internal/api"
 	"github.com/mahimailabs/voicegateway/internal/config"
@@ -21,6 +22,7 @@ import (
 	"github.com/mahimailabs/voicegateway/internal/ingest"
 	"github.com/mahimailabs/voicegateway/internal/join"
 	"github.com/mahimailabs/voicegateway/internal/obs"
+	"github.com/mahimailabs/voicegateway/internal/scrape"
 	"github.com/mahimailabs/voicegateway/internal/seal"
 	"github.com/mahimailabs/voicegateway/internal/sink"
 	"github.com/mahimailabs/voicegateway/internal/store/chstore"
@@ -57,6 +59,7 @@ func Web(ctx context.Context, c config.Config, log *slog.Logger) error {
 		return redactErr(err, c.ClickHouseURL)
 	}
 	defer func() { _ = events.Close() }()
+
 	projects := pgstore.NewStore(pool, sealer)
 	producer := stream.NewProducer(rdb, stream.Ingest)
 	uploads := &ingest.Uploads{Projects: projects, Stream: producer, Log: log, Now: time.Now}
@@ -73,7 +76,7 @@ func Web(ctx context.Context, c config.Config, log *slog.Logger) error {
 		log.Warn("web: VOICEGATEWAY_API_TOKEN is not set, so /api/v1 answers 401 to every request")
 	}
 	mux.Handle("/api/v1/", (&api.API{
-		Projects: projects, Calls: projects, Traces: events, Log: log, Now: time.Now, Gate: api.BearerToken(c.APIToken),
+		Projects: projects, Calls: projects, Traces: events, Layers: events, Log: log, Now: time.Now, Gate: api.BearerToken(c.APIToken),
 	}).Routes())
 
 	srv := &http.Server{
@@ -109,9 +112,19 @@ func Web(ctx context.Context, c config.Config, log *slog.Logger) error {
 	return nil
 }
 
-// Worker joins and stores what web appends to the stream until ctx is cancelled, and sweeps idle
-// calls and unlinked traces once a minute. It never answers HTTP (CLAUDE.md Boundaries).
+// Worker joins and stores what web appends to the stream, sweeps idle calls and unlinked traces
+// once a minute, and samples each project's LiveKit server until ctx is cancelled. It never answers
+// HTTP (CLAUDE.md Boundaries).
 func Worker(ctx context.Context, c config.Config, log *slog.Logger) error {
+	sealer, err := seal.New(c.SecretKey)
+	if err != nil {
+		return fmt.Errorf("secret key: %w", err)
+	}
+	pool, err := pgxpool.New(ctx, c.PostgresURL)
+	if err != nil {
+		return fmt.Errorf("postgres: %w", redactErr(err, c.PostgresURL))
+	}
+	defer pool.Close()
 	opts, err := redis.ParseURL(c.RedisURL)
 	if err != nil {
 		return fmt.Errorf("parse VOICEGATEWAY_REDIS_URL: %w", redactErr(err, c.RedisURL))
@@ -123,11 +136,6 @@ func Worker(ctx context.Context, c config.Config, log *slog.Logger) error {
 		return redactErr(err, c.ClickHouseURL)
 	}
 	defer func() { _ = events.Close() }()
-	pool, err := pgxpool.New(ctx, c.PostgresURL)
-	if err != nil {
-		return fmt.Errorf("postgres: %w", redactErr(err, c.PostgresURL))
-	}
-	defer pool.Close()
 	// The call index needs no sealer: it never reads a LiveKit secret.
 	joiner := &join.Joiner{Calls: pgstore.NewStore(pool, nil), Traces: events, Log: log, Timeout: 30 * time.Second}
 	// One consumer per worker process; a worker that dies leaves its entries to be claimed.
@@ -137,23 +145,39 @@ func Worker(ctx context.Context, c config.Config, log *slog.Logger) error {
 	}
 
 	log.Info("worker started", "consumer", name)
-	swept := make(chan struct{})
-	go func() {
-		defer close(swept)
-		sweep(ctx, joiner, log)
-	}()
-	err = (&sink.Sink{
-		Stream:    stream.NewConsumer(rdb, stream.Ingest, workerGroup, name),
-		Events:    events,
-		Join:      joiner,
-		Log:       log,
-		Batch:     1000,
-		Block:     time.Second,
-		ClaimIdle: time.Minute,
-		Backoff:   250 * time.Millisecond, MaxBackoff: 30 * time.Second,
-		Timeout: 30 * time.Second,
-	}).Run(ctx)
-	<-swept
+	g, gctx := errgroup.WithContext(ctx)
+	g.Go(func() error {
+		return (&scrape.Scraper{
+			Projects:  pgstore.NewStore(pool, sealer),
+			Samples:   events,
+			Lock:      &scrape.RedisLock{Client: rdb},
+			Dial:      scrape.DialSDK,
+			ID:        name,
+			Log:       log,
+			Now:       time.Now,
+			Every:     10 * time.Second,
+			FullEvery: time.Minute,
+			Timeout:   10 * time.Second,
+		}).Run(gctx)
+	})
+	g.Go(func() error {
+		sweep(gctx, joiner, log)
+		return nil
+	})
+	g.Go(func() error {
+		return (&sink.Sink{
+			Stream:    stream.NewConsumer(rdb, stream.Ingest, workerGroup, name),
+			Events:    events,
+			Join:      joiner,
+			Log:       log,
+			Batch:     1000,
+			Block:     time.Second,
+			ClaimIdle: time.Minute,
+			Backoff:   250 * time.Millisecond, MaxBackoff: 30 * time.Second,
+			Timeout: 30 * time.Second,
+		}).Run(gctx)
+	})
+	err = g.Wait()
 	log.Info("worker stopped")
 	return err
 }
