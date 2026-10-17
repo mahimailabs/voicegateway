@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { Link, useNavigate, useParams } from "@tanstack/react-router"
 import { keepPreviousData, useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query"
 import type { SortingState } from "@tanstack/react-table"
@@ -18,7 +18,6 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { cn } from "@/lib/utils"
 import { ApiError, type Call, type CallSummary, type CallTotals, callCountQuery, callPagesQuery, callQuery, latestCallQuery } from "@/lib/api"
 import { serverOperators, toServerParams } from "./call-filters"
-import { usePreviewCall } from "@/mocks/preview"
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty"
 import { PageState, errorText } from "@/components/page-state"
 import { Spinner } from "@/components/ui/spinner"
@@ -281,6 +280,20 @@ function callFields(allTags: string[], tagsOf: (room: string) => string[]): Fiel
     { id: "recorded", label: "Recorded", type: "boolean", icon: <Waveform />, operators: serverOperators.boolean, get: (r) => r.summary.recorded },
     ...(allTags.length ? [{ id: "tag", label: "Tag", type: "multiselect" as const, icon: <Tag />, operators: serverOperators.tags, options: allTags.map((t) => ({ value: t, label: t })), get: (r: Row) => tagsOf(r.summary.room) }] : []),
   ]
+}
+
+// The design preview (mocks/preview.ts) in development only. It is loaded with import() inside the DEV
+// check, so a production build leaves it and the captured calls it reads out of the bundle.
+function usePreviewCall() {
+  const [preview, setPreview] = useState<{ call: Call; summary: CallSummary } | null>(null)
+  useEffect(() => {
+    if (import.meta.env.DEV)
+      import("@/mocks/preview")
+        .then((m) => m.loadPreviewCall())
+        .then(setPreview)
+        .catch(() => setPreview(null))
+  }, [])
+  return preview
 }
 
 export function CallsPage() {

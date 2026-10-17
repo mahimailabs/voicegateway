@@ -21,11 +21,10 @@ import { NewProjectDialog } from "@/components/new-project-dialog"
 import { currentOrg, currentScope, scopePrefix, useUrlState } from "@/lib/url-state"
 import { type WidgetId, widgets } from "@/features/embed/widgets"
 import { DEFAULTS, type Thresholds as T } from "@/lib/thresholds"
-import { invitationsQuery, listCalls, projectSettingsQuery } from "@/lib/api"
+import { callTotalsQuery, invitationsQuery, latestMatchingCallQuery, mediaServerQuery, projectSettingsQuery } from "@/lib/api"
 import type { Invitation, Invitations, ProjectSettings } from "@/lib/api-types"
 import { useLocalSave } from "@/lib/local-store"
 import { errorText } from "@/components/page-state"
-import { data as media } from "@/features/media-server/room-drawer"
 
 // Settings as a modal over the page you are on (layout from shadcn's sidebar-13 block). Three groups,
 // as in ShipVoice Pro's settings: the project picked at the top of the sidebar (integrations, data,
@@ -116,6 +115,15 @@ function Row({ title, description, value, mono, icon: I, muted, last }: { title:
   )
 }
 const NotSet = () => <span className="text-muted-foreground">Not set</span>
+const Muted = ({ children }: { children: React.ReactNode }) => <span className="text-muted-foreground">{children}</span>
+
+// The project's LiveKit server as getMediaServer reports it.
+function ServerUrl() {
+  const read = useQuery(mediaServerQuery())
+  if (read.isPending) return <Muted>Loading</Muted>
+  if (read.isError) return <Muted>Could not be read</Muted>
+  return read.data.server ? <span className="font-mono text-[13px]">{read.data.server.url}</span> : <Muted>not reported</Muted>
+}
 
 // --- Pages ---
 
@@ -164,7 +172,7 @@ function Organisation() {
       <Header title={org().name} description="The organisation that owns your projects. The open-source edition is one organisation with any number of projects and no usage limits." />
       <Group label="Projects">
         {org().projects.map(({ name: p }, k) => (
-          <Row key={p} icon={TreeStructure} title={p} description="Current project" value={<span className="font-mono text-[13px]">{media.server?.url ?? "not reported"}</span>} last={k === org().projects.length - 1} />
+          <Row key={p} icon={TreeStructure} title={p} description="Current project" value={<ServerUrl />} last={k === org().projects.length - 1} />
         ))}
       </Group>
       <div className="pt-3">
@@ -470,14 +478,22 @@ const days = (n: number | null) => (n === null ? <NotSet /> : `${n} ${n === 1 ? 
 
 const Data = () => <WithSettings title="Data">{(s) => <DataPane s={s} />}</WithSettings>
 
+// How many calls have a recording, from listCalls' totals over every call. A count the server could
+// not give stays unknown.
+function RecordedCalls() {
+  const read = useQuery(callTotalsQuery(new URLSearchParams()))
+  if (read.isPending) return <Muted>Loading</Muted>
+  if (read.isError) return <Muted>Could not be read</Muted>
+  const { recorded, callCount } = read.data
+  return `${recorded ?? "Unknown"} of ${callCount ?? "unknown"}`
+}
+
 function DataPane({ s }: { s: ProjectSettings }) {
-  const calls = listCalls().filter((c) => !c.recording?.preview)
-  const recorded = calls.filter((c) => c.recording).length
   return (
     <>
       <Header title="Data" description="Recordings and how long this project keeps what it collects. It all stays in your own storage." badge="Read only" />
       <Group label="Recordings">
-        <Row title="Captured calls with a recording" value={`${recorded} of ${calls.length}`} />
+        <Row title="Captured calls with a recording" value={<RecordedCalls />} />
         <Row title="Source" description="Turned on in the agent session. LiveKit Egress is the other option." value="Agent session upload" />
         <Row title="Storage bucket" description="SeaweedFS from the install, or any S3 bucket." value={s.storageBucket ?? <NotSet />} last />
       </Group>
@@ -563,7 +579,9 @@ function Embeds() {
   const [pick, setPick] = useUrlState<WidgetId>("widget", "answer-time")
   const [theme, setTheme] = useState<"light" | "dark">("light")
   const w = widgets.find((x) => x.id === pick) ?? widgets[0]
-  const callId = listCalls().find((c) => c.turns?.length)?.id
+  // The call widget previews the newest call with a turn; other widgets need no call.
+  const latest = useQuery({ ...latestMatchingCallQuery(new URLSearchParams({ turnsMin: "1" })), enabled: pick === "call" })
+  const callId = latest.data?.id
   const src = `${window.location.origin}${scopePrefix()}/embed/${w.id}`
   const preview = `${src}?theme=${theme}${w.id === "call" && callId ? `&call=${encodeURIComponent(callId)}` : ""}`
   const snippet = `<iframe\n  src="${src}?token=EMBED_TOKEN&theme=${theme}${w.id === "call" ? "&call=CALL_ID" : ""}"\n  width="100%"\n  height="${w.height}"\n  style="border: 0"\n  title="${w.title}, VoiceGateway"\n></iframe>`
@@ -594,7 +612,13 @@ function Embeds() {
           </ToggleGroup>
         </div>
         <p className="text-[13px] text-muted-foreground">{w.description}</p>
-        <iframe key={preview} src={preview} title={`${w.title} preview`} className="block w-full rounded-xl border" style={{ height: Math.min(w.height, 420) }} />
+        {w.id === "call" && !callId ? (
+          <p className="rounded-xl border px-4 py-10 text-center text-[13px] text-muted-foreground">
+            {latest.isPending ? "Loading a call for the preview." : latest.isError ? `A call for the preview could not be read. ${errorText(latest.error)}` : "No call with a turn yet, so there is nothing to preview."}
+          </p>
+        ) : (
+          <iframe key={preview} src={preview} title={`${w.title} preview`} className="block w-full rounded-xl border" style={{ height: Math.min(w.height, 420) }} />
+        )}
       </section>
       <section className="pt-6">
         <h3 className="pb-1 text-[14px] font-semibold">Snippet</h3>

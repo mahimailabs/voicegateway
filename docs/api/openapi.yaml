@@ -3449,8 +3449,8 @@ components:
           type: object
           additionalProperties: false
           required: [ high, medium, low, info ]
-          description: "Issues in the range by severity, the same groups listIssues returns."
-          x-source: { kind: computed, file: dashboard/src/features/issues/issues-model.ts, pointer: null, detail: "Issues in the range by severity, the same groups listIssues returns." }
+          description: "Event issues with a hit in the range by severity, the same groups listIssues returns with kind event. Standing issues are current state, not problems in the range, and are not counted."
+          x-source: { kind: computed, file: dashboard/src/features/issues/issues-model.ts, pointer: null, detail: "Event issues with a hit in the range by severity, the same groups listIssues returns with kind event. Standing issues are not counted." }
           properties:
             high:
               type: [ integer, "null" ]
@@ -3739,12 +3739,12 @@ components:
           x-source: { kind: computed, file: docs/api/coverage.md, pointer: null, detail: "false when part of the range is not stored, so an issue may have more hits than listed." }
         items:
           type: array
-          description: "Issues in the range, high severity first, then by hits. Grouping, titles and severities are the ones in issues-model.ts."
-          x-source: { kind: computed, file: dashboard/src/features/issues/issues-model.ts, pointer: null, detail: "Issues in the range, high severity first, then by hits. Grouping, titles and severities are the ones in issues-model.ts." }
+          description: "Event issues with a hit in the range, and every standing issue whatever the range, high severity first, then by hits. Grouping, titles and severities are the ones in issues-model.ts."
+          x-source: { kind: computed, file: dashboard/src/features/issues/issues-model.ts, pointer: null, detail: "Event issues with a hit in the range, and every standing issue whatever the range, high severity first, then by hits. Grouping, titles and severities are the ones in issues-model.ts." }
           items:
             type: object
             additionalProperties: false
-            required: [ id, title, severity, source, lastSeenAt, hits ]
+            required: [ id, title, kind, severity, source, lastSeenAt, hits ]
             properties:
               id:
                 type: string
@@ -3754,6 +3754,11 @@ components:
                 type: string
                 description: "Issue title."
                 x-source: { kind: computed, file: dashboard/src/features/issues/issues-model.ts, pointer: null, detail: "Issue title." }
+              kind:
+                type: string
+                enum: [ event, standing ]
+                description: "event: something that happened, each hit dated and kept only when from <= at < to. standing: a state true of the latest read (an agent worker or phone bridge check over what LiveKit lists now), listed in every range with undated hits and never counted as a problem in the range."
+                x-source: { kind: computed, file: dashboard/src/features/issues/issues-model.ts, pointer: null, detail: "Call findings are events dated by the call's start; Agent workers and Phone bridge checks run over the current read, so they are standing." }
               severity:
                 type: string
                 enum: [ high, medium, low, info ]
@@ -3768,12 +3773,12 @@ components:
                 type: [ string, "null" ]
                 format: date-time
                 description: "Most recent hit, UTC. Compared with a disposition's time to mark a resolved issue as regressed."
-                x-null-reason: "No hit carries a time, for example a configuration check."
+                x-null-reason: "A standing issue, whose hits carry no time because it is true now."
                 x-source: { kind: computed, file: dashboard/src/features/issues/issues-model.ts, pointer: null, detail: "Most recent hit, UTC. Compared with a disposition's time to mark a resolved issue as regressed." }
               hits:
                 type: array
-                description: "Where the issue was found, most recent first."
-                x-source: { kind: computed, file: dashboard/src/features/issues/issues-model.ts, pointer: null, detail: "Where the issue was found, most recent first." }
+                description: "Where the issue was found, most recent first. Never empty."
+                x-source: { kind: computed, file: dashboard/src/features/issues/issues-model.ts, pointer: null, detail: "Where the issue was found, most recent first. Never empty." }
                 items:
                   type: object
                   additionalProperties: false
@@ -3783,7 +3788,7 @@ components:
                       type: [ string, "null" ]
                       format: date-time
                       description: "When the hit happened, UTC."
-                      x-null-reason: "The check has no event time, for example a trunk setting."
+                      x-null-reason: "Always null on a standing issue, for example a trunk setting. An event hit always has a time; one whose time was not captured is in no range and is not listed."
                       x-source: { kind: computed, file: dashboard/src/features/issues/issues-model.ts, pointer: null, detail: "When the hit happened, UTC." }
                     where:
                       type: string

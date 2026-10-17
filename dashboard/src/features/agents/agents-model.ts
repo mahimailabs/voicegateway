@@ -1,7 +1,6 @@
 import { JOIN_MS } from "@/lib/thresholds"
 import type { CloudAgents } from "@/lib/api-types"
-import { cloudAgents } from "@/mocks/livekit"
-import { type MediaServerData, type Room, data as legacyRooms } from "../media-server/room-drawer"
+import type { MediaServerData, Room } from "../media-server/room-drawer"
 
 // The agents of a project, from two reads: LiveKit Cloud's CloudAgent API for deployed agents, and the
 // jobs and agent participants in the rooms we watched for every agent, including self-hosted workers
@@ -30,9 +29,6 @@ export type Agent = {
 }
 
 const realVersion = (v: string | null) => (v && v !== "---" ? v : null)
-
-// Pages not yet reading the API build the list from the mock directly; #323 removes this.
-export const agents = (): Agent[] => agentsFrom(cloudAgents(), legacyRooms)
 
 // The agents from the CloudAgent read (getCloudAgents) and the rooms of the media server read.
 export function agentsFrom(cloud: CloudAgents, rooms: MediaServerData): Agent[] {

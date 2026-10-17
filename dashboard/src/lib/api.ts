@@ -1,5 +1,4 @@
 import { infiniteQueryOptions } from "@tanstack/react-query"
-import { capturedCalls } from "@/mocks/fixtures"
 import { currentScope } from "@/lib/url-state"
 import type { AlertEvents, AlertSetup, CapacityRun, Invitations, IssueDispositions, ProjectSettings, Workspaces, Call as GeneratedCall, CallPage, CallStats, ProviderProbes, Workers, CloudAgents, CallSummary, CallTotals, Egress, EndOfTurnEvent, Ingress, IssueList, MediaServer, ProjectSnapshot, Sip, ItemEvent, OverlapEvent, RecordingSegment, Span, StateEvent, TranscriptEvent, Turn } from "@/lib/api-types"
 
@@ -8,11 +7,6 @@ export type SessionEvent = StateEvent | TranscriptEvent | EndOfTurnEvent | Overl
 // preview is a console-only marker for the dev design preview, not part of the API contract.
 export type Recording = NonNullable<GeneratedCall["recording"]> & { preview?: string }
 export type Call = Omit<GeneratedCall, "recording"> & { recording?: Recording | null }
-
-// Pages not yet moved to the API read the captured calls directly; #323 removes these as each page
-// moves to fetch.
-export const listCalls = (): Call[] => capturedCalls()
-export const getCall = (room: string): Call | undefined => capturedCalls().find((c) => c.room === room)
 
 // An API answer that is not 2xx. status 0 means no API answered.
 export class ApiError extends Error {
@@ -62,12 +56,13 @@ export function fetchCallPage(filters: URLSearchParams, next?: { cursor: string;
   return getJSON<CallPage>(`${projectApi()}/calls?${q}`)
 }
 
-// Only the totals and the first rows, for counts beside the list (one page of one call).
-export const fetchCallCount = async (filters: URLSearchParams) => {
+// Only the totals and the first row, for counts beside the list (one page of one call).
+const fetchFirstPage = (filters: URLSearchParams) => {
   const q = new URLSearchParams(filters)
   q.set("limit", "1")
-  return (await getJSON<CallPage>(`${projectApi()}/calls?${q}`)).totals.callCount
+  return getJSON<CallPage>(`${projectApi()}/calls?${q}`)
 }
+export const fetchCallCount = async (filters: URLSearchParams) => (await fetchFirstPage(filters)).totals.callCount
 
 // The most recent calls, newest first, for lists that show a recent slice (the command palette).
 export const recentCallsQuery = () => ({ queryKey: ["calls", currentScope(), "recent"], queryFn: async () => (await fetchCallPage(new URLSearchParams({ sort: "startedAt", order: "desc" }), undefined, 100)).items })
@@ -91,6 +86,18 @@ export const callPagesQuery = (filters: URLSearchParams) =>
   })
 export const latestCallQuery = () => ({ queryKey: ["calls", currentScope(), "latest"], queryFn: fetchLatestCall })
 export const callCountQuery = (filters: URLSearchParams) => ({ queryKey: ["calls", currentScope(), "count", filters.toString()], queryFn: () => fetchCallCount(filters) })
+// The totals over every call matching the filters, such as how many are recorded.
+export const callTotalsQuery = (filters: URLSearchParams) => ({ queryKey: ["calls", currentScope(), "totals", filters.toString()], queryFn: async () => (await fetchFirstPage(filters)).totals })
+// The most recent call matching the filters, or null when none does.
+export const latestMatchingCallQuery = (filters: URLSearchParams) => ({
+  queryKey: ["calls", currentScope(), "latest", filters.toString()],
+  queryFn: async () => {
+    const q = new URLSearchParams(filters)
+    q.set("sort", "startedAt")
+    q.set("order", "desc")
+    return (await fetchFirstPage(q)).items[0] ?? null
+  },
+})
 // The call that ran in one LiveKit room, matched by the room's SID so a reused room name never opens
 // another room's call. It pages through every call with that room name; null only when none matches,
 // and an error when the search stops early, so a partial search is never reported as no call.
