@@ -23,8 +23,8 @@ require (
 	github.com/testcontainers/testcontainers-go/modules/redis v0.44.0
 	github.com/twitchtv/twirp v8.1.3+incompatible
 	go.opentelemetry.io/collector/pdata v1.68.0
-	golang.org/x/sync v0.24.0
 	golang.org/x/crypto v0.58.0
+	golang.org/x/sync v0.24.0
 	golang.org/x/term v0.47.0
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20261012220534-4341edf3f941
 	google.golang.org/protobuf v1.36.12
