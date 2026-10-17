@@ -610,7 +610,7 @@ type mediaRoom struct {
 	FirstSeenAt  *time.Time `json:"firstSeenAt"`
 	LastSeenAt   *time.Time `json:"lastSeenAt"`
 	Participants []struct {
-		store.Participant
+		store.RoomParticipant
 		States []struct {
 			At    *time.Time `json:"at"`
 			State string     `json:"state"`
@@ -628,7 +628,7 @@ func (m mediaServer) room(sid string) *mediaRoom {
 }
 
 func (r *mediaRoom) participant(sid string) *struct {
-	store.Participant
+	store.RoomParticipant
 	States []struct {
 		At    *time.Time `json:"at"`
 		State string     `json:"state"`

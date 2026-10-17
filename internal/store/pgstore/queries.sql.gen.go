@@ -11,6 +11,71 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const callByJobID = `-- name: CallByJobID :one
+SELECT id, ended_at FROM calls
+WHERE organisation_id = $1 AND project_id = $2 AND job_id = $3
+ORDER BY started_at DESC NULLS LAST
+LIMIT 1
+`
+
+type CallByJobIDParams struct {
+	OrganisationID string
+	ProjectID      string
+	JobID          pgtype.Text
+}
+
+type CallByJobIDRow struct {
+	ID      pgtype.UUID
+	EndedAt pgtype.Timestamptz
+}
+
+func (q *Queries) CallByJobID(ctx context.Context, arg CallByJobIDParams) (CallByJobIDRow, error) {
+	row := q.db.QueryRow(ctx, callByJobID, arg.OrganisationID, arg.ProjectID, arg.JobID)
+	var i CallByJobIDRow
+	err := row.Scan(&i.ID, &i.EndedAt)
+	return i, err
+}
+
+const callByRoomSID = `-- name: CallByRoomSID :one
+SELECT id, ended_at FROM calls
+WHERE organisation_id = $1 AND project_id = $2 AND room_sid = $3
+`
+
+type CallByRoomSIDParams struct {
+	OrganisationID string
+	ProjectID      string
+	RoomSid        pgtype.Text
+}
+
+type CallByRoomSIDRow struct {
+	ID      pgtype.UUID
+	EndedAt pgtype.Timestamptz
+}
+
+func (q *Queries) CallByRoomSID(ctx context.Context, arg CallByRoomSIDParams) (CallByRoomSIDRow, error) {
+	row := q.db.QueryRow(ctx, callByRoomSID, arg.OrganisationID, arg.ProjectID, arg.RoomSid)
+	var i CallByRoomSIDRow
+	err := row.Scan(&i.ID, &i.EndedAt)
+	return i, err
+}
+
+const closeIdleCalls = `-- name: CloseIdleCalls :execrows
+UPDATE calls SET end_state = 'inferred', ended_at = last_activity_at
+WHERE end_state = 'open' AND updated_at < $1
+  AND (last_activity_at IS NULL OR last_activity_at < $1)
+`
+
+// Closes calls with no reported activity since @idle_since, and that nothing has joined since then
+// either, so replaying old data does not close a call the moment it is opened. The end is the
+// latest reported activity, null when no source reported one.
+func (q *Queries) CloseIdleCalls(ctx context.Context, idleSince pgtype.Timestamptz) (int64, error) {
+	result, err := q.db.Exec(ctx, closeIdleCalls, idleSince)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const createProject = `-- name: CreateProject :one
 INSERT INTO projects (organisation_id, id, name, livekit_url, livekit_api_key, livekit_api_secret_sealed)
 VALUES ($1, $2, $3, $4, $5, $6)
@@ -56,6 +121,26 @@ func (q *Queries) CreateProject(ctx context.Context, arg CreateProjectParams) (C
 	return i, err
 }
 
+const finishCall = `-- name: FinishCall :exec
+UPDATE calls SET
+    ended_at         = COALESCE($1, ended_at),
+    end_state        = 'observed',
+    last_activity_at = GREATEST(last_activity_at, $1),
+    updated_at       = now()
+WHERE id = $2
+`
+
+type FinishCallParams struct {
+	EndedAt pgtype.Timestamptz
+	ID      pgtype.UUID
+}
+
+// room_finished: the end LiveKit reported, observed.
+func (q *Queries) FinishCall(ctx context.Context, arg FinishCallParams) error {
+	_, err := q.db.Exec(ctx, finishCall, arg.EndedAt, arg.ID)
+	return err
+}
+
 const listProjects = `-- name: ListProjects :many
 SELECT organisation_id, id, name, livekit_url, livekit_api_key, created_at
 FROM projects
@@ -96,6 +181,37 @@ func (q *Queries) ListProjects(ctx context.Context) ([]ListProjectsRow, error) {
 		return nil, err
 	}
 	return items, nil
+}
+
+const openCallInRoom = `-- name: OpenCallInRoom :one
+SELECT id FROM calls
+WHERE organisation_id = $1 AND project_id = $2 AND room_name = $3
+  AND (started_at IS NULL OR started_at <= $4)
+  AND (ended_at IS NULL OR ended_at >= $4)
+  AND (end_state = 'open' OR ended_at IS NOT NULL)
+ORDER BY started_at DESC NULLS LAST
+LIMIT 1
+`
+
+type OpenCallInRoomParams struct {
+	OrganisationID string
+	ProjectID      string
+	RoomName       pgtype.Text
+	At             pgtype.Timestamptz
+}
+
+// The call in a named room at a reported time: the room-name-and-window fallback of 0012, for
+// sources that name no room SID.
+func (q *Queries) OpenCallInRoom(ctx context.Context, arg OpenCallInRoomParams) (pgtype.UUID, error) {
+	row := q.db.QueryRow(ctx, openCallInRoom,
+		arg.OrganisationID,
+		arg.ProjectID,
+		arg.RoomName,
+		arg.At,
+	)
+	var id pgtype.UUID
+	err := row.Scan(&id)
+	return id, err
 }
 
 const organisationExists = `-- name: OrganisationExists :one
@@ -188,4 +304,130 @@ func (q *Queries) SealedLiveKitSecret(ctx context.Context, arg SealedLiveKitSecr
 	var livekit_api_secret_sealed []byte
 	err := row.Scan(&livekit_api_secret_sealed)
 	return livekit_api_secret_sealed, err
+}
+
+const touchCall = `-- name: TouchCall :exec
+UPDATE calls SET
+    job_id           = COALESCE(job_id, $1),
+    started_at       = COALESCE(started_at, $2),
+    last_activity_at = GREATEST(last_activity_at, $3),
+    updated_at       = now()
+WHERE id = $4
+`
+
+type TouchCallParams struct {
+	JobID          pgtype.Text
+	StartedAt      pgtype.Timestamptz
+	LastActivityAt pgtype.Timestamptz
+	ID             pgtype.UUID
+}
+
+// Adds what a source joined by job id or room name reported to its call.
+func (q *Queries) TouchCall(ctx context.Context, arg TouchCallParams) error {
+	_, err := q.db.Exec(ctx, touchCall,
+		arg.JobID,
+		arg.StartedAt,
+		arg.LastActivityAt,
+		arg.ID,
+	)
+	return err
+}
+
+const upsertCallByJobID = `-- name: UpsertCallByJobID :one
+INSERT INTO calls (organisation_id, project_id, job_id, last_activity_at)
+VALUES ($1, $2, $3, $4)
+ON CONFLICT (organisation_id, project_id, job_id) WHERE room_sid IS NULL AND job_id IS NOT NULL DO UPDATE SET
+    last_activity_at = GREATEST(calls.last_activity_at, EXCLUDED.last_activity_at),
+    updated_at       = now()
+RETURNING id
+`
+
+type UpsertCallByJobIDParams struct {
+	OrganisationID string
+	ProjectID      string
+	JobID          pgtype.Text
+	LastActivityAt pgtype.Timestamptz
+}
+
+// Opens a call for a job no source has named a room SID for, or adds to it.
+func (q *Queries) UpsertCallByJobID(ctx context.Context, arg UpsertCallByJobIDParams) (pgtype.UUID, error) {
+	row := q.db.QueryRow(ctx, upsertCallByJobID,
+		arg.OrganisationID,
+		arg.ProjectID,
+		arg.JobID,
+		arg.LastActivityAt,
+	)
+	var id pgtype.UUID
+	err := row.Scan(&id)
+	return id, err
+}
+
+const upsertCallByRoomSID = `-- name: UpsertCallByRoomSID :one
+INSERT INTO calls (organisation_id, project_id, room_sid, room_name, job_id, started_at, last_activity_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7)
+ON CONFLICT (organisation_id, project_id, room_sid) WHERE room_sid IS NOT NULL DO UPDATE SET
+    room_name        = COALESCE(calls.room_name, EXCLUDED.room_name),
+    job_id           = COALESCE(calls.job_id, EXCLUDED.job_id),
+    started_at       = COALESCE(calls.started_at, EXCLUDED.started_at),
+    last_activity_at = GREATEST(calls.last_activity_at, EXCLUDED.last_activity_at),
+    updated_at       = now()
+RETURNING id
+`
+
+type UpsertCallByRoomSIDParams struct {
+	OrganisationID string
+	ProjectID      string
+	RoomSid        pgtype.Text
+	RoomName       pgtype.Text
+	JobID          pgtype.Text
+	StartedAt      pgtype.Timestamptz
+	LastActivityAt pgtype.Timestamptz
+}
+
+// Opens the call of one room instance or adds to it. A value already set is kept; the latest
+// reported activity wins. GREATEST and COALESCE skip nulls, so an unreported time changes nothing.
+func (q *Queries) UpsertCallByRoomSID(ctx context.Context, arg UpsertCallByRoomSIDParams) (pgtype.UUID, error) {
+	row := q.db.QueryRow(ctx, upsertCallByRoomSID,
+		arg.OrganisationID,
+		arg.ProjectID,
+		arg.RoomSid,
+		arg.RoomName,
+		arg.JobID,
+		arg.StartedAt,
+		arg.LastActivityAt,
+	)
+	var id pgtype.UUID
+	err := row.Scan(&id)
+	return id, err
+}
+
+const upsertParticipant = `-- name: UpsertParticipant :exec
+INSERT INTO call_participants (call_id, participant_sid, identity, kind, joined_at, left_at)
+VALUES ($1, $2, $3, $4, $5, $6)
+ON CONFLICT (call_id, participant_sid) DO UPDATE SET
+    identity  = CASE WHEN EXCLUDED.identity <> '' THEN EXCLUDED.identity ELSE call_participants.identity END,
+    kind      = EXCLUDED.kind,
+    joined_at = COALESCE(call_participants.joined_at, EXCLUDED.joined_at),
+    left_at   = COALESCE(EXCLUDED.left_at, call_participants.left_at)
+`
+
+type UpsertParticipantParams struct {
+	CallID         pgtype.UUID
+	ParticipantSid string
+	Identity       string
+	Kind           string
+	JoinedAt       pgtype.Timestamptz
+	LeftAt         pgtype.Timestamptz
+}
+
+func (q *Queries) UpsertParticipant(ctx context.Context, arg UpsertParticipantParams) error {
+	_, err := q.db.Exec(ctx, upsertParticipant,
+		arg.CallID,
+		arg.ParticipantSid,
+		arg.Identity,
+		arg.Kind,
+		arg.JoinedAt,
+		arg.LeftAt,
+	)
+	return err
 }

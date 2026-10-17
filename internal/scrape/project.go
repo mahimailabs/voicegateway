@@ -90,8 +90,8 @@ func jobStatuses(st *livekit.JobState) []store.StatusAt {
 // projectParticipant turns a livekit.ParticipantInfo into the stored projection, with its state and
 // SIP call status. Identity, name, metadata and attributes other than LiveKit's sip.* keys are not
 // part of it. agentNames maps an agent participant's identity to the agent its job dispatched.
-func projectParticipant(p *livekit.ParticipantInfo, agentNames map[string]string) (store.Participant, string, string) {
-	out := store.Participant{
+func projectParticipant(p *livekit.ParticipantInfo, agentNames map[string]string) (store.RoomParticipant, string, string) {
+	out := store.RoomParticipant{
 		SID:      p.GetSid(),
 		Kind:     strings.ToLower(p.GetKind().String()),
 		Region:   nonEmpty(p.GetRegion()),

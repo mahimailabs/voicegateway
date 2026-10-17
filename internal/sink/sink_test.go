@@ -105,6 +105,7 @@ func (f fixture) sink(name string, events Events) *Sink {
 	return &Sink{
 		Stream:    stream.NewConsumer(f.rdb, stream.Ingest, "worker", name),
 		Events:    events,
+		Join:      noJoin{},
 		Log:       slog.New(slog.NewTextHandler(io.Discard, nil)),
 		Batch:     100,
 		Block:     100 * time.Millisecond,
@@ -123,6 +124,11 @@ func (f fixture) append(t *testing.T, kind event.Kind, id, payload string) {
 		t.Fatal(err)
 	}
 }
+
+// noJoin leaves rows unjoined; joining is tested in internal/join.
+type noJoin struct{}
+
+func (noJoin) Join(context.Context, []store.Event) error { return nil }
 
 // run runs a sink until cond holds or the deadline passes, then stops it.
 func run(t *testing.T, s *Sink, cond func() bool) {

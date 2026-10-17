@@ -46,7 +46,7 @@ type ParticipantSample struct {
 	ProjectID      string
 	ReadAt         time.Time
 	RoomSID        string
-	Participant    Participant
+	Participant    RoomParticipant
 	// State is an agent participant's lk.agent.state attribute (listening, thinking, speaking...),
 	// empty for other participants.
 	State string
@@ -109,9 +109,9 @@ type StatusAt struct {
 	Status string     `json:"status"`
 }
 
-// Participant is the projection of livekit.ParticipantInfo. Identity, name, metadata and other
+// RoomParticipant is the projection of livekit.ParticipantInfo. Identity, name, metadata and other
 // attributes are not part of it.
-type Participant struct {
+type RoomParticipant struct {
 	SID         string      `json:"sid"`
 	Kind        string      `json:"kind"`
 	Region      *string     `json:"region"`
@@ -178,7 +178,7 @@ type RoomSeen struct {
 // saw it.
 type ParticipantSeen struct {
 	RoomSID     string
-	Participant Participant
+	Participant RoomParticipant
 	FirstSeen   time.Time
 	LastSeen    time.Time
 }

@@ -37,7 +37,7 @@ type mediaRoom struct {
 }
 
 type mediaParticipant struct {
-	store.Participant
+	store.RoomParticipant
 	FirstSeenAt *time.Time `json:"firstSeenAt"`
 	LastSeenAt  *time.Time `json:"lastSeenAt"`
 	States      []stateAt  `json:"states"`
@@ -140,7 +140,7 @@ func joinRooms(rooms []store.RoomSeen, parts []store.ParticipantSeen, changes []
 	byRoom := map[string][]mediaParticipant{}
 	for _, p := range parts {
 		k := pkey{p.RoomSID, p.Participant.SID}
-		mp := mediaParticipant{Participant: p.Participant, FirstSeenAt: timePtr(p.FirstSeen), LastSeenAt: timePtr(p.LastSeen), States: states[k]}
+		mp := mediaParticipant{RoomParticipant: p.Participant, FirstSeenAt: timePtr(p.FirstSeen), LastSeenAt: timePtr(p.LastSeen), States: states[k]}
 		if mp.States == nil {
 			mp.States = []stateAt{}
 		}

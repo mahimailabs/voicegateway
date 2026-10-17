@@ -20,6 +20,7 @@ import (
 	"github.com/mahimailabs/voicegateway/internal/config"
 	"github.com/mahimailabs/voicegateway/internal/event"
 	"github.com/mahimailabs/voicegateway/internal/ingest"
+	"github.com/mahimailabs/voicegateway/internal/join"
 	"github.com/mahimailabs/voicegateway/internal/obs"
 	"github.com/mahimailabs/voicegateway/internal/scrape"
 	"github.com/mahimailabs/voicegateway/internal/seal"
@@ -105,9 +106,9 @@ func Web(ctx context.Context, c config.Config, log *slog.Logger) error {
 	return nil
 }
 
-// Worker stores what web appends to the stream and samples each project's LiveKit server until ctx
-// is cancelled. Call joining and settling join it in later phases; it never answers HTTP (CLAUDE.md
-// Boundaries).
+// Worker joins and stores what web appends to the stream, sweeps idle calls and unlinked traces
+// once a minute, and samples each project's LiveKit server until ctx is cancelled. It never answers
+// HTTP (CLAUDE.md Boundaries).
 func Worker(ctx context.Context, c config.Config, log *slog.Logger) error {
 	sealer, err := seal.New(c.SecretKey)
 	if err != nil {
@@ -129,6 +130,8 @@ func Worker(ctx context.Context, c config.Config, log *slog.Logger) error {
 		return redactErr(err, c.ClickHouseURL)
 	}
 	defer func() { _ = events.Close() }()
+	// The call index needs no sealer: it never reads a LiveKit secret.
+	joiner := &join.Joiner{Calls: pgstore.NewStore(pool, nil), Traces: events, Log: log, Timeout: 30 * time.Second}
 	// One consumer per worker process; a worker that dies leaves its entries to be claimed.
 	name, err := os.Hostname()
 	if err != nil {
@@ -152,9 +155,14 @@ func Worker(ctx context.Context, c config.Config, log *slog.Logger) error {
 		}).Run(gctx)
 	})
 	g.Go(func() error {
+		sweep(gctx, joiner, log)
+		return nil
+	})
+	g.Go(func() error {
 		return (&sink.Sink{
 			Stream:    stream.NewConsumer(rdb, stream.Ingest, workerGroup, name),
 			Events:    events,
+			Join:      joiner,
 			Log:       log,
 			Batch:     1000,
 			Block:     time.Second,
@@ -166,6 +174,27 @@ func Worker(ctx context.Context, c config.Config, log *slog.Logger) error {
 	err = g.Wait()
 	log.Info("worker stopped")
 	return err
+}
+
+// sweepEvery is how often the worker closes idle calls and counts unlinked traces. Every worker
+// sweeps; both sweeps are safe to run twice.
+const sweepEvery = time.Minute
+
+func sweep(ctx context.Context, j *join.Joiner, log *slog.Logger) {
+	t := time.NewTicker(sweepEvery)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case now := <-t.C:
+			cctx, cancel := context.WithTimeout(ctx, sweepEvery)
+			if err := j.Sweep(cctx, now); err != nil && ctx.Err() == nil {
+				log.Error("worker: sweep failed, retrying next minute", "err", err)
+			}
+			cancel()
+		}
+	}
 }
 
 // workerGroup is the consumer group every worker reads the ingest stream in.
