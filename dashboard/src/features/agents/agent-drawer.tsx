@@ -26,12 +26,17 @@ function spans(a: Agent): Span[] {
   return rooms.flatMap((room) =>
     room.participants
       .filter((x) => x.kind === "agent" && (x.agentName ?? "unnamed") === (a.name ?? "unnamed"))
-      .map((p) => ({ from: p.joinedAtMs ? p.joinedAtMs / 1000 : p.firstSeen, to: p.lastSeen, open: openAtWatchEnd(p), room })),
+      // A stay with no reported start or end cannot be counted on the chart.
+      .flatMap((p) => {
+        const from = p.joinedAtMs !== null ? p.joinedAtMs / 1000 : p.firstSeen
+        return from !== null && p.lastSeen !== null ? [{ from, to: p.lastSeen, open: openAtWatchEnd(p), room }] : []
+      }),
   )
 }
 
 function windows(list: Span[]) {
   return data.windows
+    .filter((w): w is typeof w & { start: number; end: number } => w.start !== null && w.end !== null)
     .map((w) => {
       const inside = list.filter((s) => s.to >= w.start && s.from <= w.end)
       if (!inside.length) return null
@@ -97,7 +102,7 @@ export function AgentDrawer({ agent: a, onOpenChange, onTest }: { agent: Agent |
                 <ArrowLeft /> Back to {a.name ?? "the agent"}
               </Button>
             </div>
-            <RoomBody room={room} />
+            <RoomBody room={room} ms={data} />
           </>
         ) : (
           a && <Body a={a} onRoom={setRoom} onTest={() => onTest(a)} />

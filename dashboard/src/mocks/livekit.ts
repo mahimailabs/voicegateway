@@ -1,14 +1,16 @@
-import type { Egress, Ingress, Sip } from "@/lib/api-types"
+import type { Egress, Ingress, MediaServer, Sip } from "@/lib/api-types"
 import egressRaw from "@/mocks/egress.json"
 import ingressRaw from "@/mocks/ingress.json"
 import sipRaw from "@/mocks/sip.json"
+import mediaRaw from "@/mocks/media-server.json"
 
 // The LiveKit reads the mock API serves, adapted from the captured fixtures to the contract
 // (docs/api/openapi.yaml). Captured times are Unix seconds; the contract carries RFC 3339 UTC. Fields
 // the capture kept that the contract does not carry are left out, never renamed into something else.
 
-// Unix seconds to RFC 3339, keeping an unreported time unknown.
+// Unix seconds, or milliseconds, to RFC 3339, keeping an unreported time unknown.
 const iso = (s: number | null | undefined) => (typeof s === "number" ? new Date(s * 1000).toISOString() : null)
+const isoMs = (ms: number | null | undefined) => (typeof ms === "number" ? new Date(ms).toISOString() : null)
 
 type Captured<T> = Record<string, unknown> & T
 
@@ -45,4 +47,42 @@ export function sip(): Sip {
     return rest
   }
   return { ...d, inbound: d.inbound.map(strip), outbound: d.outbound.map(strip), rules: d.rules.map(strip) } as Sip
+}
+
+// The media server read. The capture keeps some times in milliseconds (createdMs, joinedAtMs,
+// createdAtMs, startedAtMs, versionMs, inviteMs) and the rest in seconds; both become RFC 3339. A
+// recording's id is its playback URL, the only identifier the capture has (as for calls).
+export function mediaServer(): MediaServer {
+  type At = { t: number; [k: string]: unknown }
+  type R = Record<string, unknown> & {
+    createdMs: number | null
+    firstSeen: number | null
+    lastSeen: number | null
+    participants: (Record<string, unknown> & { joinedAtMs: number | null; firstSeen: number | null; lastSeen: number | null; states: At[]; tracks: (Record<string, unknown> & { versionMs: number | null })[] | null; sip?: Record<string, unknown> & { inviteMs: number | null; statuses: At[] } })[]
+    dispatches: (Record<string, unknown> & { createdAtMs: number | null; jobs: (Record<string, unknown> & { startedAtMs: number | null; statuses: At[] })[] })[] | null
+    recording: (Record<string, unknown> & { url: string }) | null
+  }
+  const d = mediaRaw as unknown as Record<string, unknown> & { windows: (Record<string, unknown> & { start: number | null; end: number | null })[]; rooms: R[] }
+  const at = ({ t, ...x }: At) => ({ ...x, at: iso(t) })
+  return {
+    ...d,
+    windows: d.windows.map((w) => ({ ...w, start: iso(w.start), end: iso(w.end) })),
+    rooms: d.rooms.map(({ createdMs, firstSeen, lastSeen, participants, dispatches, recording, ...r }) => ({
+      ...r,
+      createdAt: isoMs(createdMs),
+      firstSeenAt: iso(firstSeen),
+      lastSeenAt: iso(lastSeen),
+      participants: participants.map(({ joinedAtMs, firstSeen: pf, lastSeen: pl, states, tracks, sip, ...p }) => ({
+        ...p,
+        joinedAt: isoMs(joinedAtMs),
+        firstSeenAt: iso(pf),
+        lastSeenAt: iso(pl),
+        states: states.map(at),
+        tracks: tracks && tracks.map(({ versionMs, ...t }) => ({ ...t, versionAt: isoMs(versionMs) })),
+        ...(sip ? { sip: (({ inviteMs, statuses, ...x }) => ({ ...x, invitedAt: isoMs(inviteMs), statuses: statuses.map(at) }))(sip) } : {}),
+      })),
+      dispatches: dispatches && dispatches.map(({ createdAtMs, jobs, ...x }) => ({ ...x, createdAt: isoMs(createdAtMs), jobs: jobs.map(({ startedAtMs, statuses, ...j }) => ({ ...j, startedAt: isoMs(startedAtMs), statuses: statuses.map(at) })) })),
+      recording: recording && { ...recording, id: recording.url },
+    })),
+  } as MediaServer
 }

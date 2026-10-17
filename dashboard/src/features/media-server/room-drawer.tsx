@@ -7,7 +7,8 @@ import { Badge } from "@/components/ui/badge"
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { cn } from "@/lib/utils"
-import raw from "@/mocks/media-server.json"
+import type { MediaServer } from "@/lib/api-types"
+import { mediaServer } from "@/mocks/livekit"
 import { useEmbedded } from "@/lib/url-state"
 import { listCalls } from "@/lib/api"
 
@@ -15,42 +16,63 @@ import { listCalls } from "@/lib/api"
 // who was in it with which tracks, and the room's own settings. Everything comes from RoomService and
 // AgentDispatchService reads; fields a watch did not keep say so instead of showing a default.
 
-// The fixture's shape. Watch 1 kept no track, permission or dispatch detail, so those are null there.
-type Track = { sid: string; name: string; type: string; source: string; mime: string | null; versionMs: number; muted: boolean; stereo: boolean; dtx: boolean; red: boolean; encryption: string; features: string[] }
-export type Participant = {
-  sid: string
-  kind: string
-  region: string | null
-  joinedAtMs: number
-  agentName: string | null
-  firstSeen: number
-  lastSeen: number
-  states: { t: number; state: string }[]
-  permission: { canPublish: boolean; canSubscribe: boolean; canPublishData: boolean; hidden: boolean; agent: boolean } | null
+// The page's view of the media server read (getMediaServer): the contract's records with times as
+// epoch numbers for the timelines, in the units the drawing code uses (ms for createdMs, joinedAtMs,
+// createdAtMs, startedAtMs, versionMs, inviteMs; seconds for the rest). Built only by fromContract
+// below; a time the API did not report stays null.
+type Contract = MediaServer
+type CRoom = Contract["rooms"][number]
+type CParticipant = CRoom["participants"][number]
+type At = { t: number | null }
+type Track = Omit<NonNullable<CParticipant["tracks"]>[number], "versionAt"> & { versionMs: number | null }
+export type Participant = Omit<CParticipant, "joinedAt" | "firstSeenAt" | "lastSeenAt" | "states" | "tracks" | "sip"> & {
+  joinedAtMs: number | null
+  firstSeen: number | null
+  lastSeen: number | null
+  states: (At & { state: string })[]
   tracks: Track[] | null
-  audioTracks: number
-  sip?: { trunkId: string | null; ruleId: string | null; inviteMs: number | null; trunkNumber?: string | null; twilio?: boolean; statuses: { t: number; status: string }[] }
+  sip?: Omit<NonNullable<CParticipant["sip"]>, "invitedAt" | "statuses"> & { inviteMs: number | null; statuses: (At & { status: string })[] }
 }
-type Dispatch = { id: string; agentName: string | null; createdAtMs: number; jobs: { id: string; status: string; statuses: { t: number; status: string }[]; startedAtMs: number; workerId: string | null; agentId: string | null; recording: boolean }[] }
-type RoomData = {
-  sid: string
-  name: string
-  createdMs: number
-  firstSeen: number
-  lastSeen: number
-  settings: { emptyTimeout: number | null; departureTimeout: number | null; maxParticipants: number; codecs: string[] | null; egressRecording: boolean | null }
-  dispatches: Dispatch[] | null
+type CDispatch = NonNullable<CRoom["dispatches"]>[number]
+type Dispatch = Omit<CDispatch, "createdAt" | "jobs"> & { createdAtMs: number | null; jobs: (Omit<CDispatch["jobs"][number], "startedAt" | "statuses"> & { startedAtMs: number | null; statuses: (At & { status: string })[] })[] }
+type RoomData = Omit<CRoom, "createdAt" | "firstSeenAt" | "lastSeenAt" | "participants" | "dispatches"> & {
+  createdMs: number | null
+  firstSeen: number | null
+  lastSeen: number | null
   participants: Participant[]
-  recording: { callRoom: string | null; url: string; durationS: number; startedAt: string } | null
+  dispatches: Dispatch[] | null
 }
-export type MediaServerData = {
-  source: string
-  server: { edition: string; version: string; protocol: number; region: string; nodeId: string; joinMs: number; url: string }
-  windows: { start: number; end: number; everySeconds: number; detail: boolean }[]
-  sipTrunks: Record<string, { name: string; mediaEncryption: string; krispEnabled: boolean; source: string }>
-  rooms: RoomData[]
+export type MediaServerData = Omit<Contract, "rooms" | "windows"> & { rooms: RoomData[]; windows: (Omit<Contract["windows"][number], "start" | "end"> & { start: number | null; end: number | null })[] }
+
+const ms = (t: string | null) => (t === null ? null : Date.parse(t))
+const s = (t: string | null) => (t === null ? null : Date.parse(t) / 1000)
+const at = <T extends { at: string | null }>({ at: a, ...x }: T) => ({ ...x, t: s(a) })
+
+export function fromContract(m: Contract): MediaServerData {
+  return {
+    ...m,
+    windows: m.windows.map((w) => ({ ...w, start: s(w.start), end: s(w.end) })),
+    rooms: m.rooms.map(({ createdAt, firstSeenAt, lastSeenAt, participants, dispatches, ...r }) => ({
+      ...r,
+      createdMs: ms(createdAt),
+      firstSeen: s(firstSeenAt),
+      lastSeen: s(lastSeenAt),
+      participants: participants.map(({ joinedAt, firstSeenAt: pf, lastSeenAt: pl, states, tracks, sip, ...p }) => ({
+        ...p,
+        joinedAtMs: ms(joinedAt),
+        firstSeen: s(pf),
+        lastSeen: s(pl),
+        states: states.map(at),
+        tracks: tracks && tracks.map(({ versionAt, ...t }) => ({ ...t, versionMs: ms(versionAt) })),
+        ...(sip ? { sip: { ...sip, inviteMs: ms(sip.invitedAt), statuses: sip.statuses.map(at) } } : {}),
+      })),
+      dispatches: dispatches && dispatches.map(({ createdAt: c, jobs, ...d }) => ({ ...d, createdAtMs: ms(c), jobs: jobs.map(({ startedAt, statuses, ...j }) => ({ ...j, startedAtMs: ms(startedAt), statuses: statuses.map(at) })) })),
+    })),
+  }
 }
-export const data = raw as unknown as MediaServerData
+
+// Pages not yet reading getMediaServer use the mock's answer directly; #323 removes this.
+export const data = fromContract(mediaServer())
 
 // The call a room's recording belongs to: the latest call in that room, as the Live page opens it.
 // The recording names a room the captured calls hold, so a call is always found.
@@ -78,7 +100,11 @@ export function roomOrigin(r: Room): Origin {
 }
 
 // A room still listed at the last read of its watch was open when we stopped watching; its end is unknown.
-export const openAtWatchEnd = (r: { lastSeen: number }) => data.windows.some((w) => r.lastSeen >= w.end - 1 && r.lastSeen <= w.end + 1)
+// Unknown when the room or the watch reported no time: the room is then not claimed to be open.
+export const openAtWatchEnd = (r: { lastSeen: number | null }, m: MediaServerData = data) =>
+  r.lastSeen !== null && m.windows.some((w) => w.end !== null && r.lastSeen! >= w.end - 1 && r.lastSeen! <= w.end + 1)
+// The watch a time falls in, if the time and the watch's bounds are known.
+export const windowOf = (t: number | null, m: MediaServerData = data) => (t === null ? undefined : m.windows.find((w) => w.start !== null && w.end !== null && t >= w.start - 1 && t <= w.end + 1))
 
 const clock = (ms: number) => new Date(ms).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })
 const plus = (ms: number) => `${ms < 0 ? "-" : "+"}${(Math.abs(ms) / 1000).toFixed(2)} s`
@@ -108,11 +134,11 @@ function Row({ k, v }: { k: string; v: React.ReactNode }) {
   )
 }
 
-export function RoomDrawer({ room, open, onOpenChange }: { room: Room | null; open: boolean; onOpenChange: (o: boolean) => void }) {
+export function RoomDrawer({ room, ms = data, open, onOpenChange }: { room: Room | null; ms?: MediaServerData; open: boolean; onOpenChange: (o: boolean) => void }) {
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent side="right" onOpenAutoFocus={(e) => e.preventDefault()} className="gap-0 overflow-y-auto p-0 data-[side=right]:w-[560px] data-[side=right]:sm:max-w-none">
-        {room && <RoomBody room={room} />}
+        {room && <RoomBody room={room} ms={ms} />}
       </SheetContent>
     </Sheet>
   )
@@ -144,12 +170,12 @@ function OriginLine({ room }: { room: Room }) {
   )
 }
 
-export function RoomBody({ room }: { room: Room }) {
+export function RoomBody({ room, ms: data }: { room: Room; ms: MediaServerData }) {
   const t0 = room.createdMs
-  const stillOpen = openAtWatchEnd(room)
+  const stillOpen = openAtWatchEnd(room, data)
   const caller = room.participants.find((p) => p.kind !== "agent")
   const agent = room.participants.find((p) => p.kind === "agent")
-  const wait = caller && agent ? agent.joinedAtMs - caller.joinedAtMs : null
+  const wait = caller?.joinedAtMs != null && agent?.joinedAtMs != null ? agent.joinedAtMs - caller.joinedAtMs : null
   const busiest = room.participants.filter((p) => p.kind === "agent").sort((a, b) => b.states.length - a.states.length)[0]
   const detail = room.dispatches !== null
   const dispatches = room.dispatches?.filter((d) => d.agentName || d.jobs.length) ?? []
@@ -161,10 +187,12 @@ export function RoomBody({ room }: { room: Room }) {
   const e2ee = detail ? tracks.length > 0 && tracks.every((t) => t.encryption !== "NONE") : null
 
   // The sequence LiveKit recorded, measured from the room's creation.
-  const every = (data.windows.find((w) => room.lastSeen >= w.start - 1 && room.lastSeen <= w.end + 1)?.everySeconds ?? 2) * 1000
-  const steps: { at: number; icon: Icon; label: string; note?: string; alert?: boolean }[] = [
+  // How often the room was read; the known default when its watch is not known.
+  const every = (windowOf(room.lastSeen, data)?.everySeconds ?? 2) * 1000
+  // Steps whose time was not reported cannot be placed on the timeline; they are counted instead.
+  const allSteps: { at: number | null; icon: Icon; label: string; note?: string; alert?: boolean }[] = [
     ...(sipCaller?.sip?.inviteMs ? [{ at: sipCaller.sip.inviteMs, icon: Phone, label: "Call came in", note: "SIP INVITE time, from the caller's lk.sip.inviteTime attribute." }] : []),
-    ...(sipCaller?.sip?.statuses ?? []).map((x) => ({ at: x.t * 1000, icon: Phone, label: `Call ${x.status === "active" ? "answered" : x.status}`, note: `sip.callStatus became ${x.status} by this read.` })),
+    ...(sipCaller?.sip?.statuses ?? []).map((x) => ({ at: x.t === null ? null : x.t * 1000, icon: Phone, label: `Call ${x.status === "active" ? "answered" : x.status}`, note: `sip.callStatus became ${x.status} by this read.` })),
     ...dispatches.map((d) => ({ at: d.createdAtMs, icon: Robot, label: "Agent dispatched", note: d.jobs[0] ? `${d.agentName}, job ${d.jobs[0].id} on worker ${d.jobs[0].workerId ?? "unknown"}` : undefined })),
     ...room.participants.map((p, k) => ({
       at: p.joinedAtMs,
@@ -173,22 +201,28 @@ export function RoomBody({ room }: { room: Room }) {
     })),
     // Someone gone before the room's last read left between two reads.
     ...room.participants
-      .filter((p) => p.lastSeen < room.lastSeen - 1)
-      .map((p) => ({ at: p.lastSeen * 1000, icon: SignOut, label: `${kindName[p.kind] ?? p.kind} left`, note: `Last listed at this time; gone by the next read ${every / 1000} s later.`, alert: p.kind === "agent" })),
+      .filter((p) => p.lastSeen !== null && room.lastSeen !== null && p.lastSeen < room.lastSeen - 1)
+      .map((p) => ({ at: p.lastSeen! * 1000, icon: SignOut, label: `${kindName[p.kind] ?? p.kind} left`, note: `Last listed at this time; gone by the next read ${every / 1000} s later.`, alert: p.kind === "agent" })),
     ...dispatches.flatMap((d) =>
       d.jobs.flatMap((j) =>
         j.statuses
           .filter((x) => x.status === "JS_FAILED")
-          .map((x) => ({ at: x.t * 1000, icon: WarningCircle, label: "Agent job reported failed", note: `ListDispatch reported ${j.id} as failed. Its reason is not in the API; the worker's own logs have it.`, alert: true })),
+          .map((x) => ({ at: x.t === null ? null : x.t * 1000, icon: WarningCircle, label: "Agent job reported failed", note: `ListDispatch reported ${j.id} as failed. Its reason is not in the API; the worker's own logs have it.`, alert: true })),
       ),
     ),
     ...room.participants.flatMap((p) => (p.tracks ?? []).map((t) => ({ at: t.versionMs, icon: Microphone, label: `${kindName[p.kind] ?? p.kind} mic on`, note: "Track version time: the server's last change to this track, which here was its publish." }))),
-  ].sort((a, b) => a.at - b.at)
+  ]
+  const steps = allSteps.filter((x): x is typeof x & { at: number } => x.at !== null).sort((a, b) => a.at - b.at)
+  const unplaced = allSteps.length - steps.length
+  // Times are shown from the room's creation, or from the first event when creation was not reported.
+  const anchor = t0 ?? steps[0]?.at ?? null
 
   // How the audio is protected on each hop. Signalling and WebRTC media are encrypted by protocol;
   // end-to-end comes from the tracks; the phone leg needs the SIP trunk's settings.
   const security: { icon: Icon; label: string; value: string; ok: boolean | null; note: string }[] = [
-    { icon: LockSimple, label: "Signalling", value: data.server.url.startsWith("wss://") ? "TLS" : "Plain", ok: data.server.url.startsWith("wss://"), note: `From the project URL, ${data.server.url.split("://")[0]}://.` },
+    data.server
+      ? { icon: LockSimple, label: "Signalling", value: data.server.url.startsWith("wss://") ? "TLS" : "Plain", ok: data.server.url.startsWith("wss://"), note: `From the project URL, ${data.server.url.split("://")[0]}://.` }
+      : { icon: Question, label: "Signalling", value: "Unknown", ok: null, note: "The server's URL was not reported." },
     { icon: LockSimple, label: "Media to LiveKit", value: "DTLS-SRTP", ok: true, note: "Inferred: WebRTC always encrypts media between each participant and the media server." },
     {
       icon: e2ee === null ? Question : e2ee ? LockSimple : LockSimpleOpen,
@@ -225,7 +259,7 @@ export function RoomBody({ room }: { room: Room }) {
 
       <div className="grid grid-cols-3 gap-4">
         {[
-          [`${secs(room.lastSeen - t0 / 1000)}${stillOpen ? "+" : ""}`, "length"],
+          [room.lastSeen !== null && t0 !== null ? `${secs(room.lastSeen - t0 / 1000)}${stillOpen ? "+" : ""}` : "Unknown", "length"],
           [String(room.participants.length), "people"],
           [wait === null ? "Unknown" : wait >= 0 ? secs(wait / 1000) : "first", "agent after caller"],
         ].map(([v, l]) => (
@@ -254,13 +288,13 @@ export function RoomBody({ room }: { room: Room }) {
         })}
       </div>
 
-      <Section title="Timeline" hint={`from ${clock(t0)}`}>
+      <Section title="Timeline" hint={anchor === null ? "no times reported" : `from ${clock(anchor)}${t0 === null ? ", the first event (creation time not reported)" : ""}${unplaced ? `; ${unplaced} without a time` : ""}`}>
         <ol className="space-y-2">
-          {[{ at: t0, icon: Door, label: "Room created", note: undefined as string | undefined, alert: false }, ...steps].sort((a, b) => a.at - b.at).map((s, k) => {
+          {[...(t0 !== null ? [{ at: t0, icon: Door, label: "Room created", note: undefined as string | undefined, alert: false }] : []), ...steps].sort((a, b) => a.at - b.at).map((s, k) => {
             const I = s.icon
             const line = (
               <span className="flex items-center gap-2 text-[13px]">
-                <span className="w-16 text-muted-foreground tnum">{plus(s.at - t0)}</span>
+                <span className="w-16 text-muted-foreground tnum">{plus(s.at - anchor!)}</span>
                 <I size={14} className={"alert" in s && s.alert ? "text-destructive" : "text-muted-foreground"} />
                 <span className={cn("alert" in s && s.alert && "text-destructive")}>{s.label}</span>
               </span>
@@ -283,7 +317,7 @@ export function RoomBody({ room }: { room: Room }) {
         </ol>
       </Section>
 
-      {busiest && new Set(busiest.states.map((s) => s.state)).size > 1 && <AgentStates agent={busiest} />}
+      {busiest && new Set(busiest.states.map((s) => s.state)).size > 1 && <AgentStates agent={busiest} ms={data} />}
 
       <Section title="People">
         <ul className="divide-y rounded-xl border">
@@ -298,7 +332,7 @@ export function RoomBody({ room }: { room: Room }) {
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-[14px] font-medium">{who(p)}</p>
                   <p className="text-[12px] text-muted-foreground">
-                    {regionCity[p.region ?? ""] ?? p.region ?? "Region unknown"} · {clock(p.joinedAtMs)}
+                    {regionCity[p.region ?? ""] ?? p.region ?? "Region unknown"} · {p.joinedAtMs === null ? "join time unknown" : clock(p.joinedAtMs)}
                   </p>
                 </div>
                 <div className="flex flex-wrap justify-end gap-1">
@@ -342,7 +376,7 @@ export function RoomBody({ room }: { room: Room }) {
 function Recording({ room, requested }: { room: Room; requested: boolean }) {
   const embedded = useEmbedded()
   const rec = room.recording
-  const offset = rec ? new Date(rec.startedAt).getTime() - room.createdMs : null
+  const offset = rec && room.createdMs !== null ? new Date(rec.startedAt).getTime() - room.createdMs : null
   return (
     <Section title="Recording">
       <div className="divide-y rounded-xl border px-4">
@@ -367,26 +401,29 @@ function Recording({ room, requested }: { room: Room; requested: boolean }) {
                 <AudioPlayerButton item={{ id: room.sid, src: rec.url }} variant="default" size="icon-sm" className="rounded-full" />
                 <AudioPlayerProgress className="flex-1" />
                 <span className="text-[12px] text-muted-foreground tnum">
-                  <AudioPlayerTime /> / {secs(rec.durationS)}
+                  <AudioPlayerTime /> / {rec.durationS === null ? "unknown" : secs(rec.durationS)}
                 </span>
               </div>
               {offset !== null && offset > 2000 && <p className="mt-2 text-[12px] text-muted-foreground">Starts at {plus(offset)}, when the agent session started. Stereo: caller left, agent right.</p>}
             </AudioPlayerProvider>
           )}
         </div>
-        <Row k="Egress recording" v={room.settings.egressRecording ? "On" : "Off"} />
+        <Row k="Egress recording" v={room.settings.egressRecording === null ? "Unknown" : room.settings.egressRecording ? "On" : "Off"} />
       </div>
     </Section>
   )
 }
 
 // What the agent said it was doing, from its lk.agent.state attribute at each read.
-function AgentStates({ agent }: { agent: Participant }) {
-  const start = agent.states[0].t
-  const end = agent.lastSeen
+// Reads without a time cannot be placed, so the bar is drawn from the timed ones; with none it is not drawn.
+function AgentStates({ agent, ms }: { agent: Participant; ms: MediaServerData }) {
+  const timed = agent.states.filter((x): x is typeof x & { t: number } => x.t !== null)
+  if (!timed.length) return null
+  const start = timed[0].t
+  const end = agent.lastSeen ?? timed[timed.length - 1].t
   const span = Math.max(end - start, 1)
-  const every = data.windows.find((w) => start >= w.start - 1 && start <= w.end + 1)?.everySeconds
-  const parts = agent.states.map((s, k) => ({ state: s.state, from: s.t, to: agent.states[k + 1]?.t ?? end }))
+  const every = windowOf(start, ms)?.everySeconds
+  const parts = timed.map((s, k) => ({ state: s.state, from: s.t, to: timed[k + 1]?.t ?? end }))
   const total = (st: string) => parts.filter((p) => p.state === st).reduce((a, p) => a + (p.to - p.from), 0)
   return (
     <Section title="What the agent was doing" hint={every ? `read every ${every} s, shorter states missed` : undefined}>

@@ -73,7 +73,7 @@ export function CallPathStrip({ call, model, onModels }: { call: Call; model: Ca
           icon: hopIcons.phone,
           title: "Phone",
           sub: sip.sip?.trunkId ?? "trunk unknown",
-          tags: [answered ? `answered in ${secs(answered.t * 1000 - sip.sip!.inviteMs!)}` : "answer time unknown"],
+          tags: [answered?.t != null ? `answered in ${secs(answered.t * 1000 - sip.sip!.inviteMs!)}` : "answer time unknown"],
           issues: enc === "RTP" ? [{ title: "Phone leg not encrypted (plain RTP)", severity: "medium" }] : [],
           ...(embedded ? {} : { onClick: () => navigate({ to: "/sip" }), hint: "Open the SIP page" }),
         }
@@ -90,14 +90,15 @@ export function CallPathStrip({ call, model, onModels }: { call: Call; model: Ca
     const agentP = room?.participants.filter((p) => p.kind === "agent") ?? []
     const dispatch = room?.dispatches?.find((d) => d.agentName && d.jobs.length)
     const failed = dispatch?.jobs.filter((j) => j.statuses.some((s) => s.status === "JS_FAILED")) ?? []
-    const join = dispatch && agentP[0] ? agentP[agentP.length - 1].joinedAtMs - dispatch.createdAtMs : null
+    const joinedAt = agentP[agentP.length - 1]?.joinedAtMs ?? null
+    const join = dispatch?.createdAtMs != null && joinedAt !== null ? joinedAt - dispatch.createdAtMs : null
     const test = TEST_AGENTS.has(dispatch?.agentName ?? agentP[0]?.agentName ?? "")
     const lk: Hop = room
       ? {
           icon: hopIcons.room,
           title: "LiveKit room",
           sub: regionCity[agentP[0]?.region ?? room.participants[0]?.region ?? ""] ?? "region unknown",
-          tags: [`${data.server.edition} ${data.server.version}`, `${room.participants.length} people`],
+          tags: [data.server ? `${data.server.edition} ${data.server.version}` : "version unknown", `${room.participants.length} people`],
           onClick: () => setRoomOpen(true),
           hint: "Open the room",
         }

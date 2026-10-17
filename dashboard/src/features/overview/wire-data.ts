@@ -22,11 +22,13 @@ export function wireData(rows: Row[], budget: number) {
   const plain = [...sip.inbound, ...sip.outbound].filter((t) => enc(t.media.encryption) === "RTP").length
   const sipRooms = rooms.rooms.filter((r) => r.participants.some((p) => p.kind === "sip"))
   const phoneSids = new Set(sipRooms.map((r) => r.sid))
-  const ring = sipRooms.flatMap((r) => r.participants.flatMap((p) => (p.sip?.inviteMs && p.sip.statuses.find((s) => s.status === "active") ? [(p.sip.statuses.find((s) => s.status === "active")!.t - p.sip.inviteMs / 1000) * 1000] : [])))
+  const ring = sipRooms.flatMap((r) => r.participants.flatMap((p) => (p.sip?.inviteMs != null && p.sip.statuses.find((s) => s.status === "active")?.t != null ? [(p.sip.statuses.find((s) => s.status === "active")!.t! - p.sip.inviteMs / 1000) * 1000] : [])))
   const active = rows.filter((r) => r.callList.length)
   const all = active.flatMap((r) => r.callList)
   const phoneCalls = all.filter((c) => c.roomSid !== null && phoneSids.has(c.roomSid)).length
-  const lastRead = Math.max(...rooms.windows.map((w) => w.end))
+  // The latest known end of a watch; NaN when none was reported, which places no room as live.
+  const ends = rooms.windows.flatMap((w) => (w.end === null ? [] : [w.end]))
+  const lastRead = ends.length ? Math.max(...ends) : NaN
 
   // Rooms still open at the last read, and which agent was in them: the only calls drawn as live.
   const liveRooms = rooms.rooms.filter((r) => openAtWatchEnd(r) && r.participants.some((p) => p.kind === "agent" && openAtWatchEnd(p)))
@@ -181,14 +183,14 @@ export function wireData(rows: Row[], budget: number) {
     }
   })
   const phoneLayer = hours.map((h) => {
-    const rs = sipRooms.filter((r) => inHour(h, r.createdMs / 1000))
+    const rs = sipRooms.filter((r) => r.createdMs !== null && inHour(h, r.createdMs / 1000))
     return rs.length
       ? { color: plain ? "bg-amber-500" : "bg-good", tooltip: `${label(h)} · ${rs.length} phone ${rs.length === 1 ? "call" : "calls"}${plain ? " · legs unencrypted" : ""}` }
       : { color: grey, tooltip: `${label(h)} · no phone calls` }
   })
   const mediaLayer = hours.map((h) => {
-    const watched = rooms.windows.some((w) => w.start < h + 3600 && w.end >= h)
-    const rs = rooms.rooms.filter((r) => r.lastSeen >= h && r.firstSeen < h + 3600)
+    const watched = rooms.windows.some((w) => w.start !== null && w.end !== null && w.start < h + 3600 && w.end >= h)
+    const rs = rooms.rooms.filter((r) => r.lastSeen !== null && r.firstSeen !== null && r.lastSeen >= h && r.firstSeen < h + 3600)
     return watched ? { color: "bg-good", tooltip: `${label(h)} · watched · ${rs.length} rooms seen` } : { color: grey, tooltip: `${label(h)} · not watched` }
   })
   const jobs = active.flatMap((r) => r.agent?.jobs ?? [])
