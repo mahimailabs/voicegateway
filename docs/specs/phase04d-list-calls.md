@@ -51,7 +51,7 @@ The console's Calls page reads real stored calls through web's API: `listCalls` 
     - `realtime` when they hold `realtime_inference`.
     - `text` when they hold `llm_node` and no `tts_node`.
     - `unknown` otherwise.
-  - `agentKey`: the agent participant's registered name when a webhook reported one; else `lk.agent_name` on the call's spans, the value most spans carry; else null.
+  - `agentKey`: `lk.agent_name` on the call's spans, the value most spans carry; else null. The agent participant's registered name would come first, but no webhook field VoiceGateway stores carries it yet.
 - **`CallTotals`,** over every call matching the range and filters as of the snapshot:
   - `callCount` and `byChannel`.
   - `answers`: the turns with a measured answer, how many exceed `budgetMs`, their median, and `valuesMs` (at most 1000 values, oldest calls dropped first, with `valuesTruncated`).
@@ -82,7 +82,7 @@ The console's Calls page reads real stored calls through web's API: `listCalls` 
 5. Given calls with known and unknown answer medians, when sorted by `answerMs` `asc` and `desc`, then the unknowns come last both times, ties are ordered by `id`, and `answerMsMin` excludes every unknown (measured by `TestListCallsSortsUnknownLast`).
 6. Given a cursor, when it is sent with a changed filter, a changed order, or no `snapshot`, then each is 400 `invalid_request` and validates as `Error` (3 of 3). A `limit` of 0 or 101 is 400 too (measured by `TestListCallsRejectsMisusedCursor`).
 7. Given calls with a SIP participant, with only standard participants and with no webhooks, then their `channel` is `phone`, `web` and `unknown`, and `totals.byChannel` counts 1 of each. `issues=high`, `tag=x`, `archived=true` and `recorded=true` each return 0 items with `callCount` 0. `archived=false` returns all 3 (measured by `TestListCallsChannelsAndUnstoredFilters`).
-8. Given 4 calls with answer times 1000, 1400, 1600 and 2000 ms and one call with none, then `totals.answers.turns` is 4, `overBudget` 2 at `budgetMs` 1500, `p50Ms` 1500, and the unmeasured call adds nothing (measured by `TestListCallsTotals`).
+8. Given 4 calls with answer times 1000, 1400, 1600 and 2000 ms and one call with none, then `totals.answers.turns` is 4, `overBudget` 2 at `budgetMs` 1500, `p50Ms` 1600 (the console's median, the upper middle value, `dashboard/src/mocks/calls-query.ts`), and the unmeasured call adds nothing (measured by `TestListCallsTotals`).
 9. Given three calls, one with no room, one with no start and one with neither (after the fallbacks), then all three are left out of the items and out of `callCount`, and `getCall` answers 404 for each, through the same predicate (measured by `TestListCallsLeavesOutUnservableCalls`).
 10. Given `voicegateway migrate` run twice on the 04c schema with stored calls, then the new columns and `call_summaries` are added, existing calls remain, and the second run applies nothing (measured by `TestMigrateTwice`, extended).
 

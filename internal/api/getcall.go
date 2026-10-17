@@ -91,10 +91,6 @@ const (
 	alignUnknown  = "unknown"
 )
 
-// The span attribute on which LiveKit Agents 1.8.7 reports the room's name, on job_entrypoint and
-// agent_session; "pii" because the agent can redact it.
-const attrRoomName = "lk.pii.room_name"
-
 // getCall serves operationId getCall.
 func (a *API) getCall(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
@@ -115,8 +111,7 @@ func (a *API) getCall(w http.ResponseWriter, r *http.Request) {
 	}
 	body, ok := buildCall(c, spans, built)
 	if !ok {
-		// Neither a webhook nor a span named the room or reported a start: the contract requires
-		// both, and nothing stored can fill them.
+		// No source named the room or reported a start: the contract requires both.
 		writeError(w, r, http.StatusNotFound, codeNotFound, "call not found")
 		return
 	}
@@ -134,25 +129,31 @@ func (a *API) fail(w http.ResponseWriter, r *http.Request, err error, notFound s
 	writeError(w, r, http.StatusInternalServerError, codeInternal, "the call could not be read")
 }
 
-// buildCall maps a stored call to the contract. It reports false when the call lacks a room or a
-// start that any source reported.
+// Servable reports whether a stored call can fill the contract's required room and start: the
+// one rule getCall's 404 and listCalls' leave-out share (spec 04d). The start is the room start a
+// webhook or report gave, else the earliest time any joined source reported.
+func Servable(c store.Call) bool {
+	return c.RoomName != "" && callStart(c) != nil
+}
+
+func callStart(c store.Call) *time.Time {
+	if c.StartedAt != nil {
+		return c.StartedAt
+	}
+	return c.FirstSeenAt
+}
+
+// buildCall maps a stored call to the contract. It reports false when the call is not Servable.
 func buildCall(c store.Call, spans []store.Span, built turn.Result) (call, bool) {
-	room := c.RoomName
-	if room == "" {
-		room = spanRoomName(spans)
-	}
-	traceStart := earliestStart(spans)
-	started, startObserved := c.StartedAt, c.StartedAt != nil
-	if started == nil {
-		started = traceStart
-	}
-	if room == "" || started == nil {
+	if !Servable(c) {
 		return call{}, false
 	}
+	started, startObserved := callStart(c), c.StartedAt != nil
+	traceStart := earliestStart(spans)
 
 	out := call{
 		ID:        c.ID,
-		Room:      room,
+		Room:      c.RoomName,
 		RoomSID:   text(c.RoomSID),
 		StartedAt: *started,
 		EndedAt:   c.EndedAt,
@@ -299,18 +300,6 @@ func plural(n int, one, many string) string {
 		return one
 	}
 	return many
-}
-
-// spanRoomName is the room name the agent's own spans report, empty when none does.
-func spanRoomName(spans []store.Span) string {
-	for _, s := range spans {
-		if s.Name == "job_entrypoint" || s.Name == "agent_session" {
-			if name := s.Attributes[attrRoomName]; name != "" {
-				return name
-			}
-		}
-	}
-	return ""
 }
 
 // earliestStart is the earliest reported span start, nil when no span reported one.

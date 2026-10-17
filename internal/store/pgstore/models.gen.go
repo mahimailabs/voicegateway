@@ -20,6 +20,31 @@ type Call struct {
 	EndState       string
 	LastActivityAt pgtype.Timestamptz
 	UpdatedAt      pgtype.Timestamptz
+	FirstSeenAt    pgtype.Timestamptz
+	CreatedAt      pgtype.Timestamptz
+	SummaryStaleAt pgtype.Timestamptz
+}
+
+type CallList struct {
+	OrganisationID  string
+	ProjectID       string
+	ID              pgtype.UUID
+	RoomName        pgtype.Text
+	RoomSid         pgtype.Text
+	StartedAt       pgtype.Timestamptz
+	EndedAt         pgtype.Timestamptz
+	EndState        string
+	CreatedAt       pgtype.Timestamptz
+	StartAt         pgtype.Timestamptz
+	DurationSeconds interface{}
+	Participants    int64
+	Channel         string
+	TurnCount       pgtype.Int4
+	AnswerMs        []float64
+	AnswerMsMedian  pgtype.Float8
+	Models          []string
+	Pipeline        string
+	AgentKey        pgtype.Text
 }
 
 type CallParticipant struct {
@@ -29,6 +54,17 @@ type CallParticipant struct {
 	Kind           string
 	JoinedAt       pgtype.Timestamptz
 	LeftAt         pgtype.Timestamptz
+}
+
+type CallSummary struct {
+	CallID         pgtype.UUID
+	TurnCount      pgtype.Int4
+	AnswerMs       []float64
+	AnswerMsMedian pgtype.Float8
+	Models         []string
+	Pipeline       string
+	AgentKey       pgtype.Text
+	ComputedAt     pgtype.Timestamptz
 }
 
 type Organisation struct {

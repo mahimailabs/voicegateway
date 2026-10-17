@@ -12,7 +12,7 @@ import (
 )
 
 const callByID = `-- name: CallByID :one
-SELECT c.id, c.room_name, c.room_sid, c.job_id, c.started_at, c.ended_at, c.end_state,
+SELECT c.id, c.room_name, c.room_sid, c.job_id, c.started_at, c.ended_at, c.end_state, c.first_seen_at,
        (SELECT count(*) FROM call_participants p WHERE p.call_id = c.id) AS participants
 FROM calls c
 WHERE c.organisation_id = $1 AND c.project_id = $2 AND c.id = $3
@@ -32,6 +32,7 @@ type CallByIDRow struct {
 	StartedAt    pgtype.Timestamptz
 	EndedAt      pgtype.Timestamptz
 	EndState     string
+	FirstSeenAt  pgtype.Timestamptz
 	Participants int64
 }
 
@@ -47,6 +48,7 @@ func (q *Queries) CallByID(ctx context.Context, arg CallByIDParams) (CallByIDRow
 		&i.StartedAt,
 		&i.EndedAt,
 		&i.EndState,
+		&i.FirstSeenAt,
 		&i.Participants,
 	)
 	return i, err
@@ -98,6 +100,129 @@ func (q *Queries) CallByRoomSID(ctx context.Context, arg CallByRoomSIDParams) (C
 	var i CallByRoomSIDRow
 	err := row.Scan(&i.ID, &i.EndedAt)
 	return i, err
+}
+
+const callTotals = `-- name: CallTotals :one
+WITH f AS (
+    SELECT l.organisation_id, l.project_id, l.id, l.room_name, l.room_sid, l.started_at, l.ended_at, l.end_state, l.created_at, l.start_at, l.duration_seconds, l.participants, l.channel, l.turn_count, l.answer_ms, l.answer_ms_median, l.models, l.pipeline, l.agent_key
+    FROM call_list l
+    WHERE l.organisation_id = $3 AND l.project_id = $4 AND l.created_at <= $5
+      AND ($6::timestamptz IS NULL OR l.start_at >= $6::timestamptz)
+      AND ($7::timestamptz IS NULL OR l.start_at < $7::timestamptz)
+      AND ($8::text IS NULL OR l.room_name = $8::text)
+      AND (cardinality($9::text[]) = 0 OR l.channel = ANY($9::text[]))
+      AND ($10::float8 IS NULL OR l.answer_ms_median >= $10::float8)
+      AND ($11::float8 IS NULL OR l.answer_ms_median <= $11::float8)
+      AND ($12::float8 IS NULL OR l.duration_seconds >= $12::float8)
+      AND ($13::float8 IS NULL OR l.duration_seconds <= $13::float8)
+      AND ($14::int IS NULL OR l.turn_count >= $14::int)
+      AND ($15::int IS NULL OR l.turn_count <= $15::int)
+      AND (NOT $16::bool OR l.answer_ms_median IS NULL)
+      AND (NOT $17::bool OR l.duration_seconds IS NULL)
+      AND (NOT $18::bool OR l.turn_count IS NULL)
+      AND NOT $19::bool
+), a AS (
+    SELECT u.v, f.start_at, f.id, u.ord
+    FROM f, unnest(f.answer_ms) WITH ORDINALITY AS u(v, ord)
+)
+SELECT
+    (SELECT count(*) FROM f) AS call_count,
+    (SELECT count(*) FROM f WHERE channel = 'phone') AS phone,
+    (SELECT count(*) FROM f WHERE channel = 'web') AS web,
+    (SELECT count(*) FROM f WHERE channel = 'unknown') AS unknown_channel,
+    (SELECT count(*) FROM a) AS answer_turns,
+    (SELECT count(*) FROM a WHERE a.v > $1::float8) AS over_budget,
+    -- Null when no turn measured an answer.
+    (SELECT (array_agg(a.v ORDER BY a.v))[count(*) / 2 + 1] FROM a) AS p50_ms,
+    COALESCE((SELECT (array_agg(a.v ORDER BY a.start_at DESC, a.id, a.ord))[1:$2::int] FROM a), '{}')::double precision[] AS values_ms
+`
+
+type CallTotalsParams struct {
+	BudgetMs        float64
+	MaxValues       int32
+	OrganisationID  string
+	ProjectID       string
+	SnapshotAt      pgtype.Timestamptz
+	FromAt          pgtype.Timestamptz
+	ToAt            pgtype.Timestamptz
+	Room            pgtype.Text
+	Channels        []string
+	AnswerMin       pgtype.Float8
+	AnswerMax       pgtype.Float8
+	DurationMin     pgtype.Float8
+	DurationMax     pgtype.Float8
+	TurnsMin        pgtype.Int4
+	TurnsMax        pgtype.Int4
+	UnknownAnswer   bool
+	UnknownDuration bool
+	UnknownTurns    bool
+	MatchNone       bool
+}
+
+type CallTotalsRow struct {
+	CallCount      int64
+	Phone          int64
+	Web            int64
+	UnknownChannel int64
+	AnswerTurns    int64
+	OverBudget     int64
+	P50Ms          interface{}
+	ValuesMs       []float64
+}
+
+// Totals over every call the same filters match as of the snapshot, not one page. Answer values
+// come newest call first, each call's in turn order, so a cut drops the oldest calls first; the
+// median is the console's, the upper middle value.
+func (q *Queries) CallTotals(ctx context.Context, arg CallTotalsParams) (CallTotalsRow, error) {
+	row := q.db.QueryRow(ctx, callTotals,
+		arg.BudgetMs,
+		arg.MaxValues,
+		arg.OrganisationID,
+		arg.ProjectID,
+		arg.SnapshotAt,
+		arg.FromAt,
+		arg.ToAt,
+		arg.Room,
+		arg.Channels,
+		arg.AnswerMin,
+		arg.AnswerMax,
+		arg.DurationMin,
+		arg.DurationMax,
+		arg.TurnsMin,
+		arg.TurnsMax,
+		arg.UnknownAnswer,
+		arg.UnknownDuration,
+		arg.UnknownTurns,
+		arg.MatchNone,
+	)
+	var i CallTotalsRow
+	err := row.Scan(
+		&i.CallCount,
+		&i.Phone,
+		&i.Web,
+		&i.UnknownChannel,
+		&i.AnswerTurns,
+		&i.OverBudget,
+		&i.P50Ms,
+		&i.ValuesMs,
+	)
+	return i, err
+}
+
+const clearStale = `-- name: ClearStale :exec
+UPDATE calls SET summary_stale_at = NULL
+WHERE id = $1 AND summary_stale_at = $2
+`
+
+type ClearStaleParams struct {
+	ID   pgtype.UUID
+	Seen pgtype.Timestamptz
+}
+
+// Clears a call's stale mark only if nothing joined since the rebuild read it.
+func (q *Queries) ClearStale(ctx context.Context, arg ClearStaleParams) error {
+	_, err := q.db.Exec(ctx, clearStale, arg.ID, arg.Seen)
+	return err
 }
 
 const closeIdleCalls = `-- name: CloseIdleCalls :execrows
@@ -180,6 +305,177 @@ type FinishCallParams struct {
 func (q *Queries) FinishCall(ctx context.Context, arg FinishCallParams) error {
 	_, err := q.db.Exec(ctx, finishCall, arg.EndedAt, arg.ID)
 	return err
+}
+
+const healCall = `-- name: HealCall :exec
+UPDATE calls SET
+    room_name     = COALESCE(room_name, $1),
+    first_seen_at = LEAST(first_seen_at, $2)
+WHERE id = $3
+`
+
+type HealCallParams struct {
+	RoomName    pgtype.Text
+	FirstSeenAt pgtype.Timestamptz
+	ID          pgtype.UUID
+}
+
+// Fills what an older call lacks from its spans: the room name the agent reported and the earliest
+// time a span reported. A value already stored is kept.
+func (q *Queries) HealCall(ctx context.Context, arg HealCallParams) error {
+	_, err := q.db.Exec(ctx, healCall, arg.RoomName, arg.FirstSeenAt, arg.ID)
+	return err
+}
+
+const listCalls = `-- name: ListCalls :many
+WITH f AS (
+    SELECT l.organisation_id, l.project_id, l.id, l.room_name, l.room_sid, l.started_at, l.ended_at, l.end_state, l.created_at, l.start_at, l.duration_seconds, l.participants, l.channel, l.turn_count, l.answer_ms, l.answer_ms_median, l.models, l.pipeline, l.agent_key,
+        CASE $6::text
+            WHEN 'startedAt'       THEN EXTRACT(EPOCH FROM l.start_at)::double precision
+            WHEN 'durationSeconds' THEN l.duration_seconds
+            WHEN 'turnCount'       THEN l.turn_count::double precision
+            WHEN 'answerMs'        THEN l.answer_ms_median
+        END * CASE WHEN $7::bool THEN -1 ELSE 1 END AS sort_key
+    FROM call_list l
+    WHERE l.organisation_id = $8 AND l.project_id = $9 AND l.created_at <= $10
+      AND ($11::timestamptz IS NULL OR l.start_at >= $11::timestamptz)
+      AND ($12::timestamptz IS NULL OR l.start_at < $12::timestamptz)
+      AND ($13::text IS NULL OR l.room_name = $13::text)
+      AND (cardinality($14::text[]) = 0 OR l.channel = ANY($14::text[]))
+      AND ($15::float8 IS NULL OR l.answer_ms_median >= $15::float8)
+      AND ($16::float8 IS NULL OR l.answer_ms_median <= $16::float8)
+      AND ($17::float8 IS NULL OR l.duration_seconds >= $17::float8)
+      AND ($18::float8 IS NULL OR l.duration_seconds <= $18::float8)
+      AND ($19::int IS NULL OR l.turn_count >= $19::int)
+      AND ($20::int IS NULL OR l.turn_count <= $20::int)
+      AND (NOT $21::bool OR l.answer_ms_median IS NULL)
+      AND (NOT $22::bool OR l.duration_seconds IS NULL)
+      AND (NOT $23::bool OR l.turn_count IS NULL)
+      AND NOT $24::bool
+)
+SELECT f.id, f.room_name, f.room_sid, f.start_at, f.started_at, f.ended_at, f.end_state, f.duration_seconds,
+       f.participants, f.channel, f.turn_count, f.answer_ms, f.answer_ms_median, f.models, f.pipeline, f.agent_key,
+       (f.sort_key IS NULL) AS key_unknown, COALESCE(f.sort_key, 0)::double precision AS sort_value
+FROM f
+WHERE NOT $1::bool
+   OR ((f.sort_key IS NULL), COALESCE(f.sort_key, 0), f.id) > ($2::bool, $3::float8, $4::uuid)
+ORDER BY (f.sort_key IS NULL), COALESCE(f.sort_key, 0), f.id
+LIMIT $5
+`
+
+type ListCallsParams struct {
+	AfterCursor     bool
+	CursorUnknown   bool
+	CursorValue     float64
+	CursorID        pgtype.UUID
+	MaxRows         int32
+	SortBy          string
+	Descending      bool
+	OrganisationID  string
+	ProjectID       string
+	SnapshotAt      pgtype.Timestamptz
+	FromAt          pgtype.Timestamptz
+	ToAt            pgtype.Timestamptz
+	Room            pgtype.Text
+	Channels        []string
+	AnswerMin       pgtype.Float8
+	AnswerMax       pgtype.Float8
+	DurationMin     pgtype.Float8
+	DurationMax     pgtype.Float8
+	TurnsMin        pgtype.Int4
+	TurnsMax        pgtype.Int4
+	UnknownAnswer   bool
+	UnknownDuration bool
+	UnknownTurns    bool
+	MatchNone       bool
+}
+
+type ListCallsRow struct {
+	ID              pgtype.UUID
+	RoomName        pgtype.Text
+	RoomSid         pgtype.Text
+	StartAt         pgtype.Timestamptz
+	StartedAt       pgtype.Timestamptz
+	EndedAt         pgtype.Timestamptz
+	EndState        string
+	DurationSeconds interface{}
+	Participants    int64
+	Channel         string
+	TurnCount       pgtype.Int4
+	AnswerMs        []float64
+	AnswerMsMedian  pgtype.Float8
+	Models          []string
+	Pipeline        string
+	AgentKey        pgtype.Text
+	KeyUnknown      interface{}
+	SortValue       float64
+}
+
+// One page of a project's calls as of a snapshot. The sort key is one number, negated for
+// descending order, so unknowns sort last and ties break by id in both orders; the cursor is the
+// last row's (unknown, key, id).
+func (q *Queries) ListCalls(ctx context.Context, arg ListCallsParams) ([]ListCallsRow, error) {
+	rows, err := q.db.Query(ctx, listCalls,
+		arg.AfterCursor,
+		arg.CursorUnknown,
+		arg.CursorValue,
+		arg.CursorID,
+		arg.MaxRows,
+		arg.SortBy,
+		arg.Descending,
+		arg.OrganisationID,
+		arg.ProjectID,
+		arg.SnapshotAt,
+		arg.FromAt,
+		arg.ToAt,
+		arg.Room,
+		arg.Channels,
+		arg.AnswerMin,
+		arg.AnswerMax,
+		arg.DurationMin,
+		arg.DurationMax,
+		arg.TurnsMin,
+		arg.TurnsMax,
+		arg.UnknownAnswer,
+		arg.UnknownDuration,
+		arg.UnknownTurns,
+		arg.MatchNone,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListCallsRow
+	for rows.Next() {
+		var i ListCallsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.RoomName,
+			&i.RoomSid,
+			&i.StartAt,
+			&i.StartedAt,
+			&i.EndedAt,
+			&i.EndState,
+			&i.DurationSeconds,
+			&i.Participants,
+			&i.Channel,
+			&i.TurnCount,
+			&i.AnswerMs,
+			&i.AnswerMsMedian,
+			&i.Models,
+			&i.Pipeline,
+			&i.AgentKey,
+			&i.KeyUnknown,
+			&i.SortValue,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const openCallInRoom = `-- name: OpenCallInRoom :one
@@ -287,6 +583,45 @@ func (q *Queries) ProjectByLiveKitKey(ctx context.Context, livekitApiKey string)
 	return i, err
 }
 
+const putSummary = `-- name: PutSummary :exec
+INSERT INTO call_summaries (call_id, turn_count, answer_ms, answer_ms_median, models, pipeline, agent_key, computed_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+ON CONFLICT (call_id) DO UPDATE SET
+    turn_count       = EXCLUDED.turn_count,
+    answer_ms        = EXCLUDED.answer_ms,
+    answer_ms_median = EXCLUDED.answer_ms_median,
+    models           = EXCLUDED.models,
+    pipeline         = EXCLUDED.pipeline,
+    agent_key        = EXCLUDED.agent_key,
+    computed_at      = EXCLUDED.computed_at
+`
+
+type PutSummaryParams struct {
+	CallID         pgtype.UUID
+	TurnCount      pgtype.Int4
+	AnswerMs       []float64
+	AnswerMsMedian pgtype.Float8
+	Models         []string
+	Pipeline       string
+	AgentKey       pgtype.Text
+	ComputedAt     pgtype.Timestamptz
+}
+
+// Stores a call's rebuilt summary.
+func (q *Queries) PutSummary(ctx context.Context, arg PutSummaryParams) error {
+	_, err := q.db.Exec(ctx, putSummary,
+		arg.CallID,
+		arg.TurnCount,
+		arg.AnswerMs,
+		arg.AnswerMsMedian,
+		arg.Models,
+		arg.Pipeline,
+		arg.AgentKey,
+		arg.ComputedAt,
+	)
+	return err
+}
+
 const sealedLiveKitSecret = `-- name: SealedLiveKitSecret :one
 SELECT livekit_api_secret_sealed
 FROM projects
@@ -305,19 +640,63 @@ func (q *Queries) SealedLiveKitSecret(ctx context.Context, arg SealedLiveKitSecr
 	return livekit_api_secret_sealed, err
 }
 
+const staleCalls = `-- name: StaleCalls :many
+SELECT organisation_id, project_id, id, summary_stale_at
+FROM calls
+WHERE summary_stale_at IS NOT NULL
+ORDER BY summary_stale_at
+LIMIT $1
+`
+
+type StaleCallsRow struct {
+	OrganisationID string
+	ProjectID      string
+	ID             pgtype.UUID
+	SummaryStaleAt pgtype.Timestamptz
+}
+
+// Calls whose summary needs rebuilding, oldest mark first.
+func (q *Queries) StaleCalls(ctx context.Context, maxCalls int32) ([]StaleCallsRow, error) {
+	rows, err := q.db.Query(ctx, staleCalls, maxCalls)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []StaleCallsRow
+	for rows.Next() {
+		var i StaleCallsRow
+		if err := rows.Scan(
+			&i.OrganisationID,
+			&i.ProjectID,
+			&i.ID,
+			&i.SummaryStaleAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const touchCall = `-- name: TouchCall :exec
 UPDATE calls SET
     job_id           = COALESCE(job_id, $1),
     started_at       = COALESCE(started_at, $2),
     last_activity_at = GREATEST(last_activity_at, $3),
+    first_seen_at    = LEAST(first_seen_at, $4),
+    summary_stale_at = now(),
     updated_at       = now()
-WHERE id = $4
+WHERE id = $5
 `
 
 type TouchCallParams struct {
 	JobID          pgtype.Text
 	StartedAt      pgtype.Timestamptz
 	LastActivityAt pgtype.Timestamptz
+	FirstSeenAt    pgtype.Timestamptz
 	ID             pgtype.UUID
 }
 
@@ -327,16 +706,19 @@ func (q *Queries) TouchCall(ctx context.Context, arg TouchCallParams) error {
 		arg.JobID,
 		arg.StartedAt,
 		arg.LastActivityAt,
+		arg.FirstSeenAt,
 		arg.ID,
 	)
 	return err
 }
 
 const upsertCallByJobID = `-- name: UpsertCallByJobID :one
-INSERT INTO calls (organisation_id, project_id, job_id, last_activity_at)
-VALUES ($1, $2, $3, $4)
+INSERT INTO calls (organisation_id, project_id, job_id, last_activity_at, first_seen_at, summary_stale_at)
+VALUES ($1, $2, $3, $4, $5, now())
 ON CONFLICT (organisation_id, project_id, job_id) WHERE room_sid IS NULL AND job_id IS NOT NULL DO UPDATE SET
     last_activity_at = GREATEST(calls.last_activity_at, EXCLUDED.last_activity_at),
+    first_seen_at    = LEAST(calls.first_seen_at, EXCLUDED.first_seen_at),
+    summary_stale_at = now(),
     updated_at       = now()
 RETURNING id
 `
@@ -346,6 +728,7 @@ type UpsertCallByJobIDParams struct {
 	ProjectID      string
 	JobID          pgtype.Text
 	LastActivityAt pgtype.Timestamptz
+	FirstSeenAt    pgtype.Timestamptz
 }
 
 // Opens a call for a job no source has named a room SID for, or adds to it.
@@ -355,6 +738,7 @@ func (q *Queries) UpsertCallByJobID(ctx context.Context, arg UpsertCallByJobIDPa
 		arg.ProjectID,
 		arg.JobID,
 		arg.LastActivityAt,
+		arg.FirstSeenAt,
 	)
 	var id pgtype.UUID
 	err := row.Scan(&id)
@@ -362,13 +746,15 @@ func (q *Queries) UpsertCallByJobID(ctx context.Context, arg UpsertCallByJobIDPa
 }
 
 const upsertCallByRoomSID = `-- name: UpsertCallByRoomSID :one
-INSERT INTO calls (organisation_id, project_id, room_sid, room_name, job_id, started_at, last_activity_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7)
+INSERT INTO calls (organisation_id, project_id, room_sid, room_name, job_id, started_at, last_activity_at, first_seen_at, summary_stale_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, now())
 ON CONFLICT (organisation_id, project_id, room_sid) WHERE room_sid IS NOT NULL DO UPDATE SET
     room_name        = COALESCE(calls.room_name, EXCLUDED.room_name),
     job_id           = COALESCE(calls.job_id, EXCLUDED.job_id),
     started_at       = COALESCE(calls.started_at, EXCLUDED.started_at),
     last_activity_at = GREATEST(calls.last_activity_at, EXCLUDED.last_activity_at),
+    first_seen_at    = LEAST(calls.first_seen_at, EXCLUDED.first_seen_at),
+    summary_stale_at = now(),
     updated_at       = now()
 RETURNING id
 `
@@ -381,6 +767,7 @@ type UpsertCallByRoomSIDParams struct {
 	JobID          pgtype.Text
 	StartedAt      pgtype.Timestamptz
 	LastActivityAt pgtype.Timestamptz
+	FirstSeenAt    pgtype.Timestamptz
 }
 
 // Opens the call of one room instance or adds to it. A value already set is kept; the latest
@@ -394,6 +781,7 @@ func (q *Queries) UpsertCallByRoomSID(ctx context.Context, arg UpsertCallByRoomS
 		arg.JobID,
 		arg.StartedAt,
 		arg.LastActivityAt,
+		arg.FirstSeenAt,
 	)
 	var id pgtype.UUID
 	err := row.Scan(&id)

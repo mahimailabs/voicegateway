@@ -21,6 +21,9 @@ const (
 	attrJobID     = "job_id"
 	attrLKRoomSID = "lk.room_sid"
 	attrLKJobID   = "lk.job_id"
+	// attrRoomName is the room's name on job_entrypoint and agent_session; "pii" because the agent
+	// can redact it.
+	attrRoomName = "lk.pii.room_name"
 )
 
 // ref is what a span names its call by: a room SID or, failing that, a job id.
@@ -100,10 +103,16 @@ const staleAfter = time.Minute
 // A span that starts more than staleAfter after that call ended is left unjoined.
 func (j *Joiner) joinSpans(ctx context.Context, r *store.Event, k ref, idx []int) (string, error) {
 	spans := make([]window, len(idx))
+	roomName := ""
 	for n, i := range idx {
 		spans[n] = window{r.Spans[i].Start, r.Spans[i].End}
+		// LiveKit Agents 1.8.7 reports the room's name on job_entrypoint and agent_session; it
+		// fills the call's room only when no webhook named it.
+		if roomName == "" {
+			roomName = r.Spans[i].Attributes[attrRoomName]
+		}
 	}
-	callID, joined, err := j.joinRef(ctx, r, k, spans, "spans")
+	callID, joined, err := j.joinRef(ctx, r, k, spans, roomName, "spans")
 	for n, i := range idx {
 		if joined[n] {
 			r.Spans[i].CallID = callID
@@ -118,7 +127,7 @@ type window struct{ start, end time.Time }
 // joinRef joins items sharing ref k to their call, creating it if no source has, and reports which
 // joined. An item that starts more than staleAfter after that call ended carries a previous job's
 // ids and is left unjoined. Each joined item's end is activity on the call.
-func (j *Joiner) joinRef(ctx context.Context, r *store.Event, k ref, items []window, what string) (string, []bool, error) {
+func (j *Joiner) joinRef(ctx context.Context, r *store.Event, k ref, items []window, roomName, what string) (string, []bool, error) {
 	joined := make([]bool, len(items))
 	var (
 		existing store.CallRef
@@ -134,7 +143,7 @@ func (j *Joiner) joinRef(ctx context.Context, r *store.Event, k ref, items []win
 	}
 
 	fresh := 0
-	var activity *time.Time
+	var activity, firstSeen *time.Time
 	for n, it := range items {
 		if existing.EndedAt != nil && it.start.After(existing.EndedAt.Add(staleAfter)) {
 			continue
@@ -142,6 +151,7 @@ func (j *Joiner) joinRef(ctx context.Context, r *store.Event, k ref, items []win
 		joined[n] = true
 		fresh++
 		activity = latest(activity, ptr(it.end))
+		firstSeen = earliest(firstSeen, ptr(it.start))
 	}
 	if stale := len(items) - fresh; stale > 0 {
 		j.Log.Warn("join: "+what+" start after their call ended, not joined", "project", r.ProjectID, "count", stale)
@@ -155,12 +165,12 @@ func (j *Joiner) joinRef(ctx context.Context, r *store.Event, k ref, items []win
 	case k.roomSID != "":
 		callID, err = j.Calls.UpsertCall(ctx, store.CallUpsert{
 			OrganisationID: r.OrganisationID, ProjectID: r.ProjectID,
-			RoomSID: k.roomSID, JobID: k.jobID, LastActivityAt: activity,
+			RoomSID: k.roomSID, RoomName: roomName, JobID: k.jobID, LastActivityAt: activity, FirstSeenAt: firstSeen,
 		})
 	case existing.ID != "":
-		callID, err = existing.ID, j.Calls.TouchCall(ctx, existing.ID, "", nil, activity)
+		callID, err = existing.ID, j.Calls.TouchCall(ctx, existing.ID, "", nil, activity, firstSeen)
 	default:
-		callID, err = j.Calls.UpsertCallByJob(ctx, r.OrganisationID, r.ProjectID, k.jobID, activity)
+		callID, err = j.Calls.UpsertCallByJob(ctx, r.OrganisationID, r.ProjectID, k.jobID, activity, firstSeen)
 	}
 	if err != nil {
 		return "", make([]bool, len(items)), err
