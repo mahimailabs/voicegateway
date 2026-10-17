@@ -325,7 +325,9 @@ describe("getCallStats", () => {
     const all = await (await fetch(`${base}/call-stats?from=2000-01-01T00:00:00Z&to=2100-01-01T00:00:00Z`)).json()
     expect(before.callCount).toBe(0)
     expect(from.callCount).toBe(all.callCount)
-  }, 20_000)
+    // A century-long range still answers with at most a week of hours.
+    expect(all.byHour.length).toBe(168)
+  })
 
   test("the stage chain and providers stay within what was measured", async () => {
     const s = await stats()

@@ -198,7 +198,7 @@ export function LatencyChain({ all: overall, groups: sets, backMs }: { all: Chai
                               <span className="text-right">
                                 {s.p50 !== null ? (
                                   <>
-                                    <span className={cn("block text-[13px] font-semibold tnum", st.id === "stall" && "text-destructive")}>{st.id === "stall" ? `up to ${fmtMs(s.max!)}` : fmtMs(s.p50)}</span>
+                                    <span className={cn("block text-[13px] font-semibold tnum", st.id === "stall" && "text-destructive")}>{st.id === "stall" ? (s.max === null ? "longest unknown" : `up to ${fmtMs(s.max)}`) : fmtMs(s.p50)}</span>
                                   </>
                                 ) : (
                                   <span className="text-[12px] text-muted-foreground">{reported ? "none in these turns" : "not reported"}</span>

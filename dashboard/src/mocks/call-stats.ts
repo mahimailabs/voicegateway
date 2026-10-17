@@ -14,6 +14,7 @@ import { summarize } from "./summaries"
 
 const MAX_VALUES = 5000
 const MAX_CALLS = 500
+const MAX_HOURS = 168
 const CHANNELS = ["phone", "web", "console", "local", "unknown"] as const
 
 const p90 = (xs: number[]) => (xs.length ? [...xs].sort((a, b) => a - b)[Math.min(xs.length - 1, Math.ceil(xs.length * 0.9) - 1)] : null)
@@ -134,15 +135,27 @@ export function callStats(from: Date, to: Date): CallStats {
   const values = newest.flatMap(({ c, s, m }) => m.turns.filter((t) => t.responseMs !== null).map((t) => ({ ms: t.responseMs, callId: c.id, room: c.room, turn: t.i, agentKey: s.agentKey })))
   const all = newest.flatMap(({ s }) => s.answerMs ?? [])
 
+  const perDay = new Map<string, number>()
+  for (const c of calls) {
+    const date = new Date(c.startedAt).toISOString().slice(0, 10)
+    perDay.set(date, (perDay.get(date) ?? 0) + 1)
+  }
   const days: CallStats["byDay"] = []
   for (let d = Date.UTC(from.getUTCFullYear(), from.getUTCMonth(), from.getUTCDate()); d < +to; d += 86_400_000) {
     const date = new Date(d).toISOString().slice(0, 10)
-    days.push({ date, callCount: calls.filter((c) => c.startedAt.slice(0, 10) === date).length })
+    days.push({ date, callCount: perDay.get(date) ?? 0 })
   }
 
+  // The last 168 UTC hours of the range at most; calls are bucketed once, not rescanned per hour.
+  const HOUR = 3_600_000
+  const byHourKey = new Map<number, typeof rows>()
+  for (const r of rows) {
+    const h = Math.floor(Date.parse(r.c.startedAt) / HOUR) * HOUR
+    byHourKey.set(h, [...(byHourKey.get(h) ?? []), r])
+  }
   const hours: CallStats["byHour"] = []
-  for (let h = Math.floor(+from / 3_600_000) * 3_600_000; h < +to; h += 3_600_000) {
-    const inHour = rows.filter(({ c }) => Date.parse(c.startedAt) >= h && Date.parse(c.startedAt) < h + 3_600_000)
+  for (let h = Math.max(Math.floor(+from / HOUR), Math.ceil(+to / HOUR) - MAX_HOURS) * HOUR; h < +to; h += HOUR) {
+    const inHour = byHourKey.get(h) ?? []
     hours.push({ hour: new Date(h).toISOString(), callCount: inHour.length, answerP50Ms: median(inHour.flatMap(({ s }) => s.answerMs ?? [])) })
   }
 

@@ -841,7 +841,7 @@ export type CallStats = {
         callCount: number | null;
     }>;
     /**
-     * Calls per UTC hour in the range, oldest first, one entry per hour including hours with none, each with its median answer, for the Live wire's calls strip.
+     * Calls per UTC hour over the last 168 hours of the range (all of it when shorter), oldest first, one entry per hour including hours with none, each with its median answer, for the Live wire's calls strip. An hour cut by the range's start or end counts only the calls inside the range.
      */
     byHour: Array<{
         /**

@@ -47,7 +47,9 @@ export function wireData(rows: Row[], { stats, ms: rooms, sip, probes: probe }: 
     { id: "media", kind: "media", y: -20, title: "Media server", sub: `${rooms.rooms.length} rooms watched`, tip: "LiveKit Cloud" },
   ]
   // Calls that reached an agent through the media server without a phone leg; unknown if any count is.
-  const unnamed = rows.find((r) => r.key === "other")?.stats?.callCount ?? 0
+  // No unidentified row means none of those calls; a row with an unknown count leaves the rest unknown.
+  const other = rows.find((r) => r.key === "other")?.stats
+  const unnamed = other ? other.callCount : 0
   const webIn = all === null || phoneCalls === null || unnamed === null ? null : Math.max(all - phoneCalls - unnamed, 0)
   const links: WireLink[] = [
     {

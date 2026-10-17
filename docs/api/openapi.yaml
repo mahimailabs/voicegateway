@@ -3309,7 +3309,8 @@ components:
                 minimum: 0
         byHour:
           type: array
-          description: "Calls per UTC hour in the range, oldest first, one entry per hour including hours with none, each with its median answer, for the Live wire's calls strip."
+          description: "Calls per UTC hour over the last 168 hours of the range (all of it when shorter), oldest first, one entry per hour including hours with none, each with its median answer, for the Live wire's calls strip. An hour cut by the range's start or end counts only the calls inside the range."
+          maxItems: 168
           x-source: { kind: computed, file: dashboard/src/features/overview/wire-data.ts, pointer: null, detail: "Calls per UTC hour with their median answer, for the Live wire's calls strip." }
           items:
             type: object
