@@ -317,5 +317,22 @@
     "operations": [],
     "assetNotes": {},
     "exclusion": "Starts the mock API with import() only in development or with VITE_MOCK_API=on; reads nothing itself."
+  },
+  {
+    "file": "dashboard/src/lib/session.ts",
+    "fixtures": [],
+    "assets": [
+      "/auth/session",
+      "/auth/sign-in",
+      "/auth/sign-out"
+    ],
+    "browserStorage": false,
+    "operations": [],
+    "assetNotes": {
+      "/auth/session": "Who is signed in (decision 0027); not a console read.",
+      "/auth/sign-in": "Signs in with email and password (decision 0027); a write, not a console read.",
+      "/auth/sign-out": "Ends the session on the server (decision 0027); a write, not a console read."
+    },
+    "exclusion": "Sign-in and the session, from web's /auth routes (decision 0027, phase 06a); not part of the read contract."
   }
 ]

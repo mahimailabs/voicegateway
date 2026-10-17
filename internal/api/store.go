@@ -36,3 +36,8 @@ type Layers interface {
 	ParticipantChanges(ctx context.Context, organisationID, projectID string, roomSIDs []string) ([]store.ParticipantChange, error)
 	LatestSIP(ctx context.Context, organisationID, projectID string) (store.SIPRead, error)
 }
+
+// Accounts reads what a signed-in user may see.
+type Accounts interface {
+	Workspaces(ctx context.Context, userID string) ([]store.Workspace, error)
+}

@@ -82,6 +82,12 @@ type ListSnapshot struct {
 	CreatedAt      pgtype.Timestamptz
 }
 
+type Membership struct {
+	UserID         pgtype.UUID
+	OrganisationID string
+	Role           string
+}
+
 type Organisation struct {
 	ID        string
 	Name      string
@@ -96,4 +102,23 @@ type Project struct {
 	LivekitApiKey          string
 	LivekitApiSecretSealed []byte
 	CreatedAt              pgtype.Timestamptz
+}
+
+type Session struct {
+	Token  string
+	Data   []byte
+	Expiry pgtype.Timestamptz
+}
+
+type SignInAttempt struct {
+	Kind string
+	Key  string
+	At   pgtype.Timestamptz
+}
+
+type User struct {
+	ID           pgtype.UUID
+	Email        string
+	PasswordHash string
+	CreatedAt    pgtype.Timestamptz
 }

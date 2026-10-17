@@ -11,6 +11,7 @@ import (
 const (
 	codeInvalidRequest    = "invalid_request"
 	codeUnauthenticated   = "unauthenticated"
+	codeForbidden         = "forbidden"
 	codeNotFound          = "not_found"
 	codeSourceUnavailable = "source_unavailable"
 	codeInternal          = "internal_error"

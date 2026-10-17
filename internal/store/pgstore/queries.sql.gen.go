@@ -11,6 +11,21 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const addMembership = `-- name: AddMembership :exec
+INSERT INTO memberships (user_id, organisation_id, role) VALUES ($1, $2, $3)
+`
+
+type AddMembershipParams struct {
+	UserID         pgtype.UUID
+	OrganisationID string
+	Role           string
+}
+
+func (q *Queries) AddMembership(ctx context.Context, arg AddMembershipParams) error {
+	_, err := q.db.Exec(ctx, addMembership, arg.UserID, arg.OrganisationID, arg.Role)
+	return err
+}
+
 const callByID = `-- name: CallByID :one
 SELECT l.id, l.room_name, l.room_sid, l.job_id, l.started_at, l.ended_at, l.end_state, l.first_seen_at,
        l.participants, l.servable, l.summarized::boolean AS summarized
@@ -246,6 +261,17 @@ func (q *Queries) CloseIdleCalls(ctx context.Context, idleSince pgtype.Timestamp
 	return result.RowsAffected(), nil
 }
 
+const countUsers = `-- name: CountUsers :one
+SELECT count(*) FROM users
+`
+
+func (q *Queries) CountUsers(ctx context.Context) (int64, error) {
+	row := q.db.QueryRow(ctx, countUsers)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createProject = `-- name: CreateProject :one
 INSERT INTO projects (organisation_id, id, name, livekit_url, livekit_api_key, livekit_api_secret_sealed)
 VALUES ($1, $2, $3, $4, $5, $6)
@@ -291,6 +317,22 @@ func (q *Queries) CreateProject(ctx context.Context, arg CreateProjectParams) (C
 	return i, err
 }
 
+const createUser = `-- name: CreateUser :one
+INSERT INTO users (email, password_hash) VALUES ($1, $2) RETURNING id
+`
+
+type CreateUserParams struct {
+	Email        string
+	PasswordHash string
+}
+
+func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (pgtype.UUID, error) {
+	row := q.db.QueryRow(ctx, createUser, arg.Email, arg.PasswordHash)
+	var id pgtype.UUID
+	err := row.Scan(&id)
+	return id, err
+}
+
 const deferStale = `-- name: DeferStale :exec
 UPDATE calls SET
     summary_failures = summary_failures + 1,
@@ -304,6 +346,30 @@ WHERE id = $1 AND summary_stale_at IS NOT NULL
 func (q *Queries) DeferStale(ctx context.Context, id pgtype.UUID) error {
 	_, err := q.db.Exec(ctx, deferStale, id)
 	return err
+}
+
+const failedSignIns = `-- name: FailedSignIns :one
+SELECT count(*) AS failures, min(at)::timestamptz AS oldest
+FROM sign_in_attempts WHERE kind = $1 AND key = $2 AND at >= $3
+`
+
+type FailedSignInsParams struct {
+	Kind  string
+	Key   string
+	Since pgtype.Timestamptz
+}
+
+type FailedSignInsRow struct {
+	Failures int64
+	Oldest   pgtype.Timestamptz
+}
+
+// Failures for one key since a time, and the oldest of them, for Retry-After.
+func (q *Queries) FailedSignIns(ctx context.Context, arg FailedSignInsParams) (FailedSignInsRow, error) {
+	row := q.db.QueryRow(ctx, failedSignIns, arg.Kind, arg.Key, arg.Since)
+	var i FailedSignInsRow
+	err := row.Scan(&i.Failures, &i.Oldest)
+	return i, err
 }
 
 const finishCall = `-- name: FinishCall :exec
@@ -333,6 +399,15 @@ DELETE FROM list_snapshots WHERE created_at < now() - interval '1 day'
 // Deletes snapshots past their day, by the Postgres clock that wrote them.
 func (q *Queries) ForgetListSnapshots(ctx context.Context) error {
 	_, err := q.db.Exec(ctx, forgetListSnapshots)
+	return err
+}
+
+const forgetSignIns = `-- name: ForgetSignIns :exec
+DELETE FROM sign_in_attempts WHERE at < $1
+`
+
+func (q *Queries) ForgetSignIns(ctx context.Context, before pgtype.Timestamptz) error {
+	_, err := q.db.Exec(ctx, forgetSignIns, before)
 	return err
 }
 
@@ -587,6 +662,51 @@ func (q *Queries) MarkStale(ctx context.Context, ids []pgtype.UUID) error {
 	return err
 }
 
+const membership = `-- name: Membership :one
+SELECT role FROM memberships WHERE user_id = $1 AND organisation_id = $2
+`
+
+type MembershipParams struct {
+	UserID         pgtype.UUID
+	OrganisationID string
+}
+
+func (q *Queries) Membership(ctx context.Context, arg MembershipParams) (string, error) {
+	row := q.db.QueryRow(ctx, membership, arg.UserID, arg.OrganisationID)
+	var role string
+	err := row.Scan(&role)
+	return role, err
+}
+
+const memberships = `-- name: Memberships :many
+SELECT organisation_id, role FROM memberships WHERE user_id = $1 ORDER BY organisation_id
+`
+
+type MembershipsRow struct {
+	OrganisationID string
+	Role           string
+}
+
+func (q *Queries) Memberships(ctx context.Context, userID pgtype.UUID) ([]MembershipsRow, error) {
+	rows, err := q.db.Query(ctx, memberships, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []MembershipsRow
+	for rows.Next() {
+		var i MembershipsRow
+		if err := rows.Scan(&i.OrganisationID, &i.Role); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const openCallInRoom = `-- name: OpenCallInRoom :one
 SELECT id FROM calls
 WHERE organisation_id = $1 AND project_id = $2 AND room_name = $3
@@ -754,6 +874,20 @@ func (q *Queries) PutSummary(ctx context.Context, arg PutSummaryParams) error {
 		arg.AgentKey,
 		arg.ComputedAt,
 	)
+	return err
+}
+
+const recordFailedSignIn = `-- name: RecordFailedSignIn :exec
+INSERT INTO sign_in_attempts (kind, key) VALUES ($1, $2)
+`
+
+type RecordFailedSignInParams struct {
+	Kind string
+	Key  string
+}
+
+func (q *Queries) RecordFailedSignIn(ctx context.Context, arg RecordFailedSignInParams) error {
+	_, err := q.db.Exec(ctx, recordFailedSignIn, arg.Kind, arg.Key)
 	return err
 }
 
@@ -962,4 +1096,81 @@ func (q *Queries) UpsertParticipant(ctx context.Context, arg UpsertParticipantPa
 		arg.LeftAt,
 	)
 	return err
+}
+
+const userByEmail = `-- name: UserByEmail :one
+SELECT id, email, password_hash FROM users WHERE email = $1
+`
+
+type UserByEmailRow struct {
+	ID           pgtype.UUID
+	Email        string
+	PasswordHash string
+}
+
+func (q *Queries) UserByEmail(ctx context.Context, email string) (UserByEmailRow, error) {
+	row := q.db.QueryRow(ctx, userByEmail, email)
+	var i UserByEmailRow
+	err := row.Scan(&i.ID, &i.Email, &i.PasswordHash)
+	return i, err
+}
+
+const userByID = `-- name: UserByID :one
+SELECT id, email FROM users WHERE id = $1
+`
+
+type UserByIDRow struct {
+	ID    pgtype.UUID
+	Email string
+}
+
+func (q *Queries) UserByID(ctx context.Context, id pgtype.UUID) (UserByIDRow, error) {
+	row := q.db.QueryRow(ctx, userByID, id)
+	var i UserByIDRow
+	err := row.Scan(&i.ID, &i.Email)
+	return i, err
+}
+
+const workspaceProjects = `-- name: WorkspaceProjects :many
+SELECT o.id AS organisation_id, o.name AS organisation_name, m.role, p.id AS project_id, p.name AS project_name
+FROM memberships m
+JOIN organisations o ON o.id = m.organisation_id
+LEFT JOIN projects p ON p.organisation_id = o.id
+WHERE m.user_id = $1
+ORDER BY o.id, p.id
+`
+
+type WorkspaceProjectsRow struct {
+	OrganisationID   string
+	OrganisationName string
+	Role             string
+	ProjectID        pgtype.Text
+	ProjectName      pgtype.Text
+}
+
+// The projects of the organisations a user belongs to.
+func (q *Queries) WorkspaceProjects(ctx context.Context, userID pgtype.UUID) ([]WorkspaceProjectsRow, error) {
+	rows, err := q.db.Query(ctx, workspaceProjects, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []WorkspaceProjectsRow
+	for rows.Next() {
+		var i WorkspaceProjectsRow
+		if err := rows.Scan(
+			&i.OrganisationID,
+			&i.OrganisationName,
+			&i.Role,
+			&i.ProjectID,
+			&i.ProjectName,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }

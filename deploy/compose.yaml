@@ -13,6 +13,10 @@ x-voicegateway-env: &voicegateway-env
   VOICEGATEWAY_SECRET_KEY: ${VOICEGATEWAY_SECRET_KEY:?set it in deploy/.env}
   # The bearer token /api/v1 requires; unset, the API answers 401 to everything.
   VOICEGATEWAY_API_TOKEN: ${VOICEGATEWAY_API_TOKEN:-}
+  # Where people open the console; https makes the session cookie Secure (decision 0027).
+  VOICEGATEWAY_PUBLIC_URL: ${VOICEGATEWAY_PUBLIC_URL:-}
+  # Proxies whose X-Forwarded-For and X-Forwarded-Proto web believes, comma-separated.
+  VOICEGATEWAY_TRUSTED_PROXIES: ${VOICEGATEWAY_TRUSTED_PROXIES:-}
   VOICEGATEWAY_LOG_LEVEL: ${VOICEGATEWAY_LOG_LEVEL:-info}
 
 x-voicegateway-depends: &voicegateway-depends

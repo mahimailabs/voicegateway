@@ -5,6 +5,8 @@ import (
 	"crypto/subtle"
 	"net/http"
 	"strings"
+
+	"github.com/mahimailabs/voicegateway/internal/store"
 )
 
 // BearerToken is the interim gate on /api/v1 until the sign-in decision (#321) lands: a request
@@ -25,7 +27,7 @@ func BearerToken(token string) func(http.Handler) http.Handler {
 				unauthenticated(w, r, "a valid API token is required")
 				return
 			}
-			next.ServeHTTP(w, r)
+			next.ServeHTTP(w, r.WithContext(store.WithPrincipal(r.Context(), store.Principal{Token: true})))
 		})
 	}
 }

@@ -366,8 +366,13 @@ func (f *fixture) api(traces Traces) *API {
 	return &API{Projects: f.pg, Calls: f.pg, Traces: traces, Log: f.log, Now: time.Now, Gate: passThrough}
 }
 
-// passThrough is a gate that lets every request in, for tests of what lies behind the gate.
-func passThrough(next http.Handler) http.Handler { return next }
+// passThrough is a gate that lets every request in as the interim token, for tests of what lies
+// behind the gate.
+func passThrough(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		next.ServeHTTP(w, r.WithContext(store.WithPrincipal(r.Context(), store.Principal{Token: true})))
+	})
+}
 
 // callID returns the id of the test project's call in a room.
 func (f *fixture) callID(roomSID string) string {

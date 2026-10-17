@@ -254,3 +254,44 @@ DELETE FROM list_snapshots WHERE created_at < now() - interval '1 day';
 -- A snapshot not yet expired, judged by the Postgres clock that wrote created_at.
 SELECT organisation_id, project_id, filters, at, totals FROM list_snapshots
 WHERE id = @id AND created_at >= now() - interval '1 day';
+
+-- name: CountUsers :one
+SELECT count(*) FROM users;
+
+-- name: CreateUser :one
+INSERT INTO users (email, password_hash) VALUES (@email, @password_hash) RETURNING id;
+
+-- name: AddMembership :exec
+INSERT INTO memberships (user_id, organisation_id, role) VALUES (@user_id, @organisation_id, @role);
+
+-- name: UserByEmail :one
+SELECT id, email, password_hash FROM users WHERE email = @email;
+
+-- name: UserByID :one
+SELECT id, email FROM users WHERE id = @id;
+
+-- name: Memberships :many
+SELECT organisation_id, role FROM memberships WHERE user_id = @user_id ORDER BY organisation_id;
+
+-- name: Membership :one
+SELECT role FROM memberships WHERE user_id = @user_id AND organisation_id = @organisation_id;
+
+-- name: RecordFailedSignIn :exec
+INSERT INTO sign_in_attempts (kind, key) VALUES (@kind, @key);
+
+-- name: FailedSignIns :one
+-- Failures for one key since a time, and the oldest of them, for Retry-After.
+SELECT count(*) AS failures, min(at)::timestamptz AS oldest
+FROM sign_in_attempts WHERE kind = @kind AND key = @key AND at >= @since;
+
+-- name: ForgetSignIns :exec
+DELETE FROM sign_in_attempts WHERE at < @before;
+
+-- name: WorkspaceProjects :many
+-- The projects of the organisations a user belongs to.
+SELECT o.id AS organisation_id, o.name AS organisation_name, m.role, p.id AS project_id, p.name AS project_name
+FROM memberships m
+JOIN organisations o ON o.id = m.organisation_id
+LEFT JOIN projects p ON p.organisation_id = o.id
+WHERE m.user_id = @user_id
+ORDER BY o.id, p.id;
