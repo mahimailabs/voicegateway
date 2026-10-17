@@ -277,6 +277,33 @@ func TestRealCallPreemptiveGeneration(t *testing.T) {
 	if !near(third.TTFTMs, 342.1) || !near(third.LLM1Ms, 342.1) {
 		t.Errorf("turn 3 ttft %s, llm1 %s; want 342.1 (the spoken generation), not 472.6", show(third.TTFTMs), show(third.LLM1Ms))
 	}
+	// The discarded generation opened no speech of its own: no tts_node starts between it and the
+	// spoken one.
+	var llmStarts, ttsStarts []time.Time
+	for _, sp := range spans {
+		if sp.Start.Before(third.Start) || sp.Start.After(third.End) {
+			continue
+		}
+		switch sp.Name {
+		case "llm_node":
+			llmStarts = append(llmStarts, sp.Start)
+		case "tts_node":
+			ttsStarts = append(ttsStarts, sp.Start)
+		}
+	}
+	if len(llmStarts) != 2 {
+		t.Fatalf("turn 3 llm_node spans = %d, want 2", len(llmStarts))
+	}
+	for _, s := range ttsStarts {
+		if s.After(llmStarts[0]) && s.Before(llmStarts[1]) {
+			t.Errorf("a tts_node starts at %v, between the discarded and the spoken generation", s)
+		}
+	}
+	for i, tu := range r.Turns {
+		if tu.STTAudioSeconds.Sum != nil {
+			t.Errorf("turn %d STT audio = %v; no per-turn source exists", i+1, *tu.STTAudioSeconds.Sum)
+		}
+	}
 	if in := third.InputTokens; in.Sum == nil || *in.Sum != 67+73 || in.Missing != 0 {
 		t.Errorf("turn 3 input tokens = %+v, want 140 (both requests), none missing", in)
 	}

@@ -84,7 +84,8 @@ func (t *Total[T]) add(v *T) {
 }
 
 // CallUsage is a call's usage over every request in it, inside a turn or not. STT audio seconds
-// stay nil: LiveKit Agents 1.8.7 reports them in no span.
+// come from no span: Build leaves them nil and the reader fills them from the agent's usage
+// counter, lk.agents.usage.stt_audio_duration.
 type CallUsage struct {
 	InputTokens, OutputTokens, CachedTokens, TTSCharacters Total[int64]
 	TTSAudioSeconds, STTAudioSeconds                       Total[float64]

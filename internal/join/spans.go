@@ -99,6 +99,27 @@ const staleAfter = time.Minute
 // joinSpans joins the spans at idx, which share ref k, to their call, creating it if no source has.
 // A span that starts more than staleAfter after that call ended is left unjoined.
 func (j *Joiner) joinSpans(ctx context.Context, r *store.Event, k ref, idx []int) (string, error) {
+	spans := make([]window, len(idx))
+	for n, i := range idx {
+		spans[n] = window{r.Spans[i].Start, r.Spans[i].End}
+	}
+	callID, joined, err := j.joinRef(ctx, r, k, spans, "spans")
+	for n, i := range idx {
+		if joined[n] {
+			r.Spans[i].CallID = callID
+		}
+	}
+	return callID, err
+}
+
+// window is the reported start and end of something joined to a call: a span or a metric point.
+type window struct{ start, end time.Time }
+
+// joinRef joins items sharing ref k to their call, creating it if no source has, and reports which
+// joined. An item that starts more than staleAfter after that call ended carries a previous job's
+// ids and is left unjoined. Each joined item's end is activity on the call.
+func (j *Joiner) joinRef(ctx context.Context, r *store.Event, k ref, items []window, what string) (string, []bool, error) {
+	joined := make([]bool, len(items))
 	var (
 		existing store.CallRef
 		err      error
@@ -109,24 +130,24 @@ func (j *Joiner) joinSpans(ctx context.Context, r *store.Event, k ref, idx []int
 		existing, err = j.Calls.CallByJob(ctx, r.OrganisationID, r.ProjectID, k.jobID)
 	}
 	if err != nil && !errors.Is(err, store.ErrNotFound) {
-		return "", err
+		return "", joined, err
 	}
 
-	var fresh []int
+	fresh := 0
 	var activity *time.Time
-	for _, i := range idx {
-		sp := r.Spans[i]
-		if existing.EndedAt != nil && sp.Start.After(existing.EndedAt.Add(staleAfter)) {
+	for n, it := range items {
+		if existing.EndedAt != nil && it.start.After(existing.EndedAt.Add(staleAfter)) {
 			continue
 		}
-		fresh = append(fresh, i)
-		activity = latest(activity, ptr(sp.End))
+		joined[n] = true
+		fresh++
+		activity = latest(activity, ptr(it.end))
 	}
-	if stale := len(idx) - len(fresh); stale > 0 {
-		j.Log.Warn("join: spans start after their call ended, not joined", "project", r.ProjectID, "count", stale)
+	if stale := len(items) - fresh; stale > 0 {
+		j.Log.Warn("join: "+what+" start after their call ended, not joined", "project", r.ProjectID, "count", stale)
 	}
-	if len(fresh) == 0 {
-		return "", nil
+	if fresh == 0 {
+		return "", joined, nil
 	}
 
 	var callID string
@@ -142,12 +163,9 @@ func (j *Joiner) joinSpans(ctx context.Context, r *store.Event, k ref, idx []int
 		callID, err = j.Calls.UpsertCallByJob(ctx, r.OrganisationID, r.ProjectID, k.jobID, activity)
 	}
 	if err != nil {
-		return "", err
+		return "", make([]bool, len(items)), err
 	}
-	for _, i := range fresh {
-		r.Spans[i].CallID = callID
-	}
-	return callID, nil
+	return callID, joined, nil
 }
 
 func boolInt(b bool) int {

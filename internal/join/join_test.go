@@ -3,6 +3,9 @@ package join_test
 import (
 	"context"
 	"errors"
+	"fmt"
+	"math"
+	"os"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -504,4 +507,52 @@ func TestExportSpanningTwoCallsHasNoCallID(t *testing.T) {
 	if spans[hexSpan("x")] != calls["RM_X"].ID || spans[hexSpan("y")] != calls["RM_Y"].ID {
 		t.Errorf("span calls = %+v", spans)
 	}
+}
+
+// Acceptance check 10 of phase 04b: STT audio seconds come from the agent's usage counter, joined
+// point by point, counted once when an export is delivered twice, and stay null without a point.
+func TestSTTAudioFromUsageMetric(t *testing.T) {
+	f := newFixture(t)
+	exports := make([][]byte, 4)
+	for i := range exports {
+		b, err := os.ReadFile(fmt.Sprintf("testdata/agents-1.8.7-metrics-%d.binpb", i+1))
+		if err != nil {
+			t.Fatal(err)
+		}
+		exports[i] = b
+	}
+	for _, e := range exports {
+		f.append(event.KindAgentMetrics, "", e)
+	}
+	f.appendWebhook(&livekit.WebhookEvent{Event: "room_started", Room: room("RM_NOSTT", "quiet", base), Id: "EV_1", CreatedAt: at(base)})
+	f.store("w1")
+	// The second export delivered again later, so it lands in a part of its own.
+	f.append(event.KindAgentMetrics, "", exports[1])
+	f.store("w2")
+
+	calls := f.calls()
+	ctx := context.Background()
+	for sid, want := range map[string]float64{"RM_Sg9DUevZhpJp": 23.900 + 9.950, "RM_35ayuuwAkwVj": 24.750 + 8.500} {
+		got, err := f.events.CallTurns(ctx, "default", f.project, calls[sid].ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if s := got.Usage.STTAudioSeconds.Sum; s == nil || math.Abs(*s-want) > 0.001 {
+			t.Errorf("call %s STT audio = %s, want %.3f", sid, orNull(s), want)
+		}
+	}
+	quiet, err := f.events.CallTurns(ctx, "default", f.project, calls["RM_NOSTT"].ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s := quiet.Usage.STTAudioSeconds.Sum; s != nil {
+		t.Errorf("call with no metric point STT audio = %v, want null", *s)
+	}
+}
+
+func orNull(v *float64) string {
+	if v == nil {
+		return "null"
+	}
+	return fmt.Sprintf("%.3f", *v)
 }

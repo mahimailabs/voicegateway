@@ -6,6 +6,9 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"maps"
+	"slices"
+	"strings"
 	"time"
 
 	"github.com/ClickHouse/clickhouse-go/v2"
@@ -116,6 +119,9 @@ func (s *Store) Insert(ctx context.Context, events []store.Event) error {
 	if err := s.insertUnmatched(ctx, events); err != nil {
 		return err
 	}
+	if err := s.insertMetricPoints(ctx, events); err != nil {
+		return err
+	}
 	return s.send(ctx, "events", len(events),
 		`INSERT INTO events (organisation_id, project_id, kind, call_id, dedupe_key, event_id, stream_id, received_at, payload)`,
 		func(b driver.Batch) error {
@@ -193,6 +199,28 @@ func (s *Store) insertUnmatched(ctx context.Context, events []store.Event) error
 		})
 }
 
+func (s *Store) insertMetricPoints(ctx context.Context, events []store.Event) error {
+	n := 0
+	for _, e := range events {
+		n += len(e.MetricPoints)
+	}
+	if n == 0 {
+		return nil
+	}
+	return s.send(ctx, "metric points", n,
+		`INSERT INTO metric_points (organisation_id, project_id, name, call_id, value, start_time, end_time, room_id, job_id, attributes, attributes_key, stream_id)`,
+		func(b driver.Batch) error {
+			for _, e := range events {
+				for _, p := range e.MetricPoints {
+					if err := b.Append(e.OrganisationID, e.ProjectID, p.Name, p.CallID, p.Value, p.Start, p.End, p.RoomID, p.JobID, nonNil(p.Attributes), attributesKey(p.Attributes), e.StreamID); err != nil {
+						return fmt.Errorf("metric point of %s: %w", e.StreamID, err)
+					}
+				}
+			}
+			return nil
+		})
+}
+
 // send prepares one insert, lets fill append its rows and sends it. An append that fails, or a
 // data error from ClickHouse, wraps store.ErrBadRow; any other failure is transient.
 func (s *Store) send(ctx context.Context, what string, n int, query string, fill func(driver.Batch) error) error {
@@ -221,6 +249,19 @@ func orNil(t time.Time) *time.Time {
 		return nil
 	}
 	return &t
+}
+
+// attributesKey is a map as sorted key=value lines: equal maps give equal keys.
+func attributesKey(m map[string]string) string {
+	keys := slices.Sorted(maps.Keys(m))
+	var b strings.Builder
+	for _, k := range keys {
+		b.WriteString(k)
+		b.WriteByte('=')
+		b.WriteString(m[k])
+		b.WriteByte('\n')
+	}
+	return b.String()
 }
 
 func nonNil(m map[string]string) map[string]string {
@@ -313,7 +354,32 @@ func (s *Store) CallTurns(ctx context.Context, organisationID, projectID, callID
 	if err != nil {
 		return turn.Result{}, err
 	}
-	return turn.Build(spans, history), nil
+	res := turn.Build(spans, history)
+	// STT audio has no per-turn source in LiveKit Agents 1.8.7; the call's comes from its
+	// lk.agents.usage.stt_audio_duration points, null when none joined.
+	if res.Usage.STTAudioSeconds.Sum, err = s.usageSum(ctx, organisationID, projectID, callID, "lk.agents.usage.stt_audio_duration"); err != nil {
+		return turn.Result{}, err
+	}
+	return res, nil
+}
+
+// usageSum adds up a usage counter's points joined to a call; nil when none joined.
+func (s *Store) usageSum(ctx context.Context, organisationID, projectID, callID, name string) (*float64, error) {
+	var (
+		n   uint64
+		sum float64
+	)
+	if err := s.conn.QueryRow(ctx, `
+		SELECT count(), sum(value) FROM metric_points FINAL
+		WHERE organisation_id = @org AND project_id = @project AND call_id = @call AND name = @name`,
+		clickhouse.Named("org", organisationID), clickhouse.Named("project", projectID),
+		clickhouse.Named("call", callID), clickhouse.Named("name", name)).Scan(&n, &sum); err != nil {
+		return nil, fmt.Errorf("usage %s: %w", name, err)
+	}
+	if n == 0 {
+		return nil, nil
+	}
+	return &sum, nil
 }
 
 func (s *Store) callSpans(ctx context.Context, organisationID, projectID, callID string) ([]store.Span, error) {
