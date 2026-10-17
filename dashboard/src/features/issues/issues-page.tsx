@@ -10,7 +10,7 @@ import { type Store, statusOf, storeFrom, useSaveIssueStates } from "./issue-sta
 import { type Columns, DataTable, type Field } from "@/components/data-table"
 import { DataGridColumnHeader } from "@/components/reui/data-grid/data-grid-column-header"
 import { cn } from "@/lib/utils"
-import { type Issue, type Severity, issuesFrom } from "./issues-model"
+import { type Issue, type Severity, issuesFrom, lastSeen, lastSortKey } from "./issues-model"
 import { useQuery } from "@tanstack/react-query"
 import { QueryState } from "@/components/page-state"
 import { issueDispositionsQuery, issuesQuery } from "@/lib/api"
@@ -45,11 +45,6 @@ function Hits({ issue }: { issue: Issue }) {
       ))}
     </ul>
   )
-}
-
-const lastSeen = (i: Issue) => {
-  const t = Math.max(...i.hits.map((h) => h.at ?? -Infinity))
-  return Number.isFinite(t) ? t : null
 }
 
 function Seen({ i }: { i: Issue }) {
@@ -143,7 +138,7 @@ const columns: Columns<Issue> = [
   },
   {
     id: "last",
-    accessorFn: (i) => lastSeen(i) ?? -1,
+    accessorFn: lastSortKey,
     header: ({ column }) => <DataGridColumnHeader title="Last" column={column} />,
     meta: { headerClassName: "[&>div]:w-full [&>div]:justify-end", cellClassName: "text-right" },
     cell: ({ row }) => (

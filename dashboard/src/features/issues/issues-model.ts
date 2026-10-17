@@ -32,3 +32,13 @@ export function issuesFrom(list: IssueList): Issue[] {
     hits: i.hits.map((h) => ({ at: h.at === null ? null : Date.parse(h.at) / 1000, where: h.where, detail: h.detail, callId: h.callId ?? undefined })),
   }))
 }
+
+// The latest dated hit, or null when no hit has a time.
+export const lastSeen = (i: Issue) => {
+  const t = Math.max(...i.hits.map((h) => h.at ?? -Infinity))
+  return Number.isFinite(t) ? t : null
+}
+
+// The Last column's sort key. A standing issue is true now, so it sorts as now: first when newest is
+// first. An event issue with no reported time stays at the far end.
+export const lastSortKey = (i: Issue) => (i.kind === "standing" ? Infinity : (lastSeen(i) ?? -Infinity))
