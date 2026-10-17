@@ -52,7 +52,7 @@ The whole of "Connect the console" does not fit one session. `listCalls` has cur
 ## Constraints
 
 - chi for routing, as #365; `encoding/json`; the contract's own field names and the `Error` shape from #365's `errors.go`.
-- Validate responses in tests against `docs/api/openapi.yaml` with a library (kin-openapi `openapi3filter`), not a hand-written schema check.
+- Validate responses in tests against `docs/api/openapi.yaml` with a library that reads OpenAPI 3.1 (the contract is 3.1.1): pb33f `libopenapi-validator`, not a hand-written schema check.
 - Never log a span attribute value, transcript text or participant identity.
 - Real-thing tests: Postgres and ClickHouse through testcontainers, data stored through the 04a sink and joiner, requests through `httptest` against `Routes()`.
 
