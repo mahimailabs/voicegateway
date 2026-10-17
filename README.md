@@ -46,6 +46,15 @@ Unreported measurements stay **unknown**. Traces, usage and recordings appear on
 
 **VoiceGateway stays outside the audio path.** The V1 platform joins LiveKit webhooks, server metrics, agent spans and session uploads into one call view. If the profiler is unavailable, the agent's call must carry on. See the [architecture](ARCHITECTURE.md) and [capture design](docs/decisions/0014-livekit-observability-endpoints.md).
 
+### Components
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/readme/components-dark.svg" />
+  <img src="docs/assets/readme/components-light.svg" alt="VoiceGateway components. LiveKit sends webhooks and metrics, and voice agents send spans and session uploads, to web. The dashboard and MCP read through web's API. web appends to a Redis stream and reads Postgres; worker consumes the stream and writes batches to ClickHouse. An S3 bucket holds opt-in recordings." width="100%" />
+</picture>
+
+One Go binary runs as **web** (checks keys, takes data in, serves the API and dashboard) and **worker** (joins events into calls, writes to ClickHouse). A Redis stream is their only link. Postgres holds projects and keys, ClickHouse everything measured, and your own S3 bucket any recordings. `docker compose up` starts all six. See [ARCHITECTURE.md](ARCHITECTURE.md).
+
 ## Quickstart
 
 Run the captured-data console locally with **Node.js 24** and npm. No LiveKit credentials are needed for this preview.

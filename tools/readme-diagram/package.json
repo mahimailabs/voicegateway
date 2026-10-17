@@ -1,0 +1,14 @@
+{
+  "name": "voicegateway-flow-artwork",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs"
+  },
+  "devDependencies": {
+    "@xmldom/xmldom": "0.9.12",
+    "fontkit": "2.0.4",
+    "reladraw": "0.16.0",
+    "roughjs": "4.6.6"
+  }
+}

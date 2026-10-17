@@ -42,3 +42,14 @@ The maintainer also referenced [local-livekit](https://github.com/mahimairaja/lo
 `social-light.jpg` and `social-dark.jpg` are 1280 × 640 JPEG exports from the same banner source with `?format=social&theme=light` or `?format=social&theme=dark`. The social format uses legible typography instead of a small UI capture. Both exports stay below 45 KB and the repository file cap.
 
 GitHub stores one fixed social image, not theme-adaptive alternatives. The light export was uploaded to `mahimailabs/voicegateway` on 2026-10-16 and verified in Settings after reload. The dark export is retained for manual reuse. This repository setting is independent of merging the artwork PR. The card states V1 is in development and makes no cost, scoring or non-LiveKit framework claims.
+
+## Components diagram
+
+`components.reladraw` lays out the components in ARCHITECTURE.md: web and worker over Postgres, the S3 bucket, Redis and ClickHouse, with LiveKit, the voice agent and the dashboard feeding web. Brand marks in `icons/` are from [Simple Icons](https://simpleicons.org) 16.35.0 (CC0); the bucket is reladraw's own `package` icon. `tools/readme-diagram` renders `components-light.svg` and `components-dark.svg` with reladraw's layout, Rough.js ink and outlined Kalam lettering, so the SVGs need no font or script:
+
+```bash
+npm --prefix tools/readme-diagram ci
+npm --prefix tools/readme-diagram run build
+```
+
+Kalam is by Indian Type Foundry under the SIL Open Font License (`tools/readme-diagram/Kalam-OFL.txt`); the checked-in font is a subset of printable ASCII plus the middle dot, so labels must stay within it.
