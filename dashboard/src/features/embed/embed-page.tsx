@@ -12,8 +12,9 @@ import { columns, rowOf, serverSort, type Row } from "@/features/calls/calls-pag
 import type { SortingState } from "@tanstack/react-table"
 import { useUrlState } from "@/lib/url-state"
 import { issuesFrom, type Severity } from "@/features/issues/issues-model"
-import { fmtS, useOverview } from "@/features/overview/overview"
-import { AnswerGauge, TurnAnatomy, anatomy } from "@/features/overview/visuals"
+import { AnswerTimeFigure, useCallStats } from "@/features/overview/overview"
+import { TurnAnatomy, lanesFrom } from "@/features/overview/visuals"
+import type { CallStats } from "@/lib/api-types"
 import { widgets } from "./widgets"
 
 // One widget in a frame on someone else's site (decision 0023): no sidebar, no top bar, no links into
@@ -24,21 +25,21 @@ const sevDot: Record<Severity, string> = { high: "bg-destructive", medium: "bg-a
 const noTags = () => [] as string[]
 
 function AnswerTime() {
-  const o = useOverview()
-  const over = o.answers.filter((a) => a > BUDGET_MS).length
+  const stats = useCallStats()
+  if (!stats.data) return <Note>{stats.isError ? "Answer times could not be loaded." : "Loading answer times."}</Note>
   return (
     <div className="flex flex-col items-center justify-center pt-2">
-      <AnswerGauge p50={o.p50} budget={BUDGET_MS} />
-      <p className={cn("mt-2 text-[34px] leading-none font-semibold tracking-[-0.03em] tnum", o.p50 !== null && o.p50 > BUDGET_MS && "text-destructive")}>{o.p50 === null ? "Unknown" : fmtS(o.p50)}</p>
-      <p className="mt-1.5 text-[12px] text-muted-foreground tnum">{`median answer · ${over} of ${o.answers.length} turns over ${BUDGET_MS / 1000} s`}</p>
+      <AnswerTimeFigure answers={(stats.data as CallStats).answers} />
     </div>
   )
 }
 
 function Anatomy() {
-  const o = useOverview()
-  const shape = useMemo(() => anatomy(o.fleetRows.filter((r) => r.calls > 0).map((r) => ({ name: r.name, calls: r.callList }))), [o])
-  return <TurnAnatomy lanes={shape.lanes} e2e={shape.e2e} turns={shape.turns} budget={BUDGET_MS} />
+  const stats = useCallStats()
+  if (!stats.data) return <Note>{stats.isError ? "Turn anatomy could not be loaded." : "Loading turn anatomy."}</Note>
+  const s = stats.data as CallStats
+  const realtime = s.agents.filter((a) => a.stages.some((st) => st.stage === "Realtime")).map((a) => a.name ?? a.key ?? "Agent not identified")
+  return <TurnAnatomy lanes={lanesFrom(s.stages, realtime)} e2e={s.answers.p50Ms} turns={s.anatomyTurns} budget={BUDGET_MS} />
 }
 
 const Note = ({ children }: { children: React.ReactNode }) => <p className="py-10 text-center text-[13px] text-muted-foreground">{children}</p>

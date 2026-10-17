@@ -29,6 +29,15 @@ function channelOf(c: Call): CallSummary["channel"] {
   return c.room.startsWith("spike") ? "local" : "unknown"
 }
 
+// The agent that took the call: the agent in its watched room, else the one its own trace names
+// (lk.agent_name on its spans). Console and local test sessions name none.
+export function agentKeyOf(c: Call): string | null {
+  const a = rooms.find((x) => x.sid === c.roomSid)?.participants.find((p) => p.kind === "agent")
+  if (a) return a.agentName ?? "unnamed"
+  const named = (c.spans ?? []).map((sp) => sp.attrs?.["lk.agent_name"]).find((n) => n)
+  return typeof named === "string" ? named : null
+}
+
 // Agent turns from the spans when the call has them, else the reported turns; unknown when neither.
 const turnCount = (c: Call) => (c.spans ? c.spans.filter((s) => s.name === "agent_turn").length : (c.turns?.length ?? null))
 
@@ -50,6 +59,7 @@ export function summarize(c: Call): CallSummary {
     channel: channelOf(c),
     pipeline: model.pipeline,
     models: model.models,
+    agentKey: agentKeyOf(c),
     turnCount: turnCount(c),
     answerMs: answers.length ? answers : null,
     answerMsMedian: median(answers),

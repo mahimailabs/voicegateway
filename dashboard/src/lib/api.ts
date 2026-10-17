@@ -1,7 +1,7 @@
 import { infiniteQueryOptions } from "@tanstack/react-query"
 import { capturedCalls } from "@/mocks/fixtures"
 import { currentScope } from "@/lib/url-state"
-import type { AlertEvents, CapacityRun, Call as GeneratedCall, CallPage, CloudAgents, CallSummary, CallTotals, Egress, EndOfTurnEvent, Ingress, IssueList, MediaServer, ProjectSnapshot, Sip, ItemEvent, OverlapEvent, RecordingSegment, Span, StateEvent, TranscriptEvent, Turn } from "@/lib/api-types"
+import type { AlertEvents, CapacityRun, Call as GeneratedCall, CallPage, CallStats, ProviderProbes, Workers, CloudAgents, CallSummary, CallTotals, Egress, EndOfTurnEvent, Ingress, IssueList, MediaServer, ProjectSnapshot, Sip, ItemEvent, OverlapEvent, RecordingSegment, Span, StateEvent, TranscriptEvent, Turn } from "@/lib/api-types"
 
 export type { CallSummary, CallTotals, RecordingSegment, Span, Turn }
 export type SessionEvent = StateEvent | TranscriptEvent | EndOfTurnEvent | OverlapEvent | ItemEvent
@@ -100,9 +100,17 @@ export const sipQuery = () => ({ queryKey: ["sip", currentScope()], queryFn: () 
 export const mediaServerQuery = () => ({ queryKey: ["media-server", currentScope()], queryFn: () => getJSON<MediaServer>(`${projectApi()}/media-server`) })
 export const cloudAgentsQuery = () => ({ queryKey: ["agents", currentScope()], queryFn: () => getJSON<CloudAgents>(`${projectApi()}/agents`) })
 export const capacityQuery = () => ({ queryKey: ["capacity", currentScope()], queryFn: () => getJSON<CapacityRun | null>(`${projectApi()}/capacity`) })
+export const workersQuery = () => ({ queryKey: ["workers", currentScope()], queryFn: () => getJSON<Workers>(`${projectApi()}/workers`) })
+export const providerProbesQuery = () => ({ queryKey: ["provider-probes", currentScope()], queryFn: () => getJSON<ProviderProbes>(`${projectApi()}/provider-probes`) })
 export const snapshotQuery = () => ({ queryKey: ["snapshot", currentScope()], queryFn: () => getJSON<ProjectSnapshot>(`${projectApi()}/snapshot`) })
 
 // Issues and alert evaluation over all of time up to now: the pages have no range picker yet.
 const allTime = () => new URLSearchParams({ from: new Date(0).toISOString(), to: new Date(Date.now() + 60_000).toISOString() })
 export const issuesQuery = () => ({ queryKey: ["issues", currentScope()], queryFn: () => getJSON<IssueList>(`${projectApi()}/issues?${allTime()}`) })
 export const alertEventsQuery = () => ({ queryKey: ["alert-events", currentScope()], queryFn: () => getJSON<AlertEvents>(`${projectApi()}/alert-events?${allTime()}`) })
+
+// Overview's aggregates over a range, computed by the server over every call in it.
+export const callStatsQuery = (from: Date, to: Date) => ({
+  queryKey: ["call-stats", currentScope(), from.toISOString(), to.toISOString()],
+  queryFn: () => getJSON<CallStats>(`${projectApi()}/call-stats?${new URLSearchParams({ from: from.toISOString(), to: to.toISOString() })}`),
+})

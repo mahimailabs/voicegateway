@@ -138,11 +138,7 @@
   {
     "file": "dashboard/src/features/overview/overview.tsx",
     "fixtures": [
-      "egress.json",
-      "ingress.json",
-      "network-probe.json",
-      "sip.json",
-      "workers.json"
+      "summaries"
     ],
     "assets": [],
     "browserStorage": false,
@@ -284,6 +280,7 @@
   {
     "file": "dashboard/src/mocks/handlers.ts",
     "fixtures": [
+      "call-stats",
       "calls-query",
       "fixtures",
       "insights",
@@ -294,13 +291,16 @@
     "browserStorage": false,
     "operations": [
       "getCall",
+      "getCallStats",
       "getCapacity",
       "getCloudAgents",
       "getEgress",
       "getIngress",
       "getMediaServer",
       "getProjectSnapshot",
+      "getProviderProbes",
       "getSip",
+      "getWorkers",
       "listAlertEvents",
       "listCalls",
       "listIssues"
@@ -359,8 +359,10 @@
       "egress.json",
       "ingress.json",
       "media-server.json",
+      "network-probe.json",
       "project-snapshot.json",
-      "sip.json"
+      "sip.json",
+      "workers.json"
     ],
     "assets": [],
     "browserStorage": false,
@@ -371,9 +373,26 @@
       "getIngress",
       "getMediaServer",
       "getProjectSnapshot",
-      "getSip"
+      "getProviderProbes",
+      "getSip",
+      "getWorkers"
     ],
     "assetNotes": {},
     "exclusion": "The mock API's adapter from the captured LiveKit reads to contract shape."
+  },
+  {
+    "file": "dashboard/src/mocks/call-stats.ts",
+    "fixtures": [
+      "fixtures",
+      "insights",
+      "summaries"
+    ],
+    "assets": [],
+    "browserStorage": false,
+    "operations": [
+      "getCallStats"
+    ],
+    "assetNotes": {},
+    "exclusion": "Server-side CallStats computation inside the mock API."
   }
 ]

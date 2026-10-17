@@ -3090,7 +3090,7 @@ components:
       type: object
       additionalProperties: false
       description: One row of the Calls list. The same identity as Call, with the per-call figures the list shows, filters and sorts on, computed on the server. No spans, turns or events.
-      required: [ id, room, roomSid, startedAt, endedAt, durationSeconds, participantCount, endState, channel, pipeline, models, turnCount, answerMs, answerMsMedian, issues, tags, archived, recorded ]
+      required: [ id, room, roomSid, startedAt, endedAt, durationSeconds, participantCount, endState, channel, pipeline, models, agentKey, turnCount, answerMs, answerMsMedian, issues, tags, archived, recorded ]
       properties:
         id:
           type: string
@@ -3150,6 +3150,11 @@ components:
           x-source: { kind: computed, file: dashboard/src/features/call/call-model.ts, pointer: null, detail: "Model names reported by the call's spans, most used first. Empty when spans named none." }
           items:
             type: string
+        agentKey:
+          type: [ string, "null" ]
+          description: "The agent that took the call: the name it registered with LiveKit, read from the agent participant in the watched room, else from lk.agent_name on the call's spans. The same key as CallStats.agents and the agents read; unnamed when the agent registered without a name."
+          x-null-reason: "No agent was identified on the call (console and local test sessions, rooms not watched)."
+          x-source: { kind: computed, file: dashboard/src/mocks/summaries.ts, pointer: null, detail: "The agent participant's agentName in the watched room, else lk.agent_name on the call's spans." }
         turnCount:
           type: [ integer, "null" ]
           description: "Agent turns: agent_turn spans when present, else reported turns."
@@ -3216,7 +3221,7 @@ components:
       type: object
       additionalProperties: false
       description: Aggregates over every stored call in the range, computed on the server so no client totals pages. Test and design-preview calls are counted separately and left out of the answer and stage figures.
-      required: [ from, to, complete, callCount, byChannel, byDay, answers, issueCounts, stages, agents ]
+      required: [ from, to, complete, callCount, byChannel, byDay, answers, issueCounts, anatomyTurns, stages, agents ]
       properties:
         from:
           type: string
@@ -3305,7 +3310,7 @@ components:
         answers:
           type: object
           additionalProperties: false
-          required: [ turns, overBudget, budgetMs, p50Ms, p90Ms, valuesMs, valuesTruncated ]
+          required: [ turns, overBudget, budgetMs, p50Ms, p90Ms, values, valuesTruncated ]
           description: "Answer time (caller stops to agent audio) over every measured turn in the range."
           x-source: { kind: computed, file: dashboard/src/features/call/call-model.ts, pointer: null, detail: "Answer time over every measured turn in the range." }
           properties:
@@ -3342,23 +3347,52 @@ components:
               x-unit: milliseconds
               x-null-reason: "No turn in scope reported this value. Unknown, not zero."
               x-source: { kind: computed, file: docs/api/coverage.md, pointer: null, detail: "90th percentile answer time." }
-            valuesMs:
+            values:
               type: array
-              description: "Measured answer times, most recent first, for the turn strip. At most 5,000; see valuesTruncated."
-              x-unit: milliseconds
-              x-source: { kind: computed, file: dashboard/src/features/overview/visuals.tsx, pointer: null, detail: "Measured answer times, most recent first, for the turn strip. At most 5,000; see valuesTruncated." }
+              description: "Every measured turn, most recent call first, for the turn strip: its answer time and which call, turn and agent it belongs to. At most 5,000; see valuesTruncated."
+              x-source: { kind: computed, file: dashboard/src/features/overview/visuals.tsx, pointer: null, detail: "Every measured turn with its call, turn and agent, for the turn strip. At most 5,000; see valuesTruncated." }
               maxItems: 5000
               items:
-                type: number
-                minimum: 0
+                type: object
+                additionalProperties: false
+                required: [ ms, callId, room, turn, agentKey ]
+                properties:
+                  ms:
+                    type: [ number, "null" ]
+                    minimum: 0
+                    description: "Answer time: caller stops to agent audio. The strip draws only entries with a value."
+                    x-null-reason: "The turn reported no answer time. Unknown, not zero."
+                    x-unit: milliseconds
+                    x-source: { kind: computed, file: dashboard/src/features/call/call-model.ts, pointer: null, detail: "The turn's measured answer time, as in CallSummary.answerMs." }
+                  callId:
+                    type: string
+                    minLength: 1
+                    description: "The call the turn belongs to, the value getCall takes."
+                    x-source: { kind: computed, file: docs/api/coverage.md, pointer: null, detail: "The call the turn belongs to, the value getCall takes." }
+                  room:
+                    type: string
+                    description: "That call's room name, for the label."
+                    x-source: { kind: computed, file: docs/api/coverage.md, pointer: null, detail: "That call's room name, as in CallSummary.room." }
+                  turn:
+                    type: [ integer, "null" ]
+                    minimum: 0
+                    description: "The turn's position in the call, counted from 0."
+                    x-null-reason: "The source reported the turn without its position."
+                    x-unit: count
+                    x-source: { kind: computed, file: dashboard/src/features/call/call-model.ts, pointer: null, detail: "The turn's position in the call, counted from 0." }
+                  agentKey:
+                    type: [ string, "null" ]
+                    description: "The agent that took the call, as in CallSummary.agentKey."
+                    x-null-reason: "No agent was identified on the call."
+                    x-source: { kind: computed, file: dashboard/src/mocks/summaries.ts, pointer: null, detail: "The agent that took the call, as in CallSummary.agentKey." }
             valuesTruncated:
               type: boolean
-              description: "true when valuesMs holds only the most recent 5,000 of more measured turns. The counts and percentiles always use every turn."
-              x-source: { kind: computed, file: docs/api/coverage.md, pointer: null, detail: "true when valuesMs holds only the most recent 5,000 of more measured turns. The counts and percentiles always use every turn." }
+              description: "true when values holds only the most recent 5,000 of more measured turns. The counts and percentiles always use every turn."
+              x-source: { kind: computed, file: docs/api/coverage.md, pointer: null, detail: "true when values holds only the most recent 5,000 of more measured turns. The counts and percentiles always use every turn." }
         issueCounts:
           type: object
           additionalProperties: false
-          required: [ high, medium, low ]
+          required: [ high, medium, low, info ]
           description: "Issues in the range by severity, the same groups listIssues returns."
           x-source: { kind: computed, file: dashboard/src/features/issues/issues-model.ts, pointer: null, detail: "Issues in the range by severity, the same groups listIssues returns." }
           properties:
@@ -3383,6 +3417,20 @@ components:
               x-null-reason: "Null when the stored range is incomplete (retention, ingest gap or a source outage), so a total would undercount. Never zero for missing data."
               x-source: { kind: computed, file: docs/api/coverage.md, pointer: null, detail: "Low-severity issues." }
               minimum: 0
+            info:
+              type: [ integer, "null" ]
+              description: "Informational issues."
+              x-unit: count
+              x-null-reason: "Null when the stored range is incomplete (retention, ingest gap or a source outage), so a total would undercount. Never zero for missing data."
+              x-source: { kind: computed, file: docs/api/coverage.md, pointer: null, detail: "Informational issues." }
+              minimum: 0
+        anatomyTurns:
+          type: [ integer, "null" ]
+          description: "Turns with a transcript or a measured answer: what Turn anatomy counts each stage's turns against."
+          x-unit: count
+          x-null-reason: "Null when the stored range is incomplete (retention, ingest gap or a source outage), so a total would undercount. Never zero for missing data."
+          x-source: { kind: computed, file: dashboard/src/features/overview/visuals.tsx, pointer: null, detail: "Turns with a transcript or a measured answer." }
+          minimum: 0
         stages:
           type: array
           description: "Turn anatomy for all agents: one entry per stage that any turn reported. Stages nothing reports are absent, not zero."
@@ -3396,7 +3444,7 @@ components:
           items:
             type: object
             additionalProperties: false
-            required: [ key, name, callCount, answerP50Ms, issues, models, stages ]
+            required: [ key, name, callCount, answerP50Ms, issues, models, anatomyTurns, stages, calls, callsTruncated ]
             properties:
               key:
                 type: [ string, "null" ]
@@ -3434,12 +3482,48 @@ components:
                 x-source: { kind: computed, file: dashboard/src/features/call/call-model.ts, pointer: null, detail: "Model names this agent's calls reported." }
                 items:
                   type: string
+              anatomyTurns:
+                type: [ integer, "null" ]
+                description: "This agent's turns with a transcript or a measured answer."
+                x-unit: count
+                x-null-reason: "Null when the stored range is incomplete (retention, ingest gap or a source outage), so a total would undercount. Never zero for missing data."
+                x-source: { kind: computed, file: dashboard/src/features/overview/visuals.tsx, pointer: null, detail: "This agent's turns with a transcript or a measured answer." }
+                minimum: 0
               stages:
                 type: array
                 description: "Turn anatomy for this agent only."
                 x-source: { kind: computed, file: dashboard/src/features/overview/visuals.tsx, pointer: null, detail: "Turn anatomy for this agent only." }
                 items:
                   $ref: "#/components/schemas/StageTiming"
+              calls:
+                type: array
+                description: "This agent's calls, oldest first, each with its median answer, for the per-call strip. At most 500, the most recent; see callsTruncated."
+                x-source: { kind: computed, file: dashboard/src/features/overview/visuals.tsx, pointer: null, detail: "This agent's calls with their median answer, for the per-call strip." }
+                maxItems: 500
+                items:
+                  type: object
+                  additionalProperties: false
+                  required: [ callId, room, answerP50Ms ]
+                  properties:
+                    callId:
+                      type: string
+                      minLength: 1
+                      description: "The call, the value getCall takes."
+                      x-source: { kind: computed, file: docs/api/coverage.md, pointer: null, detail: "The call, the value getCall takes." }
+                    room:
+                      type: string
+                      description: "That call's room name, for the label."
+                      x-source: { kind: computed, file: docs/api/coverage.md, pointer: null, detail: "That call's room name, as in CallSummary.room." }
+                    answerP50Ms:
+                      type: [ number, "null" ]
+                      description: "The call's median answer, as CallSummary.answerMsMedian."
+                      x-unit: milliseconds
+                      x-null-reason: "No turn in scope reported this value. Unknown, not zero."
+                      x-source: { kind: computed, file: docs/api/coverage.md, pointer: null, detail: "The call's median answer, as CallSummary.answerMsMedian." }
+              callsTruncated:
+                type: boolean
+                description: "true when calls holds only the most recent 500 of this agent's calls. callCount always counts every call."
+                x-source: { kind: computed, file: docs/api/coverage.md, pointer: null, detail: "true when calls holds only the most recent 500 of this agent's calls." }
     StageTiming:
       type: object
       additionalProperties: false
@@ -3468,10 +3552,10 @@ components:
           x-source: { kind: computed, file: docs/api/coverage.md, pointer: null, detail: "Median end of the stage after the caller stops speaking." }
         p90Ms:
           type: [ number, "null" ]
-          description: "90th percentile end of the stage after the caller stops speaking."
+          description: "Where the stage's slow tail ends after the caller stops speaking: its median start plus the 90th percentile of its length, never before medianMs."
           x-unit: milliseconds
           x-null-reason: "No turn in scope reported this value. Unknown, not zero."
-          x-source: { kind: computed, file: docs/api/coverage.md, pointer: null, detail: "90th percentile end of the stage after the caller stops speaking." }
+          x-source: { kind: computed, file: docs/api/coverage.md, pointer: null, detail: "Median start plus the 90th percentile of the stage's length, never before medianMs." }
         turns:
           type: [ integer, "null" ]
           description: "Turns that reported this stage."

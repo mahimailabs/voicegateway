@@ -1,4 +1,4 @@
-import type { CapacityRun, CloudAgents, Egress, Ingress, MediaServer, ProjectSnapshot, Sip } from "@/lib/api-types"
+import type { CapacityRun, CloudAgents, Egress, Ingress, MediaServer, ProjectSnapshot, ProviderProbes, Sip, Workers } from "@/lib/api-types"
 import egressRaw from "@/mocks/egress.json"
 import ingressRaw from "@/mocks/ingress.json"
 import sipRaw from "@/mocks/sip.json"
@@ -6,6 +6,8 @@ import mediaRaw from "@/mocks/media-server.json"
 import agentsRaw from "@/mocks/agents.json"
 import capacityRaw from "@/mocks/capacity.json"
 import snapshotRaw from "@/mocks/project-snapshot.json"
+import workersRaw from "@/mocks/workers.json"
+import probesRaw from "@/mocks/network-probe.json"
 
 // The LiveKit reads the mock API serves, adapted from the captured fixtures to the contract
 // (docs/api/openapi.yaml). Captured times are Unix seconds; the contract carries RFC 3339 UTC. Fields
@@ -125,3 +127,7 @@ export function projectSnapshot(): ProjectSnapshot {
     observed: { ...d.observed, options: { ...options, preemptiveGeneration: preemptive_generation, maxToolSteps: max_tool_steps, userAwayTimeout: user_away_timeout, ivrDetection: ivr_detection } },
   } as ProjectSnapshot
 }
+
+// Worker metric samples and the host-to-provider probe: the captures already carry the contract's shape.
+export const workers = (): Workers => workersRaw as Workers
+export const providerProbes = (): ProviderProbes => probesRaw as ProviderProbes

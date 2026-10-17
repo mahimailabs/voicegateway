@@ -200,6 +200,8 @@ describe("LiveKit reads", () => {
     ["agents", "CloudAgents"],
     ["capacity", "CapacityRun"],
     ["snapshot", "ProjectSnapshot"],
+    ["workers", "Workers"],
+    ["provider-probes", "ProviderProbes"],
   ])("%s answers in the contract shape, and 404 for another project", async (path, schema) => {
     const res = await fetch(`${base}/${path}`)
     expect(res.status).toBe(200)
@@ -232,5 +234,76 @@ describe("issues and alert events", () => {
     expect(body.items.length).toBeGreaterThan(0)
     expect(body.items.every((i: { hits: { at: string | null }[] }) => i.hits.every((h) => h.at === null))).toBe(true)
     expect(body.items.every((i: { source: string }) => i.source !== "calls")).toBe(true)
+  })
+})
+
+describe("getCallStats", () => {
+  // The span of the captures, as the console asks for it: a week ending after the latest call.
+  const range = `from=${new Date("2026-10-08T00:00:00Z").toISOString()}&to=${new Date("2026-10-15T00:00:00Z").toISOString()}`
+  const stats = async () => (await fetch(`${base}/call-stats?${range}`)).json()
+  const page = async () => (await fetch(`${base}/calls?limit=100&${range}`)).json()
+
+  test("answers in the contract shape for a range, and refuses a missing range", async () => {
+    const res = await fetch(`${base}/call-stats?${range}`)
+    expect(res.status).toBe(200)
+    expect(valid("CallStats", await res.json())).toBe("")
+    expect((await fetch(`${base}/call-stats`)).status).toBe(400)
+  })
+
+  test("agrees with the Calls list's totals for the same range: calls, measured turns, median and over budget", async () => {
+    const [s, p] = await Promise.all([stats(), page()])
+    expect(s.callCount).toBe(p.totals.callCount)
+    expect(s.callCount).toBeGreaterThan(0)
+    expect(s.answers.turns).toBe(p.totals.answers.turns)
+    expect(s.answers.p50Ms).toBe(p.totals.answers.p50Ms)
+    expect(s.answers.overBudget).toBe(p.totals.answers.overBudget)
+    expect(s.byChannel).toEqual(p.totals.byChannel)
+  })
+
+  test("each agent row counts exactly the calls the list names that agent on, and every call has one row", async () => {
+    const [s, p] = await Promise.all([stats(), page()])
+    for (const a of s.agents) {
+      const mine = p.items.filter((c: { agentKey: string | null }) => c.agentKey === a.key)
+      expect(a.callCount).toBe(mine.length)
+      expect(a.calls.map((c: { callId: string }) => c.callId).sort()).toEqual(mine.map((c: { id: string }) => c.id).sort())
+    }
+    expect(s.agents.reduce((n: number, a: { callCount: number }) => n + a.callCount, 0)).toBe(s.callCount)
+    expect(new Set(s.agents.map((a: { key: string | null }) => a.key)).size).toBe(s.agents.length)
+  })
+
+  test("every turn value names its call, turn and agent as the list does", async () => {
+    const [s, p] = await Promise.all([stats(), page()])
+    expect(s.answers.values.length).toBe(s.answers.turns)
+    for (const v of s.answers.values) {
+      const call = p.items.find((c: { id: string }) => c.id === v.callId)
+      expect(call.agentKey).toBe(v.agentKey)
+      expect(call.room).toBe(v.room)
+      expect(call.answerMs).toContain(v.ms)
+    }
+  })
+
+  test("a call with no measured answer keeps a null median in its agent's strip, not zero", async () => {
+    const [s, p] = await Promise.all([stats(), page()])
+    const unmeasured = p.items.filter((c: { answerMsMedian: number | null }) => c.answerMsMedian === null)
+    expect(unmeasured.length).toBeGreaterThan(0)
+    const strips = s.agents.flatMap((a: { calls: { callId: string; answerP50Ms: number | null }[] }) => a.calls)
+    for (const c of unmeasured) expect(strips.find((x: { callId: string }) => x.callId === c.id).answerP50Ms).toBeNull()
+  })
+
+  test("the issue counts are the Issues list's groups for the same range, by severity", async () => {
+    const [s, list] = await Promise.all([stats(), (await fetch(`${base}/issues?${range}`)).json()])
+    for (const sev of ["high", "medium", "low", "info"]) expect(s.issueCounts[sev]).toBe(list.items.filter((i: { severity: string }) => i.severity === sev).length)
+  })
+
+  test("a stage is reported by no more turns than Turn anatomy counts, and a range with no calls has no stages", async () => {
+    const s = await stats()
+    expect(s.stages.length).toBeGreaterThan(0)
+    for (const st of s.stages) expect(st.turns).toBeLessThanOrEqual(s.anatomyTurns)
+    const empty = await (await fetch(`${base}/call-stats?from=2000-01-01T00:00:00Z&to=2000-01-03T00:00:00Z`)).json()
+    expect(valid("CallStats", empty)).toBe("")
+    expect(empty.callCount).toBe(0)
+    expect(empty.answers.p50Ms).toBeNull()
+    expect(empty.stages).toEqual([])
+    expect(empty.byDay.map((d: { date: string }) => d.date)).toEqual(["2000-01-01", "2000-01-02"])
   })
 })
