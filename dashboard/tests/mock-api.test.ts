@@ -214,3 +214,23 @@ describe("LiveKit reads", () => {
     for (const t of times) expect(t === null || !Number.isNaN(Date.parse(t))).toBe(true)
   })
 })
+
+describe("issues and alert events", () => {
+  const all = `from=${new Date(0).toISOString()}&to=${new Date("2100-01-01").toISOString()}`
+  test.each([
+    ["issues", "IssueList"],
+    ["alert-events", "AlertEvents"],
+  ])("%s answers in the contract shape for a range, and refuses a missing range", async (path, schema) => {
+    const res = await fetch(`${base}/${path}?${all}`)
+    expect(res.status).toBe(200)
+    expect(valid(schema, await res.json())).toBe("")
+    expect((await fetch(`${base}/${path}`)).status).toBe(400)
+  })
+
+  test("a range before every capture drops every timed hit and keeps the standing ones, which have no time", async () => {
+    const body = await (await fetch(`${base}/issues?from=2000-01-01T00:00:00Z&to=2000-01-02T00:00:00Z`)).json()
+    expect(body.items.length).toBeGreaterThan(0)
+    expect(body.items.every((i: { hits: { at: string | null }[] }) => i.hits.every((h) => h.at === null))).toBe(true)
+    expect(body.items.every((i: { source: string }) => i.source !== "calls")).toBe(true)
+  })
+})

@@ -286,6 +286,7 @@
     "fixtures": [
       "calls-query",
       "fixtures",
+      "insights",
       "livekit",
       "summaries"
     ],
@@ -300,7 +301,9 @@
       "getMediaServer",
       "getProjectSnapshot",
       "getSip",
-      "listCalls"
+      "listAlertEvents",
+      "listCalls",
+      "listIssues"
     ],
     "assetNotes": {},
     "exclusion": "The mock API itself, answering the contract's paths."

@@ -34,7 +34,8 @@ import {
 } from "@/components/ui/sidebar"
 import { ThemeToggle } from "@/components/theme"
 import { UserMenu } from "@/components/user-menu"
-import { listCalls } from "@/lib/api"
+import { useQuery } from "@tanstack/react-query"
+import { callCountQuery } from "@/lib/api"
 import { useThresholds } from "@/lib/thresholds"
 import { SettingsDialog, type SettingsPage } from "@/features/settings/settings-dialog"
 import { useUrlState } from "@/lib/url-state"
@@ -54,7 +55,7 @@ const groups: { label: string | null; items: Item[] }[] = [
     label: "Observe",
     items: [
       { to: "/live", label: "Live", icon: Activity, key: "l" },
-      { to: "/calls", label: "Calls", icon: PhoneCall, key: "c", badge: String(listCalls().length) },
+      { to: "/calls", label: "Calls", icon: PhoneCall, key: "c" },
       { to: "/issues", label: "Issues", icon: WarningCircle, key: "i" },
       { to: "/alerts", label: "Alerts", icon: Bell, key: "a" },
     ],
@@ -90,6 +91,9 @@ export function AppShell() {
   useCommandHotkeys({ pages, onPalette: () => setPalette((o) => !o), onSettings: () => openSettings(), onShortcuts: () => setShortcuts(true) })
   // A threshold change re-renders the page so its checks use the new numbers.
   const thresholds = useThresholds()
+  // The Calls badge is the server's count of every call; nothing shows until it answers.
+  const callCount = useQuery(callCountQuery(new URLSearchParams())).data
+  const badgeOf = (it: Item) => (it.to === "/calls" ? (callCount == null ? undefined : String(callCount)) : it.badge)
   // The current page carries a pill that slides between items as you move.
   const nav = (it: Item) => {
     const on = path.startsWith(it.to)
@@ -107,9 +111,9 @@ export function AppShell() {
             <span>{it.label}</span>
           </Link>
         </SidebarMenuButton>
-        {it.badge && (
+        {badgeOf(it) && (
           <SidebarMenuBadge style={{ top: "50%", transform: "translateY(-50%)" }} className="h-5 rounded-md bg-foreground/[0.07] px-1.5 text-[10.5px] !text-muted-foreground tnum">
-            {it.badge}
+            {badgeOf(it)}
           </SidebarMenuBadge>
         )}
       </SidebarMenuItem>

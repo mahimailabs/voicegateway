@@ -1,7 +1,7 @@
 import { infiniteQueryOptions } from "@tanstack/react-query"
 import { capturedCalls } from "@/mocks/fixtures"
 import { currentScope } from "@/lib/url-state"
-import type { CapacityRun, Call as GeneratedCall, CallPage, CloudAgents, CallSummary, CallTotals, Egress, EndOfTurnEvent, Ingress, MediaServer, ProjectSnapshot, Sip, ItemEvent, OverlapEvent, RecordingSegment, Span, StateEvent, TranscriptEvent, Turn } from "@/lib/api-types"
+import type { AlertEvents, CapacityRun, Call as GeneratedCall, CallPage, CloudAgents, CallSummary, CallTotals, Egress, EndOfTurnEvent, Ingress, IssueList, MediaServer, ProjectSnapshot, Sip, ItemEvent, OverlapEvent, RecordingSegment, Span, StateEvent, TranscriptEvent, Turn } from "@/lib/api-types"
 
 export type { CallSummary, CallTotals, RecordingSegment, Span, Turn }
 export type SessionEvent = StateEvent | TranscriptEvent | EndOfTurnEvent | OverlapEvent | ItemEvent
@@ -69,6 +69,9 @@ export const fetchCallCount = async (filters: URLSearchParams) => {
   return (await getJSON<CallPage>(`${projectApi()}/calls?${q}`)).totals.callCount
 }
 
+// The most recent calls, newest first, for lists that show a recent slice (the command palette).
+export const recentCallsQuery = () => ({ queryKey: ["calls", currentScope(), "recent"], queryFn: async () => (await fetchCallPage(new URLSearchParams({ sort: "startedAt", order: "desc" }), undefined, 100)).items })
+
 // The project's most recent call, unfiltered: where the time range ends, and whether there are calls at all.
 export const fetchLatestCall = async () => (await getJSON<CallPage>(`${projectApi()}/calls?limit=1&sort=startedAt&order=desc`)).items[0] ?? null
 
@@ -98,3 +101,8 @@ export const mediaServerQuery = () => ({ queryKey: ["media-server", currentScope
 export const cloudAgentsQuery = () => ({ queryKey: ["agents", currentScope()], queryFn: () => getJSON<CloudAgents>(`${projectApi()}/agents`) })
 export const capacityQuery = () => ({ queryKey: ["capacity", currentScope()], queryFn: () => getJSON<CapacityRun | null>(`${projectApi()}/capacity`) })
 export const snapshotQuery = () => ({ queryKey: ["snapshot", currentScope()], queryFn: () => getJSON<ProjectSnapshot>(`${projectApi()}/snapshot`) })
+
+// Issues and alert evaluation over all of time up to now: the pages have no range picker yet.
+const allTime = () => new URLSearchParams({ from: new Date(0).toISOString(), to: new Date(Date.now() + 60_000).toISOString() })
+export const issuesQuery = () => ({ queryKey: ["issues", currentScope()], queryFn: () => getJSON<IssueList>(`${projectApi()}/issues?${allTime()}`) })
+export const alertEventsQuery = () => ({ queryKey: ["alert-events", currentScope()], queryFn: () => getJSON<AlertEvents>(`${projectApi()}/alert-events?${allTime()}`) })

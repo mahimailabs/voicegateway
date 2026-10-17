@@ -1,7 +1,8 @@
 import { http, HttpResponse, type PathParams } from "msw"
-import type { Call, CallPage, CapacityRun, CloudAgents, Egress, Error as ApiErrorBody, Ingress, MediaServer, ProjectSnapshot, Sip } from "@/lib/api-types"
+import type { AlertEvents, Call, CallPage, IssueList, CapacityRun, CloudAgents, Egress, Error as ApiErrorBody, Ingress, MediaServer, ProjectSnapshot, Sip } from "@/lib/api-types"
 import { orgs } from "@/components/workspace-switcher"
 import { capturedCalls } from "./fixtures"
+import { alertEvents, issueList } from "./insights"
 import { capacity, cloudAgents, egress, ingress, mediaServer, projectSnapshot, sip } from "./livekit"
 import { summarize } from "./summaries"
 import { matchesFilters, parseFilters, sortCalls, totals } from "./calls-query"
@@ -26,6 +27,18 @@ const fail = (status: number, code: ApiErrorBody["code"], message: string) =>
 // A project the console does not know is not found, as on the server.
 function known(params: PathParams) {
   return orgs.some((o) => o.id === params.orgId && o.projects.some((p) => p.id === params.projectId))
+}
+
+// A required from/to range: inclusive start, exclusive end, both RFC 3339.
+function range(q: URLSearchParams): { from: Date; to: Date } | string {
+  const from = q.get("from")
+  const to = q.get("to")
+  if (from === null || to === null) return "from and to are required."
+  const f = new Date(from)
+  const t = new Date(to)
+  if (Number.isNaN(+f) || Number.isNaN(+t)) return "from and to must be date-times."
+  if (+t <= +f) return "to must be after from."
+  return { from: f, to: t }
 }
 
 // The fixtures never change while the page is open, so one snapshot names them all.
@@ -61,6 +74,18 @@ export const handlers = [
     if (!known(params)) return fail(404, "not_found", "No such project.")
     const call = capturedCalls().find((c) => c.id === params.callId)
     return call ? HttpResponse.json(call) : fail(404, "not_found", "No such call in this project.")
+  }),
+
+  // Issues and alert evaluation over a range; both bounds are required.
+  http.get<PathParams, never, IssueList | ApiErrorBody>(`${project}/issues`, ({ params, request }) => {
+    if (!known(params)) return fail(404, "not_found", "No such project.")
+    const r = range(new URL(request.url).searchParams)
+    return typeof r === "string" ? fail(400, "invalid_request", r) : HttpResponse.json(issueList(r.from, r.to))
+  }),
+  http.get<PathParams, never, AlertEvents | ApiErrorBody>(`${project}/alert-events`, ({ params, request }) => {
+    if (!known(params)) return fail(404, "not_found", "No such project.")
+    const r = range(new URL(request.url).searchParams)
+    return typeof r === "string" ? fail(400, "invalid_request", r) : HttpResponse.json(alertEvents(r.from, r.to))
   }),
 
   // LiveKit reads: one document each, as the capture recorded it.
