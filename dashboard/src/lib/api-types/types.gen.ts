@@ -841,6 +841,23 @@ export type CallStats = {
         callCount: number | null;
     }>;
     /**
+     * Calls per UTC hour over the last 168 hours of the range (all of it when shorter), oldest first, one entry per hour including hours with none, each with its median answer, for the Live wire's calls strip. An hour cut by the range's start or end counts only the calls inside the range.
+     */
+    byHour: Array<{
+        /**
+         * Start of the UTC hour.
+         */
+        hour: string;
+        /**
+         * Calls started in that hour.
+         */
+        callCount: number | null;
+        /**
+         * Median answer over the measured turns of those calls.
+         */
+        answerP50Ms: number | null;
+    }>;
+    /**
      * Answer time (caller stops to agent audio) over every measured turn in the range.
      */
     answers: {
@@ -924,6 +941,10 @@ export type CallStats = {
      */
     stages: Array<StageTiming>;
     /**
+     * Every stage a turn passes through for all agents, each its own median duration over the turns that reported it. Stages nothing reports are absent, not zero.
+     */
+    chain: Array<ChainStage>;
+    /**
      * One row per agent that took calls in the range, plus one with key null for calls no agent is identified on.
      */
     agents: Array<{
@@ -940,6 +961,10 @@ export type CallStats = {
          */
         callCount: number | null;
         /**
+         * This agent's turns with a measured answer time.
+         */
+        answerTurns: number | null;
+        /**
          * Median answer time over this agent's measured turns.
          */
         answerP50Ms: number | null;
@@ -952,6 +977,10 @@ export type CallStats = {
          */
         models: Array<string>;
         /**
+         * The model providers this agent's turns used, from the model each stage's span names, with the median time each stage took there.
+         */
+        providers: Array<ProviderUse>;
+        /**
          * This agent's turns with a transcript or a measured answer.
          */
         anatomyTurns: number | null;
@@ -959,6 +988,10 @@ export type CallStats = {
          * Turn anatomy for this agent only.
          */
         stages: Array<StageTiming>;
+        /**
+         * Every stage a turn passes through, for this agent only.
+         */
+        chain: Array<ChainStage>;
         /**
          * This agent's calls, oldest first, each with its median answer, for the per-call strip. At most 500, the most recent; see callsTruncated.
          */
@@ -980,6 +1013,59 @@ export type CallStats = {
          * true when calls holds only the most recent 500 of this agent's calls. callCount always counts every call.
          */
         callsTruncated: boolean;
+    }>;
+};
+
+/**
+ * One stage of a turn as its own duration, median over the turns that reported it. The hop back to the media server is a network probe (getProviderProbes) and the agent's join is per job (getMediaServer), so neither is here.
+ */
+export type ChainStage = {
+    /**
+     * Final transcript (transcription_delay), turn detector (eou_detection span), endpointing wait (end_of_turn_delay), end-of-turn hook (on_user_turn_completed span), model first token (llm ttft), tools (function_tool spans, summed per turn), model after tools (second llm ttft), voice first audio (tts ttfb), realtime model (realtime ttft) or the longest event-loop stall in the turn (event_loop_blocked).
+     */
+    stage: 'stt' | 'eou' | 'eot' | 'hook' | 'llm1' | 'tool' | 'llm2' | 'tts' | 'realtime' | 'stall';
+    /**
+     * Median duration over the turns that reported the stage.
+     */
+    medianMs: number | null;
+    /**
+     * Longest duration over those turns; Overview shows it for stalls.
+     */
+    maxMs: number | null;
+    /**
+     * Turns that reported the stage.
+     */
+    turns: number | null;
+};
+
+/**
+ * A model provider one agent's turns used, and what it served.
+ */
+export type ProviderUse = {
+    /**
+     * Provider key, from the model name a stage's span reports (for example openai, deepgram, cartesia).
+     */
+    provider: string;
+    /**
+     * Calls in which the agent used this provider.
+     */
+    callCount: number | null;
+    /**
+     * The stages this provider served, each with its median time over the turns it served.
+     */
+    roles: Array<{
+        /**
+         * Speech to text (final transcript), LLM (first token), text to speech (first audio) or a realtime model (answer).
+         */
+        role: 'stt' | 'llm' | 'tts' | 'realtime';
+        /**
+         * Median time of that stage at this provider.
+         */
+        medianMs: number | null;
+        /**
+         * Turns this provider served in that stage.
+         */
+        turns: number | null;
     }>;
 };
 

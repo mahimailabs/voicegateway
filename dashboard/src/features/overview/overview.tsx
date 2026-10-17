@@ -7,18 +7,17 @@ import { ProviderLogo, providerOfModel } from "@/components/provider-logo"
 import { QueryState } from "@/components/page-state"
 import { presetRange } from "@/components/time-range-picker"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
-import { callStatsQuery, cloudAgentsQuery, egressQuery, ingressQuery, latestCallQuery, listCalls, mediaServerQuery, providerProbesQuery, sipQuery, workersQuery } from "@/lib/api"
+import { callStatsQuery, cloudAgentsQuery, egressQuery, ingressQuery, latestCallQuery, mediaServerQuery, providerProbesQuery, sipQuery, workersQuery } from "@/lib/api"
 import type { CallStats, CloudAgents, Egress, Ingress, ProviderProbes, Sip, Workers } from "@/lib/api-types"
 import { BUDGET_MS } from "@/lib/thresholds"
 import { cn } from "@/lib/utils"
-import { agentKeyOf } from "@/mocks/summaries"
 import { fmtMs } from "@/features/call/call-model"
 import { type Agent, TEST_AGENTS, agentsFrom, joinDelays, median } from "@/features/agents/agents-model"
 import { peakAtOnce } from "@/features/agents/agent-drawer"
 import { type MediaServerData, fromContract, regionCity } from "@/features/media-server/room-drawer"
 import { type SipData, checks as sipChecks, enc, routes } from "@/features/sip/sip-model"
 import { ProviderGlobe } from "@/features/profile/provider-globe"
-import { LatencyChain } from "./latency-chain"
+import { type ChainScope, LatencyChain } from "./latency-chain"
 import { AnswerGauge, CallTracker, TurnAnatomy, TurnStrip, lanesFrom } from "./visuals"
 import { LiveWire } from "./live-wire"
 import { wireData } from "./wire-data"
@@ -74,10 +73,6 @@ function fleetRows(fleet: Agent[], stats: CallStats): FleetRow[] {
   rows.push({ key: "other", name: "Agent not identified", agent: null, stats: byKey.get(null) ?? null })
   return rows
 }
-
-// Until the Live wire and the stage chain have their own reads, they are built from the captured calls,
-// grouped by the same agent key the API returns (#323).
-const legacyCalls = (key: string | null) => listCalls().filter((c) => !c.recording?.preview && agentKeyOf(c) === key)
 
 const ms = (v: number | null) => (v === null ? "unknown" : fmtMs(v))
 const sumOrNull = (xs: (number | null)[]) => (xs.some((x) => x === null) ? null : xs.reduce<number>((n, x) => n + (x ?? 0), 0))
@@ -151,10 +146,10 @@ function OverviewView({ stats, cloud, ms: rooms, sip: sipRead, egress, ingress, 
   const nameOf = (key: string | null) => rows.find((r) => r.key === (key ?? "other"))?.name ?? key ?? "Agent not identified"
   const dots = answers.values.flatMap((v) => (v.ms === null ? [] : [{ ms: v.ms, room: v.room, turn: v.turn, agent: nameOf(v.agentKey) }]))
 
-  // The Live wire and the stage chain still read the captured calls (#323).
-  const legacy = useMemo(() => rows.map((r) => ({ key: r.key, name: r.name, agent: r.agent, callList: legacyCalls(r.key === "other" ? null : r.agent ? (r.agent.name ?? "unnamed") : r.key) })), [rows])
-  const wire = useMemo(() => wireData(legacy, BUDGET_MS), [legacy])
-  const chainGroups = legacy.filter((r) => r.callList.length && (pick === "all" || r.key === pick)).map((r) => ({ key: r.key, name: r.name, calls: r.callList, joins: r.agent ? joinDelays(r.agent.jobs) : [] }))
+  const sip = sipRead as unknown as SipData
+  const wire = useMemo(() => wireData(rows, { stats, ms: rooms, sip, probes: probe }, BUDGET_MS), [rows, stats, rooms, sip, probe])
+  const chainAll: ChainScope = { key: "all", name: "All agents", chain: stats.chain, turns: stats.anatomyTurns, calls: stats.callCount, e2e: p50, joins: [] }
+  const chainGroups: ChainScope[] = active.filter((r) => pick === "all" || r.key === pick).map((r) => ({ key: r.key, name: r.name, chain: r.stats!.chain, turns: r.stats!.anatomyTurns, calls: r.stats!.callCount, e2e: r.stats!.answerP50Ms, joins: r.agent ? joinDelays(r.agent.jobs) : [] }))
 
   // Calls at once across the workers: only instants every worker reported count.
   const n = Math.min(...workers.workers.map((w) => w.samples.length))
@@ -162,7 +157,6 @@ function OverviewView({ stats, cloud, ms: rooms, sip: sipRead, egress, ingress, 
   const known = load.filter((x): x is number => x !== null)
   const peak = known.length ? Math.max(...known) : null
 
-  const sip = sipRead as unknown as SipData
   const hints = rooms.rooms.flatMap((r) => r.participants.filter((p) => p.sip).map((p) => ({ trunkId: p.sip!.trunkId, twilio: Boolean(p.sip!.twilio) })))
   const routeRows = routes(sip, hints)
   const legs = [...sip.inbound.map((t) => enc(t.media.encryption)), ...sip.outbound.map((t) => enc(t.media.encryption))]
@@ -230,7 +224,7 @@ function OverviewView({ stats, cloud, ms: rooms, sip: sipRead, egress, ingress, 
             Every stage, with where it comes from
           </CollapsibleTrigger>
           <CollapsibleContent className="pt-4">
-            <LatencyChain groups={chainGroups} />
+            <LatencyChain all={chainAll} groups={chainGroups} backMs={lkHop?.tcpMs ?? null} />
           </CollapsibleContent>
         </Collapsible>
       </Section>

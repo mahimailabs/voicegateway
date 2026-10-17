@@ -124,49 +124,6 @@
     "exclusion": "The room drawer's view of getMediaServer (fromContract). Its legacy `data` export reads the mock directly for pages not yet moved (#323)."
   },
   {
-    "file": "dashboard/src/features/overview/latency-chain.tsx",
-    "fixtures": [
-      "network-probe.json"
-    ],
-    "assets": [],
-    "browserStorage": false,
-    "operations": [
-      "getProviderProbes"
-    ],
-    "assetNotes": {}
-  },
-  {
-    "file": "dashboard/src/features/overview/overview.tsx",
-    "fixtures": [
-      "summaries"
-    ],
-    "assets": [],
-    "browserStorage": false,
-    "operations": [
-      "getEgress",
-      "getIngress",
-      "getProviderProbes",
-      "getSip",
-      "getWorkers",
-      "getCallStats"
-    ],
-    "assetNotes": {}
-  },
-  {
-    "file": "dashboard/src/features/overview/wire-data.ts",
-    "fixtures": [
-      "network-probe.json",
-      "sip.json"
-    ],
-    "assets": [],
-    "browserStorage": false,
-    "operations": [
-      "getProviderProbes",
-      "getSip"
-    ],
-    "assetNotes": {}
-  },
-  {
     "file": "dashboard/src/features/profile/provider-globe.tsx",
     "fixtures": [
       "network-probe.json"
