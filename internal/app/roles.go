@@ -14,11 +14,14 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
+	"golang.org/x/sync/errgroup"
 
+	"github.com/mahimailabs/voicegateway/internal/api"
 	"github.com/mahimailabs/voicegateway/internal/config"
 	"github.com/mahimailabs/voicegateway/internal/event"
 	"github.com/mahimailabs/voicegateway/internal/ingest"
 	"github.com/mahimailabs/voicegateway/internal/obs"
+	"github.com/mahimailabs/voicegateway/internal/scrape"
 	"github.com/mahimailabs/voicegateway/internal/seal"
 	"github.com/mahimailabs/voicegateway/internal/sink"
 	"github.com/mahimailabs/voicegateway/internal/store/chstore"
@@ -49,6 +52,12 @@ func Web(ctx context.Context, c config.Config, log *slog.Logger) error {
 	rdb := redis.NewClient(opts)
 	defer func() { _ = rdb.Close() }()
 
+	layers, err := chstore.Open(c.ClickHouseURL)
+	if err != nil {
+		return redactErr(err, c.ClickHouseURL)
+	}
+	defer func() { _ = layers.Close() }()
+
 	projects := pgstore.NewStore(pool, sealer)
 	producer := stream.NewProducer(rdb, stream.Ingest)
 	uploads := &ingest.Uploads{Projects: projects, Stream: producer, Log: log, Now: time.Now}
@@ -61,6 +70,7 @@ func Web(ctx context.Context, c config.Config, log *slog.Logger) error {
 	mux.Handle("POST /observability/logs/otlp/v0", uploads.OTLP(event.KindAgentLogs))
 	mux.Handle("POST /observability/metrics/otlp/v0", uploads.OTLP(event.KindAgentMetrics))
 	mux.HandleFunc("POST /observability/recordings/v0", uploads.SessionReport)
+	mux.Handle("/api/v1/", (&api.API{Projects: projects, Layers: layers, Log: log, Now: time.Now}).Routes())
 
 	srv := &http.Server{
 		Addr:              c.WebAddr,
@@ -95,9 +105,19 @@ func Web(ctx context.Context, c config.Config, log *slog.Logger) error {
 	return nil
 }
 
-// Worker stores what web appends to the stream until ctx is cancelled. Call joining, settling and
-// scraping join it in later phases; it never answers HTTP (CLAUDE.md Boundaries).
+// Worker stores what web appends to the stream and samples each project's LiveKit server until ctx
+// is cancelled. Call joining and settling join it in later phases; it never answers HTTP (CLAUDE.md
+// Boundaries).
 func Worker(ctx context.Context, c config.Config, log *slog.Logger) error {
+	sealer, err := seal.New(c.SecretKey)
+	if err != nil {
+		return fmt.Errorf("secret key: %w", err)
+	}
+	pool, err := pgxpool.New(ctx, c.PostgresURL)
+	if err != nil {
+		return fmt.Errorf("postgres: %w", redactErr(err, c.PostgresURL))
+	}
+	defer pool.Close()
 	opts, err := redis.ParseURL(c.RedisURL)
 	if err != nil {
 		return fmt.Errorf("parse VOICEGATEWAY_REDIS_URL: %w", redactErr(err, c.RedisURL))
@@ -116,16 +136,34 @@ func Worker(ctx context.Context, c config.Config, log *slog.Logger) error {
 	}
 
 	log.Info("worker started", "consumer", name)
-	err = (&sink.Sink{
-		Stream:    stream.NewConsumer(rdb, stream.Ingest, workerGroup, name),
-		Events:    events,
-		Log:       log,
-		Batch:     1000,
-		Block:     time.Second,
-		ClaimIdle: time.Minute,
-		Backoff:   250 * time.Millisecond, MaxBackoff: 30 * time.Second,
-		Timeout: 30 * time.Second,
-	}).Run(ctx)
+	g, gctx := errgroup.WithContext(ctx)
+	g.Go(func() error {
+		return (&scrape.Scraper{
+			Projects:  pgstore.NewStore(pool, sealer),
+			Samples:   events,
+			Lock:      &scrape.RedisLock{Client: rdb},
+			Dial:      scrape.DialSDK,
+			ID:        name,
+			Log:       log,
+			Now:       time.Now,
+			Every:     10 * time.Second,
+			FullEvery: time.Minute,
+			Timeout:   10 * time.Second,
+		}).Run(gctx)
+	})
+	g.Go(func() error {
+		return (&sink.Sink{
+			Stream:    stream.NewConsumer(rdb, stream.Ingest, workerGroup, name),
+			Events:    events,
+			Log:       log,
+			Batch:     1000,
+			Block:     time.Second,
+			ClaimIdle: time.Minute,
+			Backoff:   250 * time.Millisecond, MaxBackoff: 30 * time.Second,
+			Timeout: 30 * time.Second,
+		}).Run(gctx)
+	})
+	err = g.Wait()
 	log.Info("worker stopped")
 	return err
 }

@@ -123,6 +123,37 @@ func (s *Store) ProjectByLiveKitKey(ctx context.Context, key string) (store.Proj
 	}, nil
 }
 
+// Projects lists every project, the way the worker finds what to read.
+func (s *Store) Projects(ctx context.Context) ([]store.Project, error) {
+	rows, err := s.q.ListProjects(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list projects: %w", err)
+	}
+	out := make([]store.Project, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, store.Project{
+			OrganisationID: row.OrganisationID, ID: row.ID, Name: row.Name,
+			LiveKitURL: row.LivekitUrl, LiveKitAPIKey: row.LivekitApiKey, CreatedAt: row.CreatedAt.Time,
+		})
+	}
+	return out, nil
+}
+
+// Project finds one project by its organisation and id.
+func (s *Store) Project(ctx context.Context, organisationID, projectID string) (store.Project, error) {
+	row, err := s.q.ProjectByID(ctx, ProjectByIDParams{OrganisationID: organisationID, ID: projectID})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return store.Project{}, store.ErrNotFound
+	}
+	if err != nil {
+		return store.Project{}, fmt.Errorf("project %s/%s: %w", organisationID, projectID, err)
+	}
+	return store.Project{
+		OrganisationID: row.OrganisationID, ID: row.ID, Name: row.Name,
+		LiveKitURL: row.LivekitUrl, LiveKitAPIKey: row.LivekitApiKey, CreatedAt: row.CreatedAt.Time,
+	}, nil
+}
+
 // LiveKitSecret opens a project's LiveKit API secret, for verifying what that project signs.
 func (s *Store) LiveKitSecret(ctx context.Context, organisationID, projectID string) (string, error) {
 	sealed, err := s.q.SealedLiveKitSecret(ctx, SealedLiveKitSecretParams{OrganisationID: organisationID, ID: projectID})

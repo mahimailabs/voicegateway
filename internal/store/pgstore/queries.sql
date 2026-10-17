@@ -15,3 +15,13 @@ WHERE organisation_id = $1 AND id = $2;
 
 -- name: OrganisationExists :one
 SELECT EXISTS (SELECT 1 FROM organisations WHERE id = $1);
+
+-- name: ListProjects :many
+SELECT organisation_id, id, name, livekit_url, livekit_api_key, created_at
+FROM projects
+ORDER BY organisation_id, id;
+
+-- name: ProjectByID :one
+SELECT organisation_id, id, name, livekit_url, livekit_api_key, created_at
+FROM projects
+WHERE organisation_id = $1 AND id = $2;

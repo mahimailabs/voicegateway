@@ -26,10 +26,11 @@ func TestWebServesHealthAndStopsCleanly(t *testing.T) {
 	done := make(chan error, 1)
 	// Nothing listens on these; web must still start and answer /healthz.
 	c := config.Config{
-		WebAddr:     addr,
-		PostgresURL: "postgres://voicegateway@127.0.0.1:1/voicegateway",
-		RedisURL:    "redis://127.0.0.1:1/0",
-		SecretKey:   bytes.Repeat([]byte{7}, seal.KeySize),
+		WebAddr:       addr,
+		PostgresURL:   "postgres://voicegateway@127.0.0.1:1/voicegateway",
+		RedisURL:      "redis://127.0.0.1:1/0",
+		ClickHouseURL: "clickhouse://voicegateway@127.0.0.1:1/voicegateway",
+		SecretKey:     bytes.Repeat([]byte{7}, seal.KeySize),
 	}
 	go func() { done <- Web(ctx, c, slog.New(slog.NewTextHandler(io.Discard, nil))) }()
 
