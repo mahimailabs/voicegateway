@@ -1,15 +1,17 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import { useNavigate } from "@tanstack/react-router"
-import { ArrowCounterClockwise, Broom, CaretDown, MagnifyingGlass, MagnifyingGlassMinus, MagnifyingGlassPlus, Phone, Robot, Users } from "@phosphor-icons/react"
+import { ArrowCounterClockwise, Broadcast, Broom, CaretDown, MagnifyingGlass, MagnifyingGlassMinus, MagnifyingGlassPlus, Phone, Robot, Users } from "@phosphor-icons/react"
 import { Button } from "@/components/ui/button"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/input-group"
 import { Kbd } from "@/components/ui/kbd"
 import { Switch } from "@/components/ui/switch"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
-import { listCalls } from "@/lib/api"
+import { useQuery, useQueryClient } from "@tanstack/react-query"
+import { QueryState } from "@/components/page-state"
+import { callInRoomQuery, mediaServerQuery } from "@/lib/api"
 import { cn } from "@/lib/utils"
-import { type Room, RoomDrawer, data, roomOrigin } from "../media-server/room-drawer"
+import { type MediaServerData, type Room, RoomDrawer, fromContract, roomOrigin } from "../media-server/room-drawer"
 import { useUrlPick, useUrlState } from "@/lib/url-state"
 
 // Live, in the shape of Logfire's live view: the real clock runs, the window slides with Now on
@@ -32,13 +34,13 @@ const windows = [
 // The captured rooms on a compressed timeline: real lengths and order, gaps capped at 30 s.
 // Rooms with no reported creation or last-seen time cannot be replayed and are left out.
 type Timed = Room & { createdMs: number; lastSeen: number }
-const captured: Timed[] = data.rooms
-  .map((r, k) => ({ ...r, n: k + 1 }))
-  .filter((r): r is Timed => r.createdMs !== null && r.lastSeen !== null)
-  .sort((a, b) => a.createdMs - b.createdMs)
 type Slot = { room: Timed; start: number; end: number }
-const slots: Slot[] = []
-{
+function replay(ms: MediaServerData) {
+  const captured: Timed[] = ms.rooms
+    .map((r, k) => ({ ...r, n: k + 1 }))
+    .filter((r): r is Timed => r.createdMs !== null && r.lastSeen !== null)
+    .sort((a, b) => a.createdMs - b.createdMs)
+  const slots: Slot[] = []
   let cursor = 0
   let prevEnd = captured.length ? captured[0].createdMs / 1000 : 0
   for (const r of captured) {
@@ -49,8 +51,8 @@ const slots: Slot[] = []
     cursor += len
     prevEnd = Math.max(prevEnd, r.lastSeen)
   }
+  return { captured, slots, cycle: Math.max(0, ...slots.map((s) => s.end)) + 30 }
 }
-const cycle = Math.max(0, ...slots.map((s) => s.end)) + 30
 
 const hms = (s: number) => new Date(s * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false })
 const hm = (s: number) => new Date(s * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false })
@@ -67,7 +69,17 @@ function useNow(running: boolean) {
   return now
 }
 
+// The rooms come from the media server read (getMediaServer).
 export function LivePage() {
+  const read = useQuery(mediaServerQuery())
+  const ms = useMemo(() => (read.data ? fromContract(read.data) : null), [read.data])
+  if (!ms) return <QueryState icon={Broadcast} what="the rooms" query={read} />
+  return <LiveView ms={ms} />
+}
+
+function LiveView({ ms }: { ms: MediaServerData }) {
+  const { captured, slots, cycle } = useMemo(() => replay(ms), [ms])
+  const queryClient = useQueryClient()
   const navigate = useNavigate()
   const [running, setRunning] = useState(true)
   const [wi, setWi] = useState(0)
@@ -104,8 +116,6 @@ export function LivePage() {
     // The ticks sit inside the strip's 16 px padding, so measure against that inner width.
     return Math.min(Math.max((clientX - r.left - 16) / (r.width - 32), 0), 1)
   }
-  // Rooms that are calls, to their call id. A reused room opens its latest call.
-  const callRooms = useMemo(() => new Map([...listCalls()].sort((a, b) => Date.parse(a.startedAt) - Date.parse(b.startedAt)).map((c) => [c.room, c.id])), [])
 
   // Every repetition of the captured set that overlaps the window.
   const rows: { key: string; room: Timed; start: number; end: number }[] = []
@@ -126,7 +136,13 @@ export function LivePage() {
   const step = range ? (windows.find((o) => o.s >= span * 0.9) ?? windows[windows.length - 1]).tick / (span < 300 ? 5 : 1) : w.tick
   for (let s = Math.ceil(from / step) * step; s < now - span * 0.06; s += step) if (s > from + span * 0.06) ticks.push(s)
   const tickLabel = span < 3600 ? hms : hm
-  const open = (r: Room) => (callRooms.has(r.name) ? navigate({ to: "/calls/$callId", params: { callId: callRooms.get(r.name)! } }) : setOpenRoom(r))
+  // A room that is a call opens the call, matched by the room's SID; any other room, or a lookup that
+  // fails, opens the room drawer.
+  const open = async (r: Room) => {
+    const callId = await queryClient.fetchQuery(callInRoomQuery(r.name, r.sid)).catch(() => null)
+    if (callId) void navigate({ to: "/calls/$callId", params: { callId } })
+    else setOpenRoom(r)
+  }
 
   return (
     <div className="mx-auto max-w-[1400px] space-y-3">
@@ -304,7 +320,7 @@ export function LivePage() {
           </ul>
         )}
       </div>
-      <RoomDrawer room={openRoom} open={openRoom !== null} onOpenChange={(o) => !o && setOpenRoom(null)} />
+      <RoomDrawer room={openRoom} ms={ms} open={openRoom !== null} onOpenChange={(o) => !o && setOpenRoom(null)} />
     </div>
   )
 }

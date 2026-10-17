@@ -91,6 +91,12 @@ export const callPagesQuery = (filters: URLSearchParams) =>
   })
 export const latestCallQuery = () => ({ queryKey: ["calls", currentScope(), "latest"], queryFn: fetchLatestCall })
 export const callCountQuery = (filters: URLSearchParams) => ({ queryKey: ["calls", currentScope(), "count", filters.toString()], queryFn: () => fetchCallCount(filters) })
+// The call that ran in one LiveKit room, matched by the room's SID so a reused room name never opens
+// another room's call; null when no stored call names that room.
+export const callInRoomQuery = (name: string, sid: string) => ({
+  queryKey: ["calls", currentScope(), "in-room", sid],
+  queryFn: async () => (await fetchCallPage(new URLSearchParams({ room: name, sort: "startedAt", order: "desc" }), undefined, 100)).items.find((c) => c.roomSid === sid)?.id ?? null,
+})
 export const callQuery = (id: string) => ({ queryKey: ["call", currentScope(), id], queryFn: () => fetchCall(id) })
 
 // The LiveKit pages' reads, one document each.
