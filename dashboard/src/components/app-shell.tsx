@@ -40,7 +40,7 @@ import { DEFAULTS, applyThresholds } from "@/lib/thresholds"
 import { PageState, errorText } from "@/components/page-state"
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty"
 import { SettingsDialog, type SettingsPage } from "@/features/settings/settings-dialog"
-import { firstProjectPath, scopeUnknown, useUrlState } from "@/lib/url-state"
+import { currentOrg, firstProjectPath, scopeUnknown, useUrlState } from "@/lib/url-state"
 import { OrgSwitcher, ProjectSwitcher } from "@/components/org-switcher"
 import { BrandWordmark } from "@/components/brand-wordmark"
 import { motion } from "motion/react"
@@ -80,8 +80,11 @@ export function AppShell() {
   // Settings is a modal over the current page, kept in the URL (?settings=access) so a link opens it:
   // the sidebar item, Cmd or Ctrl + comma, or /settings.
   const [settingsParam, setSettingsParam] = useUrlState<string | null>("settings", null)
-  const openSettings = (page?: SettingsPage) => setSettingsParam(page ?? "integrations")
-  const settingsOpen = settingsParam !== null || path === "/settings"
+  // A link to an organisation or project this person cannot read asks nothing of the API, and Settings
+  // stays closed: there is no project to show settings for.
+  const unknown = scopeUnknown()
+  const openSettings = (page?: SettingsPage) => !unknown && setSettingsParam(page ?? "integrations")
+  const settingsOpen = !unknown && (settingsParam !== null || path === "/settings")
   const closeSettings = (o: boolean) => {
     if (o) return
     if (path === "/settings") navigate({ to: "/overview" })
@@ -94,8 +97,6 @@ export function AppShell() {
   // Pages judge calls against the project's thresholds, so they wait for the settings read, and a
   // threshold change renders the page again. Settings that could not be read leave the contract's
   // defaults in place, and the page says so.
-  // A link to an organisation or project this person cannot read asks nothing of the API.
-  const unknown = scopeUnknown()
   const settings = useQuery({ ...projectSettingsQuery(), enabled: !unknown })
   const thresholds = settings.data?.thresholds ?? DEFAULTS
   applyThresholds(thresholds)
@@ -138,7 +139,8 @@ export function AppShell() {
           </div>
         </SidebarHeader>
         <SidebarContent>
-          {groups.map((g, i) => (
+          {/* On "No such project" the page links lead nowhere useful, so only its own link to a project shows. */}
+          {!unknown && groups.map((g, i) => (
             <SidebarGroup key={i}>
               {g.label && <SidebarGroupLabel className="text-[10.5px] font-semibold tracking-[0.08em] text-muted-foreground/80 uppercase">{g.label}</SidebarGroupLabel>}
               <SidebarMenu className="gap-0.5">{g.items.map(nav)}</SidebarMenu>
@@ -156,7 +158,7 @@ export function AppShell() {
               </SidebarMenuButton>
             </SidebarMenuItem>
             <SidebarMenuItem>
-              <SidebarMenuButton isActive={settingsOpen} tooltip={`Settings (${mod} ,)`} onClick={() => openSettings()}>
+              <SidebarMenuButton isActive={settingsOpen} disabled={unknown} tooltip={`Settings (${mod} ,)`} onClick={() => openSettings()}>
                 <Settings />
                 <span>Settings</span>
               </SidebarMenuButton>
@@ -171,7 +173,7 @@ export function AppShell() {
         <header className="sticky top-0 z-10 flex h-12 shrink-0 items-center gap-2 border-b bg-background/85 px-4 backdrop-blur md:px-6">
           <SidebarTrigger className="-ml-1 text-muted-foreground lg:hidden" />
           <OrgSwitcher onSettings={() => openSettings("organisation")} />
-          <span className="text-muted-foreground/50">/</span>
+          {currentOrg() && <span className="text-muted-foreground/50">/</span>}
           <ProjectSwitcher onManage={() => openSettings("organisation")} />
           <div className="ml-auto flex items-center gap-1.5">
             <button type="button" onClick={() => setPalette(true)} className="mr-1 hidden h-8 w-60 items-center gap-2 rounded-lg border bg-muted/40 pr-1.5 pl-2.5 text-[13px] text-muted-foreground transition-colors hover:bg-muted lg:flex">
