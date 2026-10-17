@@ -1,13 +1,10 @@
-import { useMemo } from "react"
 import { Info } from "@phosphor-icons/react"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
-import type { Call } from "@/lib/api"
+import type { ChainStage } from "@/lib/api-types"
 import { BUDGET_MS } from "@/lib/thresholds"
 import { cn } from "@/lib/utils"
-import probe from "@/mocks/network-probe.json"
-import { buildModel, fmtMs, median, placed } from "@/features/call/call-model"
-import { waterfallRows } from "@/features/profile/ttfa-waterfall"
+import { fmtMs, median } from "@/features/call/call-model"
 import { useUrlState } from "@/lib/url-state"
 
 // Every stage a turn passes through, caller's mouth to caller's ear, in order. Each stage is the median
@@ -56,64 +53,27 @@ const groups: { title: string; stages: Stage[] }[] = [
   },
 ]
 
-type Sample = Partial<Record<StageId, number>> & { e2e?: number }
+// One scope of the chain: every agent, or one. Stage figures come from getCallStats; the agent's join
+// is per job (the fleet) and the hop back to the media server is the network probe.
+export type ChainScope = { key: string; name: string; chain: ChainStage[]; turns: number | null; calls: number | null; e2e: number | null; joins: number[] }
 
-function samples(calls: Call[]): Sample[] {
-  const sfu = probe.endpoints.find((e) => e.role === "sfu")?.tcpMs
-  return calls.flatMap((c) => {
-    const m = buildModel(c)
-    // Only spans with a start and duration can fall inside a turn's window.
-    const spans = (c.spans ?? []).filter(placed)
-    return m.turns
-      .filter((t) => t.userText !== null || t.responseMs !== null)
-      .map((t) => {
-        const s: Sample = {}
-        const within = (start: number) => start / 1000 >= t.window.start && start / 1000 <= t.window.end
-        if (m.pipeline === "realtime") {
-          if (t.responseMs !== null) s.rt = t.responseMs
-        } else {
-          const rows = waterfallRows(c, t) ?? []
-          const span = (label: string) => rows.find((r) => r.label === label)
-          const dur = (label: string) => {
-            const r = span(label)
-            return r ? r.end - r.start : undefined
-          }
-          s.stt = dur("Speech to text") ?? c.turns?.[t.i]?.transcriptionDelayMs ?? undefined
-          s.eou = dur("Turn detection")
-          s.eot = t.eotMs ?? undefined
-          s.llm1 = dur("LLM") ?? dur("LLM, call 1") ?? t.ttftMs ?? undefined
-          s.llm2 = dur("LLM, call 2")
-          const tools = rows.filter((r) => r.label === "Tool")
-          if (tools.length) s.tool = tools.reduce((a, r) => a + (r.end - r.start), 0)
-          s.tts = dur("Text to speech") ?? t.ttsMs ?? undefined
-          const hook = spans.find((x) => x.name === "on_user_turn_completed" && within(x.startMs))
-          if (hook) s.hook = hook.durationMs
-        }
-        const stalls = spans.filter((x) => x.name === "event_loop_blocked" && within(x.startMs))
-        if (stalls.length) s.stall = Math.max(...stalls.map((x) => Number(x.attrs?.["lk.blocking.duration"] ?? x.durationMs / 1000) * 1000))
-        if (sfu !== undefined) s.back = sfu
-        if (t.responseMs !== null) s.e2e = t.responseMs
-        return s
-      })
-  })
-}
-
-export function LatencyChain({ groups: sets }: { groups: { key: string; name: string; calls: Call[]; joins: number[] }[] }) {
-  const usable = sets.filter((g) => g.calls.length)
+export function LatencyChain({ all: overall, groups: sets, backMs }: { all: ChainScope; groups: ChainScope[]; backMs: number | null }) {
+  const usable = sets.filter((g) => g.calls !== 0)
   const [pick, setPick] = useUrlState("agent", "all")
-  const calls = pick === "all" ? usable.flatMap((g) => g.calls) : (usable.find((g) => g.key === pick)?.calls ?? [])
-  const all = useMemo(() => samples(calls), [calls])
+  const scope = pick === "all" ? overall : (usable.find((g) => g.key === pick) ?? overall)
   const joins = (pick === "all" ? sets.flatMap((g) => g.joins) : (sets.find((g) => g.key === pick)?.joins ?? [])).map((x) => x * 1000)
   const stat = (id: StageId) => {
-    const xs = id === "join" ? joins : all.map((s) => s[id]).filter((v): v is number => v !== undefined)
-    return { n: xs.length, p50: median(xs), max: xs.length ? Math.max(...xs) : null }
+    if (id === "join") return { n: joins.length, p50: median(joins), max: joins.length ? Math.max(...joins) : null }
+    // The hop back is one measured round trip, the same for every turn.
+    if (id === "back") return { n: backMs === null ? 0 : (scope.turns ?? 0), p50: backMs, max: backMs }
+    const st = scope.chain.find((c) => c.stage === (id === "rt" ? "realtime" : id))
+    return { n: st?.turns ?? 0, p50: st?.medianMs ?? null, max: st?.maxMs ?? null }
   }
-  const e2eXs = all.map((s) => s.e2e).filter((v): v is number => v !== undefined)
-  const e2e = median(e2eXs)
-  const anyRealtime = all.some((s) => s.rt !== undefined)
+  const e2e = scope.e2e
+  const anyRealtime = scope.chain.some((c) => c.stage === "realtime")
   // The realtime row belongs to the agents that run a realtime model, named on the row.
-  const rtNames = usable.filter((g) => (pick === "all" || g.key === pick) && g.calls.some((c) => buildModel(c).pipeline === "realtime")).map((g) => g.name)
-  const anyCascaded = all.some((s) => s.llm1 !== undefined || s.eot !== undefined)
+  const rtNames = usable.filter((g) => (pick === "all" || g.key === pick) && g.chain.some((c) => c.stage === "realtime")).map((g) => g.name)
+  const anyCascaded = scope.chain.some((c) => c.stage === "llm1" || c.stage === "eot")
   const shown = (st: Stage) => (st.id === "rt" ? anyRealtime : true)
   const scale =
     Math.max(
@@ -144,7 +104,7 @@ export function LatencyChain({ groups: sets }: { groups: { key: string; name: st
             </ToggleGroupItem>
           ))}
         </ToggleGroup>
-        <span className="text-[12px] text-muted-foreground tnum">{`${all.length} turns · ${calls.length} calls`}</span>
+        <span className="text-[12px] text-muted-foreground tnum">{`${scope.turns ?? "unknown"} turns · ${scope.calls ?? "unknown"} calls`}</span>
       </div>
 
       {anyCascaded && chain.length > 0 && (
@@ -208,7 +168,7 @@ export function LatencyChain({ groups: sets }: { groups: { key: string; name: st
                                     <TooltipTrigger asChild>
                                       <span className="cursor-help truncate">{st.id === "rt" && rtNames.length ? `${st.label} · ${rtNames.join(", ")}` : st.label}</span>
                                     </TooltipTrigger>
-                                    <TooltipContent className="text-xs">{`${st.source}${s.n ? ` · ${st.id === "back" ? "network probe" : st.id === "join" ? `${s.n} jobs` : st.id === "stall" ? `${s.n} turns with a stall` : `${s.n} of ${all.length} turns`}` : ""}`}</TooltipContent>
+                                    <TooltipContent className="text-xs">{`${st.source}${s.n ? ` · ${st.id === "back" ? "network probe" : st.id === "join" ? `${s.n} jobs` : st.id === "stall" ? `${s.n} turns with a stall` : `${s.n} of ${scope.turns ?? "an unknown number of"} turns`}` : ""}`}</TooltipContent>
                                   </Tooltip>
                                   {st.why && (
                                     <Tooltip>

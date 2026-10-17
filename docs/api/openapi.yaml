@@ -3221,7 +3221,7 @@ components:
       type: object
       additionalProperties: false
       description: Aggregates over every stored call in the range, computed on the server so no client totals pages. Test and design-preview calls are counted separately and left out of the answer and stage figures.
-      required: [ from, to, complete, callCount, byChannel, byDay, answers, issueCounts, anatomyTurns, stages, agents ]
+      required: [ from, to, complete, callCount, byChannel, byDay, byHour, answers, issueCounts, anatomyTurns, stages, chain, agents ]
       properties:
         from:
           type: string
@@ -3307,6 +3307,33 @@ components:
                 x-null-reason: "Null when the stored range is incomplete (retention, ingest gap or a source outage), so a total would undercount. Never zero for missing data."
                 x-source: { kind: computed, file: docs/api/coverage.md, pointer: null, detail: "Calls started that day." }
                 minimum: 0
+        byHour:
+          type: array
+          description: "Calls per UTC hour in the range, oldest first, one entry per hour including hours with none, each with its median answer, for the Live wire's calls strip."
+          x-source: { kind: computed, file: dashboard/src/features/overview/wire-data.ts, pointer: null, detail: "Calls per UTC hour with their median answer, for the Live wire's calls strip." }
+          items:
+            type: object
+            additionalProperties: false
+            required: [ hour, callCount, answerP50Ms ]
+            properties:
+              hour:
+                type: string
+                format: date-time
+                description: "Start of the UTC hour."
+                x-source: { kind: computed, file: docs/api/coverage.md, pointer: null, detail: "Start of the UTC hour." }
+              callCount:
+                type: [ integer, "null" ]
+                description: "Calls started in that hour."
+                x-unit: count
+                x-null-reason: "Null when the stored range is incomplete (retention, ingest gap or a source outage), so a total would undercount. Never zero for missing data."
+                x-source: { kind: computed, file: docs/api/coverage.md, pointer: null, detail: "Calls started in that hour." }
+                minimum: 0
+              answerP50Ms:
+                type: [ number, "null" ]
+                description: "Median answer over the measured turns of those calls."
+                x-unit: milliseconds
+                x-null-reason: "No turn in scope reported this value. Unknown, not zero."
+                x-source: { kind: computed, file: docs/api/coverage.md, pointer: null, detail: "Median answer over the measured turns of those calls." }
         answers:
           type: object
           additionalProperties: false
@@ -3437,6 +3464,12 @@ components:
           x-source: { kind: computed, file: dashboard/src/features/overview/visuals.tsx, pointer: null, detail: "Turn anatomy for all agents: one entry per stage that any turn reported. Stages nothing reports are absent, not zero." }
           items:
             $ref: "#/components/schemas/StageTiming"
+        chain:
+          type: array
+          description: "Every stage a turn passes through for all agents, each its own median duration over the turns that reported it. Stages nothing reports are absent, not zero."
+          x-source: { kind: computed, file: dashboard/src/features/overview/latency-chain.tsx, pointer: null, detail: "Every stage's median duration over the turns that reported it." }
+          items:
+            $ref: "#/components/schemas/ChainStage"
         agents:
           type: array
           description: "One row per agent that took calls in the range, plus one with key null for calls no agent is identified on."
@@ -3444,7 +3477,7 @@ components:
           items:
             type: object
             additionalProperties: false
-            required: [ key, name, callCount, answerP50Ms, issues, models, anatomyTurns, stages, calls, callsTruncated ]
+            required: [ key, name, callCount, answerTurns, answerP50Ms, issues, models, providers, anatomyTurns, stages, chain, calls, callsTruncated ]
             properties:
               key:
                 type: [ string, "null" ]
@@ -3462,6 +3495,13 @@ components:
                 x-unit: count
                 x-null-reason: "Null when the stored range is incomplete (retention, ingest gap or a source outage), so a total would undercount. Never zero for missing data."
                 x-source: { kind: computed, file: docs/api/coverage.md, pointer: null, detail: "Calls this agent took in the range." }
+                minimum: 0
+              answerTurns:
+                type: [ integer, "null" ]
+                description: "This agent's turns with a measured answer time."
+                x-unit: count
+                x-null-reason: "Null when the stored range is incomplete (retention, ingest gap or a source outage), so a total would undercount. Never zero for missing data."
+                x-source: { kind: computed, file: docs/api/coverage.md, pointer: null, detail: "This agent's turns with a measured answer time." }
                 minimum: 0
               answerP50Ms:
                 type: [ number, "null" ]
@@ -3482,6 +3522,12 @@ components:
                 x-source: { kind: computed, file: dashboard/src/features/call/call-model.ts, pointer: null, detail: "Model names this agent's calls reported." }
                 items:
                   type: string
+              providers:
+                type: array
+                description: "The model providers this agent's turns used, from the model each stage's span names, with the median time each stage took there."
+                x-source: { kind: computed, file: dashboard/src/features/overview/wire-data.ts, pointer: null, detail: "Providers from the model named on each stage's span, with the stage's median time." }
+                items:
+                  $ref: "#/components/schemas/ProviderUse"
               anatomyTurns:
                 type: [ integer, "null" ]
                 description: "This agent's turns with a transcript or a measured answer."
@@ -3495,6 +3541,12 @@ components:
                 x-source: { kind: computed, file: dashboard/src/features/overview/visuals.tsx, pointer: null, detail: "Turn anatomy for this agent only." }
                 items:
                   $ref: "#/components/schemas/StageTiming"
+              chain:
+                type: array
+                description: "Every stage a turn passes through, for this agent only."
+                x-source: { kind: computed, file: dashboard/src/features/overview/latency-chain.tsx, pointer: null, detail: "Every stage's median duration over this agent's turns that reported it." }
+                items:
+                  $ref: "#/components/schemas/ChainStage"
               calls:
                 type: array
                 description: "This agent's calls, oldest first, each with its median answer, for the per-call strip. At most 500, the most recent; see callsTruncated."
@@ -3524,6 +3576,80 @@ components:
                 type: boolean
                 description: "true when calls holds only the most recent 500 of this agent's calls. callCount always counts every call."
                 x-source: { kind: computed, file: docs/api/coverage.md, pointer: null, detail: "true when calls holds only the most recent 500 of this agent's calls." }
+    ChainStage:
+      type: object
+      additionalProperties: false
+      description: One stage of a turn as its own duration, median over the turns that reported it. The hop back to the media server is a network probe (getProviderProbes) and the agent's join is per job (getMediaServer), so neither is here.
+      required: [ stage, medianMs, maxMs, turns ]
+      properties:
+        stage:
+          type: string
+          enum: [ stt, eou, eot, hook, llm1, tool, llm2, tts, realtime, stall ]
+          description: "Final transcript (transcription_delay), turn detector (eou_detection span), endpointing wait (end_of_turn_delay), end-of-turn hook (on_user_turn_completed span), model first token (llm ttft), tools (function_tool spans, summed per turn), model after tools (second llm ttft), voice first audio (tts ttfb), realtime model (realtime ttft) or the longest event-loop stall in the turn (event_loop_blocked)."
+          x-source: { kind: computed, file: dashboard/src/features/overview/latency-chain.tsx, pointer: null, detail: "The LiveKit field or span each stage is read from." }
+        medianMs:
+          type: [ number, "null" ]
+          description: "Median duration over the turns that reported the stage."
+          x-unit: milliseconds
+          x-null-reason: "No turn in scope reported this value. Unknown, not zero."
+          x-source: { kind: computed, file: docs/api/coverage.md, pointer: null, detail: "Median duration over the turns that reported the stage." }
+        maxMs:
+          type: [ number, "null" ]
+          description: "Longest duration over those turns; Overview shows it for stalls."
+          x-unit: milliseconds
+          x-null-reason: "No turn in scope reported this value. Unknown, not zero."
+          x-source: { kind: computed, file: docs/api/coverage.md, pointer: null, detail: "Longest duration over the turns that reported the stage." }
+        turns:
+          type: [ integer, "null" ]
+          description: "Turns that reported the stage."
+          x-unit: count
+          x-null-reason: "Null when the stored range is incomplete (retention, ingest gap or a source outage), so a total would undercount. Never zero for missing data."
+          x-source: { kind: computed, file: docs/api/coverage.md, pointer: null, detail: "Turns that reported the stage." }
+          minimum: 0
+    ProviderUse:
+      type: object
+      additionalProperties: false
+      description: A model provider one agent's turns used, and what it served.
+      required: [ provider, callCount, roles ]
+      properties:
+        provider:
+          type: string
+          description: "Provider key, from the model name a stage's span reports (for example openai, deepgram, cartesia)."
+          x-source: { kind: computed, file: dashboard/src/components/provider-logo.tsx, pointer: null, detail: "Provider key from the model name a stage's span reports." }
+        callCount:
+          type: [ integer, "null" ]
+          description: "Calls in which the agent used this provider."
+          x-unit: count
+          x-null-reason: "Null when the stored range is incomplete (retention, ingest gap or a source outage), so a total would undercount. Never zero for missing data."
+          x-source: { kind: computed, file: docs/api/coverage.md, pointer: null, detail: "Calls in which the agent used this provider." }
+          minimum: 0
+        roles:
+          type: array
+          description: "The stages this provider served, each with its median time over the turns it served."
+          x-source: { kind: computed, file: dashboard/src/features/overview/wire-data.ts, pointer: null, detail: "Stages the provider served with their median time." }
+          items:
+            type: object
+            additionalProperties: false
+            required: [ role, medianMs, turns ]
+            properties:
+              role:
+                type: string
+                enum: [ stt, llm, tts, realtime ]
+                description: "Speech to text (final transcript), LLM (first token), text to speech (first audio) or a realtime model (answer)."
+                x-source: { kind: computed, file: dashboard/src/features/profile/ttfa-waterfall.tsx, pointer: null, detail: "The waterfall stage the provider served." }
+              medianMs:
+                type: [ number, "null" ]
+                description: "Median time of that stage at this provider."
+                x-unit: milliseconds
+                x-null-reason: "No turn in scope reported this value. Unknown, not zero."
+                x-source: { kind: computed, file: docs/api/coverage.md, pointer: null, detail: "Median time of that stage at this provider." }
+              turns:
+                type: [ integer, "null" ]
+                description: "Turns this provider served in that stage."
+                x-unit: count
+                x-null-reason: "Null when the stored range is incomplete (retention, ingest gap or a source outage), so a total would undercount. Never zero for missing data."
+                x-source: { kind: computed, file: docs/api/coverage.md, pointer: null, detail: "Turns this provider served in that stage." }
+                minimum: 0
     StageTiming:
       type: object
       additionalProperties: false

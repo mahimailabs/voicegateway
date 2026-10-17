@@ -1,7 +1,8 @@
-import type { CallStats, StageTiming } from "@/lib/api-types"
+import type { CallStats, ChainStage, ProviderUse, StageTiming } from "@/lib/api-types"
 import type { Call } from "@/lib/api"
 import { BUDGET_MS } from "@/lib/thresholds"
-import { buildModel, median } from "@/features/call/call-model"
+import { providerOfModel } from "@/components/provider-logo"
+import { buildModel, median, placed } from "@/features/call/call-model"
 import { stageDefs } from "@/features/overview/visuals"
 import { waterfallRows } from "@/features/profile/ttfa-waterfall"
 import { capturedCalls } from "./fixtures"
@@ -53,6 +54,76 @@ function anatomy(calls: Call[]): { stages: StageTiming[]; turns: number } {
   return { stages, turns }
 }
 
+// Every stage of each turn as its own duration, the way LiveKit reports it; a stage a turn did not
+// report is left out of that stage's median, never counted as zero.
+type ChainId = ChainStage["stage"]
+function chain(calls: Call[]): ChainStage[] {
+  const by = new Map<ChainId, number[]>()
+  const add = (id: ChainId, v: number | null | undefined) => {
+    if (v === null || v === undefined) return
+    by.set(id, [...(by.get(id) ?? []), v])
+  }
+  for (const c of calls) {
+    const m = buildModel(c)
+    const spans = (c.spans ?? []).filter(placed)
+    for (const t of m.turns) {
+      if (t.userText === null && t.responseMs === null) continue
+      const within = (start: number) => start / 1000 >= t.window.start && start / 1000 <= t.window.end
+      if (m.pipeline === "realtime") add("realtime", t.responseMs)
+      else {
+        const rows = waterfallRows(c, t) ?? []
+        const dur = (label: string) => {
+          const r = rows.find((x) => x.label === label)
+          return r ? r.end - r.start : undefined
+        }
+        add("stt", dur("Speech to text") ?? c.turns?.[t.i]?.transcriptionDelayMs)
+        add("eou", dur("Turn detection"))
+        add("eot", t.eotMs)
+        add("llm1", dur("LLM") ?? dur("LLM, call 1") ?? t.ttftMs)
+        add("llm2", dur("LLM, call 2"))
+        const tools = rows.filter((r) => r.label === "Tool")
+        if (tools.length) add("tool", tools.reduce((a, r) => a + (r.end - r.start), 0))
+        add("tts", dur("Text to speech") ?? t.ttsMs)
+        add("hook", spans.find((x) => x.name === "on_user_turn_completed" && within(x.startMs))?.durationMs)
+      }
+      const stalls = spans.filter((x) => x.name === "event_loop_blocked" && within(x.startMs))
+      if (stalls.length) add("stall", Math.max(...stalls.map((x) => Number(x.attrs?.["lk.blocking.duration"] ?? x.durationMs / 1000) * 1000)))
+    }
+  }
+  const order: ChainId[] = ["stt", "eou", "eot", "hook", "llm1", "tool", "llm2", "tts", "realtime", "stall"]
+  return order.filter((id) => by.has(id)).map((id) => ({ stage: id, medianMs: median(by.get(id)!), maxMs: Math.max(...by.get(id)!), turns: by.get(id)!.length }))
+}
+
+// The providers an agent's turns used, from the model each stage's span names.
+function providers(calls: Call[]): ProviderUse[] {
+  type Role = ProviderUse["roles"][number]["role"]
+  const by = new Map<string, { calls: Set<string>; roles: Map<Role, number[]> }>()
+  const add = (prov: string | null, role: Role, callId: string, ms: number) => {
+    if (!prov) return
+    const v = by.get(prov) ?? { calls: new Set<string>(), roles: new Map<Role, number[]>() }
+    v.calls.add(callId)
+    v.roles.set(role, [...(v.roles.get(role) ?? []), ms])
+    by.set(prov, v)
+  }
+  for (const c of calls) {
+    const m = buildModel(c)
+    for (const t of m.turns) {
+      if (m.pipeline === "realtime") {
+        if (t.responseMs !== null) add(providerOfModel(m.models.find((x) => x.includes("realtime")) ?? m.models[0]), "realtime", c.id, t.responseMs)
+        continue
+      }
+      for (const w of waterfallRows(c, t) ?? []) {
+        const model = w.sub.replace(/ (first token|first audio)$/, "")
+        if (w.label === "Speech to text") add(providerOfModel(model), "stt", c.id, w.end - w.start)
+        else if (w.label === "LLM" || w.label === "LLM, call 1") add(providerOfModel(model), "llm", c.id, w.end - w.start)
+        else if (w.label === "Text to speech") add(providerOfModel(model), "tts", c.id, w.end - w.start)
+      }
+    }
+  }
+  const roles: Role[] = ["stt", "llm", "tts", "realtime"]
+  return [...by].map(([provider, v]) => ({ provider, callCount: v.calls.size, roles: roles.filter((r) => v.roles.has(r)).map((role) => ({ role, medianMs: median(v.roles.get(role)!), turns: v.roles.get(role)!.length })) }))
+}
+
 export function callStats(from: Date, to: Date): CallStats {
   const calls = capturedCalls()
     .filter((c) => !c.recording?.preview)
@@ -67,6 +138,12 @@ export function callStats(from: Date, to: Date): CallStats {
   for (let d = Date.UTC(from.getUTCFullYear(), from.getUTCMonth(), from.getUTCDate()); d < +to; d += 86_400_000) {
     const date = new Date(d).toISOString().slice(0, 10)
     days.push({ date, callCount: calls.filter((c) => c.startedAt.slice(0, 10) === date).length })
+  }
+
+  const hours: CallStats["byHour"] = []
+  for (let h = Math.floor(+from / 3_600_000) * 3_600_000; h < +to; h += 3_600_000) {
+    const inHour = rows.filter(({ c }) => Date.parse(c.startedAt) >= h && Date.parse(c.startedAt) < h + 3_600_000)
+    hours.push({ hour: new Date(h).toISOString(), callCount: inHour.length, answerP50Ms: median(inHour.flatMap(({ s }) => s.answerMs ?? [])) })
   }
 
   const found = issueList(from, to).items
@@ -84,12 +161,15 @@ export function callStats(from: Date, to: Date): CallStats {
         key,
         name: key === "unnamed" ? null : key,
         callCount: mine.length,
+        answerTurns: mine.flatMap(({ s }) => s.answerMs ?? []).length,
         answerP50Ms: median(mine.flatMap(({ s }) => s.answerMs ?? [])),
         // Unknown when none of the calls had anything to check, not zero.
         issues: checked.length ? checked.reduce((n, { s }) => n + (s.issues.high ?? 0) + (s.issues.medium ?? 0), 0) : null,
         models: [...new Set(mine.flatMap(({ s }) => s.models))],
+        providers: providers(mine.map(({ c }) => c)),
         anatomyTurns: shape.turns,
         stages: shape.stages,
+        chain: chain(mine.map(({ c }) => c)),
         calls: oldest.slice(-MAX_CALLS).map(({ c, s }) => ({ callId: c.id, room: c.room, answerP50Ms: s.answerMsMedian })),
         callsTruncated: oldest.length > MAX_CALLS,
       }
@@ -103,10 +183,12 @@ export function callStats(from: Date, to: Date): CallStats {
     callCount: calls.length,
     byChannel: Object.fromEntries(CHANNELS.map((ch) => [ch, rows.filter(({ s }) => s.channel === ch).length])) as CallStats["byChannel"],
     byDay: days,
+    byHour: hours,
     answers: { turns: all.length, overBudget: all.filter((a) => a > BUDGET_MS).length, budgetMs: BUDGET_MS, p50Ms: median(all), p90Ms: p90(all), values: values.slice(0, MAX_VALUES), valuesTruncated: values.length > MAX_VALUES },
     issueCounts: { high: count("high"), medium: count("medium"), low: count("low"), info: count("info") },
     anatomyTurns: overall.turns,
     stages: overall.stages,
+    chain: chain(calls),
     agents,
   }
 }

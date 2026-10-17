@@ -306,4 +306,45 @@ describe("getCallStats", () => {
     expect(empty.stages).toEqual([])
     expect(empty.byDay.map((d: { date: string }) => d.date)).toEqual(["2000-01-01", "2000-01-02"])
   })
+
+  test("the hourly and daily counts each add up to the call count, and turn values come newest call first", async () => {
+    const [s, p] = await Promise.all([stats(), page()])
+    expect(s.byHour.length).toBe(7 * 24)
+    expect(s.byHour.reduce((n: number, h: { callCount: number }) => n + h.callCount, 0)).toBe(s.callCount)
+    expect(s.byDay.reduce((n: number, d: { callCount: number }) => n + d.callCount, 0)).toBe(s.callCount)
+    const started = new Map(p.items.map((c: { id: string; startedAt: string }) => [c.id, Date.parse(c.startedAt)]))
+    const at = s.answers.values.map((v: { callId: string }) => started.get(v.callId) as number)
+    expect(at).toEqual([...at].sort((a, b) => b - a))
+  })
+
+  test("a call starting exactly at to is left out; at from it is kept", async () => {
+    const first = (await (await fetch(`${base}/calls?limit=1&sort=startedAt&order=asc`)).json()).items[0]
+    const at = new Date(first.startedAt).toISOString()
+    const before = await (await fetch(`${base}/call-stats?from=2000-01-01T00:00:00Z&to=${at}`)).json()
+    const from = await (await fetch(`${base}/call-stats?from=${at}&to=2100-01-01T00:00:00Z`)).json()
+    const all = await (await fetch(`${base}/call-stats?from=2000-01-01T00:00:00Z&to=2100-01-01T00:00:00Z`)).json()
+    expect(before.callCount).toBe(0)
+    expect(from.callCount).toBe(all.callCount)
+  }, 20_000)
+
+  test("the stage chain and providers stay within what was measured", async () => {
+    const s = await stats()
+    expect(s.chain.length).toBeGreaterThan(0)
+    for (const scope of [s, ...s.agents]) {
+      for (const st of scope.chain) {
+        expect(st.turns).toBeLessThanOrEqual(scope.anatomyTurns)
+        expect(st.maxMs).toBeGreaterThanOrEqual(st.medianMs)
+      }
+    }
+    for (const a of s.agents) {
+      for (const pu of a.providers) {
+        expect(pu.callCount).toBeLessThanOrEqual(a.callCount)
+        expect(pu.roles.length).toBeGreaterThan(0)
+      }
+      expect(a.answerTurns).toBe(s.answers.values.filter((v: { agentKey: string | null }) => v.agentKey === a.key).length)
+    }
+    // The console and realtime sessions name no agent; their realtime turns are that row's, nobody else's.
+    const realtime = s.agents.filter((a: { chain: { stage: string }[] }) => a.chain.some((c) => c.stage === "realtime"))
+    expect(realtime.map((a: { key: string | null }) => a.key)).toEqual([null])
+  })
 })

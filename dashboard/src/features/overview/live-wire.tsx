@@ -17,7 +17,7 @@ import { fmtMs } from "@/features/call/call-model"
 // run only on links that carried a call still open at the last read.
 
 export type WireNode = { id: string; kind: "callers" | "phone" | "media" | "agent" | "provider"; title: string; sub: string; provider?: string; cloud?: boolean; issues?: number; tip?: string; y?: number }
-export type WireLink = { id: string; from: string; to: string; calls: number; ms: number | null; msLabel?: string; issues: boolean; live: boolean; tip: string }
+export type WireLink = { id: string; from: string; to: string; calls: number | null; ms: number | null; msLabel?: string; issues: boolean; live: boolean; tip: string }
 export type TrackerRow = { layer: string; blocks: { color: string; tooltip: string }[] }
 
 const kindIcon: Record<WireNode["kind"], Icon> = { callers: Users, phone: Phone, media: HardDrives, agent: Robot, provider: Robot }
@@ -53,7 +53,8 @@ function WireNodeView({ id, data }: NodeProps<FlowNode<WireNode>>) {
 function WireEdgeView({ id, sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition, data }: EdgeProps<FlowEdge<WireLink>>) {
   const [path, lx, ly] = getBezierPath({ sourceX, sourceY, sourcePosition, targetX, targetY, targetPosition })
   const d = data!
-  const width = Math.min(1.5 + d.calls * 0.7, 10)
+  // An unknown count draws the thinnest line, never one sized as zero calls.
+  const width = Math.min(1.5 + (d.calls ?? 0) * 0.7, 10)
   return (
     <>
       <BaseEdge id={id} path={path} style={{ strokeWidth: width, stroke: d.issues ? "var(--destructive)" : "var(--muted-foreground)", strokeOpacity: d.issues ? 0.55 : 0.28 }} />
@@ -148,7 +149,7 @@ export function LiveWire({ nodes, links, live, trackers }: { nodes: WireNode[]; 
               fromRef={ref(`${l.from}:out`)}
               toRef={ref(`${l.to}:in`)}
               pathOpacity={0}
-              pathWidth={Math.min(2 + l.calls * 0.6, 6)}
+              pathWidth={Math.min(2 + (l.calls ?? 0) * 0.6, 6)}
               gradientStartColor="var(--primary)"
               gradientStopColor="var(--primary)"
               duration={2.6}
