@@ -99,30 +99,6 @@
     "exclusion": "Reads calls only through the API; preview.ts is the dev-only design preview."
   },
   {
-    "file": "dashboard/src/features/egress/egress-page.tsx",
-    "fixtures": [
-      "egress.json"
-    ],
-    "assets": [],
-    "browserStorage": false,
-    "operations": [
-      "getEgress"
-    ],
-    "assetNotes": {}
-  },
-  {
-    "file": "dashboard/src/features/ingress/ingress-page.tsx",
-    "fixtures": [
-      "ingress.json"
-    ],
-    "assets": [],
-    "browserStorage": false,
-    "operations": [
-      "getIngress"
-    ],
-    "assetNotes": {}
-  },
-  {
     "file": "dashboard/src/features/issues/issue-state.ts",
     "fixtures": [],
     "assets": [],
@@ -255,7 +231,6 @@
   {
     "file": "dashboard/src/features/sip/sip-page.tsx",
     "fixtures": [
-      "sip.json",
       "sip-test.json"
     ],
     "assets": [
@@ -333,13 +308,17 @@
     "fixtures": [
       "calls-query",
       "fixtures",
+      "livekit",
       "summaries"
     ],
     "assets": [],
     "browserStorage": false,
     "operations": [
-      "listCalls",
-      "getCall"
+      "getCall",
+      "getEgress",
+      "getIngress",
+      "getSip",
+      "listCalls"
     ],
     "assetNotes": {},
     "exclusion": "The mock API itself, answering the contract's paths."
@@ -386,5 +365,22 @@
     ],
     "assetNotes": {},
     "exclusion": "The mock API serving the archive and tags the console keeps in this browser, as the server will store them."
+  },
+  {
+    "file": "dashboard/src/mocks/livekit.ts",
+    "fixtures": [
+      "egress.json",
+      "ingress.json",
+      "sip.json"
+    ],
+    "assets": [],
+    "browserStorage": false,
+    "operations": [
+      "getEgress",
+      "getIngress",
+      "getSip"
+    ],
+    "assetNotes": {},
+    "exclusion": "The mock API's adapter from the captured LiveKit reads to contract shape."
   }
 ]

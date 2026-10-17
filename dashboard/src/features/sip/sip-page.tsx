@@ -7,7 +7,10 @@ import { Command, CommandEmpty, CommandInput, CommandItem, CommandList } from "@
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { cn } from "@/lib/utils"
-import real from "@/mocks/sip.json"
+import { useQuery } from "@tanstack/react-query"
+import { QueryState } from "@/components/page-state"
+import { sipQuery } from "@/lib/api"
+// A hand-written layout example (?data=test), not API data: it shows the page with many trunks.
 import synthetic from "@/mocks/sip-test.json"
 import { type Room, RoomDrawer, data } from "../media-server/room-drawer"
 import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput, InputGroupText } from "@/components/ui/input-group"
@@ -112,9 +115,15 @@ const clock = (ms: number) => new Date(ms).toLocaleString([], { month: "short", 
 const secs = (s: number) => (s >= 60 ? `${Math.floor(s / 60)}m ${String(Math.round(s % 60)).padStart(2, "0")}s` : `${s.toFixed(1)} s`)
 
 export function SipPage() {
-  const [tab, setTab] = useUrlState("tab", "paths")
   const test = new URLSearchParams(window.location.search).get("data") === "test"
-  const sip = (test ? synthetic : real) as SipData
+  const read = useQuery({ ...sipQuery(), enabled: !test })
+  if (test) return <SipView sip={synthetic as SipData} test />
+  if (!read.data) return <QueryState icon={PhoneIncoming} what="the phone bridge" query={read} />
+  return <SipView sip={read.data} test={false} />
+}
+
+function SipView({ sip, test }: { sip: SipData; test: boolean }) {
+  const [tab, setTab] = useUrlState("tab", "paths")
   const calls = test ? [] : data.rooms.map((r, k) => ({ ...r, n: k + 1 })).filter((r) => r.participants.some((p) => p.kind === "sip"))
   const [openRoom, setOpenRoom] = useUrlPick<Room>("room", calls, (r) => r.sid)
   const hints = calls.flatMap((r) => r.participants.filter((p) => p.sip).map((p) => ({ trunkId: p.sip!.trunkId, twilio: Boolean((p.sip as { twilio?: boolean }).twilio) })))

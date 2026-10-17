@@ -19,7 +19,8 @@ import { cn } from "@/lib/utils"
 import { ApiError, type Call, type CallSummary, type CallTotals, callCountQuery, callPagesQuery, callQuery, latestCallQuery } from "@/lib/api"
 import { serverOperators, toServerParams } from "./call-filters"
 import { usePreviewCall } from "@/mocks/preview"
-import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty"
+import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty"
+import { PageState, errorText } from "@/components/page-state"
 import { Spinner } from "@/components/ui/spinner"
 import { CallMeta } from "@/features/call/call-meta"
 import { CallTags, TagChip, useCallTags } from "@/features/call/call-tags"
@@ -335,9 +336,9 @@ export function CallsPage() {
   const known = (n: number | null | undefined) => (n === null || n === undefined ? "?" : String(n))
   const flagged = t && t.issues.high !== null && t.issues.medium !== null ? t.issues.high + t.issues.medium : null
 
-  if (latest.isPending) return <PageState loading title="Loading calls" />
-  if (latest.isError) return <PageState title="Calls could not be loaded" detail={errorText(latest.error)} retry={() => void latest.refetch()} />
-  if (!latest.data && !preview) return <PageState title="No calls yet" detail="Calls appear here once VoiceGateway receives a LiveKit webhook or an agent upload for this project." />
+  if (latest.isPending) return <PageState icon={PhoneCall} loading title="Loading calls" />
+  if (latest.isError) return <PageState icon={PhoneCall} title="Calls could not be loaded" detail={errorText(latest.error)} retry={() => void latest.refetch()} />
+  if (!latest.data && !preview) return <PageState icon={PhoneCall} title="No calls yet" detail="Calls appear here once VoiceGateway receives a LiveKit webhook or an agent upload for this project." />
 
   return (
     <div className="mx-auto max-w-[1200px] space-y-8">
@@ -392,8 +393,8 @@ export function CallsPage() {
           <p className="text-[12px] text-amber-700 dark:text-amber-400">{`Not applied, the server cannot filter on: ${server.dropped.join(", ")}.`}</p>
         )}
         {server.nothing && <p className="text-[12px] text-muted-foreground">These filters rule each other out, so no call can match.</p>}
-        {!server.nothing && list.isError && <PageState title="Calls could not be loaded" detail={errorText(list.error)} retry={() => void list.refetch()} />}
-        {!server.nothing && list.isPending && <PageState loading title="Loading calls" />}
+        {!server.nothing && list.isError && <PageState icon={PhoneCall} title="Calls could not be loaded" detail={errorText(list.error)} retry={() => void list.refetch()} />}
+        {!server.nothing && list.isPending && <PageState icon={PhoneCall} loading title="Loading calls" />}
         {(server.nothing || list.isSuccess) && (
         <DataTable
           key={view}
@@ -449,28 +450,6 @@ export function CallsPage() {
         </SheetContent>
       </Sheet>
     </div>
-  )
-}
-
-const errorText = (e: unknown) => (e instanceof ApiError && e.status === 0 ? "The VoiceGateway API did not answer. Check that web is running and reachable from this page." : e instanceof Error ? e.message : "Unknown error")
-
-// The whole page while its data is loading, could not be read, or holds nothing yet.
-function PageState({ loading, title, detail, retry }: { loading?: boolean; title: string; detail?: string; retry?: () => void }) {
-  return (
-    <Empty className="mx-auto max-w-[1200px]">
-      <EmptyHeader>
-        <EmptyMedia variant="icon">{loading ? <Spinner /> : <PhoneCall />}</EmptyMedia>
-        <EmptyTitle>{title}</EmptyTitle>
-        {detail && <EmptyDescription>{detail}</EmptyDescription>}
-      </EmptyHeader>
-      {retry && (
-        <EmptyContent>
-          <Button size="sm" variant="outline" onClick={retry}>
-            Try again
-          </Button>
-        </EmptyContent>
-      )}
-    </Empty>
   )
 }
 

@@ -8,28 +8,19 @@ import { DataGridColumnHeader } from "@/components/reui/data-grid/data-grid-colu
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { cn } from "@/lib/utils"
-import raw from "@/mocks/egress.json"
+import { useQuery } from "@tanstack/react-query"
+import { QueryState } from "@/components/page-state"
+import { egressQuery } from "@/lib/api"
+import type { Egress as EgressData } from "@/lib/api-types"
 import { useUrlState } from "@/lib/url-state"
 
 // Recordings and streams out of the project's rooms, as ListEgress returns them. ListEgress keeps only
 // recent egress, so history needs LiveKit's egress webhooks (Phase 2). The request is kept as its shape
 // only: where it writes and in what format, never the storage credentials.
 
-type Egress = {
-  id: string
-  room: string | null
-  status: string
-  startedAt: number | null
-  endedAt: number | null
-  error: string | null
-  details: string | null
-  request: { kind: string | null; audioOnly: boolean; fileType: string | null; storage: string | null; outputs: string[] } | null
-  file: { name: string; sizeBytes: number; durationS: number; bucketHost: string | null; playable: string | null } | null
-  history: { t: number; status: string }[]
-  sampled: boolean
-}
-type EgressData = { source: string; egress: Egress[]; rejected: { t: number; case: string; error: string }[] }
-const d = raw as unknown as EgressData
+type Egress = EgressData["egress"][number]
+// RFC 3339 to Unix seconds, keeping an unreported time unknown.
+const sec = (t: string | null) => (t === null ? null : Date.parse(t) / 1000)
 
 const docs = "https://docs.livekit.io"
 const outcome = (s: string) => s.replace("EGRESS_", "").replace("_", " ").toLowerCase()
@@ -46,10 +37,19 @@ const kindName: Record<string, string> = { roomComposite: "Room recording", web:
 const clock = (s: number) => new Date(s * 1000).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })
 const secs = (s: number) => (s >= 60 ? `${Math.floor(s / 60)}m ${String(Math.round(s % 60)).padStart(2, "0")}s` : `${s.toFixed(1)} s`)
 const size = (b: number) => (b >= 1024 ** 2 ? `${(b / 1024 ** 2).toFixed(1)} MB` : `${Math.round(b / 1024)} KB`)
-// A file that recorded audio but reached no bucket: the length is known, the bytes are gone.
-const lost = (e: Egress) => e.status === "EGRESS_FAILED" && e.file !== null && e.file.sizeBytes === 0 && e.file.durationS > 0
+// A file that recorded audio but reached no bucket: the length is known, the bytes are gone. An
+// unreported size or length is not evidence of a loss.
+const lost = (e: Egress) => e.status === "EGRESS_FAILED" && e.file !== null && e.file.sizeBytes === 0 && e.file.durationS !== null && e.file.durationS > 0
+const kept = (e: Egress) => e.status === "EGRESS_COMPLETE" && e.file !== null && e.file.sizeBytes !== null && e.file.sizeBytes > 0
 
-const length = (e: Egress) => (e.file?.durationS ? e.file.durationS : e.startedAt && e.endedAt ? e.endedAt - e.startedAt : null)
+const length = (e: Egress) => {
+  if (e.file?.durationS) return e.file.durationS
+  const start = sec(e.startedAt)
+  const end = sec(e.endedAt)
+  return start !== null && end !== null ? end - start : null
+}
+// The known seconds of a set of files, and whether any length was unreported.
+const audio = (list: Egress[]) => ({ s: list.reduce((a, e) => a + (e.file?.durationS ?? 0), 0), partial: list.some((e) => e.file?.durationS === null) })
 const right = { headerClassName: "[&>div]:w-full [&>div]:justify-end", cellClassName: "text-right" }
 const egressColumns: Columns<Egress> = [
   {
@@ -99,9 +99,9 @@ const egressColumns: Columns<Egress> = [
   },
   {
     id: "started",
-    accessorFn: (e) => e.startedAt ?? -1,
+    accessorFn: (e) => sec(e.startedAt) ?? -1,
     header: ({ column }) => <DataGridColumnHeader title="Started" column={column} />,
-    cell: ({ row }) => <span className="text-[13px] tnum">{row.original.startedAt ? clock(row.original.startedAt) : "unknown"}</span>,
+    cell: ({ row }) => <span className="text-[13px] tnum">{row.original.startedAt ? clock(sec(row.original.startedAt)!) : "unknown"}</span>,
   },
   {
     id: "length",
@@ -115,7 +115,7 @@ const egressColumns: Columns<Egress> = [
     accessorFn: (e) => e.file?.sizeBytes ?? -1,
     header: ({ column }) => <DataGridColumnHeader title="File" column={column} />,
     meta: right,
-    cell: ({ row: { original: e } }) => <span className={cn("text-[13px] tnum", lost(e) && "text-destructive")}>{!e.file ? "none" : lost(e) ? "lost" : size(e.file.sizeBytes)}</span>,
+    cell: ({ row: { original: e } }) => <span className={cn("text-[13px] tnum", lost(e) && "text-destructive")}>{!e.file ? "none" : lost(e) ? "lost" : e.file.sizeBytes === null ? "unknown" : size(e.file.sizeBytes)}</span>,
   },
 ]
 const egressFields: Field<Egress>[] = [
@@ -143,7 +143,7 @@ function checks(list: Egress[], rejected: EgressData["rejected"]): Check[] {
       severity: "high",
       title: `${failed.length} ${failed.length === 1 ? "recording" : "recordings"} lost on upload`,
       where: failed.map((e) => e.id).join(", "),
-      why: `LiveKit recorded ${secs(failed.reduce((a, e) => a + e.file!.durationS, 0))} of audio, then the upload to the bucket failed${sig ? " with 403 SignatureDoesNotMatch" : ""}, so no file was stored.${sig ? " In our test this was Google Cloud Storage reached through its S3 endpoint with an HMAC key." : ""}`,
+      why: `LiveKit recorded ${secs(audio(failed).s)} of audio, then the upload to the bucket failed${sig ? " with 403 SignatureDoesNotMatch" : ""}, so no file was stored.${sig ? " In our test this was Google Cloud Storage reached through its S3 endpoint with an HMAC key." : ""}`,
       fix: sig ? "Use the gcp upload with a service account key for Google Cloud Storage; check the key, bucket and region for S3." : "Check the bucket name, credentials and region in the storage config.",
       doc: `${docs}/transport/media/ingress-egress/egress/outputs/`,
     })
@@ -194,7 +194,7 @@ function StatCard({ icon: I, value, label, children, alert }: { icon: Icon; valu
 }
 
 function Detail({ e }: { e: Egress }) {
-  const t0 = e.history[0]?.t
+  const t0 = sec(e.history[0]?.at ?? null)
   return (
     <div className="grid gap-6 sm:grid-cols-2">
       <div className="space-y-3 text-[13px]">
@@ -222,21 +222,24 @@ function Detail({ e }: { e: Egress }) {
               <AudioPlayerButton item={{ id: e.id, src: e.file.playable }} variant="default" size="icon-sm" className="rounded-full" />
               <AudioPlayerProgress className="flex-1" />
               <span className="text-[12px] text-muted-foreground tnum">
-                <AudioPlayerTime /> / {secs(e.file.durationS)}
+                <AudioPlayerTime /> / {e.file.durationS === null ? "unknown" : secs(e.file.durationS)}
               </span>
             </div>
           </AudioPlayerProvider>
         )}
       </div>
       <div className="space-y-2">
-        <p className="text-[12px] text-muted-foreground">{e.sampled ? "Status changes, read every 2 s" : "Final status only, read once after it ended"}</p>
+        <p className="text-[12px] text-muted-foreground">{e.sampled === null ? "How often the status was read is unknown" : e.sampled ? "Status changes, read every 2 s" : "Final status only, read once after it ended"}</p>
         <ol className="space-y-1.5 text-[13px]">
-          {e.history.map((h) => (
-            <li key={h.status} className="flex items-center gap-2">
-              <span className={cn("rounded-full px-2 py-0.5 text-[11px]", statusTone(h.status))}>{outcome(h.status)}</span>
-              <span className="text-muted-foreground tnum">{e.sampled && t0 !== undefined ? `+${(h.t - t0).toFixed(0)} s` : clock(h.t)}</span>
-            </li>
-          ))}
+          {e.history.map((h) => {
+            const t = sec(h.at)
+            return (
+              <li key={h.status} className="flex items-center gap-2">
+                <span className={cn("rounded-full px-2 py-0.5 text-[11px]", statusTone(h.status))}>{outcome(h.status)}</span>
+                <span className="text-muted-foreground tnum">{t === null ? "time unknown" : e.sampled && t0 !== null ? `+${(t - t0).toFixed(0)} s` : clock(t)}</span>
+              </li>
+            )
+          })}
         </ol>
       </div>
     </div>
@@ -245,12 +248,19 @@ function Detail({ e }: { e: Egress }) {
 
 export function EgressPage() {
   const [tab, setTab] = useUrlState("tab", "jobs")
+  const read = useQuery(egressQuery())
+  if (!read.data) return <QueryState icon={CloudArrowUp} what="egress" query={read} />
+  const d = read.data
   const list = d.egress
   const list2 = checks(list, d.rejected)
   const by = (s: string) => list.filter((e) => e.status === s).length
-  const kept = list.filter((e) => e.status === "EGRESS_COMPLETE" && e.file && e.file.sizeBytes > 0)
-  const keptS = kept.reduce((a, e) => a + e.file!.durationS, 0)
-  const lostS = list.filter(lost).reduce((a, e) => a + e.file!.durationS, 0)
+  const stored = audio(list.filter(kept))
+  const gone = audio(list.filter(lost))
+  // A stored file whose length nobody reported is not counted as zero: the figures say they are a
+  // floor. (A lost file always has a length; that is how it is known to be lost.)
+  const atLeast = stored.partial ? "at least " : ""
+  const keptS = stored.s
+  const lostS = gone.s
   const sev = (s: Check["severity"]) => list2.filter((c) => c.severity === s).length
 
   return (
@@ -273,9 +283,9 @@ export function EgressPage() {
             <CategoryBar values={[by("EGRESS_COMPLETE"), by("EGRESS_FAILED"), by("EGRESS_ABORTED")]} colors={["accent", "alert", "amber"]} showLabels={false} />
             <p className="mt-1.5 text-[11px] text-muted-foreground">{`${by("EGRESS_COMPLETE")} complete · ${by("EGRESS_FAILED")} failed · ${by("EGRESS_ABORTED")} aborted`}</p>
           </StatCard>
-          <StatCard icon={Waveform} value={secs(keptS + lostS)} label="Audio recorded" alert={lostS > 0}>
+          <StatCard icon={Waveform} value={`${atLeast}${secs(keptS + lostS)}`} label="Audio recorded" alert={lostS > 0}>
             <CategoryBar values={[keptS, lostS]} colors={["accent", "alert"]} showLabels={false} />
-            <p className="mt-1.5 text-[11px] text-muted-foreground">{`${secs(keptS)} stored · ${secs(lostS)} lost on upload`}</p>
+            <p className="mt-1.5 text-[11px] text-muted-foreground">{`${atLeast}${secs(keptS)} stored · ${secs(lostS)} lost on upload`}</p>
           </StatCard>
           <StatCard icon={Prohibit} value={d.rejected.length} label="Rejected at start">
             <p className="text-[11px] text-muted-foreground">{d.rejected.length ? "Not in ListEgress; seen because we sent it" : "None seen"}</p>

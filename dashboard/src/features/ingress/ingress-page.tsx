@@ -7,36 +7,21 @@ import { DataGridColumnHeader } from "@/components/reui/data-grid/data-grid-colu
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { cn } from "@/lib/utils"
-import raw from "@/mocks/ingress.json"
+import { useQuery } from "@tanstack/react-query"
+import { QueryState } from "@/components/page-state"
+import { ingressQuery } from "@/lib/api"
+import type { Ingress as IngressData } from "@/lib/api-types"
 import { useUrlState } from "@/lib/url-state"
 
 // Media pushed or pulled into the project's rooms, as ListIngress returns it. An endpoint stays listed
 // until deleted, but its state covers only the current or last session; earlier sessions need LiveKit's
 // ingress webhooks (Phase 2). The stream key is a credential and is never read into the dashboard.
 
-type Media = { mimeType?: string; averageBitrate?: number; channels?: number; sampleRate?: number; width?: number; height?: number; framerate?: number }
-type Ingress = {
-  id: string
-  name: string
-  inputType: string
-  url: string
-  room: string
-  participant: string
-  transcoding: boolean
-  reusable: boolean
-  enabled: boolean
-  status: string
-  error: string | null
-  startedAt: number | null
-  endedAt: number | null
-  audioIn: Media | null
-  videoIn: Media | null
-  createdAt: number
-  published: { type: string; mimeType: string | null; source: string | null }[]
-  history: { t: number; status: string }[]
-}
-type IngressData = { source: string; ingress: Ingress[] }
-const d = raw as unknown as IngressData
+type Ingress = IngressData["ingress"][number]
+// Either input track: audio has channels and sample rate, video has size and frame rate.
+type Media = (Partial<NonNullable<Ingress["audioIn"]>> & Partial<NonNullable<Ingress["videoIn"]>>) | null
+// RFC 3339 to Unix seconds, keeping an unreported time unknown.
+const sec = (t: string | null) => (t === null ? null : Date.parse(t) / 1000)
 // Every endpoint here came from our own test; the project has none of its own.
 const TEST = true
 
@@ -58,7 +43,11 @@ const media = (m: Media | null) =>
   m?.mimeType
     ? [codec(m.mimeType), m.channels && `${m.channels === 2 ? "stereo" : m.channels === 1 ? "mono" : `${m.channels} ch`}`, m.sampleRate && `${m.sampleRate / 1000} kHz`, m.width && `${m.width}x${m.height}`].filter(Boolean).join(", ")
     : null
-const session = (e: Ingress) => (e.startedAt && e.endedAt ? e.endedAt - e.startedAt : null)
+const session = (e: Ingress) => {
+  const start = sec(e.startedAt)
+  const end = sec(e.endedAt)
+  return start !== null && end !== null ? end - start : null
+}
 
 const right = { headerClassName: "[&>div]:w-full [&>div]:justify-end", cellClassName: "text-right" }
 const ingressColumns: Columns<Ingress> = [
@@ -93,9 +82,9 @@ const ingressColumns: Columns<Ingress> = [
   },
   {
     id: "started",
-    accessorFn: (e) => e.startedAt ?? -1,
+    accessorFn: (e) => sec(e.startedAt) ?? -1,
     header: ({ column }) => <DataGridColumnHeader title="Last session" column={column} />,
-    cell: ({ row }) => <span className="text-[13px] tnum">{row.original.startedAt ? clock(row.original.startedAt) : "none"}</span>,
+    cell: ({ row }) => <span className="text-[13px] tnum">{row.original.startedAt ? clock(sec(row.original.startedAt)!) : "none"}</span>,
   },
   {
     id: "length",
@@ -179,7 +168,7 @@ function StatCard({ icon: I, value, label, children, alert }: { icon: Icon; valu
 }
 
 function Detail({ e }: { e: Ingress }) {
-  const t0 = e.history[0]?.t
+  const t0 = sec(e.history[0]?.at ?? null)
   const out = e.published.map((t) => codec(t.mimeType)).filter(Boolean)
   return (
     <div className="grid gap-6 sm:grid-cols-2">
@@ -198,21 +187,28 @@ function Detail({ e }: { e: Ingress }) {
             {e.audioIn?.averageBitrate ? `, ${Math.round(e.audioIn.averageBitrate / 1000)} kbps average` : ""}
           </dd>
           <dt className="text-muted-foreground">Into the room</dt>
-          <dd>{out.length ? `${out.join(", ")}${e.transcoding ? ", transcoded" : ""}` : "nothing published"}</dd>
+          <dd>{out.length ? `${out.join(", ")}${e.transcoding ? ", transcoded" : e.transcoding === null ? ", transcoding unknown" : ""}` : "nothing published"}</dd>
           <dt className="text-muted-foreground">Endpoint</dt>
-          <dd>{[e.reusable ? "reusable" : "single use", e.enabled ? "enabled" : "disabled", e.transcoding ? "transcoding on" : "transcoding off"].join(", ")}</dd>
+          <dd>{[
+            e.reusable === null ? "reuse unknown" : e.reusable ? "reusable" : "single use",
+            e.enabled === null ? "enabled unknown" : e.enabled ? "enabled" : "disabled",
+            e.transcoding === null ? "transcoding unknown" : e.transcoding ? "transcoding on" : "transcoding off",
+          ].join(", ")}</dd>
         </dl>
         {e.audioIn?.averageBitrate && <p className="text-[12px] text-muted-foreground">The average bitrate appeared only after the session ended; while publishing, ListIngress reported none.</p>}
       </div>
       <div className="space-y-2">
         <p className="text-[12px] text-muted-foreground">Status changes, read every 2 s</p>
         <ol className="space-y-1.5 text-[13px]">
-          {e.history.map((h, k) => (
-            <li key={k} className="flex items-center gap-2">
-              <span className={cn("rounded-full px-2 py-0.5 text-[11px]", statusTone(h.status))}>{statusName(h.status)}</span>
-              <span className="text-muted-foreground tnum">{t0 !== undefined ? `+${(h.t - t0).toFixed(0)} s` : clock(h.t)}</span>
-            </li>
-          ))}
+          {e.history.map((h, k) => {
+            const t = sec(h.at)
+            return (
+              <li key={k} className="flex items-center gap-2">
+                <span className={cn("rounded-full px-2 py-0.5 text-[11px]", statusTone(h.status))}>{statusName(h.status)}</span>
+                <span className="text-muted-foreground tnum">{t === null ? "time unknown" : t0 !== null ? `+${(t - t0).toFixed(0)} s` : clock(t)}</span>
+              </li>
+            )
+          })}
         </ol>
       </div>
     </div>
@@ -221,6 +217,9 @@ function Detail({ e }: { e: Ingress }) {
 
 export function IngressPage() {
   const [tab, setTab] = useUrlState("tab", "endpoints")
+  const read = useQuery(ingressQuery())
+  if (!read.data) return <QueryState icon={DownloadSimple} what="ingress" query={read} />
+  const d = read.data
   const list = d.ingress
   const list2 = checks(list)
   const by = (s: string) => list.filter((e) => e.status === s).length

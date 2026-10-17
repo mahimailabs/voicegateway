@@ -1,15 +1,16 @@
+import type { Sip } from "@/lib/api-types"
 import { type Path, hopIcons } from "./call-path"
 
 // The SIP setup of a project as read from ListSIPInboundTrunk, ListSIPOutboundTrunk,
 // ListSIPDispatchRule and ListPhoneNumbers, and what it means: which path each number takes, what is
 // wrong with each trunk and rule, and the hop-by-hop path for a chosen number or outbound trunk.
 
-type Media = { encryption: string | null; codecs: string[]; onlyListedCodecs: boolean; mediaTimeout: string | null }
-export type Inbound = { id: string; numbers: string[]; allowedNumbers: number; allowedAddresses: number; auth: boolean; krisp: boolean; media: Media }
-export type Outbound = { id: string; address: string; transport: string; numbers: string[]; destinationCountry: string | null; auth: boolean; headerNames: string[]; media: Media }
-export type Rule = { id: string; type: string | null; prefixSet: boolean; pin: boolean; trunkIds: string[]; hidePhoneNumber: boolean; inboundNumbers: number; agents: number; media: Media }
-export type SipData = { test?: boolean; readAt: string; source: string; livekitNumbers: { number: string; status: string | null; ruleIds: string[] }[]; inbound: Inbound[]; outbound: Outbound[]; rules: Rule[] }
-// What watched calls tell us about a trunk: whether a call through it carried sip.twilio.* attributes.
+// The contract's SIP read (getSip). test marks the hand-written layout example, which is not API data.
+export type SipData = Sip & { test?: boolean }
+export type Inbound = Sip["inbound"][number]
+export type Outbound = Sip["outbound"][number]
+export type Rule = Sip["rules"][number]
+
 export type CallHint = { trunkId: string | null; twilio: boolean }
 
 const docs = "https://docs.livekit.io"
@@ -87,13 +88,14 @@ export function checks(d: SipData, rows: Route[]): Check[] {
     out.push({ severity: "high", title: `Calls to ${r.number} are rejected`, where: r.trunk?.id ?? r.number, why: r.livekit ? "This LiveKit number has no dispatch rule assigned." : "No dispatch rule matches this trunk, so LiveKit has nowhere to put the caller.", fix: r.livekit ? "Assign a dispatch rule to the number." : "Create a dispatch rule bound to this trunk, or one with no trunk filter.", doc: `${docs}/telephony/accepting-calls/dispatch-rule/` })
   for (const t of d.inbound) {
     const rs = rulesFor(d, t)
-    if (rs.filter((r) => !r.pin).length > 1)
+    if (rs.filter((r) => r.pin === false).length > 1)
       out.push({ severity: "medium", title: `${rs.length} dispatch rules match one trunk with no PIN to tell them apart`, where: t.id, why: `Rules ${rs.map((r) => r.id).join(", ")} all match calls on this trunk. Multiple rules on a trunk are meant to differ by PIN.`, fix: "Bind each rule to its own trunk, or give each a PIN.", doc: `${docs}/telephony/accepting-calls/dispatch-rule/` })
   }
   for (const n of [...new Set(rows.filter((r) => r.duplicate).map((r) => r.number))])
     out.push({ severity: "medium", title: `${n} is on more than one inbound trunk`, where: rows.filter((r) => r.number === n).map((r) => r.trunk?.id).join(", "), why: "Which trunk, and so which rule and agent, takes the call is not obvious from the config.", fix: "Keep each number on one inbound trunk.", doc: `${docs}/telephony/accepting-calls/inbound-trunk/` })
   for (const t of d.inbound) {
-    if (!t.auth && !t.allowedAddresses && !t.allowedNumbers)
+    // Each must be reported off: an unreported setting is not evidence the trunk is open.
+    if (t.auth === false && t.allowedAddresses === 0 && t.allowedNumbers === 0)
       out.push({ severity: "high", title: "Inbound trunk accepts calls from any source", where: t.id, why: "No IP allowlist, no auth and no allowed caller numbers. Anything that sends an INVITE for these numbers reaches the agent, and every such call spends model minutes.", fix: "Set allowed_addresses to your provider's signalling IPs (LiveKit enables the field on request), or auth if your provider supports it.", doc: `${docs}/telephony/accepting-calls/inbound-trunk/` })
     if (enc(t.media.encryption) === "RTP")
       out.push({ severity: "medium", title: "Inbound calls are not encrypted", where: t.id, why: "Media encryption is off, so phone audio travels as plain RTP between the provider and LiveKit.", fix: "Enable SRTP and TLS on the provider, then set media encryption to allow or require on the trunk.", doc: `${docs}/telephony/features/secure-trunking/` })
@@ -109,13 +111,13 @@ export function checks(d: SipData, rows: Route[]): Check[] {
       out.push({ severity: "low", title: "Outbound calls are not region pinned", where: t.id, why: "No destination_country, so calls leave from the region nearest the API call. This matters only where regulation keeps calls in-country.", fix: "Set destination_country on the trunk if calls must stay in one country.", doc: `${docs}/telephony/features/region-pinning/` })
   }
   for (const r of d.rules) {
-    if (r.type === "dispatchRuleIndividual" && !r.hidePhoneNumber)
+    if (r.type === "dispatchRuleIndividual" && r.hidePhoneNumber === false)
       out.push({ severity: "medium", title: "Room names contain the caller's phone number", where: r.id, why: "An individual rule names each room after the caller's number. Room names land in logs and traces and PII redaction does not remove them.", fix: "Route each call to a predetermined room ID, and set hide_phone_number on the rule.", doc: `${docs}/telephony/accepting-calls/dispatch-rule/` })
     if (!r.trunkIds.length && d.inbound.length > 1)
       out.push({ severity: "low", title: "Dispatch rule matches every trunk", where: r.id, why: "With no trunk_ids, calls on any trunk can use this rule.", fix: "Bind the rule to its trunk.", doc: `${docs}/telephony/accepting-calls/dispatch-rule/` })
-    if (r.type === "dispatchRuleDirect" && !r.pin)
+    if (r.type === "dispatchRuleDirect" && r.pin === false)
       out.push({ severity: "medium", title: "Callers share one room", where: r.id, why: "A direct rule with no PIN puts unrelated callers in the same room, where they can hear each other.", fix: "Use an individual rule, or a callee rule with randomize on.", doc: `${docs}/telephony/accepting-calls/dispatch-rule/` })
-    if (!r.agents)
+    if (r.agents === 0)
       out.push({ severity: "low", title: "Dispatch rule sends no agent", where: r.id, why: "Callers wait in an empty room unless something else dispatches an agent.", fix: "Add the agent to the rule's room_config.", doc: `${docs}/telephony/accepting-calls/dispatch-rule/` })
   }
   const rank = { high: 0, medium: 1, low: 2 }
@@ -135,15 +137,15 @@ export function inboundPath(p: InPath, list: Check[]): Path {
     hops: [
       { icon: hopIcons.phone, title: "Caller", sub: "phone network" },
       { icon: hopIcons.provider, title: names.length === 1 ? names[0] : `${names.length} providers`, sub: p.livekit ? "LiveKit number" : known ? "provider, inferred" : "not all reported", tags: [p.wildcard ? "any number" : nums.length === 1 ? nums[0] : `${nums.length} numbers`] },
-      { icon: hopIcons.sip, title: "LiveKit SIP", sub: t?.id ?? "managed by LiveKit", tags: t ? [t.krisp ? "Krisp on" : "Krisp off"] : undefined, issues: issuesFor(list, [t?.id, ...nums]) },
+      { icon: hopIcons.sip, title: "LiveKit SIP", sub: t?.id ?? "managed by LiveKit", tags: t ? [t.krisp === null ? "Krisp unknown" : t.krisp ? "Krisp on" : "Krisp off"] : undefined, issues: issuesFor(list, [t?.id, ...nums]) },
       {
         icon: hopIcons.room,
         title: !rule ? "No rule" : rule.type === "dispatchRuleIndividual" ? "Room per caller" : rule.type === "dispatchRuleDirect" ? "Shared room" : "Room per number",
         sub: p.rules.length > 1 ? `${rule.id} +${p.rules.length - 1}` : rule?.id,
-        tags: rule ? [rule.pin ? "PIN" : "no PIN"] : undefined,
+        tags: rule ? [rule.pin === null ? "PIN unknown" : rule.pin ? "PIN" : "no PIN"] : undefined,
         issues: issuesFor(list, p.rules.map((r) => r.id)),
       },
-      { icon: hopIcons.agent, title: rule?.agents ? "Agent" : "No agent", sub: rule?.agents ? "name withheld" : undefined },
+      { icon: hopIcons.agent, title: rule?.agents ? "Agent" : rule?.agents === 0 ? "No agent" : "Agent unknown", sub: rule?.agents ? "name withheld" : undefined },
     ],
     links: [
       { label: "PSTN", secure: null, note: "The phone network leg, outside what LiveKit reports." },
@@ -162,7 +164,7 @@ export function outboundPath(t: Outbound, list: Check[]): Path {
     hops: [
       { icon: hopIcons.agent, title: "Agent", sub: "dials out" },
       { icon: hopIcons.room, title: "Room", sub: "CreateSIPParticipant" },
-      { icon: hopIcons.sip, title: "LiveKit SIP", sub: t.id, tags: [t.auth ? "auth set" : "no auth"], issues: issuesFor(list, [t.id]) },
+      { icon: hopIcons.sip, title: "LiveKit SIP", sub: t.id, tags: [t.auth === null ? "auth unknown" : t.auth ? "auth set" : "no auth"], issues: issuesFor(list, [t.id]) },
       { icon: hopIcons.provider, title: providerOf(t.address) ?? "Provider", sub: t.address, tags: [t.numbers.length === 1 ? "1 caller ID" : `${t.numbers.length} caller IDs`] },
       { icon: hopIcons.phone, title: "Callee", sub: "phone network" },
     ],
