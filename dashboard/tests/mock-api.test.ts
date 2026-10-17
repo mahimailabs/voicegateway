@@ -227,8 +227,10 @@ describe("issues and alert events", () => {
     expect((await fetch(`${base}/${path}`)).status).toBe(400)
   })
 
-  test("a range before every capture returns no issue hits", async () => {
+  test("a range before every capture drops every timed hit and keeps the standing ones, which have no time", async () => {
     const body = await (await fetch(`${base}/issues?from=2000-01-01T00:00:00Z&to=2000-01-02T00:00:00Z`)).json()
+    expect(body.items.length).toBeGreaterThan(0)
     expect(body.items.every((i: { hits: { at: string | null }[] }) => i.hits.every((h) => h.at === null))).toBe(true)
+    expect(body.items.every((i: { source: string }) => i.source !== "calls")).toBe(true)
   })
 })

@@ -21,7 +21,8 @@ export function issueList(from: Date, to: Date): IssueList {
         severity: i.severity,
         source: source[i.source],
         lastSeenAt: times.length ? iso(Math.max(...times)) : null,
-        hits: hits.map((h) => ({ at: iso(h.at), where: h.where, detail: h.detail, callId: h.callId ?? null })),
+        // Most recent first, as the contract orders them; hits with no time last.
+        hits: [...hits].sort((a, b) => (b.at ?? -Infinity) - (a.at ?? -Infinity)).map((h) => ({ at: iso(h.at), where: h.where, detail: h.detail, callId: h.callId ?? null })),
       }
     })
     .filter((i) => i.hits.length > 0)
@@ -36,7 +37,10 @@ export function alertEvents(from: Date, to: Date): AlertEvents {
     rules: rules().map((r) => ({
       ruleId: r.id as AlertEvents["rules"][number]["ruleId"],
       state: r.state ?? null,
-      events: r.events.filter((e) => inRange(e.at, +from, +to)).map((e) => ({ at: iso(e.at), where: e.where, detail: e.detail, callId: e.link && "callId" in e.link ? e.link.callId : null })),
+      events: r.events
+        .filter((e) => inRange(e.at, +from, +to))
+        .sort((a, b) => (b.at ?? -Infinity) - (a.at ?? -Infinity))
+        .map((e) => ({ at: iso(e.at), where: e.where, detail: e.detail, callId: e.link && "callId" in e.link ? e.link.callId : null })),
     })),
   }
 }

@@ -67,11 +67,15 @@ export function CommandPalette({ open, onOpenChange, pages, onSettings, onShortc
   const navigate = useNavigate()
   const { theme, toggle } = useTheme()
   // Read when the palette opens; each list shows what has answered so far.
-  const calls = useQuery({ ...recentCallsQuery(), enabled: open }).data ?? []
+  const recent = useQuery({ ...recentCallsQuery(), enabled: open })
+  const calls = recent.data ?? []
   const cloud = useQuery({ ...cloudAgentsQuery(), enabled: open }).data
   const media = useQuery({ ...mediaServerQuery(), enabled: open }).data
   const fleet = useMemo(() => (cloud && media ? agentsFrom(cloud, fromContract(media)) : []), [cloud, media])
-  const issueList = useQuery({ ...issuesQuery(), enabled: open }).data
+  const issueRead = useQuery({ ...issuesQuery(), enabled: open })
+  const issueList = issueRead.data
+  // "Nothing matches" only once the reads have answered; until then the palette says it is loading.
+  const loading = open && (recent.isPending || issueRead.isPending || !cloud || !media)
   const found = useMemo(() => (issueList ? issuesFrom(issueList) : []), [issueList])
   const run = (fn: () => void) => {
     onOpenChange(false)
@@ -84,7 +88,7 @@ export function CommandPalette({ open, onOpenChange, pages, onSettings, onShortc
       <Command className="[&_[cmdk-group-heading]]:text-[11px] [&_[cmdk-group-heading]]:font-medium">
         <CommandInput placeholder="Search pages, calls, agents, issues..." />
         <CommandList className="max-h-[420px]">
-          <CommandEmpty>Nothing matches.</CommandEmpty>
+          <CommandEmpty>{loading ? "Loading…" : "Nothing matches."}</CommandEmpty>
           <CommandGroup heading="Go to">
             {pages.map((p) => (
               <CommandItem key={p.to} value={`page ${p.label}`} onSelect={() => run(() => navigate({ to: p.to }))}>
@@ -99,7 +103,7 @@ export function CommandPalette({ open, onOpenChange, pages, onSettings, onShortc
             ))}
           </CommandGroup>
           <CommandSeparator />
-          <CommandGroup heading="Calls">
+          <CommandGroup heading={calls.length >= 100 ? "Calls, 100 most recent" : "Calls"}>
             {calls.map((c) => (
               <CommandItem key={c.id} value={`call ${c.room} ${c.startedAt}`} onSelect={() => run(() => navigate({ to: "/calls/$callId", params: { callId: c.id } }))}>
                 <PhoneCall />
