@@ -342,7 +342,7 @@ function OverviewView({ stats, cloud, ms: rooms, sip: sipRead, egress, ingress, 
         <Section title="Model providers" to="/project" link="Project">
           <div className="flex items-center gap-4">
             <div className="hidden shrink-0 overflow-hidden rounded-xl bg-muted/40 sm:block">
-              <ProviderGlobe size={210} />
+              <ProviderGlobe probes={probe} size={210} />
             </div>
             <ul className="min-w-0 flex-1 space-y-3">
               {probe.endpoints.map((e) => {

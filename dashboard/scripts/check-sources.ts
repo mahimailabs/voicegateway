@@ -157,8 +157,10 @@ export function checkCoverage(spec: Doc, repo = root, inventory?: Declared[], su
       const fixtures: string[] = []
       const assets: string[] = []
       function inspect(node: ts.Node) {
-        if (ts.isImportDeclaration(node) && ts.isStringLiteral(node.moduleSpecifier)) {
-          const name = node.moduleSpecifier.text
+        // Static imports and import() both count: a lazy fixture is still a fixture this file reads.
+        const specifier = ts.isImportDeclaration(node) ? node.moduleSpecifier : ts.isCallExpression(node) && node.expression.kind === ts.SyntaxKind.ImportKeyword ? node.arguments[0] : undefined
+        if (specifier && ts.isStringLiteralLike(specifier)) {
+          const name = specifier.text
           const target = name.startsWith("@/") ? path.join(repo, "dashboard/src", name.slice(2)) : name.startsWith(".") ? path.resolve(path.dirname(full), name) : null
           if (target?.startsWith(path.join(repo, "dashboard/src/mocks/"))) fixtures.push(path.basename(target))
         }

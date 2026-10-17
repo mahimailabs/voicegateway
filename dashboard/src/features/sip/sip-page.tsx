@@ -10,8 +10,6 @@ import { cn } from "@/lib/utils"
 import { useQuery } from "@tanstack/react-query"
 import { QueryState } from "@/components/page-state"
 import { mediaServerQuery, sipQuery } from "@/lib/api"
-// A hand-written layout example (?data=test), not API data: it shows the page with many trunks.
-import synthetic from "@/mocks/sip-test.json"
 import { type MediaServerData, type Room, RoomDrawer, fromContract } from "../media-server/room-drawer"
 import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput, InputGroupText } from "@/components/ui/input-group"
 import { Kbd } from "@/components/ui/kbd"
@@ -116,11 +114,14 @@ const secs = (s: number) => (s >= 60 ? `${Math.floor(s / 60)}m ${String(Math.rou
 
 export function SipPage() {
   const test = new URLSearchParams(window.location.search).get("data") === "test"
+  // A hand-written layout example (?data=test), not API data: it shows the page with many trunks. It is
+  // loaded with import() only when asked for, so it stays out of the main bundle.
+  const synthetic = useQuery({ queryKey: ["sip-layout-example"], queryFn: () => import("@/mocks/sip-test.json").then((m) => m.default as unknown as SipData), enabled: test, staleTime: Infinity })
   const read = useQuery({ ...sipQuery(), enabled: !test })
   // The watched phone calls come from the media server read.
   const media = useQuery({ ...mediaServerQuery(), enabled: !test })
   const ms = useMemo(() => (media.data ? fromContract(media.data) : null), [media.data])
-  if (test) return <SipView sip={synthetic as SipData} ms={null} test />
+  if (test) return synthetic.data ? <SipView sip={synthetic.data} ms={null} test /> : <QueryState icon={PhoneIncoming} what="the layout example" query={synthetic} />
   if (!read.data) return <QueryState icon={PhoneIncoming} what="the phone bridge" query={read} />
   // The trunks and checks do not need the watched calls; while those load or if they fail, the page shows without them.
   const callsNote = ms ? undefined : media.isError ? "The watched calls could not be loaded." : "Loading the watched calls."

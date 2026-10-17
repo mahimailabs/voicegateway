@@ -7,6 +7,7 @@ import { stageDefs } from "@/features/overview/visuals"
 import { waterfallRows } from "@/features/profile/ttfa-waterfall"
 import { capturedCalls } from "./fixtures"
 import { issueList } from "./insights"
+import { providerProbes } from "./livekit"
 import { summarize } from "./summaries"
 
 // What the server will compute for Overview (getCallStats), here in the mock: the Calls list's own
@@ -34,7 +35,7 @@ function anatomy(calls: Call[]): { stages: StageTiming[]; turns: number } {
         if (t.responseMs !== null) rt.push(t.responseMs)
         continue
       }
-      for (const r of waterfallRows(c, t) ?? []) {
+      for (const r of waterfallRows(c, t, providerProbes()) ?? []) {
         const key = r.label === "LLM" ? "LLM, call 1" : r.label
         const v = by.get(key) ?? { s: [], e: [] }
         v.s.push(r.start)
@@ -72,7 +73,7 @@ function chain(calls: Call[]): ChainStage[] {
       const within = (start: number) => start / 1000 >= t.window.start && start / 1000 <= t.window.end
       if (m.pipeline === "realtime") add("realtime", t.responseMs)
       else {
-        const rows = waterfallRows(c, t) ?? []
+        const rows = waterfallRows(c, t, providerProbes()) ?? []
         const dur = (label: string) => {
           const r = rows.find((x) => x.label === label)
           return r ? r.end - r.start : undefined
@@ -113,7 +114,7 @@ function providers(calls: Call[]): ProviderUse[] {
         if (t.responseMs !== null) add(providerOfModel(m.models.find((x) => x.includes("realtime")) ?? m.models[0]), "realtime", c.id, t.responseMs)
         continue
       }
-      for (const w of waterfallRows(c, t) ?? []) {
+      for (const w of waterfallRows(c, t, providerProbes()) ?? []) {
         const model = w.sub.replace(/ (first token|first audio)$/, "")
         if (w.label === "Speech to text") add(providerOfModel(model), "stt", c.id, w.end - w.start)
         else if (w.label === "LLM" || w.label === "LLM, call 1") add(providerOfModel(model), "llm", c.id, w.end - w.start)

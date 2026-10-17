@@ -14,6 +14,9 @@ import { QueryClient } from "@tanstack/react-query"
 import type { AlertSetup } from "../src/lib/api-types"
 import { localSave, writeLocal } from "../src/lib/local-store.ts"
 import { type Setup, setupFrom } from "../src/features/alerts/alerts-model.ts"
+import { agentsFrom, checks as agentChecks } from "../src/features/agents/agents-model.ts"
+import { fromContract } from "../src/features/media-server/room-drawer.tsx"
+import { checks as sipChecks, routes } from "../src/features/sip/sip-model.ts"
 
 // The mock API answers through the contract: every response is checked against docs/api/openapi.yaml
 // itself, not against types written for the test.
@@ -246,6 +249,17 @@ describe("issues and alert events", () => {
     expect(res.status).toBe(200)
     expect(valid(schema, await res.json())).toBe("")
     expect((await fetch(`${base}/${path}`)).status).toBe(400)
+  })
+
+  test("the agent and phone issues are the checks the Agents and Phone bridge pages run over the reads they make", async () => {
+    const body = await (await fetch(`${base}/issues?${all}`)).json()
+    const titles = (src: string) => [...new Set(body.items.filter((i: { source: string }) => i.source === src).map((i: { title: string }) => i.title))].sort()
+    const ms = fromContract(await (await fetch(`${base}/media-server`)).json())
+    const sip = await (await fetch(`${base}/sip`)).json()
+    const hints = ms.rooms.flatMap((r) => r.participants.filter((p) => p.sip).map((p) => ({ trunkId: p.sip!.trunkId, twilio: Boolean(p.sip!.twilio) })))
+    expect(titles("agent_workers")).toEqual([...new Set(agentChecks(agentsFrom(await (await fetch(`${base}/agents`)).json(), ms)).map((c) => c.title))].sort())
+    expect(titles("phone_bridge")).toEqual([...new Set(sipChecks(sip, routes(sip, hints)).map((c) => c.title))].sort())
+    expect(titles("agent_workers").length + titles("phone_bridge").length).toBeGreaterThan(0)
   })
 
   test("a range before every capture drops every timed hit and keeps the standing ones, which have no time", async () => {
