@@ -648,7 +648,7 @@ export type CallTotals = {
          */
         budgetMs: number;
         /**
-         * Median of the measured answer times.
+         * Median of the measured answer times: the middle value, the upper of the two middle values for an even count.
          */
         p50Ms: number | null;
         /**
@@ -748,7 +748,7 @@ export type CallSummary = {
      */
     answerMs: Array<number> | null;
     /**
-     * Median of answerMs.
+     * Median of answerMs: the middle value, the upper of the two middle values for an even count.
      */
     answerMsMedian: number | null;
     /**

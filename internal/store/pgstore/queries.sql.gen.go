@@ -12,10 +12,10 @@ import (
 )
 
 const callByID = `-- name: CallByID :one
-SELECT c.id, c.room_name, c.room_sid, c.job_id, c.started_at, c.ended_at, c.end_state, c.first_seen_at,
-       (SELECT count(*) FROM call_participants p WHERE p.call_id = c.id) AS participants
-FROM calls c
-WHERE c.organisation_id = $1 AND c.project_id = $2 AND c.id = $3
+SELECT l.id, l.room_name, l.room_sid, l.job_id, l.started_at, l.ended_at, l.end_state, l.first_seen_at,
+       l.participants, l.servable
+FROM call_list l
+WHERE l.organisation_id = $1 AND l.project_id = $2 AND l.id = $3
 `
 
 type CallByIDParams struct {
@@ -34,9 +34,10 @@ type CallByIDRow struct {
 	EndState     string
 	FirstSeenAt  pgtype.Timestamptz
 	Participants int64
+	Servable     pgtype.Bool
 }
 
-// One call of a project, with how many participants webhooks reported for it.
+// One call of a project as the API reads it, with the servable rule listCalls shares.
 func (q *Queries) CallByID(ctx context.Context, arg CallByIDParams) (CallByIDRow, error) {
 	row := q.db.QueryRow(ctx, callByID, arg.OrganisationID, arg.ProjectID, arg.ID)
 	var i CallByIDRow
@@ -50,6 +51,7 @@ func (q *Queries) CallByID(ctx context.Context, arg CallByIDParams) (CallByIDRow
 		&i.EndState,
 		&i.FirstSeenAt,
 		&i.Participants,
+		&i.Servable,
 	)
 	return i, err
 }
@@ -104,9 +106,9 @@ func (q *Queries) CallByRoomSID(ctx context.Context, arg CallByRoomSIDParams) (C
 
 const callTotals = `-- name: CallTotals :one
 WITH f AS (
-    SELECT l.organisation_id, l.project_id, l.id, l.room_name, l.room_sid, l.started_at, l.ended_at, l.end_state, l.created_at, l.start_at, l.duration_seconds, l.participants, l.channel, l.turn_count, l.answer_ms, l.answer_ms_median, l.models, l.pipeline, l.agent_key
+    SELECT l.organisation_id, l.project_id, l.id, l.room_name, l.room_sid, l.job_id, l.started_at, l.ended_at, l.end_state, l.created_at, l.first_seen_at, l.servable, l.start_at, l.duration_seconds, l.participants, l.channel, l.turn_count, l.answer_ms, l.answer_ms_median, l.models, l.pipeline, l.agent_key
     FROM call_list l
-    WHERE l.organisation_id = $3 AND l.project_id = $4 AND l.created_at <= $5
+    WHERE l.organisation_id = $3 AND l.project_id = $4 AND l.created_at <= $5 AND l.servable
       AND ($6::timestamptz IS NULL OR l.start_at >= $6::timestamptz)
       AND ($7::timestamptz IS NULL OR l.start_at < $7::timestamptz)
       AND ($8::text IS NULL OR l.room_name = $8::text)
@@ -287,6 +289,16 @@ func (q *Queries) CreateProject(ctx context.Context, arg CreateProjectParams) (C
 	return i, err
 }
 
+const deferStale = `-- name: DeferStale :exec
+UPDATE calls SET summary_stale_at = now() WHERE id = $1 AND summary_stale_at IS NOT NULL
+`
+
+// Moves a call whose rebuild failed to the back of the queue, so it cannot hold up the others.
+func (q *Queries) DeferStale(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, deferStale, id)
+	return err
+}
+
 const finishCall = `-- name: FinishCall :exec
 UPDATE calls SET
     ended_at         = COALESCE($1, ended_at),
@@ -304,6 +316,15 @@ type FinishCallParams struct {
 // room_finished: the end LiveKit reported, observed.
 func (q *Queries) FinishCall(ctx context.Context, arg FinishCallParams) error {
 	_, err := q.db.Exec(ctx, finishCall, arg.EndedAt, arg.ID)
+	return err
+}
+
+const forgetListSnapshots = `-- name: ForgetListSnapshots :exec
+DELETE FROM list_snapshots WHERE created_at < $1
+`
+
+func (q *Queries) ForgetListSnapshots(ctx context.Context, before pgtype.Timestamptz) error {
+	_, err := q.db.Exec(ctx, forgetListSnapshots, before)
 	return err
 }
 
@@ -329,7 +350,7 @@ func (q *Queries) HealCall(ctx context.Context, arg HealCallParams) error {
 
 const listCalls = `-- name: ListCalls :many
 WITH f AS (
-    SELECT l.organisation_id, l.project_id, l.id, l.room_name, l.room_sid, l.started_at, l.ended_at, l.end_state, l.created_at, l.start_at, l.duration_seconds, l.participants, l.channel, l.turn_count, l.answer_ms, l.answer_ms_median, l.models, l.pipeline, l.agent_key,
+    SELECT l.organisation_id, l.project_id, l.id, l.room_name, l.room_sid, l.job_id, l.started_at, l.ended_at, l.end_state, l.created_at, l.first_seen_at, l.servable, l.start_at, l.duration_seconds, l.participants, l.channel, l.turn_count, l.answer_ms, l.answer_ms_median, l.models, l.pipeline, l.agent_key,
         CASE $6::text
             WHEN 'startedAt'       THEN EXTRACT(EPOCH FROM l.start_at)::double precision
             WHEN 'durationSeconds' THEN l.duration_seconds
@@ -337,7 +358,7 @@ WITH f AS (
             WHEN 'answerMs'        THEN l.answer_ms_median
         END * CASE WHEN $7::bool THEN -1 ELSE 1 END AS sort_key
     FROM call_list l
-    WHERE l.organisation_id = $8 AND l.project_id = $9 AND l.created_at <= $10
+    WHERE l.organisation_id = $8 AND l.project_id = $9 AND l.created_at <= $10 AND l.servable
       AND ($11::timestamptz IS NULL OR l.start_at >= $11::timestamptz)
       AND ($12::timestamptz IS NULL OR l.start_at < $12::timestamptz)
       AND ($13::text IS NULL OR l.room_name = $13::text)
@@ -478,6 +499,42 @@ func (q *Queries) ListCalls(ctx context.Context, arg ListCallsParams) ([]ListCal
 	return items, nil
 }
 
+const listSnapshot = `-- name: ListSnapshot :one
+SELECT organisation_id, project_id, filters, at, totals FROM list_snapshots WHERE id = $1
+`
+
+type ListSnapshotRow struct {
+	OrganisationID string
+	ProjectID      string
+	Filters        string
+	At             pgtype.Timestamptz
+	Totals         []byte
+}
+
+func (q *Queries) ListSnapshot(ctx context.Context, id string) (ListSnapshotRow, error) {
+	row := q.db.QueryRow(ctx, listSnapshot, id)
+	var i ListSnapshotRow
+	err := row.Scan(
+		&i.OrganisationID,
+		&i.ProjectID,
+		&i.Filters,
+		&i.At,
+		&i.Totals,
+	)
+	return i, err
+}
+
+const markStale = `-- name: MarkStale :exec
+UPDATE calls SET summary_stale_at = now() WHERE id = ANY($1::uuid[])
+`
+
+// Marks calls whose summary must be rebuilt: called after their rows reached ClickHouse, so a
+// sweep never rebuilds from a store that lacks them.
+func (q *Queries) MarkStale(ctx context.Context, ids []pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, markStale, ids)
+	return err
+}
+
 const openCallInRoom = `-- name: OpenCallInRoom :one
 SELECT id FROM calls
 WHERE organisation_id = $1 AND project_id = $2 AND room_name = $3
@@ -581,6 +638,32 @@ func (q *Queries) ProjectByLiveKitKey(ctx context.Context, livekitApiKey string)
 		&i.CreatedAt,
 	)
 	return i, err
+}
+
+const putListSnapshot = `-- name: PutListSnapshot :exec
+INSERT INTO list_snapshots (id, organisation_id, project_id, filters, at, totals)
+VALUES ($1, $2, $3, $4, $5, $6)
+`
+
+type PutListSnapshotParams struct {
+	ID             string
+	OrganisationID string
+	ProjectID      string
+	Filters        string
+	At             pgtype.Timestamptz
+	Totals         []byte
+}
+
+func (q *Queries) PutListSnapshot(ctx context.Context, arg PutListSnapshotParams) error {
+	_, err := q.db.Exec(ctx, putListSnapshot,
+		arg.ID,
+		arg.OrganisationID,
+		arg.ProjectID,
+		arg.Filters,
+		arg.At,
+		arg.Totals,
+	)
+	return err
 }
 
 const putSummary = `-- name: PutSummary :exec
@@ -687,7 +770,6 @@ UPDATE calls SET
     started_at       = COALESCE(started_at, $2),
     last_activity_at = GREATEST(last_activity_at, $3),
     first_seen_at    = LEAST(first_seen_at, $4),
-    summary_stale_at = now(),
     updated_at       = now()
 WHERE id = $5
 `
@@ -712,13 +794,24 @@ func (q *Queries) TouchCall(ctx context.Context, arg TouchCallParams) error {
 	return err
 }
 
+const transactionTime = `-- name: TransactionTime :one
+SELECT now()::timestamptz AS at
+`
+
+// The Postgres clock, for a list snapshot: the same clock that wrote created_at.
+func (q *Queries) TransactionTime(ctx context.Context) (pgtype.Timestamptz, error) {
+	row := q.db.QueryRow(ctx, transactionTime)
+	var at pgtype.Timestamptz
+	err := row.Scan(&at)
+	return at, err
+}
+
 const upsertCallByJobID = `-- name: UpsertCallByJobID :one
-INSERT INTO calls (organisation_id, project_id, job_id, last_activity_at, first_seen_at, summary_stale_at)
-VALUES ($1, $2, $3, $4, $5, now())
+INSERT INTO calls (organisation_id, project_id, job_id, last_activity_at, first_seen_at)
+VALUES ($1, $2, $3, $4, $5)
 ON CONFLICT (organisation_id, project_id, job_id) WHERE room_sid IS NULL AND job_id IS NOT NULL DO UPDATE SET
     last_activity_at = GREATEST(calls.last_activity_at, EXCLUDED.last_activity_at),
     first_seen_at    = LEAST(calls.first_seen_at, EXCLUDED.first_seen_at),
-    summary_stale_at = now(),
     updated_at       = now()
 RETURNING id
 `
@@ -746,15 +839,14 @@ func (q *Queries) UpsertCallByJobID(ctx context.Context, arg UpsertCallByJobIDPa
 }
 
 const upsertCallByRoomSID = `-- name: UpsertCallByRoomSID :one
-INSERT INTO calls (organisation_id, project_id, room_sid, room_name, job_id, started_at, last_activity_at, first_seen_at, summary_stale_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, now())
+INSERT INTO calls (organisation_id, project_id, room_sid, room_name, job_id, started_at, last_activity_at, first_seen_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 ON CONFLICT (organisation_id, project_id, room_sid) WHERE room_sid IS NOT NULL DO UPDATE SET
     room_name        = COALESCE(calls.room_name, EXCLUDED.room_name),
     job_id           = COALESCE(calls.job_id, EXCLUDED.job_id),
     started_at       = COALESCE(calls.started_at, EXCLUDED.started_at),
     last_activity_at = GREATEST(calls.last_activity_at, EXCLUDED.last_activity_at),
     first_seen_at    = LEAST(calls.first_seen_at, EXCLUDED.first_seen_at),
-    summary_stale_at = now(),
     updated_at       = now()
 RETURNING id
 `

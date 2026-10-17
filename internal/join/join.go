@@ -23,6 +23,8 @@ type Calls interface {
 	UpsertParticipant(ctx context.Context, p store.Participant) error
 	CloseIdleCalls(ctx context.Context, idleSince time.Time) (int64, error)
 	StaleCalls(ctx context.Context, limit int) ([]store.StaleCall, error)
+	MarkStale(ctx context.Context, callIDs []string) error
+	DeferStale(ctx context.Context, callID string) error
 	PutSummary(ctx context.Context, c store.StaleCall, sum store.CallSummary, computedAt time.Time) error
 }
 
@@ -118,32 +120,64 @@ func (j *Joiner) Sweep(ctx context.Context, now time.Time) error {
 // SummaryBatch is the most summaries one sweep rebuilds, oldest mark first.
 const SummaryBatch = 200
 
+// Stored marks the summaries of every call the rows joined stale, once the rows are in ClickHouse.
+func (j *Joiner) Stored(ctx context.Context, rows []store.Event) error {
+	seen := map[string]bool{}
+	var ids []string
+	add := func(id string) {
+		if id != "" && !seen[id] {
+			seen[id] = true
+			ids = append(ids, id)
+		}
+	}
+	for _, r := range rows {
+		add(r.CallID)
+		for _, sp := range r.Spans {
+			add(sp.CallID)
+		}
+		for _, p := range r.MetricPoints {
+			add(p.CallID)
+		}
+	}
+	return j.Calls.MarkStale(ctx, ids)
+}
+
 // Summarize rebuilds the summaries of calls marked stale, at most SummaryBatch, as of now. A call
-// joined to again while its summary was rebuilt stays marked, for the next sweep.
+// joined to again while its summary was rebuilt stays marked, for the next sweep. A call whose
+// rebuild fails is skipped, counted and moved to the back of the queue, so it cannot hold up the
+// others; the sweep fails only when the queue cannot be read.
 func (j *Joiner) Summarize(ctx context.Context, now time.Time) error {
 	stale, err := j.Calls.StaleCalls(ctx, SummaryBatch)
 	if err != nil {
 		return err
 	}
+	failed := 0
 	for _, c := range stale {
-		spans, res, err := j.Traces.CallTrace(ctx, c.OrganisationID, c.ProjectID, c.ID)
-		if err != nil {
-			return err
-		}
-		s := turn.Summarize(spans, res)
-		sum := store.CallSummary{
-			TurnCount: s.TurnCount, AnswerMs: s.AnswerMs, AnswerMsMedian: s.AnswerMsMedian,
-			Models: s.Models, Pipeline: s.Pipeline, AgentKey: s.AgentKey,
-			RoomName: s.RoomName, FirstSeenAt: s.FirstSeenAt,
-		}
-		if err := j.Calls.PutSummary(ctx, c, sum, now); err != nil {
-			return err
+		if err := j.summarizeOne(ctx, c, now); err != nil {
+			failed++
+			j.Log.Error("join: call summary failed, retrying it after the others", "call", c.ID, "err", err)
+			if err := j.Calls.DeferStale(ctx, c.ID); err != nil {
+				return err
+			}
 		}
 	}
 	if len(stale) > 0 {
-		j.Log.Debug("join: rebuilt call summaries", "count", len(stale))
+		j.Log.Debug("join: rebuilt call summaries", "count", len(stale)-failed, "failed", failed)
 	}
 	return nil
+}
+
+func (j *Joiner) summarizeOne(ctx context.Context, c store.StaleCall, now time.Time) error {
+	spans, res, err := j.Traces.CallTrace(ctx, c.OrganisationID, c.ProjectID, c.ID)
+	if err != nil {
+		return err
+	}
+	s := turn.Summarize(spans, res)
+	return j.Calls.PutSummary(ctx, c, store.CallSummary{
+		TurnCount: s.TurnCount, AnswerMs: s.AnswerMs, AnswerMsMedian: s.AnswerMsMedian,
+		Models: s.Models, Pipeline: s.Pipeline, AgentKey: s.AgentKey,
+		RoomName: s.RoomName, FirstSeenAt: s.FirstSeenAt,
+	}, now)
 }
 
 // ptr returns a pointer to t, or nil when t is zero: an unreported time.

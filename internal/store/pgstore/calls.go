@@ -68,7 +68,7 @@ func (s *Store) CallInRoom(ctx context.Context, organisationID, projectID, roomN
 }
 
 // TouchCall adds a job id, a start, an activity time and a first-seen time to a call; empty values
-// change nothing. It marks the call's summary stale.
+// change nothing.
 func (s *Store) TouchCall(ctx context.Context, callID, jobID string, startedAt, activityAt, firstSeenAt *time.Time) error {
 	id, err := uuid(callID)
 	if err != nil {
@@ -188,7 +188,7 @@ func (s *Store) Call(ctx context.Context, organisationID, projectID, callID stri
 	return store.Call{
 		ID: row.ID.String(), RoomName: row.RoomName.String, RoomSID: row.RoomSid.String, JobID: row.JobID.String,
 		StartedAt: timeOf(row.StartedAt), EndedAt: timeOf(row.EndedAt), FirstSeenAt: timeOf(row.FirstSeenAt),
-		EndState: row.EndState, Participants: row.Participants,
+		EndState: row.EndState, Participants: row.Participants, Servable: row.Servable.Bool,
 	}, nil
 }
 
@@ -230,12 +230,12 @@ func (s *Store) PutSummary(ctx context.Context, c store.StaleCall, sum store.Cal
 	}
 	err = s.q.PutSummary(ctx, PutSummaryParams{
 		CallID: id, TurnCount: turns, AnswerMs: sum.AnswerMs, AnswerMsMedian: median,
-		Models: sum.Models, Pipeline: sum.Pipeline, AgentKey: text(deref(sum.AgentKey)), ComputedAt: timestamp(&computedAt),
+		Models: noNUL(sum.Models), Pipeline: sum.Pipeline, AgentKey: text(stripNUL(deref(sum.AgentKey))), ComputedAt: timestamp(&computedAt),
 	})
 	if err != nil {
 		return fmt.Errorf("put summary: %w", badRow(err))
 	}
-	if err := s.q.HealCall(ctx, HealCallParams{ID: id, RoomName: text(sum.RoomName), FirstSeenAt: timestamp(sum.FirstSeenAt)}); err != nil {
+	if err := s.q.HealCall(ctx, HealCallParams{ID: id, RoomName: text(stripNUL(sum.RoomName)), FirstSeenAt: timestamp(sum.FirstSeenAt)}); err != nil {
 		return fmt.Errorf("heal call: %w", badRow(err))
 	}
 	if err := s.q.ClearStale(ctx, ClearStaleParams{ID: id, Seen: timestamp(&c.StaleAt)}); err != nil {
@@ -249,4 +249,47 @@ func deref(s *string) string {
 		return ""
 	}
 	return *s
+}
+
+// MarkStale marks calls whose summary must be rebuilt.
+func (s *Store) MarkStale(ctx context.Context, callIDs []string) error {
+	ids := make([]pgtype.UUID, 0, len(callIDs))
+	for _, c := range callIDs {
+		id, err := uuid(c)
+		if err != nil {
+			return err
+		}
+		ids = append(ids, id)
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	if err := s.q.MarkStale(ctx, ids); err != nil {
+		return fmt.Errorf("mark stale: %w", err)
+	}
+	return nil
+}
+
+// DeferStale moves a call whose rebuild failed to the back of the stale queue.
+func (s *Store) DeferStale(ctx context.Context, callID string) error {
+	id, err := uuid(callID)
+	if err != nil {
+		return err
+	}
+	if err := s.q.DeferStale(ctx, id); err != nil {
+		return fmt.Errorf("defer stale: %w", err)
+	}
+	return nil
+}
+
+// stripNUL removes NUL characters, which Postgres text cannot hold (SQLSTATE 22021) and an agent's
+// span attributes can carry.
+func stripNUL(s string) string { return strings.ReplaceAll(s, "\x00", "") }
+
+func noNUL(ss []string) []string {
+	out := make([]string, 0, len(ss))
+	for _, s := range ss {
+		out = append(out, stripNUL(s))
+	}
+	return out
 }

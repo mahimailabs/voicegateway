@@ -28,12 +28,14 @@ CREATE TABLE call_summaries (
     computed_at      timestamptz NOT NULL
 );
 
--- One row per call a list can serve: room and start known after the fallbacks, the rule getCall's
--- 404 shares. channel is phone with a SIP participant, web with webhook participants and no SIP,
--- unknown without any; durationSeconds needs an observed start.
+-- Every call as the API reads it. servable is the one rule for which calls the API serves: room
+-- and start known after the fallbacks; listCalls shows only these and getCall answers 404 for the
+-- rest. channel is phone with a SIP participant, web with webhook participants and no SIP, unknown
+-- without any; durationSeconds needs an observed start.
 CREATE VIEW call_list AS
-SELECT c.organisation_id, c.project_id, c.id, c.room_name, c.room_sid, c.started_at, c.ended_at,
-       c.end_state, c.created_at,
+SELECT c.organisation_id, c.project_id, c.id, c.room_name, c.room_sid, c.job_id, c.started_at, c.ended_at,
+       c.end_state, c.created_at, c.first_seen_at,
+       (COALESCE(c.room_name, '') <> '' AND COALESCE(c.started_at, c.first_seen_at) IS NOT NULL) AS servable,
        COALESCE(c.started_at, c.first_seen_at) AS start_at,
        CASE WHEN c.ended_at IS NOT NULL AND c.started_at IS NOT NULL
             THEN EXTRACT(EPOCH FROM c.ended_at - c.started_at)::double precision END AS duration_seconds,
@@ -46,5 +48,19 @@ CROSS JOIN LATERAL (
     SELECT count(*) AS participants, count(*) FILTER (WHERE kind = 'sip') AS sip
     FROM call_participants WHERE call_id = c.id
 ) p
-LEFT JOIN call_summaries s ON s.call_id = c.id
-WHERE COALESCE(c.room_name, '') <> '' AND COALESCE(c.started_at, c.first_seen_at) IS NOT NULL;
+LEFT JOIN call_summaries s ON s.call_id = c.id;
+
+-- A listCalls snapshot, kept server-side so the token the console carries in its URL is a short
+-- id: which calls belong to the list (at), the scope and filters it was taken for, and the first
+-- page's totals, which every later page repeats. Rows older than a day are deleted as new ones
+-- are written.
+CREATE TABLE list_snapshots (
+    id              text        PRIMARY KEY,
+    organisation_id text        NOT NULL,
+    project_id      text        NOT NULL,
+    filters         text        NOT NULL,
+    at              timestamptz NOT NULL,
+    totals          jsonb       NOT NULL,
+    created_at      timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX list_snapshots_created ON list_snapshots (created_at);

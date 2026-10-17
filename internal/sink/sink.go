@@ -38,6 +38,10 @@ type Events interface {
 // values were refused; any other error is transient. It bounds its own calls per row.
 type Joiner interface {
 	Join(ctx context.Context, rows []store.Event) error
+	// Stored is told about rows once they are in ClickHouse, before they are acknowledged; it
+	// marks their calls' summaries stale, so a summary is never rebuilt from a store that lacks
+	// them. It may be called again with the same rows.
+	Stored(ctx context.Context, rows []store.Event) error
 }
 
 // Sink moves envelopes from the stream into Events.
@@ -147,6 +151,13 @@ func (s *Sink) store(ctx context.Context, msgs []stream.Message) {
 		if err := s.insert(ctx, chunk, msgsByID); err != nil {
 			return
 		}
+	}
+	if err := s.retry(ctx, "mark summaries stale", func(ctx context.Context) error {
+		cctx, cancel := context.WithTimeout(ctx, s.Timeout)
+		defer cancel()
+		return s.Join.Stored(cctx, fresh)
+	}); err != nil {
+		return
 	}
 	if err := s.retry(ctx, "acknowledge", func(ctx context.Context) error { return s.Stream.Ack(ctx, ids...) }); err != nil {
 		return

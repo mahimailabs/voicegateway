@@ -31,10 +31,13 @@ type CallList struct {
 	ID              pgtype.UUID
 	RoomName        pgtype.Text
 	RoomSid         pgtype.Text
+	JobID           pgtype.Text
 	StartedAt       pgtype.Timestamptz
 	EndedAt         pgtype.Timestamptz
 	EndState        string
 	CreatedAt       pgtype.Timestamptz
+	FirstSeenAt     pgtype.Timestamptz
+	Servable        pgtype.Bool
 	StartAt         pgtype.Timestamptz
 	DurationSeconds interface{}
 	Participants    int64
@@ -65,6 +68,16 @@ type CallSummary struct {
 	Pipeline       string
 	AgentKey       pgtype.Text
 	ComputedAt     pgtype.Timestamptz
+}
+
+type ListSnapshot struct {
+	ID             string
+	OrganisationID string
+	ProjectID      string
+	Filters        string
+	At             pgtype.Timestamptz
+	Totals         []byte
+	CreatedAt      pgtype.Timestamptz
 }
 
 type Organisation struct {

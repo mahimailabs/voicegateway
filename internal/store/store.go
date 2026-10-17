@@ -151,6 +151,17 @@ type Call struct {
 	EndState                        string
 	// Participants is how many participants webhooks reported for the call.
 	Participants int64
+	// Servable is the API's one rule for which calls it serves: room and start known after the
+	// fallbacks (the call_list view).
+	Servable bool
+}
+
+// ListSnapshot is a listCalls snapshot kept server-side: the scope and filters it was taken for,
+// when, and the first page's totals as the API encoded them.
+type ListSnapshot struct {
+	ID, OrganisationID, ProjectID, Filters string
+	At                                     time.Time
+	Totals                                 []byte
 }
 
 // StaleCall is a call whose summary needs rebuilding, with the mark the rebuild read.

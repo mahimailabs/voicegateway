@@ -24,7 +24,8 @@ const (
 
 // Summary is the per-call figures listCalls reads (phase 04d). A nil value is unknown.
 type Summary struct {
-	// TurnCount is the number of agent_turn spans; nil when the call has none.
+	// TurnCount is the number of agent_turn spans: 0 when the call has spans but none is a turn,
+	// nil when it has no spans at all.
 	TurnCount *int
 	// AnswerMs are the turns' measured end-to-end times in turn order; nil when no turn measured
 	// one. AnswerMsMedian is their median as the console takes it, the upper middle value.
@@ -44,7 +45,7 @@ type Summary struct {
 // Summarize builds a call's summary from its spans and the turns built from them.
 func Summarize(spans []store.Span, res Result) Summary {
 	s := Summary{Models: []string{}, Pipeline: pipeline(spans)}
-	if len(res.Turns) > 0 {
+	if len(spans) > 0 {
 		n := len(res.Turns)
 		s.TurnCount = &n
 	}

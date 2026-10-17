@@ -2,8 +2,10 @@ package pgstore
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -13,14 +15,23 @@ import (
 
 // ListCalls reads one page of a project's calls, after the cursor when one is given, and, when
 // withTotals is set, the totals over every matching call. Both reads run in one REPEATABLE READ
-// READ ONLY transaction, so the page and its totals describe the same state.
-func (s *Store) ListCalls(ctx context.Context, f store.CallFilter, after *store.CallCursor, limit int, withTotals bool, maxValues int) ([]store.CallListRow, *store.CallTotals, error) {
+// READ ONLY transaction, so the page and its totals describe the same state. A zero
+// f.SnapshotAt takes the snapshot time from the Postgres clock, the clock that writes created_at,
+// and returns it.
+func (s *Store) ListCalls(ctx context.Context, f store.CallFilter, after *store.CallCursor, limit int, withTotals bool, maxValues int) ([]store.CallListRow, *store.CallTotals, time.Time, error) {
 	tx, err := s.pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly})
 	if err != nil {
-		return nil, nil, fmt.Errorf("list calls: %w", err)
+		return nil, nil, time.Time{}, fmt.Errorf("list calls: %w", err)
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 	q := s.q.WithTx(tx)
+	if f.SnapshotAt.IsZero() {
+		now, err := q.TransactionTime(ctx)
+		if err != nil {
+			return nil, nil, time.Time{}, fmt.Errorf("list calls: %w", err)
+		}
+		f.SnapshotAt = now.Time.UTC()
+	}
 
 	p := ListCallsParams{
 		MaxRows: int32(min(limit, math.MaxInt32)), SortBy: f.SortBy, Descending: f.Descending, //nolint:gosec // bounded above
@@ -33,19 +44,19 @@ func (s *Store) ListCalls(ctx context.Context, f store.CallFilter, after *store.
 	if after != nil {
 		id, err := uuid(after.ID)
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, time.Time{}, err
 		}
 		p.AfterCursor, p.CursorUnknown, p.CursorValue, p.CursorID = true, after.Unknown, after.Value, id
 	}
 	rows, err := q.ListCalls(ctx, p)
 	if err != nil {
-		return nil, nil, fmt.Errorf("list calls: %w", err)
+		return nil, nil, time.Time{}, fmt.Errorf("list calls: %w", err)
 	}
 	out := make([]store.CallListRow, 0, len(rows))
 	for _, r := range rows {
 		row, err := listRow(r)
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, time.Time{}, err
 		}
 		out = append(out, row)
 	}
@@ -61,11 +72,11 @@ func (s *Store) ListCalls(ctx context.Context, f store.CallFilter, after *store.
 			BudgetMs: f.BudgetMs, MaxValues: int32(min(maxValues, math.MaxInt32)), //nolint:gosec // bounded above
 		})
 		if err != nil {
-			return nil, nil, fmt.Errorf("call totals: %w", err)
+			return nil, nil, time.Time{}, fmt.Errorf("call totals: %w", err)
 		}
 		p50, err := optionalFloat(t.P50Ms)
 		if err != nil {
-			return nil, nil, fmt.Errorf("call totals p50: %w", err)
+			return nil, nil, time.Time{}, fmt.Errorf("call totals p50: %w", err)
 		}
 		totals = &store.CallTotals{
 			CallCount: t.CallCount, Phone: t.Phone, Web: t.Web, Unknown: t.UnknownChannel,
@@ -74,9 +85,9 @@ func (s *Store) ListCalls(ctx context.Context, f store.CallFilter, after *store.
 		}
 	}
 	if err := tx.Commit(ctx); err != nil {
-		return nil, nil, fmt.Errorf("list calls: %w", err)
+		return nil, nil, time.Time{}, fmt.Errorf("list calls: %w", err)
 	}
-	return out, totals, nil
+	return out, totals, f.SnapshotAt, nil
 }
 
 func listRow(r ListCallsRow) (store.CallListRow, error) {
@@ -146,3 +157,35 @@ func nonNilStrings(v []string) []string {
 	}
 	return v
 }
+
+// snapshotTTL is how long a listCalls snapshot is kept: a console session paging a list.
+const snapshotTTL = 24 * time.Hour
+
+// PutListSnapshot stores a listCalls snapshot, deleting those older than a day.
+func (s *Store) PutListSnapshot(ctx context.Context, snap store.ListSnapshot) error {
+	if err := s.q.ForgetListSnapshots(ctx, timestamp(ptrTime(time.Now().Add(-snapshotTTL)))); err != nil {
+		return fmt.Errorf("forget list snapshots: %w", err)
+	}
+	err := s.q.PutListSnapshot(ctx, PutListSnapshotParams{
+		ID: snap.ID, OrganisationID: snap.OrganisationID, ProjectID: snap.ProjectID, Filters: snap.Filters,
+		At: timestamp(&snap.At), Totals: snap.Totals,
+	})
+	if err != nil {
+		return fmt.Errorf("put list snapshot: %w", err)
+	}
+	return nil
+}
+
+// ListSnapshot returns a stored listCalls snapshot, or store.ErrNotFound.
+func (s *Store) ListSnapshot(ctx context.Context, id string) (store.ListSnapshot, error) {
+	row, err := s.q.ListSnapshot(ctx, id)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return store.ListSnapshot{}, store.ErrNotFound
+	}
+	if err != nil {
+		return store.ListSnapshot{}, fmt.Errorf("list snapshot: %w", err)
+	}
+	return store.ListSnapshot{ID: id, OrganisationID: row.OrganisationID, ProjectID: row.ProjectID, Filters: row.Filters, At: row.At.Time.UTC(), Totals: row.Totals}, nil
+}
+
+func ptrTime(t time.Time) *time.Time { return &t }

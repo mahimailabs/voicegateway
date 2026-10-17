@@ -185,9 +185,16 @@ func (f *fixture) append(kind event.Kind, id string, payload []byte) {
 // store runs the worker's sink and joiner until the stream is drained.
 func (f *fixture) store() {
 	f.t.Helper()
+	f.storeWith(f.events)
+}
+
+// storeWith runs the sink with events as its ClickHouse writer, to put a step between the join
+// and the insert.
+func (f *fixture) storeWith(events sink.Events) {
+	f.t.Helper()
 	s := &sink.Sink{
 		Stream:    stream.NewConsumer(f.rdb, stream.Ingest, "worker", "w1"),
-		Events:    f.events,
+		Events:    events,
 		Join:      &join.Joiner{Calls: f.pg, Traces: f.events, Log: f.log, Timeout: 10 * time.Second},
 		Log:       f.log,
 		Batch:     100,

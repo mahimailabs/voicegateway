@@ -130,6 +130,8 @@ type noJoin struct{}
 
 func (noJoin) Join(context.Context, []store.Event) error { return nil }
 
+func (noJoin) Stored(context.Context, []store.Event) error { return nil }
+
 // run runs a sink until cond holds or the deadline passes, then stops it.
 func run(t *testing.T, s *Sink, cond func() bool) {
 	t.Helper()

@@ -19,15 +19,14 @@ SELECT EXISTS (SELECT 1 FROM organisations WHERE id = $1);
 -- name: UpsertCallByRoomSID :one
 -- Opens the call of one room instance or adds to it. A value already set is kept; the latest
 -- reported activity wins. GREATEST and COALESCE skip nulls, so an unreported time changes nothing.
-INSERT INTO calls (organisation_id, project_id, room_sid, room_name, job_id, started_at, last_activity_at, first_seen_at, summary_stale_at)
-VALUES (@organisation_id, @project_id, @room_sid, sqlc.narg(room_name), sqlc.narg(job_id), sqlc.narg(started_at), sqlc.narg(last_activity_at), sqlc.narg(first_seen_at), now())
+INSERT INTO calls (organisation_id, project_id, room_sid, room_name, job_id, started_at, last_activity_at, first_seen_at)
+VALUES (@organisation_id, @project_id, @room_sid, sqlc.narg(room_name), sqlc.narg(job_id), sqlc.narg(started_at), sqlc.narg(last_activity_at), sqlc.narg(first_seen_at))
 ON CONFLICT (organisation_id, project_id, room_sid) WHERE room_sid IS NOT NULL DO UPDATE SET
     room_name        = COALESCE(calls.room_name, EXCLUDED.room_name),
     job_id           = COALESCE(calls.job_id, EXCLUDED.job_id),
     started_at       = COALESCE(calls.started_at, EXCLUDED.started_at),
     last_activity_at = GREATEST(calls.last_activity_at, EXCLUDED.last_activity_at),
     first_seen_at    = LEAST(calls.first_seen_at, EXCLUDED.first_seen_at),
-    summary_stale_at = now(),
     updated_at       = now()
 RETURNING id;
 
@@ -43,12 +42,11 @@ LIMIT 1;
 
 -- name: UpsertCallByJobID :one
 -- Opens a call for a job no source has named a room SID for, or adds to it.
-INSERT INTO calls (organisation_id, project_id, job_id, last_activity_at, first_seen_at, summary_stale_at)
-VALUES (@organisation_id, @project_id, @job_id, sqlc.narg(last_activity_at), sqlc.narg(first_seen_at), now())
+INSERT INTO calls (organisation_id, project_id, job_id, last_activity_at, first_seen_at)
+VALUES (@organisation_id, @project_id, @job_id, sqlc.narg(last_activity_at), sqlc.narg(first_seen_at))
 ON CONFLICT (organisation_id, project_id, job_id) WHERE room_sid IS NULL AND job_id IS NOT NULL DO UPDATE SET
     last_activity_at = GREATEST(calls.last_activity_at, EXCLUDED.last_activity_at),
     first_seen_at    = LEAST(calls.first_seen_at, EXCLUDED.first_seen_at),
-    summary_stale_at = now(),
     updated_at       = now()
 RETURNING id;
 
@@ -70,7 +68,6 @@ UPDATE calls SET
     started_at       = COALESCE(started_at, sqlc.narg(started_at)),
     last_activity_at = GREATEST(last_activity_at, sqlc.narg(last_activity_at)),
     first_seen_at    = LEAST(first_seen_at, sqlc.narg(first_seen_at)),
-    summary_stale_at = now(),
     updated_at       = now()
 WHERE id = @id;
 
@@ -106,11 +103,11 @@ FROM projects
 WHERE organisation_id = $1 AND id = $2;
 
 -- name: CallByID :one
--- One call of a project, with how many participants webhooks reported for it.
-SELECT c.id, c.room_name, c.room_sid, c.job_id, c.started_at, c.ended_at, c.end_state, c.first_seen_at,
-       (SELECT count(*) FROM call_participants p WHERE p.call_id = c.id) AS participants
-FROM calls c
-WHERE c.organisation_id = @organisation_id AND c.project_id = @project_id AND c.id = @id;
+-- One call of a project as the API reads it, with the servable rule listCalls shares.
+SELECT l.id, l.room_name, l.room_sid, l.job_id, l.started_at, l.ended_at, l.end_state, l.first_seen_at,
+       l.participants, l.servable
+FROM call_list l
+WHERE l.organisation_id = @organisation_id AND l.project_id = @project_id AND l.id = @id;
 
 -- name: StaleCalls :many
 -- Calls whose summary needs rebuilding, oldest mark first.
@@ -159,7 +156,7 @@ WITH f AS (
             WHEN 'answerMs'        THEN l.answer_ms_median
         END * CASE WHEN @descending::bool THEN -1 ELSE 1 END AS sort_key
     FROM call_list l
-    WHERE l.organisation_id = @organisation_id AND l.project_id = @project_id AND l.created_at <= @snapshot_at
+    WHERE l.organisation_id = @organisation_id AND l.project_id = @project_id AND l.created_at <= @snapshot_at AND l.servable
       AND (sqlc.narg(from_at)::timestamptz IS NULL OR l.start_at >= sqlc.narg(from_at)::timestamptz)
       AND (sqlc.narg(to_at)::timestamptz IS NULL OR l.start_at < sqlc.narg(to_at)::timestamptz)
       AND (sqlc.narg(room)::text IS NULL OR l.room_name = sqlc.narg(room)::text)
@@ -191,7 +188,7 @@ LIMIT @max_rows;
 WITH f AS (
     SELECT l.*
     FROM call_list l
-    WHERE l.organisation_id = @organisation_id AND l.project_id = @project_id AND l.created_at <= @snapshot_at
+    WHERE l.organisation_id = @organisation_id AND l.project_id = @project_id AND l.created_at <= @snapshot_at AND l.servable
       AND (sqlc.narg(from_at)::timestamptz IS NULL OR l.start_at >= sqlc.narg(from_at)::timestamptz)
       AND (sqlc.narg(to_at)::timestamptz IS NULL OR l.start_at < sqlc.narg(to_at)::timestamptz)
       AND (sqlc.narg(room)::text IS NULL OR l.room_name = sqlc.narg(room)::text)
@@ -220,3 +217,26 @@ SELECT
     -- Null when no turn measured an answer.
     (SELECT (array_agg(a.v ORDER BY a.v))[count(*) / 2 + 1] FROM a) AS p50_ms,
     COALESCE((SELECT (array_agg(a.v ORDER BY a.start_at DESC, a.id, a.ord))[1:@max_values::int] FROM a), '{}')::double precision[] AS values_ms;
+
+-- name: MarkStale :exec
+-- Marks calls whose summary must be rebuilt: called after their rows reached ClickHouse, so a
+-- sweep never rebuilds from a store that lacks them.
+UPDATE calls SET summary_stale_at = now() WHERE id = ANY(@ids::uuid[]);
+
+-- name: DeferStale :exec
+-- Moves a call whose rebuild failed to the back of the queue, so it cannot hold up the others.
+UPDATE calls SET summary_stale_at = now() WHERE id = @id AND summary_stale_at IS NOT NULL;
+
+-- name: TransactionTime :one
+-- The Postgres clock, for a list snapshot: the same clock that wrote created_at.
+SELECT now()::timestamptz AS at;
+
+-- name: PutListSnapshot :exec
+INSERT INTO list_snapshots (id, organisation_id, project_id, filters, at, totals)
+VALUES (@id, @organisation_id, @project_id, @filters, @at, @totals);
+
+-- name: ForgetListSnapshots :exec
+DELETE FROM list_snapshots WHERE created_at < @before;
+
+-- name: ListSnapshot :one
+SELECT organisation_id, project_id, filters, at, totals FROM list_snapshots WHERE id = @id;

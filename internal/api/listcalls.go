@@ -1,12 +1,14 @@
 package api
 
 import (
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"net/http"
 	"net/url"
 	"slices"
@@ -98,14 +100,7 @@ type issueTotals struct {
 	Unknown *int64 `json:"unknown"`
 }
 
-// snapshot is what the opaque snapshot token carries: when the first page was read, which fixes
-// which calls belong to the list, and that page's totals, which every later page repeats.
-type snapshot struct {
-	At     time.Time  `json:"at"`
-	Totals callTotals `json:"totals"`
-}
-
-// cursor is what the opaque cursor carries: where the page ended, and a fingerprint of the
+// cursor is what the opaque cursor carries: where the page ended, and a fingerprint of the scope,
 // filters, sort, order and snapshot it was issued for.
 type cursor struct {
 	Bound   string  `json:"b"`
@@ -139,9 +134,13 @@ func (a *API) listCalls(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// The snapshot is kept server-side under a short id, so the token the console carries in its
+	// URL stays small; it is bound to the scope and filters it was taken for.
+	filters := fingerprint(org, project, q, "")
 	var (
-		snap  snapshot
-		after *store.CallCursor
+		snap   store.ListSnapshot
+		totals callTotals
+		after  *store.CallCursor
 	)
 	token, cursorToken := q.Get("snapshot"), q.Get("cursor")
 	switch {
@@ -149,39 +148,49 @@ func (a *API) listCalls(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, http.StatusBadRequest, codeInvalidRequest, "cursor needs the snapshot it was issued with")
 		return
 	case token != "":
-		if err := decode(token, &snap); err != nil {
-			writeError(w, r, http.StatusBadRequest, codeInvalidRequest, "snapshot is not one this server issued")
+		snap, err = a.Calls.ListSnapshot(ctx, token)
+		if err != nil && !errors.Is(err, store.ErrNotFound) {
+			a.fail(w, r, err, "")
 			return
 		}
-	default:
-		snap.At = a.Now().UTC()
+		if err != nil || snap.OrganisationID != org || snap.ProjectID != project || snap.Filters != filters || json.Unmarshal(snap.Totals, &totals) != nil {
+			writeError(w, r, http.StatusBadRequest, codeInvalidRequest, "snapshot was taken for another project or other filters, or has expired")
+			return
+		}
+		f.SnapshotAt = snap.At
 	}
-	f.SnapshotAt = snap.At
-	bound := fingerprint(q, snap.At)
 	if cursorToken != "" {
 		var c cursor
-		if err := decode(cursorToken, &c); err != nil || c.Bound != bound {
+		if err := decode(cursorToken, &c); err != nil || c.Bound != fingerprint(org, project, q, token) {
 			writeError(w, r, http.StatusBadRequest, codeInvalidRequest, "cursor was issued for other filters, sort, order or snapshot")
 			return
 		}
 		after = &store.CallCursor{Unknown: c.Unknown, Value: c.Value, ID: c.ID}
 	}
 
-	first := q.Get("snapshot") == ""
-	rows, totals, err := a.Calls.ListCalls(ctx, f, after, limit+1, first, maxValues)
+	first := token == ""
+	rows, pageTotals, at, err := a.Calls.ListCalls(ctx, f, after, limit+1, first, maxValues)
 	if err != nil {
 		a.fail(w, r, err, "")
 		return
 	}
 	if first {
-		snap.Totals = toTotals(totals, f.BudgetMs)
-		if token, err = encode(snap); err != nil {
+		totals = toTotals(pageTotals, f.BudgetMs)
+		body, err := json.Marshal(totals)
+		if err == nil {
+			token, err = randomID()
+		}
+		if err == nil {
+			err = a.Calls.PutListSnapshot(ctx, store.ListSnapshot{ID: token, OrganisationID: org, ProjectID: project, Filters: filters, At: at, Totals: body})
+		}
+		if err != nil {
 			a.fail(w, r, err, "")
 			return
 		}
 	}
+	bound := fingerprint(org, project, q, token)
 
-	out := callPage{Items: make([]callSummary, 0, min(len(rows), limit)), Page: page{Snapshot: token}, Totals: snap.Totals}
+	out := callPage{Items: make([]callSummary, 0, min(len(rows), limit)), Page: page{Snapshot: token}, Totals: totals}
 	for i, row := range rows {
 		if i == limit {
 			next, err := encode(cursor{Bound: bound, Unknown: rows[i-1].Cursor.Unknown, Value: rows[i-1].Cursor.Value, ID: rows[i-1].Cursor.ID})
@@ -248,8 +257,8 @@ func (a *API) parseList(org, project string, q url.Values) (store.CallFilter, in
 	}{{"answerMsMin", &f.AnswerMin}, {"answerMsMax", &f.AnswerMax}, {"durationSecondsMin", &f.DurationMin}, {"durationSecondsMax", &f.DurationMax}} {
 		if v := q.Get(b.name); v != "" {
 			n, err := strconv.ParseFloat(v, 64)
-			if err != nil || n < 0 {
-				return bad("%s must be a number of at least 0", b.name)
+			if err != nil || n < 0 || math.IsNaN(n) || math.IsInf(n, 0) {
+				return bad("%s must be a finite number of at least 0", b.name)
 			}
 			*b.dst = &n
 		}
@@ -332,9 +341,9 @@ func optionalBool(q url.Values, name string) (*bool, error) {
 	return &b, nil
 }
 
-// fingerprint binds a cursor to the filters, sort, order and snapshot it was issued for: every
-// query parameter except the paging ones, in a canonical order.
-func fingerprint(q url.Values, at time.Time) string {
+// fingerprint binds a snapshot to the scope and filters it was taken for, and a cursor to those
+// plus its snapshot id: every query parameter except the paging ones, in a canonical order.
+func fingerprint(org, project string, q url.Values, snapshotID string) string {
 	keys := make([]string, 0, len(q))
 	for k := range q {
 		if k != "cursor" && k != "snapshot" && k != "limit" {
@@ -343,13 +352,23 @@ func fingerprint(q url.Values, at time.Time) string {
 	}
 	slices.Sort(keys)
 	h := sha256.New()
+	_, _ = fmt.Fprintf(h, "org=%s\nproject=%s\n", org, project) // a hash never fails to write
 	for _, k := range keys {
 		vs := slices.Clone(q[k])
 		slices.Sort(vs)
 		_, _ = fmt.Fprintf(h, "%s=%s\n", k, strings.Join(vs, "\x00"))
 	}
-	_, _ = fmt.Fprintf(h, "at=%s\n", at.Format(time.RFC3339Nano)) // a hash never fails to write
+	_, _ = fmt.Fprintf(h, "snapshot=%s\n", snapshotID)
 	return hex.EncodeToString(h.Sum(nil))[:24]
+}
+
+// randomID is a snapshot id: 16 random bytes, URL-safe.
+func randomID() (string, error) {
+	var b [16]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return "", fmt.Errorf("snapshot id: %w", err)
+	}
+	return base64.RawURLEncoding.EncodeToString(b[:]), nil
 }
 
 func encode(v any) (string, error) {

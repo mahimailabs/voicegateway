@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -13,7 +14,9 @@ import (
 
 	"github.com/mahimailabs/voicegateway/internal/event"
 	"github.com/mahimailabs/voicegateway/internal/join"
+	"github.com/mahimailabs/voicegateway/internal/sink"
 	"github.com/mahimailabs/voicegateway/internal/store"
+	"github.com/mahimailabs/voicegateway/internal/turn"
 )
 
 var listBase = time.Date(2026, 10, 17, 20, 0, 0, 0, time.UTC)
@@ -416,5 +419,120 @@ func TestListCallsLeavesOutUnservableCalls(t *testing.T) {
 		if code := f.get(f.api(nil), path(f.project, id), &e); code != http.StatusNotFound {
 			t.Errorf("getCall %s = %d, want 404 by the same rule", id, code)
 		}
+	}
+}
+
+// sweepBeforeInsert runs the summary sweep after the join and before the rows reach ClickHouse,
+// the window in which a summary could be rebuilt from a store that lacks them.
+type sweepBeforeInsert struct {
+	sink.Events
+	f *fixture
+}
+
+func (s sweepBeforeInsert) Insert(ctx context.Context, rows []store.Event) error {
+	j := &join.Joiner{Calls: s.f.pg, Traces: s.f.events, Log: s.f.log}
+	if err := j.Summarize(ctx, time.Now()); err != nil {
+		return err
+	}
+	return s.Events.Insert(ctx, rows)
+}
+
+// Pair review of #376: the stale mark is set only once the rows are in ClickHouse, so a sweep
+// between the join and the insert cannot rebuild without them and clear the mark.
+func TestSweepBetweenJoinAndInsertLosesNothing(t *testing.T) {
+	f := newFixture(t)
+	f.roomCall("RM_RACE", listBase, nil)
+	f.store()
+	f.summarize()
+	f.append(event.KindAgentTraces, "", f.export([]store.Span{{
+		TraceID: fmt.Sprintf("%032x", 7), SpanID: fmt.Sprintf("%016x", 7),
+		Name: "agent_turn", Start: listBase, End: listBase.Add(time.Second), Attributes: map[string]string{"room_id": "RM_RACE", "lk.e2e_latency": "0.7"},
+	}}))
+	f.storeWith(sweepBeforeInsert{Events: f.events, f: f})
+	f.summarize()
+	if p, _ := f.list(nil); p.Items[0].TurnCount == nil || *p.Items[0].TurnCount != 1 {
+		t.Fatalf("turns after a sweep between join and insert = %v, want 1", p.Items[0].TurnCount)
+	}
+}
+
+// failingTrace fails ClickHouse reads for one call.
+type failingTrace struct {
+	join.Traces
+	call string
+}
+
+func (t failingTrace) CallTrace(ctx context.Context, org, project, id string) ([]store.Span, turn.Result, error) {
+	if id == t.call {
+		return nil, turn.Result{}, errors.New("dial tcp: connection refused")
+	}
+	return t.Traces.CallTrace(ctx, org, project, id)
+}
+
+// Pair review of #376: one call whose rebuild fails is skipped and moved to the back of the queue;
+// the others are rebuilt. A NUL byte in a span attribute is stripped before Postgres.
+func TestSummarizeSkipsFailingCall(t *testing.T) {
+	f := newFixture(t)
+	f.roomCall("RM_BAD", listBase, nil)
+	f.roomCall("RM_GOOD", listBase.Add(time.Minute), nil)
+	f.append(event.KindAgentTraces, "", f.export([]store.Span{{
+		TraceID: fmt.Sprintf("%032x", 8), SpanID: fmt.Sprintf("%016x", 8),
+		Name: "llm_node", Start: listBase, End: listBase.Add(time.Second), Attributes: map[string]string{"room_id": "RM_GOOD", "gen_ai.request.model": "gpt\x00-nul"},
+	}}))
+	f.store()
+	bad, good := f.callID("RM_BAD"), f.callID("RM_GOOD")
+
+	before, err := f.pg.StaleCalls(context.Background(), 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	j := &join.Joiner{Calls: f.pg, Traces: failingTrace{Traces: f.events, call: bad}, Log: f.log}
+	if err := j.Summarize(context.Background(), time.Now()); err != nil {
+		t.Fatalf("Summarize = %v, want the sweep to carry on past one failure", err)
+	}
+	after, err := f.pg.StaleCalls(context.Background(), 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(after) != 1 || after[0].ID != bad {
+		t.Fatalf("stale after the sweep = %v, want only the failing call", after)
+	}
+	for _, c := range before {
+		if c.ID == bad && !after[0].StaleAt.After(c.StaleAt) {
+			t.Errorf("failing call's mark %v not moved back from %v", after[0].StaleAt, c.StaleAt)
+		}
+	}
+	var models []string
+	if err := f.pool.QueryRow(context.Background(), `SELECT models FROM call_summaries WHERE call_id = $1::uuid`, good).Scan(&models); err != nil {
+		t.Fatal(err)
+	}
+	if len(models) != 1 || models[0] != "gpt-nul" {
+		t.Errorf("models = %q, want the NUL stripped", models)
+	}
+}
+
+// Pair review of #376: a snapshot is bound to its project and filters, and a bound that is not a
+// finite number is 400.
+func TestListCallsSnapshotBoundToScope(t *testing.T) {
+	f := newFixture(t)
+	f.roomCall("RM_1", listBase, nil)
+	f.store()
+	p, _ := f.list(url.Values{"room": {"room-RM_1"}})
+	other := f.addProject(t.Name() + "-other")
+	for name, path := range map[string]string{
+		"other project":  listPath(other, url.Values{"room": {"room-RM_1"}, "snapshot": {p.Page.Snapshot}}),
+		"other filters":  listPath(f.project, url.Values{"room": {"room-RM_2"}, "snapshot": {p.Page.Snapshot}}),
+		"unknown":        listPath(f.project, url.Values{"snapshot": {"not-a-snapshot"}}),
+		"NaN bound":      listPath(f.project, url.Values{"answerMsMin": {"NaN"}}),
+		"infinite bound": listPath(f.project, url.Values{"durationSecondsMax": {"Inf"}}),
+	} {
+		t.Run(name, func(t *testing.T) {
+			var e apiError
+			if code := f.get(f.api(nil), path, &e); code != http.StatusBadRequest || e.Code != codeInvalidRequest {
+				t.Errorf("status %d, body %+v; want 400 invalid_request", code, e)
+			}
+		})
+	}
+	if len(p.Page.Snapshot) > 64 {
+		t.Errorf("snapshot token is %d characters, want a short id", len(p.Page.Snapshot))
 	}
 }

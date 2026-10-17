@@ -244,7 +244,14 @@ How the list reads:
 - Unknowns sort last in both orders, and ties break by id.
 - `issues`, `tag`, `archived=true` and `recorded=true` match nothing until each has a stored source.
 
-Medians use the console's rule, the upper middle value. Checks 1 to 10 pass on real Postgres, ClickHouse and Redis. Mutations fail them: dropping the snapshot cut, or dropping unknowns-last.
+Medians use the console's rule, the upper middle value, now written into the contract.
+
+From the pair review:
+- A summary is marked stale only after its rows reach ClickHouse, so a sweep between the join and the insert cannot lose them.
+- A failing rebuild is skipped and moved to the back of the queue.
+- The servable rule lives only in the `call_list` view.
+- Snapshots are kept server-side under a short id, timed by the Postgres clock and bound to their scope and filters.
+- NaN and infinite bounds are refused. Checks 1 to 10 pass on real Postgres, ClickHouse and Redis. Mutations fail them: dropping the snapshot cut, or dropping unknowns-last.
 
 Manual check, on the stack holding the two real calls:
 - The migration applied over the stored data, and the sweep rebuilt both summaries, healing the agent-only call's room and start from its spans.
