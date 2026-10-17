@@ -226,4 +226,4 @@ Manual check (curl half), on the stack still holding the two real calls:
 
 `sttSeconds` reads null on that stack, because its metric exports were stored before 04b extracted usage points, and nothing backfills them. The tests, which store the same exports through the current worker, read 33.25 s.
 
-The console half waits on the sign-in decision: the console does not send a token yet. Next: 04d, `listCalls`.
+The console half waits on the sign-in decision: the console does not send a token yet. 04c is not done until that half runs. Next: 04d, `listCalls`.
