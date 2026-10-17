@@ -30,6 +30,12 @@ type Config struct {
 	// AnswerBudgetMs is the answer budget listCalls counts against; 0 is the console's default.
 	// Interim, until thresholds are stored per project.
 	AnswerBudgetMs int
+	// PublicURL is the address people open the console at; https makes every session cookie
+	// Secure. Empty means unknown, and each request's own transport decides.
+	PublicURL string
+	// TrustedProxies are the proxies (addresses and CIDRs, comma-separated) whose X-Forwarded-For
+	// and X-Forwarded-Proto web believes.
+	TrustedProxies string
 	// APIToken is the bearer token /api/v1 requires, until the sign-in decision replaces it. Empty
 	// means the API answers 401 to everything rather than run open.
 	APIToken string
@@ -66,11 +72,13 @@ func Load(getenv func(string) string) (Config, error) {
 	}
 
 	c := Config{
-		WebAddr:       optional("VOICEGATEWAY_WEB_ADDR", ":8080"),
-		APIToken:      optional("VOICEGATEWAY_API_TOKEN", ""),
-		PostgresURL:   required("VOICEGATEWAY_POSTGRES_URL"),
-		ClickHouseURL: required("VOICEGATEWAY_CLICKHOUSE_URL"),
-		RedisURL:      required("VOICEGATEWAY_REDIS_URL"),
+		WebAddr:        optional("VOICEGATEWAY_WEB_ADDR", ":8080"),
+		APIToken:       optional("VOICEGATEWAY_API_TOKEN", ""),
+		PublicURL:      optional("VOICEGATEWAY_PUBLIC_URL", ""),
+		TrustedProxies: optional("VOICEGATEWAY_TRUSTED_PROXIES", ""),
+		PostgresURL:    required("VOICEGATEWAY_POSTGRES_URL"),
+		ClickHouseURL:  required("VOICEGATEWAY_CLICKHOUSE_URL"),
+		RedisURL:       required("VOICEGATEWAY_REDIS_URL"),
 		S3: S3{
 			Endpoint:  required("VOICEGATEWAY_S3_ENDPOINT"),
 			Bucket:    required("VOICEGATEWAY_S3_BUCKET"),

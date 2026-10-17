@@ -12,11 +12,13 @@ import (
 	"strings"
 	"time"
 
+	"github.com/alexedwards/scs/pgxstore"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/mahimailabs/voicegateway/internal/api"
+	"github.com/mahimailabs/voicegateway/internal/auth"
 	"github.com/mahimailabs/voicegateway/internal/config"
 	"github.com/mahimailabs/voicegateway/internal/event"
 	"github.com/mahimailabs/voicegateway/internal/ingest"
@@ -64,6 +66,17 @@ func Web(ctx context.Context, c config.Config, log *slog.Logger) error {
 	producer := stream.NewProducer(rdb, stream.Ingest)
 	uploads := &ingest.Uploads{Projects: projects, Stream: producer, Log: log, Now: time.Now}
 
+	trusted, err := auth.ParseTrusted(c.TrustedProxies)
+	if err != nil {
+		return fmt.Errorf("VOICEGATEWAY_TRUSTED_PROXIES: %w", err)
+	}
+	secure, plain := auth.NewSessions(pgxstore.New(pool))
+	accounts := &auth.Service{
+		Users: projects, Secure: secure, Plain: plain, Trusted: trusted,
+		PublicHTTPS: strings.HasPrefix(strings.ToLower(c.PublicURL), "https://"),
+		Token:       c.APIToken, Log: log, Now: time.Now,
+	}
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", obs.Health)
 	mux.Handle("POST /livekit/webhook", &ingest.Webhooks{Projects: projects, Stream: producer, Log: log, Now: time.Now})
@@ -72,17 +85,17 @@ func Web(ctx context.Context, c config.Config, log *slog.Logger) error {
 	mux.Handle("POST /observability/logs/otlp/v0", uploads.OTLP(event.KindAgentLogs))
 	mux.Handle("POST /observability/metrics/otlp/v0", uploads.OTLP(event.KindAgentMetrics))
 	mux.HandleFunc("POST /observability/recordings/v0", uploads.SessionReport)
-	if c.APIToken == "" {
-		log.Warn("web: VOICEGATEWAY_API_TOKEN is not set, so /api/v1 answers 401 to every request")
-	}
+	mux.Handle("/auth/", accounts.Routes())
 	mux.Handle("/api/v1/", (&api.API{
-		Projects: projects, Calls: projects, Traces: events, Layers: events, Log: log, Now: time.Now, Gate: api.BearerToken(c.APIToken),
+		Projects: projects, Calls: projects, Traces: events, Layers: events, Accounts: projects, Log: log, Now: time.Now, Gate: accounts.Gate,
 		AnswerBudgetMs: c.AnswerBudgetMs,
 	}).Routes())
 
 	srv := &http.Server{
-		Addr:              c.WebAddr,
-		Handler:           mux,
+		Addr: c.WebAddr,
+		// Writes from another origin are refused on every route (decision 0027). LiveKit's webhooks
+		// and agent uploads are server to server, carry no browser origin, and pass.
+		Handler:           http.NewCrossOriginProtection().Handler(mux),
 		ReadHeaderTimeout: 5 * time.Second,
 		BaseContext:       func(net.Listener) context.Context { return ctx },
 	}

@@ -261,3 +261,19 @@ Manual check, on the stack holding the two real calls:
 - Totals: 2 calls, 4 measured answers, `p50Ms` by the console's rule.
 - Without the token: 401.
 - Each row's id opens the same call through `getCall`.
+
+### 2026-10-17: phase 06a, sign in with built-in accounts
+
+People sign in with email and password (spec `docs/specs/phase06a-sign-in.md`, decision 0027). The first admin comes from `voicegateway user add --admin`.
+
+What changed:
+- **Passwords:** argon2id (t=3, 64 MiB, p=4) in PHC strings, compared in constant time, with concurrent hashes capped at the CPU count.
+- **Sessions:** in Postgres through `scs/pgxstore`, behind an HttpOnly, SameSite=Lax cookie. The cookie is Secure whenever the public URL is https or the request came over HTTPS through a trusted proxy. A password over plain HTTP is accepted only when the request is addressed to localhost, judged by its Host header, so it works behind Docker's port forwarding; anything else answers `https_required`, whatever the public URL.
+- **Sign-in limits:** 10 per email and 50 per client address in 15 minutes, with IPv6 counted by its /64. Each attempt is reserved atomically in Postgres before the password is checked, so a parallel burst cannot pass together, and a successful sign-in gives its reservation back. Behind a trusted proxy the client address is the right-most untrusted `X-Forwarded-For` hop, and an untrusted proxy on the same host is warned about once.
+- **Failures look alike:** an unknown email and a wrong password answer alike and take the same time.
+- **Cross-origin writes:** `CrossOriginProtection` wraps web's whole mux.
+- **The gate:** `/api/v1` accepts a session, scoped by membership (403 outside the organisation), or the interim token until 06c. The API router answers any request without a principal 401.
+- **Workspaces:** `getWorkspaces` is served from storage.
+- **Console:** with the mock off, the console shows a sign-in screen, and with no account yet, the first-admin command. The account menu signs out. The Vite dev server proxies `/api` and `/auth`.
+
+Checks 1 to 10 pass: Go on real Postgres, and the console with Vitest and Testing Library (added, exact-pinned). Next: 06b, invitations and roles.

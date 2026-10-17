@@ -1,3 +1,5 @@
+import { CopyCommand } from "@/components/copy-command"
+import { workspacesRead } from "@/lib/workspaces"
 import { Button } from "@/components/ui/button"
 import { useMemo, useState } from "react"
 import { Link, Outlet, useNavigate, useRouterState } from "@tanstack/react-router"
@@ -209,10 +211,31 @@ export function AppShell() {
   )
 }
 
+// The command that adds a LiveKit project to a running install (README, make project-add).
+const PROJECT_ADD_COMMAND =
+  'docker compose exec -e LIVEKIT_API_SECRET web voicegateway project add --name "Production" --livekit-url "$LIVEKIT_URL" --livekit-api-key "$LIVEKIT_API_KEY"'
+
 // The URL names an organisation or project this person cannot read. Say so, and link to the first
-// project they can, as a full page load so that project's settings are read.
+// project they can, as a full page load so that project's settings are read. When they can read no
+// project at all, as in a fresh install, say how to add one instead.
 function NoSuchProject() {
   const first = firstProjectPath()
+  if (!first && workspacesRead()) {
+    return (
+      <Empty className="mx-auto max-w-[1200px]">
+        <EmptyHeader>
+          <EmptyMedia variant="icon">
+            <TreeStructure />
+          </EmptyMedia>
+          <EmptyTitle>No project yet</EmptyTitle>
+          <EmptyDescription>A project is one LiveKit project. Add yours on the server, with its API secret in LIVEKIT_API_SECRET, then reload.</EmptyDescription>
+        </EmptyHeader>
+        <EmptyContent className="w-full max-w-xl">
+          <CopyCommand text={PROJECT_ADD_COMMAND} label="Project add command" />
+        </EmptyContent>
+      </Empty>
+    )
+  }
   return (
     <Empty className="mx-auto max-w-[1200px]">
       <EmptyHeader>

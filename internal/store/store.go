@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"errors"
 	"time"
 )
@@ -242,4 +243,50 @@ type CallTotals struct {
 	ValuesMs                       []float64
 	// ValuesTruncated is true when more answers matched than ValuesMs holds.
 	ValuesTruncated bool
+}
+
+// Principal is who a request is from: a signed-in user with their organisation roles, or, until
+// phase 06c, the interim API token, which names no user.
+type Principal struct {
+	UserID string
+	Email  string
+	// Roles maps each organisation the user belongs to to their role there.
+	Roles map[string]string
+	// Token is true for the interim bearer token.
+	Token bool
+}
+
+type principalKey struct{}
+
+// WithPrincipal returns ctx carrying p.
+func WithPrincipal(ctx context.Context, p Principal) context.Context {
+	return context.WithValue(ctx, principalKey{}, p)
+}
+
+// PrincipalFrom returns the principal a gate put on ctx, and whether there is one.
+func PrincipalFrom(ctx context.Context) (Principal, bool) {
+	p, ok := ctx.Value(principalKey{}).(Principal)
+	return p, ok
+}
+
+// User is an account as sign-in reads it.
+type User struct {
+	ID, Email    string
+	PasswordHash string
+}
+
+// Workspace is an organisation a user belongs to, with its projects.
+type Workspace struct {
+	ID, Name string
+	Projects []WorkspaceProject
+}
+
+// WorkspaceProject is one project of a Workspace.
+type WorkspaceProject struct{ ID, Name string }
+
+// SignInKey is one key sign-in attempts are counted under: an email or a client address, with how
+// many attempts it may have in the window.
+type SignInKey struct {
+	Kind, Key string
+	Max       int
 }

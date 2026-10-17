@@ -197,7 +197,7 @@ func (f *fixture) get(t *testing.T, project string) (int, []byte) {
 func (f *fixture) getRead(t *testing.T, project, read string) (int, []byte) {
 	t.Helper()
 	srv := httptest.NewServer((&api.API{
-		Projects: f.projects, Layers: f.layers, Log: quiet(), Now: time.Now, Gate: api.BearerToken(testToken),
+		Projects: f.projects, Layers: f.layers, Log: quiet(), Now: time.Now, Gate: api.TokenGate(testToken),
 	}).Routes())
 	defer srv.Close()
 	req, err := http.NewRequest(http.MethodGet, srv.URL+"/api/v1/org/"+org+"/project/"+project+"/"+read, nil)

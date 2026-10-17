@@ -9,10 +9,12 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
 
 	"github.com/mahimailabs/voicegateway/internal/app"
 	"github.com/mahimailabs/voicegateway/internal/config"
@@ -62,6 +64,7 @@ func root() *cobra.Command {
 		role("worker", "Turn data into calls and store it", app.Worker),
 		role("migrate", "Apply pending database migrations", app.Migrate),
 		projectCommand(),
+		userCommand(),
 		&cobra.Command{
 			Use:   "preflight",
 			Short: "Check that every dependency answers",
@@ -118,4 +121,70 @@ func projectCommand() *cobra.Command {
 	cmd := &cobra.Command{Use: "project", Short: "Manage LiveKit projects"}
 	cmd.AddCommand(add)
 	return cmd
+}
+
+// userCommand adds accounts. The first admin of an install is made here, so there is no open
+// sign-up window (decision 0027). The password comes from VOICEGATEWAY_USER_PASSWORD or a prompt,
+// never a flag, so it stays out of shell history and process listings.
+func userCommand() *cobra.Command {
+	var email, org string
+	var admin bool
+	add := &cobra.Command{
+		Use:   "add",
+		Short: "Add a user (password from VOICEGATEWAY_USER_PASSWORD or a prompt)",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			if !admin {
+				return errors.New("only --admin users can be added until invitations land (phase 06b)")
+			}
+			c, err := config.Load(os.Getenv)
+			if err != nil {
+				return fmt.Errorf("configuration:\n%w", err)
+			}
+			password := os.Getenv("VOICEGATEWAY_USER_PASSWORD")
+			if password == "" {
+				if password, err = promptPassword(cmd); err != nil {
+					return err
+				}
+			}
+			if _, err := app.AddUser(cmd.Context(), c, email, org, password); err != nil {
+				return fmt.Errorf("add user: %w", err)
+			}
+			_, err = fmt.Fprintf(cmd.OutOrStdout(), "added admin %s to organisation %s\n", strings.ToLower(strings.TrimSpace(email)), org)
+			return err
+		},
+	}
+	f := add.Flags()
+	f.StringVar(&email, "email", "", "the user's email address")
+	f.StringVar(&org, "org", "default", "organisation id")
+	f.BoolVar(&admin, "admin", false, "make the user an admin of the organisation")
+	cmd := &cobra.Command{Use: "user", Short: "Manage users"}
+	cmd.AddCommand(add)
+	return cmd
+}
+
+// promptPassword reads a password twice from the terminal without echoing it.
+func promptPassword(cmd *cobra.Command) (string, error) {
+	fd := int(os.Stdin.Fd()) //nolint:gosec // a file descriptor fits an int
+	if !term.IsTerminal(fd) {
+		return "", errors.New("set VOICEGATEWAY_USER_PASSWORD, or run in a terminal to be prompted")
+	}
+	read := func(prompt string) (string, error) {
+		_, _ = fmt.Fprint(cmd.ErrOrStderr(), prompt)
+		b, err := term.ReadPassword(fd)
+		_, _ = fmt.Fprintln(cmd.ErrOrStderr())
+		return string(b), err
+	}
+	first, err := read("Password: ")
+	if err != nil {
+		return "", err
+	}
+	again, err := read("Again: ")
+	if err != nil {
+		return "", err
+	}
+	if first != again {
+		return "", errors.New("the passwords differ")
+	}
+	return first, nil
 }

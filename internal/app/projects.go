@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"regexp"
@@ -9,6 +10,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/mahimailabs/voicegateway/internal/auth"
 	"github.com/mahimailabs/voicegateway/internal/config"
 	"github.com/mahimailabs/voicegateway/internal/seal"
 	"github.com/mahimailabs/voicegateway/internal/store"
@@ -94,3 +96,31 @@ func AddProject(ctx context.Context, c config.Config, in ProjectInput) (store.Pr
 		LiveKitAPISecret: in.LiveKitAPISecret,
 	})
 }
+
+// AddUser creates an account with the admin role in one organisation, for the first admin of an
+// install (decision 0027). The password comes from the caller, never a flag.
+func AddUser(ctx context.Context, c config.Config, email, organisationID, password string) (string, error) {
+	email = strings.TrimSpace(email)
+	if email == "" || !strings.Contains(email, "@") {
+		return "", errors.New("--email must be an email address")
+	}
+	if len(password) < minPassword {
+		return "", fmt.Errorf("the password must be at least %d characters", minPassword)
+	}
+	if organisationID == "" {
+		organisationID = "default"
+	}
+	hash, err := auth.HashPassword(ctx, password)
+	if err != nil {
+		return "", err
+	}
+	pool, err := pgxpool.New(ctx, c.PostgresURL)
+	if err != nil {
+		return "", fmt.Errorf("postgres: %w", redactErr(err, c.PostgresURL))
+	}
+	defer pool.Close()
+	return pgstore.NewStore(pool, nil).AddUser(ctx, email, hash, organisationID, "admin")
+}
+
+// minPassword is the shortest password accepted.
+const minPassword = 12

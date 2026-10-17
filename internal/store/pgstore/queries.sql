@@ -254,3 +254,65 @@ DELETE FROM list_snapshots WHERE created_at < now() - interval '1 day';
 -- A snapshot not yet expired, judged by the Postgres clock that wrote created_at.
 SELECT organisation_id, project_id, filters, at, totals FROM list_snapshots
 WHERE id = @id AND created_at >= now() - interval '1 day';
+
+-- name: CountUsers :one
+SELECT count(*) FROM users;
+
+-- name: CreateUser :one
+INSERT INTO users (email, password_hash) VALUES (@email, @password_hash) RETURNING id;
+
+-- name: AddMembership :exec
+INSERT INTO memberships (user_id, organisation_id, role) VALUES (@user_id, @organisation_id, @role);
+
+-- name: UserByEmail :one
+SELECT id, email, password_hash FROM users WHERE email = @email;
+
+-- name: UserByID :one
+SELECT id, email FROM users WHERE id = @id;
+
+-- name: Memberships :many
+SELECT organisation_id, role FROM memberships WHERE user_id = @user_id ORDER BY organisation_id;
+
+-- name: Membership :one
+SELECT role FROM memberships WHERE user_id = @user_id AND organisation_id = @organisation_id;
+
+-- name: LockSignInKey :exec
+-- Serialises reservations for one key until the transaction ends.
+SELECT pg_advisory_xact_lock(hashtext(concat(sqlc.arg(lock_kind)::text, '/', sqlc.arg(lock_key)::text)));
+
+-- name: SignInAttemptsSince :one
+-- Attempts for one key in the 15-minute window, by the Postgres clock.
+SELECT count(*) FROM sign_in_attempts WHERE kind = @kind AND key = @key AND at >= now() - interval '15 minutes';
+
+-- name: LimitingSignInAttempt :one
+-- How long until the attempt that keeps a key at its limit, the limit-th newest in the window,
+-- leaves it; then the key is under the limit again.
+SELECT EXTRACT(EPOCH FROM at + interval '15 minutes' - now())::double precision AS wait_seconds
+FROM sign_in_attempts
+WHERE kind = @kind AND key = @key AND at >= now() - interval '15 minutes'
+ORDER BY at DESC
+LIMIT 1 OFFSET @skip;
+
+-- name: RecordSignInAttempt :one
+INSERT INTO sign_in_attempts (kind, key) VALUES (@kind, @key) RETURNING id;
+
+-- name: ForgetSignInAttempts :exec
+DELETE FROM sign_in_attempts WHERE id = ANY(@ids::bigint[]);
+
+-- name: FailedSignIns :one
+-- Attempts for one key since a time, and the oldest of them.
+SELECT count(*) AS failures, min(at)::timestamptz AS oldest
+FROM sign_in_attempts WHERE kind = @kind AND key = @key AND at >= @since;
+
+-- name: ForgetSignIns :exec
+-- Deletes attempts past the 15-minute window, by the Postgres clock.
+DELETE FROM sign_in_attempts WHERE at < now() - interval '15 minutes';
+
+-- name: WorkspaceProjects :many
+-- The projects of the organisations a user belongs to.
+SELECT o.id AS organisation_id, o.name AS organisation_name, m.role, p.id AS project_id, p.name AS project_name
+FROM memberships m
+JOIN organisations o ON o.id = m.organisation_id
+LEFT JOIN projects p ON p.organisation_id = o.id
+WHERE m.user_id = @user_id
+ORDER BY o.id, p.id;
