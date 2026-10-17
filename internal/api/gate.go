@@ -16,13 +16,13 @@ func BearerToken(token string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if token == "" {
-				writeError(w, r, http.StatusUnauthorized, codeUnauthenticated, "the API is off until VOICEGATEWAY_API_TOKEN is set")
+				unauthenticated(w, r, "the API is off until VOICEGATEWAY_API_TOKEN is set")
 				return
 			}
 			got, ok := bearer(r.Header.Get("Authorization"))
 			sum := sha256.Sum256([]byte(got))
 			if !ok || subtle.ConstantTimeCompare(sum[:], want[:]) != 1 {
-				writeError(w, r, http.StatusUnauthorized, codeUnauthenticated, "a valid API token is required")
+				unauthenticated(w, r, "a valid API token is required")
 				return
 			}
 			next.ServeHTTP(w, r)
@@ -38,4 +38,10 @@ func bearer(header string) (string, bool) {
 		return "", false
 	}
 	return header[len(scheme):], true
+}
+
+// unauthenticated answers 401 with the challenge RFC 6750 asks of a Bearer-protected resource.
+func unauthenticated(w http.ResponseWriter, r *http.Request, message string) {
+	w.Header().Set("WWW-Authenticate", `Bearer realm="voicegateway"`)
+	writeError(w, r, http.StatusUnauthorized, codeUnauthenticated, message)
 }

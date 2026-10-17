@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -74,5 +75,27 @@ func TestUnknownAPIPathIsGated(t *testing.T) {
 		if err := json.Unmarshal(rec.Body.Bytes(), &e); err != nil || rec.Code != tt.want || e.RequestID == "" {
 			t.Errorf("auth %q: status %d, body %s; want %d in the Error shape", tt.auth, rec.Code, rec.Body.String(), tt.want)
 		}
+	}
+}
+
+// A router wired without a gate denies every request, with the Bearer challenge, rather than serve
+// openly; and a client's X-Request-Id never becomes the id in the body.
+func TestNoGateDeniesAndRequestIDIsServers(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/org/default/project/p/calls/x", nil)
+	req.Header.Set("X-Request-Id", "chosen-by-the-client")
+	rec := httptest.NewRecorder()
+	(&API{}).Routes().ServeHTTP(rec, req)
+	var e apiError
+	if err := json.Unmarshal(rec.Body.Bytes(), &e); err != nil {
+		t.Fatal(err)
+	}
+	if rec.Code != http.StatusUnauthorized || e.Code != codeUnauthenticated {
+		t.Errorf("no gate: status %d, body %+v; want 401 unauthenticated", rec.Code, e)
+	}
+	if got := rec.Header().Get("WWW-Authenticate"); !strings.HasPrefix(got, "Bearer") {
+		t.Errorf("WWW-Authenticate = %q, want a Bearer challenge", got)
+	}
+	if e.RequestID == "" || e.RequestID == "chosen-by-the-client" {
+		t.Errorf("requestId = %q, want one the server made", e.RequestID)
 	}
 }
