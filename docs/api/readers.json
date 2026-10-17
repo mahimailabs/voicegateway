@@ -306,5 +306,16 @@
     ],
     "assetNotes": {},
     "exclusion": "Server-side CallSummary computation inside the mock API."
+  },
+  {
+    "file": "dashboard/src/main.tsx",
+    "fixtures": [
+      "browser"
+    ],
+    "assets": [],
+    "browserStorage": false,
+    "operations": [],
+    "assetNotes": {},
+    "exclusion": "Starts the mock API with import() only in development or with VITE_MOCK_API=on; reads nothing itself."
   }
 ]
