@@ -138,8 +138,13 @@ function LiveView({ ms }: { ms: MediaServerData }) {
   const tickLabel = span < 3600 ? hms : hm
   // A room that is a call opens the call, matched by the room's SID; any other room, or a lookup that
   // fails, opens the room drawer.
+  // Only the latest click acts, and nothing acts once the page is left.
+  const lastClick = useRef(0)
+  useEffect(() => () => void (lastClick.current = -1), [])
   const open = async (r: Room) => {
+    const mine = ++lastClick.current
     const callId = await queryClient.fetchQuery(callInRoomQuery(r.name, r.sid)).catch(() => null)
+    if (lastClick.current !== mine) return
     if (callId) void navigate({ to: "/calls/$callId", params: { callId } })
     else setOpenRoom(r)
   }

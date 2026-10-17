@@ -50,3 +50,20 @@ test("a room opens the call with its own SID, never another call in a reused roo
   expect(await callInRoomQuery("support", "RM_absent").queryFn()).toBeNull()
   expect(new URL(asked[0], "http://x").searchParams.get("room")).toBe("support")
 })
+
+test("a room's call on a later page is found, and a search cut short is an error, not no call", async () => {
+  const row = (id: string, roomSid: string) => ({ id, room: "support", roomSid })
+  const pages: Record<string, unknown> = {
+    first: { items: [row("a", "RM_a")], page: { nextCursor: "2", snapshot: "s" }, totals: {} },
+    second: { items: [row("b", "RM_b")], page: { nextCursor: null, snapshot: "s" }, totals: {} },
+  }
+  vi.stubGlobal("fetch", async (url: string) => {
+    const body = new URL(url, "http://x").searchParams.get("cursor") === "2" ? pages.second : pages.first
+    return new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json" } })
+  })
+  expect(await callInRoomQuery("support", "RM_b").queryFn()).toBe("b")
+  expect(await callInRoomQuery("support", "RM_absent").queryFn()).toBeNull()
+  // Every page has another after it: the search stops and says so.
+  vi.stubGlobal("fetch", async () => new Response(JSON.stringify(pages.first), { status: 200, headers: { "Content-Type": "application/json" } }))
+  await expect(callInRoomQuery("support", "RM_absent").queryFn()).rejects.toBeInstanceOf(ApiError)
+})
