@@ -5,7 +5,6 @@ import mark from "@/assets/brand/mark.svg"
 import { DataTable } from "@/components/data-table"
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query"
 import { ApiError, callQuery, callPagesQuery, issuesQuery } from "@/lib/api"
-import { BUDGET_MS } from "@/lib/thresholds"
 import { cn } from "@/lib/utils"
 import { CallView } from "@/features/call/call-view"
 import { columns, rowOf, serverSort, type Row } from "@/features/calls/calls-page"
@@ -39,7 +38,7 @@ function Anatomy() {
   if (!stats.data) return <Note>{stats.isError ? "Turn anatomy could not be loaded." : "Loading turn anatomy."}</Note>
   const s = stats.data as CallStats
   const realtime = s.agents.filter((a) => a.stages.some((st) => st.stage === "Realtime")).map((a) => a.name ?? (a.key === null ? "Agent not identified" : "Unnamed agent"))
-  return <TurnAnatomy lanes={lanesFrom(s.stages, realtime)} e2e={s.answers.p50Ms} turns={s.anatomyTurns} budget={BUDGET_MS} />
+  return <TurnAnatomy lanes={lanesFrom(s.stages, realtime)} e2e={s.answers.p50Ms} turns={s.anatomyTurns} budget={s.answers.budgetMs} />
 }
 
 const Note = ({ children }: { children: React.ReactNode }) => <p className="py-10 text-center text-[13px] text-muted-foreground">{children}</p>

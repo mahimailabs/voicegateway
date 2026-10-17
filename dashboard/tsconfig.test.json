@@ -4,5 +4,5 @@
     "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.test.tsbuildinfo",
     "types": ["node", "vite/client"]
   },
-  "include": ["src", "tests/mock-api.test.ts", "tests/api-client.test.ts", "tests/call-filters.test.ts"]
+  "include": ["src", "tests/mock-api.test.ts", "tests/api-client.test.ts", "tests/call-filters.test.ts", "tests/scope.test.ts"]
 }
