@@ -116,7 +116,7 @@ func Worker(ctx context.Context, c config.Config, log *slog.Logger) error {
 	}
 	defer pool.Close()
 	// The call index needs no sealer: it never reads a LiveKit secret.
-	joiner := &join.Joiner{Calls: pgstore.NewStore(pool, nil), Traces: events, Log: log}
+	joiner := &join.Joiner{Calls: pgstore.NewStore(pool, nil), Traces: events, Log: log, Timeout: 30 * time.Second}
 	// One consumer per worker process; a worker that dies leaves its entries to be claimed.
 	name, err := os.Hostname()
 	if err != nil {

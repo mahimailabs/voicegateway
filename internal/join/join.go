@@ -2,6 +2,7 @@ package join
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"time"
 
@@ -32,6 +33,9 @@ type Joiner struct {
 	Calls  Calls
 	Traces Traces
 	Log    *slog.Logger
+	// Timeout bounds the call-index writes for one row, so a large batch is not held to one
+	// deadline and a hung Postgres is retried, not waited on.
+	Timeout time.Duration
 }
 
 // Reasons recorded in the unmatched table.
@@ -44,23 +48,31 @@ const (
 // Join resolves each row to its call, writing the call index as it goes, and sets the row's call
 // id, spans, trace links and unmatched records. It may be called again with the same rows after a
 // failure: every write it makes is an upsert, and the fields it sets are reset first. An error
-// means the call index did not answer; a row that resolves to nothing is not an error.
+// wrapping store.ErrBadRow means a row's values were refused; any other error means the call index
+// did not answer. A row that resolves to nothing is not an error.
 func (j *Joiner) Join(ctx context.Context, rows []store.Event) error {
 	for i := range rows {
-		r := &rows[i]
-		r.CallID, r.Spans, r.TraceCalls, r.Unmatched = "", nil, nil, nil
-		var err error
-		switch event.Kind(r.Kind) {
-		case event.KindLiveKitWebhook:
-			err = j.webhook(ctx, r)
-		case event.KindAgentSessionReport:
-			err = j.sessionReport(ctx, r)
-		case event.KindAgentTraces:
-			err = j.traces(ctx, r)
+		if err := j.row(ctx, &rows[i]); err != nil {
+			return fmt.Errorf("join %s: %w", rows[i].StreamID, err)
 		}
-		if err != nil {
-			return err
-		}
+	}
+	return nil
+}
+
+func (j *Joiner) row(ctx context.Context, r *store.Event) error {
+	r.CallID, r.Spans, r.TraceCalls, r.Unmatched = "", nil, nil, nil
+	if j.Timeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, j.Timeout)
+		defer cancel()
+	}
+	switch event.Kind(r.Kind) {
+	case event.KindLiveKitWebhook:
+		return j.webhook(ctx, r)
+	case event.KindAgentSessionReport:
+		return j.sessionReport(ctx, r)
+	case event.KindAgentTraces:
+		return j.traces(ctx, r)
 	}
 	return nil
 }

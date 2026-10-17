@@ -99,7 +99,7 @@ func newFixture(t *testing.T) *fixture {
 		t.Fatal(err)
 	}
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
-	return &fixture{stack: shared, t: t, project: project, joiner: &join.Joiner{Calls: shared.calls, Traces: shared.events, Log: log}}
+	return &fixture{stack: shared, t: t, project: project, joiner: &join.Joiner{Calls: shared.calls, Traces: shared.events, Log: log, Timeout: 10 * time.Second}}
 }
 
 func start() (*stack, error) {
@@ -397,8 +397,12 @@ func (f *fixture) export(spans ...span) []byte {
 			sp.SetParentSpanID(spanID(s.parent))
 		}
 		sp.SetName("span-" + s.id)
-		sp.SetStartTimestamp(pcommon.NewTimestampFromTime(s.start))
-		sp.SetEndTimestamp(pcommon.NewTimestampFromTime(s.end))
+		if !s.start.IsZero() {
+			sp.SetStartTimestamp(pcommon.NewTimestampFromTime(s.start))
+		}
+		if !s.end.IsZero() {
+			sp.SetEndTimestamp(pcommon.NewTimestampFromTime(s.end))
+		}
 		for k, v := range s.attrs {
 			sp.Attributes().PutStr(k, v)
 		}

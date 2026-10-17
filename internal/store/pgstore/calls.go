@@ -4,9 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/mahimailabs/voicegateway/internal/store"
@@ -25,7 +27,7 @@ func (s *Store) UpsertCall(ctx context.Context, c store.CallUpsert) (string, err
 		LastActivityAt: timestamp(c.LastActivityAt),
 	})
 	if err != nil {
-		return "", fmt.Errorf("upsert call: %w", err)
+		return "", fmt.Errorf("upsert call: %w", badRow(err))
 	}
 	return id.String(), nil
 }
@@ -37,7 +39,7 @@ func (s *Store) UpsertCallByJob(ctx context.Context, organisationID, projectID, 
 		OrganisationID: organisationID, ProjectID: projectID, JobID: text(jobID), LastActivityAt: timestamp(activityAt),
 	})
 	if err != nil {
-		return "", fmt.Errorf("upsert call by job id: %w", err)
+		return "", fmt.Errorf("upsert call by job id: %w", badRow(err))
 	}
 	return id.String(), nil
 }
@@ -69,7 +71,7 @@ func (s *Store) TouchCall(ctx context.Context, callID, jobID string, startedAt, 
 		return err
 	}
 	if err := s.q.TouchCall(ctx, TouchCallParams{ID: id, JobID: text(jobID), StartedAt: timestamp(startedAt), LastActivityAt: timestamp(activityAt)}); err != nil {
-		return fmt.Errorf("touch call: %w", err)
+		return fmt.Errorf("touch call: %w", badRow(err))
 	}
 	return nil
 }
@@ -81,7 +83,7 @@ func (s *Store) FinishCall(ctx context.Context, callID string, endedAt *time.Tim
 		return err
 	}
 	if err := s.q.FinishCall(ctx, FinishCallParams{ID: id, EndedAt: timestamp(endedAt)}); err != nil {
-		return fmt.Errorf("finish call: %w", err)
+		return fmt.Errorf("finish call: %w", badRow(err))
 	}
 	return nil
 }
@@ -97,7 +99,7 @@ func (s *Store) UpsertParticipant(ctx context.Context, p store.Participant) erro
 		JoinedAt: timestamp(p.JoinedAt), LeftAt: timestamp(p.LeftAt),
 	})
 	if err != nil {
-		return fmt.Errorf("upsert participant: %w", err)
+		return fmt.Errorf("upsert participant: %w", badRow(err))
 	}
 	return nil
 }
@@ -125,12 +127,26 @@ func ref(id pgtype.UUID, endedAt pgtype.Timestamptz, err error, what string) (st
 	return r, nil
 }
 
+// badRow wraps store.ErrBadRow around errors that blame the values, not the server: a data
+// exception (class 22, such as a NUL byte or invalid UTF-8 in text) or a missing project (23503).
+// Retrying those never succeeds.
+func badRow(err error) error {
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) && (strings.HasPrefix(pgErr.Code, "22") || pgErr.Code == foreignKeyViolation) {
+		return fmt.Errorf("%w: %w", store.ErrBadRow, err)
+	}
+	return err
+}
+
+// foreignKeyViolation is the Postgres error code for a row naming a missing parent.
+const foreignKeyViolation = "23503"
+
 func found(id pgtype.UUID, err error, what string) (string, error) {
 	if errors.Is(err, pgx.ErrNoRows) {
 		return "", store.ErrNotFound
 	}
 	if err != nil {
-		return "", fmt.Errorf("%s: %w", what, err)
+		return "", fmt.Errorf("%s: %w", what, badRow(err))
 	}
 	return id.String(), nil
 }

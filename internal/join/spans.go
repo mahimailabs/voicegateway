@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"context"
 	"errors"
+	"slices"
 	"time"
 
 	"go.opentelemetry.io/collector/pdata/pcommon"
@@ -47,6 +48,11 @@ func (j *Joiner) traces(ctx context.Context, r *store.Event) error {
 		}
 		byRef[k] = append(byRef[k], i)
 	}
+	// Room SIDs first, so a job-only span earlier in the export finds the call its room opened
+	// rather than opening a second one.
+	slices.SortStableFunc(refs, func(a, b ref) int {
+		return cmp.Compare(boolInt(a.roomSID == ""), boolInt(b.roomSID == ""))
+	})
 	linked := map[store.TraceCall]bool{}
 	for _, k := range refs {
 		callID, err := j.joinSpans(ctx, r, k, byRef[k])
@@ -71,8 +77,13 @@ func (j *Joiner) traces(ctx context.Context, r *store.Event) error {
 	return nil
 }
 
+// staleAfter is how long after its call ended a span may start and still join it, for a job's
+// shutdown spans and clock skew between the agent host and LiveKit. A span starting later carries
+// a previous job's ids, which LiveKit Agents falls back to outside a job.
+const staleAfter = time.Minute
+
 // joinSpans joins the spans at idx, which share ref k, to their call, creating it if no source has.
-// A span that starts after that call ended carries a previous job's ids and is left unjoined.
+// A span that starts more than staleAfter after that call ended is left unjoined.
 func (j *Joiner) joinSpans(ctx context.Context, r *store.Event, k ref, idx []int) (string, error) {
 	var (
 		existing store.CallRef
@@ -91,7 +102,7 @@ func (j *Joiner) joinSpans(ctx context.Context, r *store.Event, k ref, idx []int
 	var activity *time.Time
 	for _, i := range idx {
 		sp := r.Spans[i]
-		if existing.EndedAt != nil && sp.Start.After(*existing.EndedAt) {
+		if existing.EndedAt != nil && sp.Start.After(existing.EndedAt.Add(staleAfter)) {
 			continue
 		}
 		fresh = append(fresh, i)
@@ -123,6 +134,13 @@ func (j *Joiner) joinSpans(ctx context.Context, r *store.Event, k ref, idx []int
 		r.Spans[i].CallID = callID
 	}
 	return callID, nil
+}
+
+func boolInt(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
 }
 
 // spanRef reads a span's own ids in the order the spec sets: room_id, job_id, lk.room_sid,

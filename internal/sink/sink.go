@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log/slog"
 	"regexp"
+	"slices"
 	"time"
 
 	"github.com/mahimailabs/voicegateway/internal/event"
@@ -33,7 +34,8 @@ type Events interface {
 }
 
 // Joiner resolves rows to calls before they are stored, setting each row's call id and what is
-// stored with it. It may be called again with the same rows; an error is transient.
+// stored with it. It may be called again with the same rows. It wraps store.ErrBadRow when a row's
+// values were refused; any other error is transient. It bounds its own calls per row.
 type Joiner interface {
 	Join(ctx context.Context, rows []store.Event) error
 }
@@ -135,15 +137,12 @@ func (s *Sink) store(ctx context.Context, msgs []stream.Message) {
 	if skipped := len(rows) - len(fresh); skipped > 0 {
 		s.Log.Info("sink: skipped events already stored", "count", skipped)
 	}
+	msgsByID := byID(msgs)
 	// Joined before inserting: an event row that carries a call id always has its call.
-	if err := s.retry(ctx, "join calls", func(ctx context.Context) error {
-		cctx, cancel := context.WithTimeout(ctx, s.Timeout)
-		defer cancel()
-		return s.Join.Join(cctx, fresh)
-	}); err != nil {
+	fresh, err = s.join(ctx, fresh, msgsByID)
+	if err != nil {
 		return
 	}
-	msgsByID := byID(msgs)
 	for _, chunk := range chunks(fresh, maxBatchBytes) {
 		if err := s.insert(ctx, chunk, msgsByID); err != nil {
 			return
@@ -214,6 +213,42 @@ func (s *Sink) insert(ctx context.Context, rows []store.Event, msgs map[string]s
 			return s.insert(ctx, rows[half:], msgs)
 		}
 		s.Log.Error("sink: insert failed, keeping entries pending", "rows", len(rows), "err", err)
+		s.sleep(ctx, wait)
+		wait = min(wait*2, s.MaxBackoff)
+	}
+}
+
+// join joins rows to their calls and returns the rows to store. A transient failure, such as
+// Postgres down, is retried without end and nothing is acknowledged meanwhile. When the call index
+// refuses a row's values, the batch is halved until that row is found; only it is dead-lettered.
+func (s *Sink) join(ctx context.Context, rows []store.Event, msgs map[string]stream.Message) ([]store.Event, error) {
+	if len(rows) == 0 {
+		return rows, nil
+	}
+	wait := s.Backoff
+	for {
+		err := s.Join.Join(ctx, rows)
+		switch {
+		case err == nil:
+			return rows, nil
+		case ctx.Err() != nil:
+			return nil, ctx.Err()
+		case errors.Is(err, store.ErrBadRow) && len(rows) == 1:
+			s.deadLetter(ctx, msgs[rows[0].StreamID], "join: "+err.Error())
+			return nil, ctx.Err()
+		case errors.Is(err, store.ErrBadRow):
+			half := len(rows) / 2
+			first, err := s.join(ctx, rows[:half], msgs)
+			if err != nil {
+				return nil, err
+			}
+			second, err := s.join(ctx, rows[half:], msgs)
+			if err != nil {
+				return nil, err
+			}
+			return append(slices.Clone(first), second...), nil
+		}
+		s.Log.Error("sink: join failed, keeping entries pending", "rows", len(rows), "err", err)
 		s.sleep(ctx, wait)
 		wait = min(wait*2, s.MaxBackoff)
 	}

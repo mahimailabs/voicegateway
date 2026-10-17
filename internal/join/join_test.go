@@ -13,6 +13,7 @@ import (
 	"github.com/mahimailabs/voicegateway/internal/join"
 	"github.com/mahimailabs/voicegateway/internal/store"
 	"github.com/mahimailabs/voicegateway/internal/store/chstore"
+	"github.com/mahimailabs/voicegateway/internal/stream"
 )
 
 // base is a whole second, since webhooks report seconds.
@@ -404,16 +405,69 @@ func TestSpanAfterItsCallEndedIsNotJoined(t *testing.T) {
 	ids := map[string]string{"room_id": "RM_OLD", "job_id": "AJ_OLD"}
 	f.append(event.KindAgentTraces, "", f.export(
 		span{trace: "T5", id: "in", start: base.Add(30 * time.Second), end: base.Add(40 * time.Second), attrs: ids},
-		span{trace: "T6", id: "late", start: base.Add(2 * time.Minute), end: base.Add(3 * time.Minute), attrs: ids},
+		// Shutdown spans and clock skew: shortly after the end still joins.
+		span{trace: "T5", id: "shutdown", start: base.Add(90 * time.Second), end: base.Add(95 * time.Second), attrs: ids},
+		span{trace: "T6", id: "late", start: base.Add(3 * time.Minute), end: base.Add(4 * time.Minute), attrs: ids},
 	))
 	f.store("w1")
 
 	c := f.calls()["RM_OLD"]
 	spans, n := f.spanCalls()
-	if n != 2 || spans[hexSpan("in")] != c.ID || spans[hexSpan("late")] != "" {
-		t.Errorf("spans = %+v, want 'in' on %s and 'late' unjoined", spans, c.ID)
+	if n != 3 || spans[hexSpan("in")] != c.ID || spans[hexSpan("shutdown")] != c.ID || spans[hexSpan("late")] != "" {
+		t.Errorf("spans = %+v, want 'in' and 'shutdown' on %s and 'late' unjoined", spans, c.ID)
 	}
 	if c.EndState != "observed" || !equalTime(c.EndedAt, base.Add(time.Minute)) {
 		t.Errorf("call = %+v, want its end unchanged", c)
+	}
+}
+
+// A job-only span ahead of the first span naming the room, in one export, joins the room's call
+// rather than opening a second.
+func TestJobOnlySpanFirstJoinsRoomCall(t *testing.T) {
+	f := newFixture(t)
+	f.append(event.KindAgentTraces, "", f.export(
+		span{trace: "T7", id: "job", start: base, end: base.Add(time.Second), attrs: map[string]string{"lk.job_id": "AJ_7"}},
+		span{trace: "T7", id: "room", start: base, end: base.Add(time.Second), attrs: map[string]string{"room_id": "RM_7", "job_id": "AJ_7"}},
+	))
+	f.store("w1")
+	calls := f.calls()
+	if len(calls) != 1 || calls["RM_7"].JobID != "AJ_7" {
+		t.Fatalf("calls = %+v, want one call for RM_7 with job AJ_7", calls)
+	}
+	spans, _ := f.spanCalls()
+	if spans[hexSpan("job")] != calls["RM_7"].ID {
+		t.Errorf("job-only span call id = %q, want %q", spans[hexSpan("job")], calls["RM_7"].ID)
+	}
+}
+
+// A webhook Postgres refuses for its values (a NUL byte in the room name) is dead-lettered on its
+// own; the rest of the batch is joined and stored, and the worker keeps going.
+func TestRefusedRowIsDeadLettered(t *testing.T) {
+	f := newFixture(t)
+	f.appendWebhook(&livekit.WebhookEvent{Event: "room_started", Room: room("RM_OK", "fine", base), Id: "EV_1", CreatedAt: at(base)})
+	f.appendWebhook(&livekit.WebhookEvent{Event: "room_started", Room: room("RM_BAD", "nul\x00name", base), Id: "EV_2", CreatedAt: at(base)})
+	before := f.rdb.XLen(context.Background(), stream.DeadLetters(stream.Ingest)).Val()
+	f.store("w1")
+
+	if calls := f.calls(); len(calls) != 1 || calls["RM_OK"].ID == "" {
+		t.Fatalf("calls = %+v, want only RM_OK", calls)
+	}
+	if events, n := f.eventCalls(); n != 1 || events["EV_1"] == "" {
+		t.Errorf("events = %+v, want EV_1 joined", events)
+	}
+	if n := f.rdb.XLen(context.Background(), stream.DeadLetters(stream.Ingest)).Val() - before; n != 1 {
+		t.Errorf("dead letters added = %d, want 1", n)
+	}
+}
+
+// A span the exporter sent without times is stored with null times, never the epoch.
+func TestSpanWithoutTimesStoresNull(t *testing.T) {
+	f := newFixture(t)
+	f.append(event.KindAgentTraces, "", f.export(span{trace: "T8", id: "notime"}))
+	f.store("w1")
+	var nulls uint64
+	if err := f.ch.QueryRow(context.Background(),
+		`SELECT count() FROM spans FINAL WHERE project_id = ? AND start_time IS NULL AND end_time IS NULL`, f.project).Scan(&nulls); err != nil || nulls != 1 {
+		t.Errorf("spans with null times = %d, %v; want 1", nulls, err)
 	}
 }

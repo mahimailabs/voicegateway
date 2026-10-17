@@ -139,7 +139,7 @@ func (s *Store) insertSpans(ctx context.Context, events []store.Event) error {
 			for _, e := range events {
 				for _, sp := range e.Spans {
 					if err := b.Append(e.OrganisationID, e.ProjectID, sp.TraceID, sp.SpanID, sp.ParentSpanID, sp.CallID, sp.Name, sp.Kind,
-						sp.Start, sp.End, sp.StatusCode, sp.RoomID, sp.JobID, sp.ScopeName, nonNil(sp.Attributes), nonNil(sp.Resource), e.StreamID); err != nil {
+						orNil(sp.Start), orNil(sp.End), sp.StatusCode, sp.RoomID, sp.JobID, sp.ScopeName, nonNil(sp.Attributes), nonNil(sp.Resource), e.StreamID); err != nil {
 						return fmt.Errorf("span of %s: %w", e.StreamID, err)
 					}
 				}
@@ -212,6 +212,14 @@ func (s *Store) send(ctx context.Context, what string, n int, query string, fill
 	return nil
 }
 
+// orNil is nil for a time the exporter did not send, stored as null.
+func orNil(t time.Time) *time.Time {
+	if t.IsZero() {
+		return nil
+	}
+	return &t
+}
+
 func nonNil(m map[string]string) map[string]string {
 	if m == nil {
 		return map[string]string{}
@@ -228,16 +236,17 @@ const UnlinkedTraceKind = "trace"
 const unlinkedLookback = 24 * time.Hour
 
 // CountUnlinkedTraces records in unmatched, once each, every trace whose last span ended before
-// lastSpanBefore, none of whose spans joined a call and that no trace link names. It returns how
-// many it recorded.
+// lastSpanBefore (when it was stored, if no span reported an end), none of whose spans joined a
+// call and that no trace link names. It returns how many it recorded. Readers count unmatched
+// with FINAL: two workers sweeping at once can write the same trace before a merge folds it.
 func (s *Store) CountUnlinkedTraces(ctx context.Context, lastSpanBefore time.Time) (uint64, error) {
 	const unlinked = `
 		SELECT organisation_id, project_id, toString(trace_id) AS key
 		FROM spans FINAL
-		WHERE start_time >= @since
+		WHERE ifNull(start_time, inserted_at) >= @since
 		  AND (organisation_id, project_id, trace_id) NOT IN (SELECT organisation_id, project_id, trace_id FROM trace_calls)
 		GROUP BY organisation_id, project_id, trace_id
-		HAVING max(end_time) < @before AND countIf(call_id != '') = 0
+		HAVING ifNull(max(end_time), max(inserted_at)) < @before AND countIf(call_id != '') = 0
 		   AND (organisation_id, project_id, key) NOT IN (SELECT organisation_id, project_id, key FROM unmatched WHERE kind = @kind)`
 	args := []any{
 		clickhouse.Named("since", lastSpanBefore.Add(-unlinkedLookback)),
