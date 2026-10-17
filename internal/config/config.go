@@ -27,6 +27,9 @@ type Config struct {
 	SecretKey []byte
 	// LogLevel is debug, info, warn or error.
 	LogLevel slog.Level
+	// APIToken is the bearer token /api/v1 requires, until the sign-in decision replaces it. Empty
+	// means the API answers 401 to everything rather than run open.
+	APIToken string
 }
 
 // S3 is any S3-compatible bucket.
@@ -37,6 +40,9 @@ type S3 struct {
 	SecretKey string
 	UseSSL    bool
 }
+
+// minAPIToken is the shortest API token accepted: 128 bits as hex.
+const minAPIToken = 32
 
 // Load reads the configuration through getenv, normally os.Getenv. It names every missing or
 // invalid variable at once.
@@ -58,6 +64,7 @@ func Load(getenv func(string) string) (Config, error) {
 
 	c := Config{
 		WebAddr:       optional("VOICEGATEWAY_WEB_ADDR", ":8080"),
+		APIToken:      optional("VOICEGATEWAY_API_TOKEN", ""),
 		PostgresURL:   required("VOICEGATEWAY_POSTGRES_URL"),
 		ClickHouseURL: required("VOICEGATEWAY_CLICKHOUSE_URL"),
 		RedisURL:      required("VOICEGATEWAY_REDIS_URL"),
@@ -77,6 +84,9 @@ func Load(getenv func(string) string) (Config, error) {
 		c.SecretKey = key
 	}
 
+	if c.APIToken != "" && len(c.APIToken) < minAPIToken {
+		errs = append(errs, fmt.Errorf("VOICEGATEWAY_API_TOKEN must be at least %d characters (openssl rand -hex 32)", minAPIToken))
+	}
 	ssl, err := strconv.ParseBool(optional("VOICEGATEWAY_S3_USE_SSL", "false"))
 	if err != nil {
 		errs = append(errs, errors.New("VOICEGATEWAY_S3_USE_SSL must be true or false"))

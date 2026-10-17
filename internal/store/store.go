@@ -136,3 +136,16 @@ type MetricPoint struct {
 	RoomID, JobID string
 	Attributes    map[string]string
 }
+
+// Call is a stored call as the API reads it. A nil time or empty string was not reported.
+type Call struct {
+	ID       string
+	RoomName string
+	RoomSID  string
+	JobID    string
+	// StartedAt is the room start a webhook or session report gave.
+	StartedAt, EndedAt *time.Time
+	EndState           string
+	// Participants is how many participants webhooks reported for the call.
+	Participants int64
+}
