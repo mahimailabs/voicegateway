@@ -192,22 +192,11 @@ func (f *fixture) store() {
 // and the insert.
 func (f *fixture) storeWith(events sink.Events) {
 	f.t.Helper()
-	s := &sink.Sink{
-		Stream:    stream.NewConsumer(f.rdb, stream.Ingest, "worker", "w1"),
-		Events:    events,
-		Join:      &join.Joiner{Calls: f.pg, Traces: f.events, Log: f.log, Timeout: 10 * time.Second},
-		Log:       f.log,
-		Batch:     100,
-		Block:     100 * time.Millisecond,
-		ClaimIdle: 200 * time.Millisecond,
-		Backoff:   20 * time.Millisecond, MaxBackoff: 100 * time.Millisecond,
-		Timeout: 10 * time.Second,
-	}
+	s := f.sinkWith(events)
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() { done <- s.Run(ctx) }()
 	drained := func() bool {
-		// Until the sink creates the consumer group, there is no pending count to read.
 		bg := context.Background() // read after the sink's context is cancelled, too
 		pending, err := f.rdb.XPending(bg, stream.Ingest, "worker").Result()
 		return err == nil && f.rdb.XLen(bg, stream.Ingest).Val() == 0 && pending.Count == 0
@@ -222,6 +211,21 @@ func (f *fixture) storeWith(events sink.Events) {
 	}
 	if !drained() {
 		f.t.Fatal("stream not drained before the deadline")
+	}
+}
+
+// sinkWith returns the worker's sink and joiner with events as its ClickHouse writer.
+func (f *fixture) sinkWith(events sink.Events) *sink.Sink {
+	return &sink.Sink{
+		Stream:    stream.NewConsumer(f.rdb, stream.Ingest, "worker", "w1"),
+		Events:    events,
+		Join:      &join.Joiner{Calls: f.pg, Traces: f.events, Log: f.log, Timeout: 10 * time.Second},
+		Log:       f.log,
+		Batch:     100,
+		Block:     100 * time.Millisecond,
+		ClaimIdle: 200 * time.Millisecond,
+		Backoff:   20 * time.Millisecond, MaxBackoff: 100 * time.Millisecond,
+		Timeout: 10 * time.Second,
 	}
 }
 

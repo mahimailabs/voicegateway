@@ -154,6 +154,9 @@ type Call struct {
 	// Servable is the API's one rule for which calls it serves: room and start known after the
 	// fallbacks (the call_list view).
 	Servable bool
+	// Summarized is true once the summary sweep has built the call's summary, and with it healed
+	// any room or start missing from a call stored before phase 04d.
+	Summarized bool
 }
 
 // ListSnapshot is a listCalls snapshot kept server-side: the scope and filters it was taken for,

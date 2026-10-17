@@ -131,15 +131,16 @@ func (a *API) fail(w http.ResponseWriter, r *http.Request, err error, notFound s
 
 // buildCall maps a stored call to the contract. A call the call_list view marks servable is
 // served from its stored columns, the rule listCalls shares. A call stored before phase 04d lacks
-// those columns until the summary sweep heals it from its spans; until then the room and start
-// fall back to what its spans report, as in 04c. It reports false when neither gives both.
+// those columns until the summary sweep heals it from its spans; until it has a summary, the room
+// and start fall back to what its spans report, as in 04c. Once summarized, the stored columns are
+// final. It reports false when neither gives both.
 func buildCall(c store.Call, spans []store.Span, built turn.Result) (call, bool) {
 	room, started, startObserved := c.RoomName, c.StartedAt, c.StartedAt != nil
 	if started == nil {
 		started = c.FirstSeenAt
 	}
 	traceStart := earliestStart(spans)
-	if !c.Servable {
+	if !c.Servable && !c.Summarized {
 		if room == "" {
 			room = spanRoomName(spans)
 		}

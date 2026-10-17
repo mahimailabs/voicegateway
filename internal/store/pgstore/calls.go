@@ -188,7 +188,7 @@ func (s *Store) Call(ctx context.Context, organisationID, projectID, callID stri
 	return store.Call{
 		ID: row.ID.String(), RoomName: row.RoomName.String, RoomSID: row.RoomSid.String, JobID: row.JobID.String,
 		StartedAt: timeOf(row.StartedAt), EndedAt: timeOf(row.EndedAt), FirstSeenAt: timeOf(row.FirstSeenAt),
-		EndState: row.EndState, Participants: row.Participants, Servable: row.Servable.Bool,
+		EndState: row.EndState, Participants: row.Participants, Servable: row.Servable.Bool, Summarized: row.Summarized == true,
 	}, nil
 }
 

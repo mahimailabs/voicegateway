@@ -105,15 +105,16 @@ WHERE organisation_id = $1 AND id = $2;
 -- name: CallByID :one
 -- One call of a project as the API reads it, with the servable rule listCalls shares.
 SELECT l.id, l.room_name, l.room_sid, l.job_id, l.started_at, l.ended_at, l.end_state, l.first_seen_at,
-       l.participants, l.servable
+       l.participants, l.servable, l.summarized
 FROM call_list l
 WHERE l.organisation_id = @organisation_id AND l.project_id = @project_id AND l.id = @id;
 
 -- name: StaleCalls :many
--- Calls whose summary needs rebuilding, oldest mark first.
+-- Calls whose summary needs rebuilding, oldest mark first; a call whose rebuild failed waits until
+-- its mark, set ahead by the backoff, comes due.
 SELECT organisation_id, project_id, id, summary_stale_at
 FROM calls
-WHERE summary_stale_at IS NOT NULL
+WHERE summary_stale_at IS NOT NULL AND summary_stale_at <= now()
 ORDER BY summary_stale_at
 LIMIT @max_calls;
 
@@ -140,7 +141,7 @@ WHERE id = @id;
 
 -- name: ClearStale :exec
 -- Clears a call's stale mark only if nothing joined since the rebuild read it.
-UPDATE calls SET summary_stale_at = NULL
+UPDATE calls SET summary_stale_at = NULL, summary_failures = 0
 WHERE id = @id AND summary_stale_at = @seen;
 
 -- name: ListCalls :many
@@ -224,8 +225,12 @@ SELECT
 UPDATE calls SET summary_stale_at = now() WHERE id = ANY(@ids::uuid[]);
 
 -- name: DeferStale :exec
--- Moves a call whose rebuild failed to the back of the queue, so it cannot hold up the others.
-UPDATE calls SET summary_stale_at = now() WHERE id = @id AND summary_stale_at IS NOT NULL;
+-- Moves a call whose rebuild failed behind the others, and backs it off: 10 s, doubling with each
+-- failure in a row, at most an hour.
+UPDATE calls SET
+    summary_failures = summary_failures + 1,
+    summary_stale_at = now() + LEAST(interval '10 seconds' * power(2, summary_failures), interval '1 hour')
+WHERE id = @id AND summary_stale_at IS NOT NULL;
 
 -- name: TransactionTime :one
 -- The Postgres clock, for a list snapshot: the same clock that wrote created_at.
@@ -239,4 +244,6 @@ VALUES (@id, @organisation_id, @project_id, @filters, @at, @totals);
 DELETE FROM list_snapshots WHERE created_at < @before;
 
 -- name: ListSnapshot :one
-SELECT organisation_id, project_id, filters, at, totals FROM list_snapshots WHERE id = @id;
+-- A snapshot not yet expired, judged by the Postgres clock that wrote created_at.
+SELECT organisation_id, project_id, filters, at, totals FROM list_snapshots
+WHERE id = @id AND created_at >= now() - interval '1 day';

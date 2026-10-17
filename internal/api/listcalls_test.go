@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/url"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -16,6 +17,7 @@ import (
 	"github.com/mahimailabs/voicegateway/internal/join"
 	"github.com/mahimailabs/voicegateway/internal/sink"
 	"github.com/mahimailabs/voicegateway/internal/store"
+	"github.com/mahimailabs/voicegateway/internal/stream"
 	"github.com/mahimailabs/voicegateway/internal/turn"
 )
 
@@ -489,16 +491,18 @@ func TestSummarizeSkipsFailingCall(t *testing.T) {
 	if err := j.Summarize(context.Background(), time.Now()); err != nil {
 		t.Fatalf("Summarize = %v, want the sweep to carry on past one failure", err)
 	}
-	after, err := f.pg.StaleCalls(context.Background(), 10)
-	if err != nil {
+	// The good call is done; the failing one is still marked but backed off, so it is not due yet.
+	if due, err := f.pg.StaleCalls(context.Background(), 10); err != nil || len(due) != 0 {
+		t.Fatalf("due after the sweep = %v, %v; want none", due, err)
+	}
+	var failures int
+	var staleAt time.Time
+	if err := f.pool.QueryRow(context.Background(), `SELECT summary_failures, summary_stale_at FROM calls WHERE id = $1::uuid`, bad).Scan(&failures, &staleAt); err != nil {
 		t.Fatal(err)
 	}
-	if len(after) != 1 || after[0].ID != bad {
-		t.Fatalf("stale after the sweep = %v, want only the failing call", after)
-	}
 	for _, c := range before {
-		if c.ID == bad && !after[0].StaleAt.After(c.StaleAt) {
-			t.Errorf("failing call's mark %v not moved back from %v", after[0].StaleAt, c.StaleAt)
+		if c.ID == bad && (failures != 1 || !staleAt.After(c.StaleAt.Add(5*time.Second))) {
+			t.Errorf("failing call: %d failures, mark %v; want 1 and backed off from %v", failures, staleAt, c.StaleAt)
 		}
 	}
 	var models []string
@@ -522,6 +526,7 @@ func TestListCallsSnapshotBoundToScope(t *testing.T) {
 		"other project":  listPath(other, url.Values{"room": {"room-RM_1"}, "snapshot": {p.Page.Snapshot}}),
 		"other filters":  listPath(f.project, url.Values{"room": {"room-RM_2"}, "snapshot": {p.Page.Snapshot}}),
 		"unknown":        listPath(f.project, url.Values{"snapshot": {"not-a-snapshot"}}),
+		"malformed":      listPath(f.project, url.Values{"snapshot": {strings.Repeat("x", 300) + "%;"}}),
 		"NaN bound":      listPath(f.project, url.Values{"answerMsMin": {"NaN"}}),
 		"infinite bound": listPath(f.project, url.Values{"durationSecondsMax": {"Inf"}}),
 	} {
@@ -534,5 +539,49 @@ func TestListCallsSnapshotBoundToScope(t *testing.T) {
 	}
 	if len(p.Page.Snapshot) > 64 {
 		t.Errorf("snapshot token is %d characters, want a short id", len(p.Page.Snapshot))
+	}
+}
+
+// crashAfterInsert stops the worker after its rows reach ClickHouse and before it marks their
+// calls stale, as a worker that dies there would.
+type crashAfterInsert struct {
+	sink.Joiner
+	crash context.CancelFunc
+}
+
+func (c crashAfterInsert) Stored(context.Context, []store.Event) error {
+	c.crash()
+	return context.Canceled
+}
+
+// Pair review of #376: a worker that dies between the insert and the stale mark loses no mark.
+// The redelivered entry is joined again, though its rows are stored, and its call is marked.
+func TestRedeliveryAfterCrashMarksStale(t *testing.T) {
+	f := newFixture(t)
+	f.roomCall("RM_CRASH", listBase, nil)
+	f.store()
+	f.summarize()
+	f.append(event.KindAgentTraces, "", f.export([]store.Span{{
+		TraceID: fmt.Sprintf("%032x", 9), SpanID: fmt.Sprintf("%016x", 9),
+		Name: "agent_turn", Start: listBase, End: listBase.Add(time.Second), Attributes: map[string]string{"room_id": "RM_CRASH", "lk.e2e_latency": "0.6"},
+	}}))
+
+	ctx, crash := context.WithCancel(context.Background())
+	s := f.sinkWith(f.events)
+	s.Join = crashAfterInsert{Joiner: s.Join, crash: crash}
+	if err := s.Run(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if pending := f.rdb.XPending(context.Background(), stream.Ingest, "worker").Val().Count; pending != 1 {
+		t.Fatalf("pending after the crash = %d, want the entry unacknowledged", pending)
+	}
+	if stale, _ := f.pg.StaleCalls(context.Background(), 10); len(stale) != 0 {
+		t.Fatalf("stale before redelivery = %d, want 0: the crash came before the mark", len(stale))
+	}
+
+	f.store() // a restarted worker claims the entry; its rows are already in ClickHouse
+	f.summarize()
+	if p, _ := f.list(nil); p.Items[0].TurnCount == nil || *p.Items[0].TurnCount != 1 {
+		t.Fatalf("turns after redelivery = %v, want 1", p.Items[0].TurnCount)
 	}
 }

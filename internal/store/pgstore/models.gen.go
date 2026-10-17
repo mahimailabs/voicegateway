@@ -9,20 +9,21 @@ import (
 )
 
 type Call struct {
-	ID             pgtype.UUID
-	OrganisationID string
-	ProjectID      string
-	RoomName       pgtype.Text
-	RoomSid        pgtype.Text
-	JobID          pgtype.Text
-	StartedAt      pgtype.Timestamptz
-	EndedAt        pgtype.Timestamptz
-	EndState       string
-	LastActivityAt pgtype.Timestamptz
-	UpdatedAt      pgtype.Timestamptz
-	FirstSeenAt    pgtype.Timestamptz
-	CreatedAt      pgtype.Timestamptz
-	SummaryStaleAt pgtype.Timestamptz
+	ID              pgtype.UUID
+	OrganisationID  string
+	ProjectID       string
+	RoomName        pgtype.Text
+	RoomSid         pgtype.Text
+	JobID           pgtype.Text
+	StartedAt       pgtype.Timestamptz
+	EndedAt         pgtype.Timestamptz
+	EndState        string
+	LastActivityAt  pgtype.Timestamptz
+	UpdatedAt       pgtype.Timestamptz
+	FirstSeenAt     pgtype.Timestamptz
+	CreatedAt       pgtype.Timestamptz
+	SummaryStaleAt  pgtype.Timestamptz
+	SummaryFailures int32
 }
 
 type CallList struct {
@@ -38,6 +39,7 @@ type CallList struct {
 	CreatedAt       pgtype.Timestamptz
 	FirstSeenAt     pgtype.Timestamptz
 	Servable        pgtype.Bool
+	Summarized      interface{}
 	StartAt         pgtype.Timestamptz
 	DurationSeconds interface{}
 	Participants    int64

@@ -7,7 +7,9 @@
 ALTER TABLE calls
     ADD COLUMN first_seen_at    timestamptz,
     ADD COLUMN created_at       timestamptz NOT NULL DEFAULT now(),
-    ADD COLUMN summary_stale_at timestamptz;
+    ADD COLUMN summary_stale_at timestamptz,
+    -- Rebuilds of the call's summary that failed in a row; each waits longer before the next try.
+    ADD COLUMN summary_failures integer NOT NULL DEFAULT 0;
 
 -- Every call stored before this migration needs a summary.
 UPDATE calls SET summary_stale_at = now();
@@ -36,6 +38,7 @@ CREATE VIEW call_list AS
 SELECT c.organisation_id, c.project_id, c.id, c.room_name, c.room_sid, c.job_id, c.started_at, c.ended_at,
        c.end_state, c.created_at, c.first_seen_at,
        (COALESCE(c.room_name, '') <> '' AND COALESCE(c.started_at, c.first_seen_at) IS NOT NULL) AS servable,
+       (s.call_id IS NOT NULL) AS summarized,
        COALESCE(c.started_at, c.first_seen_at) AS start_at,
        CASE WHEN c.ended_at IS NOT NULL AND c.started_at IS NOT NULL
             THEN EXTRACT(EPOCH FROM c.ended_at - c.started_at)::double precision END AS duration_seconds,

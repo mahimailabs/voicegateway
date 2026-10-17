@@ -11,6 +11,7 @@ import (
 	"math"
 	"net/http"
 	"net/url"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -146,6 +147,9 @@ func (a *API) listCalls(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case cursorToken != "" && token == "":
 		writeError(w, r, http.StatusBadRequest, codeInvalidRequest, "cursor needs the snapshot it was issued with")
+		return
+	case token != "" && !snapshotID.MatchString(token):
+		writeError(w, r, http.StatusBadRequest, codeInvalidRequest, "snapshot is not one this server issued")
 		return
 	case token != "":
 		snap, err = a.Calls.ListSnapshot(ctx, token)
@@ -361,6 +365,9 @@ func fingerprint(org, project string, q url.Values, snapshotID string) string {
 	_, _ = fmt.Fprintf(h, "snapshot=%s\n", snapshotID)
 	return hex.EncodeToString(h.Sum(nil))[:24]
 }
+
+// snapshotID is what randomID makes: 16 bytes, base64url without padding.
+var snapshotID = regexp.MustCompile(`^[A-Za-z0-9_-]{22}$`)
 
 // randomID is a snapshot id: 16 random bytes, URL-safe.
 func randomID() (string, error) {

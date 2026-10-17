@@ -354,3 +354,15 @@ func TestTurnUsageAndTextEdges(t *testing.T) {
 		t.Errorf("turn with no times has text %q / %q", str(notime.UserText), str(notime.AgentText))
 	}
 }
+
+// Pair review of #376: turnCount is 0 only when a session report shows the call had no turn.
+func TestTurnCountZeroOnlyWithAReport(t *testing.T) {
+	spans := []store.Span{span("llm_node", "l", "x", 0, 100, nil)}
+	if n := Summarize(spans, Build(spans, nil)).TurnCount; n != nil {
+		t.Errorf("no turn and no report: turnCount %d, want null", *n)
+	}
+	report := Build(spans, []byte(`{"items":[]}`))
+	if n := Summarize(spans, report).TurnCount; n == nil || *n != 0 {
+		t.Errorf("no turn and a report: turnCount %v, want 0", n)
+	}
+}

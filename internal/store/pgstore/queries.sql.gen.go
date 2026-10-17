@@ -13,7 +13,7 @@ import (
 
 const callByID = `-- name: CallByID :one
 SELECT l.id, l.room_name, l.room_sid, l.job_id, l.started_at, l.ended_at, l.end_state, l.first_seen_at,
-       l.participants, l.servable
+       l.participants, l.servable, l.summarized
 FROM call_list l
 WHERE l.organisation_id = $1 AND l.project_id = $2 AND l.id = $3
 `
@@ -35,6 +35,7 @@ type CallByIDRow struct {
 	FirstSeenAt  pgtype.Timestamptz
 	Participants int64
 	Servable     pgtype.Bool
+	Summarized   interface{}
 }
 
 // One call of a project as the API reads it, with the servable rule listCalls shares.
@@ -52,6 +53,7 @@ func (q *Queries) CallByID(ctx context.Context, arg CallByIDParams) (CallByIDRow
 		&i.FirstSeenAt,
 		&i.Participants,
 		&i.Servable,
+		&i.Summarized,
 	)
 	return i, err
 }
@@ -106,7 +108,7 @@ func (q *Queries) CallByRoomSID(ctx context.Context, arg CallByRoomSIDParams) (C
 
 const callTotals = `-- name: CallTotals :one
 WITH f AS (
-    SELECT l.organisation_id, l.project_id, l.id, l.room_name, l.room_sid, l.job_id, l.started_at, l.ended_at, l.end_state, l.created_at, l.first_seen_at, l.servable, l.start_at, l.duration_seconds, l.participants, l.channel, l.turn_count, l.answer_ms, l.answer_ms_median, l.models, l.pipeline, l.agent_key
+    SELECT l.organisation_id, l.project_id, l.id, l.room_name, l.room_sid, l.job_id, l.started_at, l.ended_at, l.end_state, l.created_at, l.first_seen_at, l.servable, l.summarized, l.start_at, l.duration_seconds, l.participants, l.channel, l.turn_count, l.answer_ms, l.answer_ms_median, l.models, l.pipeline, l.agent_key
     FROM call_list l
     WHERE l.organisation_id = $3 AND l.project_id = $4 AND l.created_at <= $5 AND l.servable
       AND ($6::timestamptz IS NULL OR l.start_at >= $6::timestamptz)
@@ -212,7 +214,7 @@ func (q *Queries) CallTotals(ctx context.Context, arg CallTotalsParams) (CallTot
 }
 
 const clearStale = `-- name: ClearStale :exec
-UPDATE calls SET summary_stale_at = NULL
+UPDATE calls SET summary_stale_at = NULL, summary_failures = 0
 WHERE id = $1 AND summary_stale_at = $2
 `
 
@@ -290,10 +292,14 @@ func (q *Queries) CreateProject(ctx context.Context, arg CreateProjectParams) (C
 }
 
 const deferStale = `-- name: DeferStale :exec
-UPDATE calls SET summary_stale_at = now() WHERE id = $1 AND summary_stale_at IS NOT NULL
+UPDATE calls SET
+    summary_failures = summary_failures + 1,
+    summary_stale_at = now() + LEAST(interval '10 seconds' * power(2, summary_failures), interval '1 hour')
+WHERE id = $1 AND summary_stale_at IS NOT NULL
 `
 
-// Moves a call whose rebuild failed to the back of the queue, so it cannot hold up the others.
+// Moves a call whose rebuild failed behind the others, and backs it off: 10 s, doubling with each
+// failure in a row, at most an hour.
 func (q *Queries) DeferStale(ctx context.Context, id pgtype.UUID) error {
 	_, err := q.db.Exec(ctx, deferStale, id)
 	return err
@@ -350,7 +356,7 @@ func (q *Queries) HealCall(ctx context.Context, arg HealCallParams) error {
 
 const listCalls = `-- name: ListCalls :many
 WITH f AS (
-    SELECT l.organisation_id, l.project_id, l.id, l.room_name, l.room_sid, l.job_id, l.started_at, l.ended_at, l.end_state, l.created_at, l.first_seen_at, l.servable, l.start_at, l.duration_seconds, l.participants, l.channel, l.turn_count, l.answer_ms, l.answer_ms_median, l.models, l.pipeline, l.agent_key,
+    SELECT l.organisation_id, l.project_id, l.id, l.room_name, l.room_sid, l.job_id, l.started_at, l.ended_at, l.end_state, l.created_at, l.first_seen_at, l.servable, l.summarized, l.start_at, l.duration_seconds, l.participants, l.channel, l.turn_count, l.answer_ms, l.answer_ms_median, l.models, l.pipeline, l.agent_key,
         CASE $6::text
             WHEN 'startedAt'       THEN EXTRACT(EPOCH FROM l.start_at)::double precision
             WHEN 'durationSeconds' THEN l.duration_seconds
@@ -500,7 +506,8 @@ func (q *Queries) ListCalls(ctx context.Context, arg ListCallsParams) ([]ListCal
 }
 
 const listSnapshot = `-- name: ListSnapshot :one
-SELECT organisation_id, project_id, filters, at, totals FROM list_snapshots WHERE id = $1
+SELECT organisation_id, project_id, filters, at, totals FROM list_snapshots
+WHERE id = $1 AND created_at >= now() - interval '1 day'
 `
 
 type ListSnapshotRow struct {
@@ -511,6 +518,7 @@ type ListSnapshotRow struct {
 	Totals         []byte
 }
 
+// A snapshot not yet expired, judged by the Postgres clock that wrote created_at.
 func (q *Queries) ListSnapshot(ctx context.Context, id string) (ListSnapshotRow, error) {
 	row := q.db.QueryRow(ctx, listSnapshot, id)
 	var i ListSnapshotRow
@@ -726,7 +734,7 @@ func (q *Queries) SealedLiveKitSecret(ctx context.Context, arg SealedLiveKitSecr
 const staleCalls = `-- name: StaleCalls :many
 SELECT organisation_id, project_id, id, summary_stale_at
 FROM calls
-WHERE summary_stale_at IS NOT NULL
+WHERE summary_stale_at IS NOT NULL AND summary_stale_at <= now()
 ORDER BY summary_stale_at
 LIMIT $1
 `
@@ -738,7 +746,8 @@ type StaleCallsRow struct {
 	SummaryStaleAt pgtype.Timestamptz
 }
 
-// Calls whose summary needs rebuilding, oldest mark first.
+// Calls whose summary needs rebuilding, oldest mark first; a call whose rebuild failed waits until
+// its mark, set ahead by the backoff, comes due.
 func (q *Queries) StaleCalls(ctx context.Context, maxCalls int32) ([]StaleCallsRow, error) {
 	rows, err := q.db.Query(ctx, staleCalls, maxCalls)
 	if err != nil {
