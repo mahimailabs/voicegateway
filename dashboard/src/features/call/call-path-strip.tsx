@@ -1,11 +1,12 @@
 import { JOIN_MS } from "@/lib/thresholds"
-import { useState } from "react"
+import { useMemo, useState } from "react"
+import { useQuery } from "@tanstack/react-query"
 import { Brain, Desktop, Globe } from "@phosphor-icons/react"
 import { useNavigate } from "@tanstack/react-router"
 import { ProviderLogo, providerOfModel } from "@/components/provider-logo"
-import type { Call } from "@/lib/api"
+import { type Call, mediaServerQuery } from "@/lib/api"
 import { type Hop, type Link, PathDiagram, PathLegend, hopIcons } from "../sip/call-path"
-import { type Room, RoomDrawer, data, regionCity } from "../media-server/room-drawer"
+import { type MediaServerData, type Room, RoomDrawer, fromContract, regionCity } from "../media-server/room-drawer"
 import { TEST_AGENTS } from "../agents/agents-model"
 import { type CallModel, pipelineLabel } from "./call-model"
 import { useEmbedded } from "@/lib/url-state"
@@ -19,7 +20,16 @@ const secs = (ms: number) => `${(ms / 1000).toFixed(1)} s`
 const media: Record<string, string> = { SIP_MEDIA_ENCRYPT_DISABLE: "RTP", SIP_MEDIA_ENCRYPT_ALLOW: "SRTP if offered", SIP_MEDIA_ENCRYPT_REQUIRE: "SRTP" }
 const unknown: Link = { label: "not reported", secure: null, note: "We did not watch this room, so how this hop was carried is unknown." }
 
-export function CallPathStrip({ call, model, onModels }: { call: Call; model: CallModel; onModels: (() => void) | null }) {
+// Which room the call ran in comes from the media server read; until it answers the path is not drawn,
+// so a room not yet read is never shown as not watched.
+export function CallPathStrip(props: { call: Call; model: CallModel; onModels: (() => void) | null }) {
+  const read = useQuery(mediaServerQuery())
+  const ms = useMemo(() => (read.data ? fromContract(read.data) : null), [read.data])
+  if (!ms) return <p className="px-1 py-2 text-[12px] text-muted-foreground">{read.isError ? "The call path could not be loaded: the media server read failed." : "Loading the call path."}</p>
+  return <PathStrip {...props} data={ms} />
+}
+
+function PathStrip({ call, model, onModels, data }: { call: Call; model: CallModel; onModels: (() => void) | null; data: MediaServerData }) {
   const navigate = useNavigate()
   const embedded = useEmbedded()
   const [roomOpen, setRoomOpen] = useState(false)
@@ -127,7 +137,7 @@ export function CallPathStrip({ call, model, onModels }: { call: Call; model: Ca
         <PathLegend />
       </div>
       <PathDiagram path={{ hops, links }} vertical />
-      <RoomDrawer room={room} open={roomOpen} onOpenChange={setRoomOpen} />
+      <RoomDrawer room={room} ms={data} open={roomOpen} onOpenChange={setRoomOpen} />
     </div>
   )
 }
