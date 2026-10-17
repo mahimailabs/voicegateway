@@ -1,32 +1,14 @@
 import { JOIN_MS } from "@/lib/thresholds"
-import raw from "@/mocks/agents.json"
-import { type Room, data as rooms } from "../media-server/room-drawer"
+import type { CloudAgents } from "@/lib/api-types"
+import { cloudAgents } from "@/mocks/livekit"
+import { type MediaServerData, type Room, data as legacyRooms } from "../media-server/room-drawer"
 
 // The agents of a project, from two reads: LiveKit Cloud's CloudAgent API for deployed agents, and the
 // jobs and agent participants in the rooms we watched for every agent, including self-hosted workers
 // that no API lists.
 
-type Deployment = {
-  deployment: string | null
-  region: string | null
-  serverRegion: string | null
-  status: string | null
-  replicas: number | null
-  minReplicas: number | null
-  maxReplicas: number | null
-  curCpu: string | null
-  cpuReq: string | null
-  cpuLimit: string | null
-  curMem: string | null
-  memReq: string | null
-  memLimit: string | null
-  lastScrapedAt: string | null
-  version: string | null
-}
-type CloudAgent = { id: string; name: string | null; version: string | null; deployedAt: string | null; deployments: Deployment[]; versions: { version: string; current: boolean | null; draining: boolean | null; active: boolean | null; status: string | null; createdAt: string | null; deployedAt: string | null }[] }
-const cloud = raw as unknown as { readAt: string; source: string; agents: CloudAgent[] }
-export const source = cloud.source
-export const readAt = cloud.readAt
+type CloudAgent = CloudAgents["agents"][number]
+type Deployment = CloudAgent["deployments"][number]
 
 // Kubernetes quantities as the API returns them: "2" cores, "500m" millicores, "1Gi", "4Gi", "512Mi".
 export const cores = (q: string | null) => (q == null ? null : q.endsWith("m") ? Number(q.slice(0, -1)) / 1000 : Number(q))
@@ -49,7 +31,11 @@ export type Agent = {
 
 const realVersion = (v: string | null) => (v && v !== "---" ? v : null)
 
-export function agents(): Agent[] {
+// Pages not yet reading the API build the list from the mock directly; #323 removes this.
+export const agents = (): Agent[] => agentsFrom(cloudAgents(), legacyRooms)
+
+// The agents from the CloudAgent read (getCloudAgents) and the rooms of the media server read.
+export function agentsFrom(cloud: CloudAgents, rooms: MediaServerData): Agent[] {
   const all: Room[] = rooms.rooms.map((r, k) => ({ ...r, n: k + 1 }))
   const byName = new Map<string, Agent>()
   for (const c of cloud.agents) {

@@ -1,8 +1,11 @@
-import type { Egress, Ingress, MediaServer, Sip } from "@/lib/api-types"
+import type { CapacityRun, CloudAgents, Egress, Ingress, MediaServer, ProjectSnapshot, Sip } from "@/lib/api-types"
 import egressRaw from "@/mocks/egress.json"
 import ingressRaw from "@/mocks/ingress.json"
 import sipRaw from "@/mocks/sip.json"
 import mediaRaw from "@/mocks/media-server.json"
+import agentsRaw from "@/mocks/agents.json"
+import capacityRaw from "@/mocks/capacity.json"
+import snapshotRaw from "@/mocks/project-snapshot.json"
 
 // The LiveKit reads the mock API serves, adapted from the captured fixtures to the contract
 // (docs/api/openapi.yaml). Captured times are Unix seconds; the contract carries RFC 3339 UTC. Fields
@@ -85,4 +88,40 @@ export function mediaServer(): MediaServer {
       recording: recording && { ...recording, id: recording.url },
     })),
   } as MediaServer
+}
+
+// The CloudAgent API read. The capture also kept each deployment's enabled flag and event log, which
+// the contract does not carry.
+export function cloudAgents(): CloudAgents {
+  const d = agentsRaw as unknown as Omit<CloudAgents, "agents"> & { agents: (Record<string, unknown> & { deployments: Record<string, unknown>[] })[] }
+  return {
+    ...d,
+    agents: d.agents.map((a) => ({ ...a, deployments: a.deployments.map(({ deploymentEnabled: _e, events: _v, ...x }) => x) })),
+  } as CloudAgents
+}
+
+// The one capacity run we have, with the capture's snake_case step fields in the contract's names.
+export function capacity(): CapacityRun {
+  type Step = { step: number; joined: number; pending: number; join_s: number[]; answer_s: number[]; host_load_1m: number[]; host_cores: number }
+  const d = capacityRaw as unknown as Omit<CapacityRun, "steps"> & { steps: Step[] }
+  return {
+    ...d,
+    steps: d.steps.map(({ join_s, answer_s, host_load_1m, host_cores, ...x }) => ({ ...x, joinSeconds: join_s, answerSeconds: answer_s, hostLoad1m: host_load_1m, hostCores: host_cores })),
+  } as CapacityRun
+}
+
+// The project snapshot: what the three keys see at one read. Room and join times in seconds become
+// RFC 3339, and the observed agent's options take the contract's camelCase names.
+export function projectSnapshot(): ProjectSnapshot {
+  type Raw = Omit<ProjectSnapshot, "rooms" | "observed"> & {
+    rooms: (Record<string, unknown> & { createdAt: number | null; participants: (Record<string, unknown> & { joinedAt: number | null })[] })[]
+    observed: Record<string, unknown> & { options: { endpointing: string; interruption: string; preemptive_generation: string; max_tool_steps: string; user_away_timeout: string; ivr_detection: string } }
+  }
+  const d = snapshotRaw as unknown as Raw
+  const { preemptive_generation, max_tool_steps, user_away_timeout, ivr_detection, ...options } = d.observed.options
+  return {
+    ...d,
+    rooms: d.rooms.map((r) => ({ ...r, createdAt: iso(r.createdAt), participants: r.participants.map((p) => ({ ...p, joinedAt: iso(p.joinedAt) })) })),
+    observed: { ...d.observed, options: { ...options, preemptiveGeneration: preemptive_generation, maxToolSteps: max_tool_steps, userAwayTimeout: user_away_timeout, ivrDetection: ivr_detection } },
+  } as ProjectSnapshot
 }

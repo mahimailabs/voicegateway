@@ -254,7 +254,7 @@ export function OverviewPage() {
       <Section title="Agents" to="/agents" link="Agent workers">
         <div className="grid gap-4 md:grid-cols-2">
           {active.map((r) => {
-            const peak = r.agent ? peakAtOnce(r.agent) : null
+            const peak = r.agent ? peakAtOnce(r.agent, rooms) : null
             const join = r.agent ? median(joinDelays(r.agent.jobs)) : null
             const failed = r.agent ? r.agent.jobs.filter((j) => j.failed).length : 0
             const perCall = r.callList.map((c) => ({

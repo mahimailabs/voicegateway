@@ -1,8 +1,8 @@
 import { http, HttpResponse, type PathParams } from "msw"
-import type { Call, CallPage, Egress, Error as ApiErrorBody, Ingress, MediaServer, Sip } from "@/lib/api-types"
+import type { Call, CallPage, CapacityRun, CloudAgents, Egress, Error as ApiErrorBody, Ingress, MediaServer, ProjectSnapshot, Sip } from "@/lib/api-types"
 import { orgs } from "@/components/workspace-switcher"
 import { capturedCalls } from "./fixtures"
-import { egress, ingress, mediaServer, sip } from "./livekit"
+import { capacity, cloudAgents, egress, ingress, mediaServer, projectSnapshot, sip } from "./livekit"
 import { summarize } from "./summaries"
 import { matchesFilters, parseFilters, sortCalls, totals } from "./calls-query"
 
@@ -67,5 +67,8 @@ export const handlers = [
   http.get<PathParams, never, Egress | ApiErrorBody>(`${project}/egress`, ({ params }) => (known(params) ? HttpResponse.json(egress()) : fail(404, "not_found", "No such project."))),
   http.get<PathParams, never, Ingress | ApiErrorBody>(`${project}/ingress`, ({ params }) => (known(params) ? HttpResponse.json(ingress()) : fail(404, "not_found", "No such project."))),
   http.get<PathParams, never, MediaServer | ApiErrorBody>(`${project}/media-server`, ({ params }) => (known(params) ? HttpResponse.json(mediaServer()) : fail(404, "not_found", "No such project."))),
+  http.get<PathParams, never, CloudAgents | ApiErrorBody>(`${project}/agents`, ({ params }) => (known(params) ? HttpResponse.json(cloudAgents()) : fail(404, "not_found", "No such project."))),
+  http.get<PathParams, never, CapacityRun | null | ApiErrorBody>(`${project}/capacity`, ({ params }) => (known(params) ? HttpResponse.json(capacity()) : fail(404, "not_found", "No such project."))),
+  http.get<PathParams, never, ProjectSnapshot | ApiErrorBody>(`${project}/snapshot`, ({ params }) => (known(params) ? HttpResponse.json(projectSnapshot()) : fail(404, "not_found", "No such project."))),
   http.get<PathParams, never, Sip | ApiErrorBody>(`${project}/sip`, ({ params }) => (known(params) ? HttpResponse.json(sip()) : fail(404, "not_found", "No such project."))),
 ]

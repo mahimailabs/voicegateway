@@ -6,8 +6,9 @@ import { type ChartConfig, ChartContainer, ChartTooltip, ChartTooltipContent } f
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
-import { type Room, RoomBody, data, openAtWatchEnd, regionCity } from "../media-server/room-drawer"
-import { type Agent, cores, gib, joinDelays, median, readAt } from "./agents-model"
+import type { CapacityRun } from "@/lib/api-types"
+import { type MediaServerData, type Room, RoomBody, openAtWatchEnd, regionCity } from "../media-server/room-drawer"
+import { type Agent, cores, gib, joinDelays, median } from "./agents-model"
 import { CapacityButton, CapacityResult, capacityRun } from "./capacity"
 
 // One agent, everything the three keys and the watched rooms say about it. Calls at once is counted
@@ -20,7 +21,7 @@ const when = (iso: string | null) => (iso ? new Date(iso).toLocaleString([], { m
 const config = { calls: { label: "Calls at once", color: "var(--chart-1)" } } satisfies ChartConfig
 
 type Span = { from: number; to: number; open: boolean; room: Room }
-function spans(a: Agent): Span[] {
+function spans(a: Agent, ms: MediaServerData): Span[] {
   // Every time the agent was in a room counts, including a second join after LiveKit retried a job.
   const rooms = [...new Map(a.jobs.map((j) => [j.room.sid, j.room])).values()]
   return rooms.flatMap((room) =>
@@ -29,12 +30,12 @@ function spans(a: Agent): Span[] {
       // A stay with no reported start or end cannot be counted on the chart.
       .flatMap((p) => {
         const from = p.joinedAtMs !== null ? p.joinedAtMs / 1000 : p.firstSeen
-        return from !== null && p.lastSeen !== null ? [{ from, to: p.lastSeen, open: openAtWatchEnd(p), room }] : []
+        return from !== null && p.lastSeen !== null ? [{ from, to: p.lastSeen, open: openAtWatchEnd(p, ms), room }] : []
       }),
   )
 }
 
-function windows(list: Span[]) {
+function windows(list: Span[], data: MediaServerData) {
   return data.windows
     .filter((w): w is typeof w & { start: number; end: number } => w.start !== null && w.end !== null)
     .map((w) => {
@@ -84,7 +85,10 @@ function Section({ title, note, children }: { title: string; note?: string; chil
 }
 
 // A room opens in place of the agent, with a way back, rather than as a second drawer on top.
-export function AgentDrawer({ agent: a, onOpenChange, onTest }: { agent: Agent | null; onOpenChange: (o: boolean) => void; onTest: (a: Agent) => void }) {
+// reads: the media server view, when the CloudAgent API was read, and the project's capacity run
+// (undefined when it could not be read, so "not measured" is never claimed for it).
+export type AgentReads = { ms: MediaServerData; readAt: string; run: CapacityRun | null | undefined; runNote: string }
+export function AgentDrawer({ agent: a, reads, onOpenChange, onTest }: { agent: Agent | null; reads: AgentReads; onOpenChange: (o: boolean) => void; onTest: (a: Agent) => void }) {
   const [room, setRoom] = useState<Room | null>(null)
   return (
     <Sheet
@@ -102,20 +106,21 @@ export function AgentDrawer({ agent: a, onOpenChange, onTest }: { agent: Agent |
                 <ArrowLeft /> Back to {a.name ?? "the agent"}
               </Button>
             </div>
-            <RoomBody room={room} ms={data} />
+            <RoomBody room={room} ms={reads.ms} />
           </>
         ) : (
-          a && <Body a={a} onRoom={setRoom} onTest={() => onTest(a)} />
+          a && <Body a={a} reads={reads} onRoom={setRoom} onTest={() => onTest(a)} />
         )}
       </SheetContent>
     </Sheet>
   )
 }
 
-function Body({ a, onRoom, onTest }: { a: Agent; onRoom: (r: Room) => void; onTest: () => void }) {
+function Body({ a, reads, onRoom, onTest }: { a: Agent; reads: AgentReads; onRoom: (r: Room) => void; onTest: () => void }) {
+  const { ms: data, readAt, run, runNote } = reads
   const d = a.cloud?.deployment ?? null
-  const list = spans(a)
-  const ws = windows(list)
+  const list = spans(a, data)
+  const ws = windows(list, data)
   const peak = ws.length ? Math.max(...ws.map((w) => w.peak)) : null
   const delays = joinDelays(a.jobs)
   const m = median(delays)
@@ -150,8 +155,10 @@ function Body({ a, onRoom, onTest }: { a: Agent; onRoom: (r: Room) => void; onTe
         </div>
 
         <Section title="Capacity" note="How many calls the agent carries at once before it refuses one, measured with synthetic calls.">
-          {capacityRun(a) ? (
-            <CapacityResult run={capacityRun(a)!} />
+          {run === undefined ? (
+            <p className="rounded-xl border border-dashed px-4 py-4 text-[13px] text-muted-foreground">{runNote}</p>
+          ) : capacityRun(a, run) ? (
+            <CapacityResult run={capacityRun(a, run)!} />
           ) : (
             <div className="flex items-center justify-between gap-4 rounded-xl border border-dashed px-4 py-4">
               <p className="text-[13px] text-muted-foreground">Not measured yet. Peak calls at once above is what traffic happened to reach, not what the agent can take.</p>
@@ -260,7 +267,7 @@ function Body({ a, onRoom, onTest }: { a: Agent; onRoom: (r: Room) => void; onTe
 }
 
 // Most calls the agent carried at once in the rooms we watched, or null when it was in none.
-export function peakAtOnce(a: Agent): number | null {
-  const ws = windows(spans(a))
+export function peakAtOnce(a: Agent, ms: MediaServerData): number | null {
+  const ws = windows(spans(a, ms), ms)
   return ws.length ? Math.max(...ws.map((w) => w.peak)) : null
 }

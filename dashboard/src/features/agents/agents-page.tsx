@@ -9,10 +9,14 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { cn } from "@/lib/utils"
-import { type Room, RoomDrawer, regionCity } from "../media-server/room-drawer"
-import { AgentDrawer } from "./agent-drawer"
+import { useQuery } from "@tanstack/react-query"
+import { QueryState } from "@/components/page-state"
+import { capacityQuery, cloudAgentsQuery, mediaServerQuery } from "@/lib/api"
+import type { CloudAgents } from "@/lib/api-types"
+import { type MediaServerData, type Room, RoomDrawer, fromContract, regionCity } from "../media-server/room-drawer"
+import { AgentDrawer, type AgentReads } from "./agent-drawer"
 import { CapacityButton, CapacityDialog } from "./capacity"
-import { type Agent, type Check, agents, checks, cores, gib, joinDelays, median, readAt, source } from "./agents-model"
+import { type Agent, type Check, agentsFrom, checks, cores, gib, joinDelays, median } from "./agents-model"
 import { useUrlPick, useUrlState } from "@/lib/url-state"
 
 // Agent workers as the project's three keys see them (decision 0016): every agent that is deployed to
@@ -174,8 +178,22 @@ const agentFields: Field<Agent>[] = [
 ]
 
 export function AgentsPage() {
+  const cloud = useQuery(cloudAgentsQuery())
+  const media = useQuery(mediaServerQuery())
+  // The capacity run is optional: when it cannot be read the drawer says so.
+  const run = useQuery(capacityQuery())
+  const ms = useMemo(() => (media.data ? fromContract(media.data) : null), [media.data])
+  if (!cloud.data) return <QueryState icon={Robot} what="the agents" query={cloud} />
+  if (!ms) return <QueryState icon={Robot} what="the agents' rooms" query={media} />
+  // Only a read that answered can say "not measured"; while loading or after a failure the drawer says which.
+  const runNote = run.isError ? "The capacity run could not be loaded." : "Loading the capacity run."
+  return <AgentsView cloud={cloud.data} ms={ms} run={run.isSuccess ? run.data : undefined} runNote={runNote} />
+}
+
+function AgentsView({ cloud, ms, run, runNote }: { cloud: CloudAgents; ms: MediaServerData; run: AgentReads["run"]; runNote: string }) {
+  const { source, readAt } = cloud
   const [tab, setTab] = useUrlState("tab", "fleet")
-  const list = useMemo(() => agents(), [])
+  const list = useMemo(() => agentsFrom(cloud, ms), [cloud, ms])
   const found = checks(list)
   const [openRoom, setOpenRoom] = useState<Room | null>(null)
   // The open agent is in the URL (?agent=<key>), which is also how the command palette opens one.
@@ -282,9 +300,9 @@ export function AgentsPage() {
         </TabsContent>
       </Tabs>
 
-      <AgentDrawer agent={openAgent} onOpenChange={(o) => !o && setOpenAgent(null)} onTest={(a) => (setOpenAgent(null), setTesting(a))} />
-      <CapacityDialog agent={testing} onOpenChange={(o) => !o && setTesting(null)} />
-      <RoomDrawer room={openRoom} open={openRoom !== null} onOpenChange={(o) => !o && setOpenRoom(null)} />
+      <AgentDrawer agent={openAgent} reads={{ ms, readAt, run, runNote }} onOpenChange={(o) => !o && setOpenAgent(null)} onTest={(a) => (setOpenAgent(null), setTesting(a))} />
+      <CapacityDialog agent={testing} ms={ms} onOpenChange={(o) => !o && setTesting(null)} />
+      <RoomDrawer room={openRoom} ms={ms} open={openRoom !== null} onOpenChange={(o) => !o && setOpenRoom(null)} />
     </div>
   )
 }
