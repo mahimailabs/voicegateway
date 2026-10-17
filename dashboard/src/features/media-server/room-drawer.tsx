@@ -188,7 +188,8 @@ export function RoomBody({ room, ms: data }: { room: Room; ms: MediaServerData }
 
   // The sequence LiveKit recorded, measured from the room's creation.
   // How often the room was read; the known default when its watch is not known.
-  const every = (windowOf(room.lastSeen, data)?.everySeconds ?? 2) * 1000
+  // How often the room was read, when its watch reported it.
+  const everyS = windowOf(room.lastSeen, data)?.everySeconds ?? null
   // Steps whose time was not reported cannot be placed on the timeline; they are counted instead.
   const allSteps: { at: number | null; icon: Icon; label: string; note?: string; alert?: boolean }[] = [
     ...(sipCaller?.sip?.inviteMs ? [{ at: sipCaller.sip.inviteMs, icon: Phone, label: "Call came in", note: "SIP INVITE time, from the caller's lk.sip.inviteTime attribute." }] : []),
@@ -202,7 +203,7 @@ export function RoomBody({ room, ms: data }: { room: Room; ms: MediaServerData }
     // Someone gone before the room's last read left between two reads.
     ...room.participants
       .filter((p) => p.lastSeen !== null && room.lastSeen !== null && p.lastSeen < room.lastSeen - 1)
-      .map((p) => ({ at: p.lastSeen! * 1000, icon: SignOut, label: `${kindName[p.kind] ?? p.kind} left`, note: `Last listed at this time; gone by the next read ${every / 1000} s later.`, alert: p.kind === "agent" })),
+      .map((p) => ({ at: p.lastSeen! * 1000, icon: SignOut, label: `${kindName[p.kind] ?? p.kind} left`, note: `Last listed at this time; gone by the next read${everyS === null ? "" : ` ${everyS} s later`}.`, alert: p.kind === "agent" })),
     ...dispatches.flatMap((d) =>
       d.jobs.flatMap((j) =>
         j.statuses
@@ -323,7 +324,7 @@ export function RoomBody({ room, ms: data }: { room: Room; ms: MediaServerData }
         <ul className="divide-y rounded-xl border">
           {room.participants.map((p) => {
             const I = kindIcon[p.kind] ?? Headset
-            const flags = (p.tracks ?? []).flatMap((t) => [codecName[t.mime ?? ""] ?? t.mime ?? "codec unknown", t.stereo ? "stereo" : "mono", ...(t.dtx ? ["DTX"] : []), ...(t.muted ? ["muted"] : []), ...t.features])
+            const flags = (p.tracks ?? []).flatMap((t) => [codecName[t.mime ?? ""] ?? t.mime ?? "codec unknown", t.stereo === null ? "channels unknown" : t.stereo ? "stereo" : "mono", ...(t.dtx ? ["DTX"] : []), ...(t.muted ? ["muted"] : []), ...t.features])
             return (
               <li key={p.sid} className="flex items-center gap-3 px-4 py-3">
                 <span className={cn("flex size-7 shrink-0 items-center justify-center rounded-full", p.kind === "agent" ? "bg-primary text-primary-foreground" : "bg-muted")}>
@@ -355,7 +356,7 @@ export function RoomBody({ room, ms: data }: { room: Room; ms: MediaServerData }
               <Row key={d.id} k="Agent" v={<span>{d.agentName ?? "Unnamed"}{d.jobs[0] && <span className="ml-2 font-mono text-[11px] text-muted-foreground">{d.jobs[0].workerId}</span>}</span>} />
             ))}
             <Row k="Closes" v={`${room.settings.emptyTimeout ?? "?"} s empty, ${room.settings.departureTimeout ?? "?"} s after last leaves`} />
-            <Row k="Max people" v={room.settings.maxParticipants || "No limit"} />
+            <Row k="Max people" v={room.settings.maxParticipants === null ? "Unknown" : room.settings.maxParticipants || "No limit"} />
             <Row
               k="Audio codecs"
               v={(room.settings.codecs ?? [])

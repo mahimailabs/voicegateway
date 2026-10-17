@@ -122,12 +122,14 @@ export function SipPage() {
   const ms = useMemo(() => (media.data ? fromContract(media.data) : null), [media.data])
   if (test) return <SipView sip={synthetic as SipData} ms={null} test />
   if (!read.data) return <QueryState icon={PhoneIncoming} what="the phone bridge" query={read} />
-  if (!ms) return <QueryState icon={PhoneIncoming} what="the watched calls" query={media} />
-  return <SipView sip={read.data} ms={ms} test={false} />
+  // The trunks and checks do not need the watched calls; while those load or if they fail, the page shows without them.
+  const callsNote = ms ? undefined : media.isError ? "The watched calls could not be loaded." : "Loading the watched calls."
+  return <SipView sip={read.data} ms={ms} test={false} callsNote={callsNote} />
 }
 
-// ms is null only for the layout example, which has no watched calls.
-function SipView({ sip, ms, test }: { sip: SipData; ms: MediaServerData | null; test: boolean }) {
+// ms is null for the layout example, and while the watched calls load or when they could not be read.
+// callsNote says why there are no watched calls when they were not read, so "none watched" is never claimed.
+function SipView({ sip, ms, test, callsNote }: { sip: SipData; ms: MediaServerData | null; test: boolean; callsNote?: string }) {
   const [tab, setTab] = useUrlState("tab", "paths")
   const calls = !ms ? [] : ms.rooms.map((r, k) => ({ ...r, n: k + 1 })).filter((r) => r.participants.some((p) => p.kind === "sip"))
   const [openRoom, setOpenRoom] = useUrlPick<Room>("room", calls, (r) => r.sid)
@@ -236,7 +238,7 @@ function SipView({ sip, ms, test }: { sip: SipData; ms: MediaServerData | null; 
           <StatCard icon={Timer} value={answer === null ? "Unknown" : `${answer.toFixed(1)} s`} label="Ring to answered">
             <p className="text-[11px] text-muted-foreground">
               {answer === null
-                ? "No phone call watched yet"
+                ? (callsNote ?? "No phone call watched yet")
                 : `median of ${answers.length} watched ${answers.length === 1 ? "call" : "calls"}${calls.every((r) => r.participants.some((p) => p.sip?.trunkId && ms?.sipTrunks[p.sip.trunkId])) ? ", our test trunk only" : ""}`}
             </p>
           </StatCard>
@@ -254,7 +256,7 @@ function SipView({ sip, ms, test }: { sip: SipData; ms: MediaServerData | null; 
             Checks <span className="ml-1 rounded-full bg-destructive/10 px-1.5 text-[11px] text-destructive tnum">{list.length}</span>
           </TabsTrigger>
           <TabsTrigger value="calls">
-            Calls watched <span className="ml-1 text-[11px] text-muted-foreground tnum">{calls.length}</span>
+            Calls watched <span className="ml-1 text-[11px] text-muted-foreground tnum">{callsNote ? "?" : calls.length}</span>
           </TabsTrigger>
         </TabsList>
         <TabsContent value="paths">
@@ -425,7 +427,7 @@ function SipView({ sip, ms, test }: { sip: SipData; ms: MediaServerData | null; 
                   </li>
                 )
               })}
-              {calls.length === 0 && <li className="px-4 py-6 text-center text-[13px] text-muted-foreground">No phone calls while we watched.</li>}
+              {calls.length === 0 && <li className="px-4 py-6 text-center text-[13px] text-muted-foreground">{callsNote ?? "No phone calls while we watched."}</li>}
             </ul>
           </section>
         </TabsContent>
