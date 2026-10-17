@@ -90,6 +90,11 @@ func TestMigrateTwice(t *testing.T) {
 	if err := pool.QueryRow(ctx, "SELECT name FROM organisations WHERE id = 'default'").Scan(&org); err != nil {
 		t.Errorf("default organisation missing after migrate: %v", err)
 	}
+	for _, table := range []string{"calls", "call_participants"} {
+		if _, err := pool.Exec(ctx, "SELECT count(*) FROM "+table); err != nil {
+			t.Errorf("table %s after migrate: %v", table, err)
+		}
+	}
 }
 
 func TestProjectSecretSealed(t *testing.T) {
