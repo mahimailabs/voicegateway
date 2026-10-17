@@ -1,5 +1,5 @@
 import type { Call, CallSummary } from "@/lib/api"
-import { type CallModel, buildModel } from "@/features/call/call-model"
+import { buildModel, turnCount } from "@/features/call/call-model"
 import { findingsFor } from "@/features/call/call-steps"
 import type { MediaServerData } from "@/features/media-server/room-drawer"
 import mediaServer from "@/mocks/media-server.json"
@@ -37,11 +37,6 @@ export function agentKeyOf(c: Call): string | null {
   const named = (c.spans ?? []).map((sp) => sp.attrs?.["lk.agent_name"]).find((n) => n)
   return typeof named === "string" ? named : null
 }
-
-// The turns the call view lists, so the list and the call agree: reported turns when the call has
-// session events or a recording, else placed agent_turn spans. Zero only when the session reported no
-// turns and no agent turn started; turns the view cannot place are unknown, not zero.
-const turnCount = (c: Call, model: CallModel) => model.turns.length || (c.turns?.length === 0 && !c.spans?.some((s) => s.name === "agent_turn") ? 0 : null)
 
 export function summarize(c: Call): CallSummary {
   const model = buildModel(c)
