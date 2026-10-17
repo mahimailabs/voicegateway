@@ -357,6 +357,7 @@ export type Sip = {
             mediaTimeout: string | null;
         };
     }>;
+    sourceStatus?: SourceStatus;
 };
 
 export type Egress = {

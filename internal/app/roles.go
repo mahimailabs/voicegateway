@@ -161,6 +161,18 @@ func Worker(ctx context.Context, c config.Config, log *slog.Logger) error {
 		}).Run(gctx)
 	})
 	g.Go(func() error {
+		return (&scrape.SIPScraper{
+			Projects: pgstore.NewStore(pool, sealer),
+			Samples:  events,
+			Lock:     &scrape.RedisLock{Client: rdb},
+			Dial:     scrape.DialSDK,
+			Log:      log,
+			Now:      time.Now,
+			Every:    time.Minute,
+			Timeout:  10 * time.Second,
+		}).Run(gctx)
+	})
+	g.Go(func() error {
 		sweep(gctx, joiner, log)
 		return nil
 	})

@@ -54,6 +54,11 @@ func (s *Store) StoreRead(ctx context.Context, read store.LayerRead, rooms []sto
 			return fmt.Errorf("insert %d participant samples: %w", len(participants), err)
 		}
 	}
+	return s.storeLayerRead(ctx, read)
+}
+
+// storeLayerRead records one read attempt.
+func (s *Store) storeLayerRead(ctx context.Context, read store.LayerRead) error {
 	// A batch, not Exec: Exec binds a time at whole seconds, and read_at keeps milliseconds.
 	batch, err := s.conn.PrepareBatch(ctx, `INSERT INTO layer_reads (organisation_id, project_id, layer, read_at, ok, error_class, every_ms)`)
 	if err != nil {
