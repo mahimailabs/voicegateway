@@ -3,11 +3,18 @@ package join_test
 import (
 	"context"
 	"errors"
+	"fmt"
+	"io"
+	"log/slog"
+	"math"
+	"os"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/livekit/protocol/livekit"
+	"go.opentelemetry.io/collector/pdata/pmetric"
+	"go.opentelemetry.io/collector/pdata/pmetric/pmetricotlp"
 
 	"github.com/mahimailabs/voicegateway/internal/event"
 	"github.com/mahimailabs/voicegateway/internal/join"
@@ -479,5 +486,107 @@ func TestSpanWithoutTimesStoresNull(t *testing.T) {
 	if err := f.ch.QueryRow(context.Background(),
 		`SELECT count() FROM spans FINAL WHERE project_id = ? AND start_time IS NULL AND end_time IS NULL`, f.project).Scan(&nulls); err != nil || nulls != 1 {
 		t.Errorf("spans with null times = %d, %v; want 1", nulls, err)
+	}
+}
+
+// An export whose spans join two calls names neither on its own row; each span keeps its call.
+func TestExportSpanningTwoCallsHasNoCallID(t *testing.T) {
+	f := newFixture(t)
+	f.append(event.KindAgentTraces, "", f.export(
+		span{trace: "T9", id: "x", start: base, end: base.Add(time.Second), attrs: map[string]string{"room_id": "RM_X"}},
+		span{trace: "TA", id: "y", start: base, end: base.Add(time.Second), attrs: map[string]string{"room_id": "RM_Y"}},
+	))
+	f.store("w1")
+	calls := f.calls()
+	if len(calls) != 2 {
+		t.Fatalf("calls = %+v, want 2", calls)
+	}
+	events, n := f.eventCalls()
+	for key, id := range events {
+		if n != 1 || id != "" {
+			t.Errorf("export %s call id = %q (%d rows), want one row with an empty call id", key, id, n)
+		}
+	}
+	spans, _ := f.spanCalls()
+	if spans[hexSpan("x")] != calls["RM_X"].ID || spans[hexSpan("y")] != calls["RM_Y"].ID {
+		t.Errorf("span calls = %+v", spans)
+	}
+}
+
+// Acceptance check 10 of phase 04b: STT audio seconds come from the agent's usage counter, joined
+// point by point, counted once when an export is delivered twice, and stay null without a point.
+func TestSTTAudioFromUsageMetric(t *testing.T) {
+	f := newFixture(t)
+	exports := make([][]byte, 4)
+	for i := range exports {
+		b, err := os.ReadFile(fmt.Sprintf("testdata/agents-1.8.7-metrics-%d.binpb", i+1))
+		if err != nil {
+			t.Fatal(err)
+		}
+		exports[i] = b
+	}
+	for _, e := range exports {
+		f.append(event.KindAgentMetrics, "", e)
+	}
+	f.appendWebhook(&livekit.WebhookEvent{Event: "room_started", Room: room("RM_NOSTT", "quiet", base), Id: "EV_1", CreatedAt: at(base)})
+	f.store("w1")
+	// The second export delivered again later, so it lands in a part of its own.
+	f.append(event.KindAgentMetrics, "", exports[1])
+	f.store("w2")
+
+	calls := f.calls()
+	ctx := context.Background()
+	for sid, want := range map[string]float64{"RM_Sg9DUevZhpJp": 23.900 + 9.950, "RM_35ayuuwAkwVj": 24.750 + 8.500} {
+		got, err := f.events.CallTurns(ctx, "default", f.project, calls[sid].ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if s := got.Usage.STTAudioSeconds.Sum; s == nil || math.Abs(*s-want) > 0.001 {
+			t.Errorf("call %s STT audio = %s, want %.3f", sid, orNull(s), want)
+		}
+		for i, tu := range got.Turns {
+			if tu.STTAudioSeconds.Sum != nil {
+				t.Errorf("call %s turn %d STT audio = %.3f; no per-turn source exists", sid, i+1, *tu.STTAudioSeconds.Sum)
+			}
+		}
+	}
+	quiet, err := f.events.CallTurns(ctx, "default", f.project, calls["RM_NOSTT"].ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s := quiet.Usage.STTAudioSeconds.Sum; s != nil {
+		t.Errorf("call with no metric point STT audio = %v, want null", *s)
+	}
+}
+
+func orNull(v *float64) string {
+	if v == nil {
+		return "null"
+	}
+	return fmt.Sprintf("%.3f", *v)
+}
+
+// A cumulative sum repeats its running total in every export, so it is not stored: summing it would
+// count the same audio many times.
+func TestCumulativeUsageSumIsNotStored(t *testing.T) {
+	md := pmetric.NewMetrics()
+	m := md.ResourceMetrics().AppendEmpty().ScopeMetrics().AppendEmpty().Metrics().AppendEmpty()
+	m.SetName("lk.agents.usage.stt_audio_duration")
+	sum := m.SetEmptySum()
+	sum.SetAggregationTemporality(pmetric.AggregationTemporalityCumulative)
+	dp := sum.DataPoints().AppendEmpty()
+	dp.SetDoubleValue(30)
+	dp.Attributes().PutStr("room_id", "RM_CUM")
+	b, err := pmetricotlp.NewExportRequestFromMetrics(md).MarshalProto()
+	if err != nil {
+		t.Fatal(err)
+	}
+	row := store.Event{Kind: string(event.KindAgentMetrics), OrganisationID: "default", ProjectID: "p", Payload: b}
+	rows := []store.Event{row}
+	if err := (&join.Joiner{Log: slog.New(slog.NewTextHandler(io.Discard, nil))}).Join(context.Background(), rows); err != nil {
+		t.Fatal(err)
+	}
+	if n := len(rows[0].MetricPoints); n != 0 {
+		t.Errorf("cumulative points stored = %d, want 0", n)
 	}
 }
