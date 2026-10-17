@@ -24,8 +24,8 @@ The whole of "Connect the console" does not fit one session. `listCalls` has cur
 | `id` | `calls.id` |
 | `room` | the room name a webhook or session report gave, else the `lk.pii.room_name` attribute on the call's `job_entrypoint` or `agent_session` span |
 | `roomSid` | `calls.room_sid` |
-| `startedAt` | `calls.started_at` (webhook or report room start), else the earliest start of a span joined to the call |
-| `endedAt` | `calls.ended_at` |
+| `startedAt` | `calls.started_at` (webhook or report room start), else the earliest start of a span joined to the call; the `call` clock's `inferred` alignment is what lets the drawer label such a start as inferred |
+| `endedAt` | `calls.ended_at`: the observed end, or for an `inferred` call the last activity any source reported (04a); `endState` says which |
 | `durationSeconds` | `endedAt` minus `startedAt` when both are known and `startedAt` came from `calls.started_at`; else null |
 | `participantCount` | the call's `call_participants` rows, null when no webhook reported a participant |
 | `endState` | `calls.end_state` |
@@ -40,11 +40,12 @@ The whole of "Connect the console" does not fit one session. `listCalls` has cur
 - **Turn mapping:** `model` the reply's LLM model; `ttftMs` the reply first token; `ttsMs`, `endOfTurnMs`, `transcriptionDelayMs`, `e2eMs`, `interrupted` as built; `inputTokens`, `outputTokens`, `characters` the turn's totals only when none of its requests is missing them, else null; `llmMs`, `sttMs`, `audioSeconds` (STT audio, which has no per-turn source), `eotProbability`, `eotThreshold` null; `userItemAt` and `agentItemAt` omitted.
 - **Usage mapping:** `llmInputTokens`, `llmOutputTokens`, `ttsCharacters` the call totals only when no request is missing them, else null; `sttSeconds` the sum of the call's STT usage points, null when none; `note` says where each came from and, for a value left null, how many requests did not report it.
 - **Clocks:** `call` has `originAt` = `startedAt`, offset 0, alignment `observed` when `startedAt` came from `calls.started_at`, else `inferred`. `trace` has `originAt` = the earliest span start, alignment `observed` with the offset to `startedAt` when both are known, else `unknown` with a null offset. Spans and turns use `trace`.
+- **Interim access gate**, until the sign-in decision (#321) lands: every `/api/v1` request needs `Authorization: Bearer <VOICEGATEWAY_API_TOKEN>`, compared in constant time; a missing or wrong token is `401 unauthenticated` in the contract's `Error` shape. With no token configured, `/api/v1` answers 401 to every request rather than serve transcripts openly. `make up` generates a token in `deploy/.env`. This is the gate #365 also runs behind.
 - **Errors:** an unknown organisation, project or call, a call of another project, and a call id that is not a UUID are all `404 not_found` with the request id; a storage failure is `500 internal_error`. Never an empty success.
 
 ## Out of Scope
 
-- `listCalls`, its filters, paging and totals (04d).
+- `listCalls`, its filters, paging and totals (04d). 04d leaves out of the list the calls `getCall` answers 404 for (known only from a session report), so no list row opens a missing call.
 - Contract changes. `llm1`/`llm2`, tool and hook time, cached tokens, TTS audio seconds, the participant list and the job id have no slot in `Call` (`additionalProperties: false`); exposing them is its own decision.
 - The access scheme (#321) and the console's switch from the mock to the server (`VITE_MOCK_API`).
 - Repointing the contract's `x-source` pointers from the mock fixtures; done when 04d lands and both operations are served.
@@ -53,7 +54,7 @@ The whole of "Connect the console" does not fit one session. `listCalls` has cur
 
 - chi for routing, as #365; `encoding/json`; the contract's own field names and the `Error` shape from #365's `errors.go`.
 - Validate responses in tests against `docs/api/openapi.yaml` with a library that reads OpenAPI 3.1 (the contract is 3.1.1): pb33f `libopenapi-validator`, not a hand-written schema check.
-- Never log a span attribute value, transcript text or participant identity.
+- Never log a span attribute value, transcript text, participant identity or the API token.
 - Real-thing tests: Postgres and ClickHouse through testcontainers, data stored through the 04a sink and joiner, requests through `httptest` against `Routes()`.
 
 ## Acceptance Checks
@@ -64,11 +65,13 @@ The whole of "Connect the console" does not fit one session. `listCalls` has cur
 4. Given 3 `llm_request` spans of which 1 reports no tokens, then `usage.llmInputTokens` is null and `usage.note` names 1 request missing it; the turn holding that request has null `inputTokens` (measured by `TestGetCallPartialUsageIsNull`).
 5. Given an unknown organisation, an unknown project, an unknown call id, a call id that is not a UUID and a real call id under another project, then each is 404 with `code` `not_found`, a non-empty `requestId`, and a body that validates as `Error` (5 of 5) (measured by `TestGetCallNotFound`).
 6. Given ClickHouse unreachable while Postgres answers, then the response is 500 `internal_error`, never a 200 with empty spans (measured by `TestGetCallStorageDown`).
+7. Given a stored call, when it is requested with no token configured, with no `Authorization` header, with a wrong token or with a non-Bearer value, then each is 401 with `code` `unauthenticated` and a body that validates as `Error` (4 of 4); with the configured token it is 200 (measured by `TestAPIRequiresToken`).
 
 ## Manual Check
 
-With the stack up and one real call stored, `curl` its `getCall` and open the console's call drawer against the server with `VITE_MOCK_API=off`; the room, times, turns and usage match the stored call, and every value the server does not hold reads unknown.
+With the stack up and one real call stored, `curl` its `getCall` with the token from `deploy/.env` and open the console's call drawer against the server with `VITE_MOCK_API=off`; the room, times, turns and usage match the stored call, and every value the server does not hold reads unknown.
 
 ## Open Questions
 
 - A call that neither a webhook nor a span named the room of (only a session report arrived) cannot fill the required `room`, so `getCall` answers 404 for it until another source arrives. My recommendation is to keep the contract as it is and accept this edge; making `room` and `startedAt` nullable touches every console view of a call.
+- The bearer token is interim: one shared token per install, no users. The sign-in decision replaces it; until then it keeps `/api/v1` closed when the port is exposed.
