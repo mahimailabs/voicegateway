@@ -31,6 +31,7 @@ func (a *API) Routes() http.Handler {
 	r.Route("/api/v1/org/{orgId}/project/{projectId}", func(r chi.Router) {
 		r.Use(gate)
 		r.Get("/media-server", a.mediaServer)
+		r.Get("/sip", a.sip)
 	})
 	return r
 }

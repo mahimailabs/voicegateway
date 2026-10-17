@@ -5,6 +5,7 @@ import "time"
 // Layers the worker reads from a project's LiveKit server (phase 05).
 const (
 	LayerMediaServer = "media_server"
+	LayerSIP         = "sip"
 )
 
 // Error classes a failed layer read is recorded with. They name the cause the console shows; the

@@ -19,4 +19,5 @@ type Layers interface {
 	RoomsSince(ctx context.Context, organisationID, projectID string, since time.Time, limit int) ([]store.RoomSeen, error)
 	Participants(ctx context.Context, organisationID, projectID string, roomSIDs []string) ([]store.ParticipantSeen, error)
 	ParticipantChanges(ctx context.Context, organisationID, projectID string, roomSIDs []string) ([]store.ParticipantChange, error)
+	LatestSIP(ctx context.Context, organisationID, projectID string) (store.SIPRead, error)
 }
