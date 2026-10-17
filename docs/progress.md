@@ -276,4 +276,8 @@ What changed:
 - **Workspaces:** `getWorkspaces` is served from storage.
 - **Console:** with the mock off, the console shows a sign-in screen, and with no account yet, the first-admin command. The account menu signs out. The Vite dev server proxies `/api` and `/auth`.
 
-Checks 1 to 10 pass: Go on real Postgres, and the console with Vitest and Testing Library (added, exact-pinned). Next: 06b, invitations and roles.
+Checks 1 to 13 pass: Go on real Postgres, and the console with Vitest and Testing Library (added, exact-pinned). Merged as #378 (8bfda35b).
+
+Manual check: the pair reviewer reports running it on the Compose stack behind an HTTPS proxy, and that `user add`, sign-in with a Secure cookie, sign-out then 401, and `https_required` by IP all passed. Still open: opening the two stored calls in the console.
+
+Next: 06b, invitations, members and roles (`docs/specs/phase06b-invites-and-roles.md`).
