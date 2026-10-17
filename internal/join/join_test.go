@@ -159,6 +159,16 @@ func TestSpansJoinByOwnIDs(t *testing.T) {
 			t.Errorf("span %s own call id = %q, want %q", id, spans[hexSpan(id)], c.ID)
 		}
 	}
+	// Every export row resolved to the one call its spans joined.
+	events, rows := f.eventCalls()
+	if rows != 3 {
+		t.Fatalf("export rows = %d, want 3", rows)
+	}
+	for key, id := range events {
+		if id != c.ID {
+			t.Errorf("export %s call id = %q, want %q", key, id, c.ID)
+		}
+	}
 }
 
 // Acceptance check 5, first half.
