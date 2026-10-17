@@ -2,6 +2,7 @@ package chstore
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -12,7 +13,9 @@ import (
 	"github.com/ClickHouse/clickhouse-go/v2/lib/proto"
 	"github.com/pressly/goose/v3"
 
+	"github.com/mahimailabs/voicegateway/internal/event"
 	"github.com/mahimailabs/voicegateway/internal/store"
+	"github.com/mahimailabs/voicegateway/internal/turn"
 	"github.com/mahimailabs/voicegateway/migrations"
 )
 
@@ -292,6 +295,90 @@ func (s *Store) SpanCalls(ctx context.Context, organisationID, projectID, traceI
 		return nil, fmt.Errorf("span calls: %w", err)
 	}
 	return out, nil
+}
+
+// CallTurns builds a call's turns and usage from every span that resolves to it, by its own call
+// id or through its trace's link, and from the chat history of its latest session report. Turns are
+// built at read time, so spans stored late or out of order change the answer without a rewrite.
+func (s *Store) CallTurns(ctx context.Context, organisationID, projectID, callID string) (turn.Result, error) {
+	spans, err := s.callSpans(ctx, organisationID, projectID, callID)
+	if err != nil {
+		return turn.Result{}, err
+	}
+	history, err := s.chatHistory(ctx, organisationID, projectID, callID)
+	if err != nil {
+		return turn.Result{}, err
+	}
+	return turn.Build(spans, history), nil
+}
+
+func (s *Store) callSpans(ctx context.Context, organisationID, projectID, callID string) ([]store.Span, error) {
+	rows, err := s.conn.Query(ctx, `
+		SELECT toString(trace_id), toString(span_id), parent_span_id, call_id, name, kind, start_time, end_time, status_code, room_id, job_id, scope_name, attributes
+		FROM spans FINAL
+		WHERE organisation_id = @org AND project_id = @project
+		  AND (call_id = @call OR (call_id = '' AND trace_id IN (
+		      SELECT trace_id FROM trace_calls FINAL WHERE organisation_id = @org AND project_id = @project AND call_id = @call)))
+		ORDER BY start_time`,
+		clickhouse.Named("org", organisationID), clickhouse.Named("project", projectID), clickhouse.Named("call", callID))
+	if err != nil {
+		return nil, fmt.Errorf("call spans: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var out []store.Span
+	for rows.Next() {
+		var (
+			sp         store.Span
+			start, end *time.Time
+		)
+		if err := rows.Scan(&sp.TraceID, &sp.SpanID, &sp.ParentSpanID, &sp.CallID, &sp.Name, &sp.Kind, &start, &end,
+			&sp.StatusCode, &sp.RoomID, &sp.JobID, &sp.ScopeName, &sp.Attributes); err != nil {
+			return nil, fmt.Errorf("call spans: %w", err)
+		}
+		// Null is a time the exporter did not send: zero, which turn reads as unknown.
+		if start != nil {
+			sp.Start = start.UTC()
+		}
+		if end != nil {
+			sp.End = end.UTC()
+		}
+		out = append(out, sp)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("call spans: %w", err)
+	}
+	return out, nil
+}
+
+// chatHistory returns the chat_history.json of the call's latest session report, nil when it has
+// none.
+func (s *Store) chatHistory(ctx context.Context, organisationID, projectID, callID string) ([]byte, error) {
+	rows, err := s.conn.Query(ctx, `
+		SELECT payload FROM events FINAL
+		WHERE organisation_id = @org AND project_id = @project AND kind = @kind AND call_id = @call
+		ORDER BY received_at DESC LIMIT 1`,
+		clickhouse.Named("org", organisationID), clickhouse.Named("project", projectID),
+		clickhouse.Named("kind", string(event.KindAgentSessionReport)), clickhouse.Named("call", callID))
+	if err != nil {
+		return nil, fmt.Errorf("session report: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	if !rows.Next() {
+		return nil, rows.Err()
+	}
+	var payload string
+	if err := rows.Scan(&payload); err != nil {
+		return nil, fmt.Errorf("session report: %w", err)
+	}
+	var report event.SessionReport
+	if err := json.Unmarshal([]byte(payload), &report); err != nil {
+		// A report the worker stored but cannot read holds no history to pair; the turns stand.
+		return nil, nil //nolint:nilerr // an unreadable report is no history, not a failed read
+	}
+	if report.ChatHistory == "" {
+		return nil, nil
+	}
+	return []byte(report.ChatHistory), nil
 }
 
 // dataErrors are the ClickHouse error codes that blame the data rather than the server

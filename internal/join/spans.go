@@ -28,8 +28,9 @@ type ref struct{ roomSID, jobID string }
 
 // traces decodes an OTLP trace export into spans and joins each by its own ids. Spans with no id
 // keep an empty call id and resolve through their trace when another span of it joins. The export's
-// own row carries the call its spans joined when they all joined one; an export spanning several
-// calls, or none, keeps an empty call id, since one row cannot name two.
+// own row carries a call when every span that joined, joined the same one; spans that joined none
+// do not count against it. An export whose spans joined several calls, or none, keeps an empty call
+// id, since one row cannot name two.
 func (j *Joiner) traces(ctx context.Context, r *store.Event) error {
 	req := ptraceotlp.NewExportRequest()
 	if err := req.UnmarshalProto(r.Payload); err != nil {

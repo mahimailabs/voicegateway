@@ -481,3 +481,27 @@ func TestSpanWithoutTimesStoresNull(t *testing.T) {
 		t.Errorf("spans with null times = %d, %v; want 1", nulls, err)
 	}
 }
+
+// An export whose spans join two calls names neither on its own row; each span keeps its call.
+func TestExportSpanningTwoCallsHasNoCallID(t *testing.T) {
+	f := newFixture(t)
+	f.append(event.KindAgentTraces, "", f.export(
+		span{trace: "T9", id: "x", start: base, end: base.Add(time.Second), attrs: map[string]string{"room_id": "RM_X"}},
+		span{trace: "TA", id: "y", start: base, end: base.Add(time.Second), attrs: map[string]string{"room_id": "RM_Y"}},
+	))
+	f.store("w1")
+	calls := f.calls()
+	if len(calls) != 2 {
+		t.Fatalf("calls = %+v, want 2", calls)
+	}
+	events, n := f.eventCalls()
+	for key, id := range events {
+		if n != 1 || id != "" {
+			t.Errorf("export %s call id = %q (%d rows), want one row with an empty call id", key, id, n)
+		}
+	}
+	spans, _ := f.spanCalls()
+	if spans[hexSpan("x")] != calls["RM_X"].ID || spans[hexSpan("y")] != calls["RM_Y"].ID {
+		t.Errorf("span calls = %+v", spans)
+	}
+}
