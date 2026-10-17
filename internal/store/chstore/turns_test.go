@@ -148,6 +148,10 @@ func TestCallWithoutSpansHasNoTurns(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// The empty id unjoined rows carry names no call.
+	if none, err := s.CallTurns(ctx, "default", "production", ""); err != nil || len(none.Turns) != 0 {
+		t.Errorf("CallTurns(\"\") = %d turns, %v; want none", len(none.Turns), err)
+	}
 	u := got.Usage
 	if len(got.Turns) != 0 || u.InputTokens.Sum != nil || u.OutputTokens.Sum != nil || u.CachedTokens.Sum != nil ||
 		u.TTSCharacters.Sum != nil || u.TTSAudioSeconds.Sum != nil || u.STTAudioSeconds.Sum != nil {

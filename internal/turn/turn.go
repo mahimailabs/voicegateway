@@ -60,8 +60,9 @@ type Turn struct {
 
 	Interrupted *bool
 
-	InputTokens, OutputTokens, CachedTokens, TTSCharacters *int64
-	TTSAudioSeconds, STTAudioSeconds                       *float64
+	// The turn's usage over the requests under it, each with how many did not report it.
+	InputTokens, OutputTokens, CachedTokens, TTSCharacters Total[int64]
+	TTSAudioSeconds, STTAudioSeconds                       Total[float64]
 }
 
 // Total is a call-wide usage total: the sum of what the requests reported, nil when none did, and
@@ -164,10 +165,13 @@ func build(at store.Span, under []store.Span, ut *store.Span) Turn {
 			tools = append(tools, sp)
 		case spanLLMRequest:
 			in, out, cached := tokens(sp.Attributes)
-			t.InputTokens, t.OutputTokens, t.CachedTokens = plus(t.InputTokens, in), plus(t.OutputTokens, out), plus(t.CachedTokens, cached)
+			t.InputTokens.add(in)
+			t.OutputTokens.add(out)
+			t.CachedTokens.add(cached)
 		case spanTTSRequest:
 			chars, audio := ttsUsage(sp.Attributes)
-			t.TTSCharacters, t.TTSAudioSeconds = plus(t.TTSCharacters, chars), plus(t.TTSAudioSeconds, audio)
+			t.TTSCharacters.add(chars)
+			t.TTSAudioSeconds.add(audio)
 		case spanRealtime:
 			if t.RealtimeMs == nil {
 				t.RealtimeMs = jsonMillis(sp.Attributes[attrRealtimeModelMetrics], "ttft")
@@ -358,18 +362,6 @@ func integer(s string) *int64 {
 	return &v
 }
 
-func plus[T int64 | float64](a, b *T) *T {
-	switch {
-	case b == nil:
-		return a
-	case a == nil:
-		v := *b
-		return &v
-	}
-	v := *a + *b
-	return &v
-}
-
 // message is a chat_history.json message.
 type message struct {
 	role    string
@@ -408,20 +400,28 @@ func messages(history []byte) []message {
 	return out
 }
 
-// pairText gives each turn the assistant message created inside its agent_turn, and the user
-// messages created after the previous turn's assistant message and up to this one.
+// pairText gives each turn the assistant messages created inside its agent_turn, joined in order (a
+// tool turn speaks before and after its tool), and the user messages created after the previous
+// turn's last assistant message and up to this turn's last one. A turn with no assistant message,
+// one interrupted before it spoke, takes user messages only up to its own start, so an interruption
+// belongs to the turn that answers it. A turn with no reported start or end gets no text.
 func pairText(turns []Turn, msgs []message) {
 	used := map[int]bool{}
 	var after time.Time
 	for i := range turns {
 		t := &turns[i]
-		until := t.End
+		if t.Start.IsZero() || t.End.IsZero() {
+			continue
+		}
+		until := t.Start
+		var agent []string
 		for k, m := range msgs {
 			if m.role == "assistant" && !used[k] && !m.created.Before(t.Start) && !m.created.After(t.End) {
 				used[k] = true
-				t.AgentText = nonEmpty(m.text)
+				if m.text != "" {
+					agent = append(agent, m.text)
+				}
 				until = m.created
-				break
 			}
 		}
 		var user []string
@@ -430,10 +430,11 @@ func pairText(turns []Turn, msgs []message) {
 				user = append(user, m.text)
 			}
 		}
-		if len(user) > 0 {
-			t.UserText = nonEmpty(strings.Join(user, " "))
+		t.AgentText = nonEmpty(strings.Join(agent, " "))
+		t.UserText = nonEmpty(strings.Join(user, " "))
+		if until.After(after) {
+			after = until
 		}
-		after = until
 	}
 }
 

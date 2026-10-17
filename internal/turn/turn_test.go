@@ -127,14 +127,14 @@ func TestSentinelsBecomeNull(t *testing.T) {
 		span("tts_request", "tr", "t", 1600, 500, map[string]string{"lk.tts_metrics": `{"characters_count":12,"audio_duration":0}`}),
 	}, nil)
 	tu := r.Turns[0]
-	if tu.TTFTMs != nil || tu.EndOfTurnMs != nil || tu.TTSAudioSeconds != nil {
-		t.Errorf("sentinels = ttft %s, end of turn %s, tts audio %s; want all null", show(tu.TTFTMs), show(tu.EndOfTurnMs), show(tu.TTSAudioSeconds))
+	if tu.TTFTMs != nil || tu.EndOfTurnMs != nil || tu.TTSAudioSeconds.Sum != nil {
+		t.Errorf("sentinels = ttft %s, end of turn %s, tts audio %s; want all null", show(tu.TTFTMs), show(tu.EndOfTurnMs), show(tu.TTSAudioSeconds.Sum))
 	}
 	if tu.TTSMs == nil || *tu.TTSMs != 0 {
 		t.Errorf("ttfb 0 = %s, want a measured 0", show(tu.TTSMs))
 	}
-	if !near(tu.TranscriptionDelayMs, 250.0) || tu.TTSCharacters == nil || *tu.TTSCharacters != 12 {
-		t.Errorf("transcription delay %s, characters %v; want 250 and 12", show(tu.TranscriptionDelayMs), tu.TTSCharacters)
+	if !near(tu.TranscriptionDelayMs, 250.0) || tu.TTSCharacters.Sum == nil || *tu.TTSCharacters.Sum != 12 {
+		t.Errorf("transcription delay %s, characters %+v; want 250 and 12", show(tu.TranscriptionDelayMs), tu.TTSCharacters)
 	}
 }
 
@@ -277,8 +277,8 @@ func TestRealCallPreemptiveGeneration(t *testing.T) {
 	if !near(third.TTFTMs, 342.1) || !near(third.LLM1Ms, 342.1) {
 		t.Errorf("turn 3 ttft %s, llm1 %s; want 342.1 (the spoken generation), not 472.6", show(third.TTFTMs), show(third.LLM1Ms))
 	}
-	if third.InputTokens == nil || *third.InputTokens != 67+73 {
-		t.Errorf("turn 3 input tokens = %v, want 140 (both requests)", third.InputTokens)
+	if in := third.InputTokens; in.Sum == nil || *in.Sum != 67+73 || in.Missing != 0 {
+		t.Errorf("turn 3 input tokens = %+v, want 140 (both requests), none missing", in)
 	}
 	for i, tu := range r.Turns {
 		if tu.AgentText == nil {
@@ -287,5 +287,43 @@ func TestRealCallPreemptiveGeneration(t *testing.T) {
 		if (i == 0) != (tu.UserText == nil) {
 			t.Errorf("turn %d user text = %q; want none for the greeting only", i+1, str(tu.UserText))
 		}
+	}
+}
+
+// Review findings: a turn's usage counts its requests that did not report, a tool turn keeps every
+// assistant message, an interrupted turn with no reply leaves the interruption to the next turn,
+// and a turn with no times takes no text and does not reset the window.
+func TestTurnUsageAndTextEdges(t *testing.T) {
+	r := Build([]store.Span{
+		span("agent_turn", "a1", "s", 1000, 3000, nil),
+		span("llm_request", "q1", "a1", 1001, 10, map[string]string{"gen_ai.usage.input_tokens": "67"}),
+		span("llm_request", "q2", "a1", 2001, 10, nil),
+		span("agent_turn", "a2", "s", 5000, 1500, nil), // interrupted before any text
+		span("agent_turn", "a3", "s", 7000, 2000, nil),
+		{Name: "agent_turn", SpanID: "a4", ParentSpanID: "s"}, // no times reported
+	}, history(t,
+		[3]string{"user", "where is my order", "0.5"},
+		[3]string{"assistant", "let me check", "1.5"},
+		[3]string{"assistant", "it ships Monday", "3.5"},
+		[3]string{"user", "wait", "4.5"},
+		[3]string{"user", "actually cancel it", "6.0"}, // spoken over a2, answered by a3
+		[3]string{"assistant", "cancelled", "8.0"},
+	))
+	first := r.Turns[1] // a4 sorts first: its start is zero
+	if in := first.InputTokens; in.Sum == nil || *in.Sum != 67 || in.Missing != 1 {
+		t.Errorf("turn input tokens = %+v, want 67 with 1 missing", in)
+	}
+	if got := str(first.AgentText); got != "let me check it ships Monday" {
+		t.Errorf("tool turn agent text = %q, want both messages", got)
+	}
+	interrupted, answer := r.Turns[2], r.Turns[3]
+	if got := str(interrupted.UserText); got != "wait" || interrupted.AgentText != nil {
+		t.Errorf("interrupted turn text = %q / %q, want \"wait\" and no reply", got, str(interrupted.AgentText))
+	}
+	if got := str(answer.UserText); got != "actually cancel it" {
+		t.Errorf("answering turn user text = %q", got)
+	}
+	if notime := r.Turns[0]; notime.UserText != nil || notime.AgentText != nil {
+		t.Errorf("turn with no times has text %q / %q", str(notime.UserText), str(notime.AgentText))
 	}
 }

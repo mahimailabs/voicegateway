@@ -301,6 +301,10 @@ func (s *Store) SpanCalls(ctx context.Context, organisationID, projectID, traceI
 // id or through its trace's link, and from the chat history of its latest session report. Turns are
 // built at read time, so spans stored late or out of order change the answer without a rewrite.
 func (s *Store) CallTurns(ctx context.Context, organisationID, projectID, callID string) (turn.Result, error) {
+	if callID == "" {
+		// An empty id is what unjoined rows carry; it names no call.
+		return turn.Result{}, nil
+	}
 	spans, err := s.callSpans(ctx, organisationID, projectID, callID)
 	if err != nil {
 		return turn.Result{}, err
