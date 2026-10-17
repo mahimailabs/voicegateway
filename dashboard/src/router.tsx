@@ -13,7 +13,7 @@ import { SipPage } from "@/features/sip/sip-page"
 import { MediaServerPage } from "@/features/media-server/media-server-page"
 import { EmbedPage } from "@/features/embed/embed-page"
 import { scopePrefix, scopeRewrite } from "@/lib/url-state"
-import { orgs } from "@/components/workspace-switcher"
+import { workspaces, workspacesRead } from "@/lib/workspaces"
 
 // The console pages sit inside the app shell; embeddable widgets (decision 0023) render on their own.
 const root = createRootRoute({ component: Outlet })
@@ -41,10 +41,11 @@ const sip = createRoute({ getParentRoute: () => app, path: "/sip", component: Si
 const settings = createRoute({ getParentRoute: () => app, path: "/settings", component: OverviewPage })
 
 // A bare link (an old bookmark, /calls) or one naming an organisation or project that does not exist is
-// moved under the current project before the router reads it.
+// moved under the current project before the router reads it. The workspaces are read first (main.tsx);
+// when they could not be read, a link that names a project is left as it is.
 {
   const m = location.pathname.match(/^\/org\/([^/]+)\/project\/([^/]+)(\/.*)?$/)
-  const known = m && orgs.some((o) => o.id === m[1] && o.projects.some((p) => p.id === m[2]))
+  const known = m && (!workspacesRead() || workspaces().some((o) => o.id === m[1] && o.projects.some((p) => p.id === m[2])))
   if (!known) {
     const rest = m ? (m[3] ?? "") : location.pathname === "/" ? "" : location.pathname
     history.replaceState(history.state, "", scopePrefix() + rest + location.search + location.hash)

@@ -5,8 +5,8 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { IconContext } from "@phosphor-icons/react"
 import { ThemeProvider } from "@/components/theme"
 import { TooltipProvider } from "@/components/ui/tooltip"
-import { router } from "@/router"
-import { shouldRetry } from "@/lib/api"
+import { fetchWorkspaces, shouldRetry } from "@/lib/api"
+import { setWorkspaces } from "@/lib/workspaces"
 import "./index.css"
 
 // Captured data never changes while the page is open; refetching on focus would only flicker.
@@ -27,6 +27,9 @@ async function start() {
       console.error("The mock API did not start; pages will show that no API answered.", e)
     }
   }
+  // The router decides which project a URL names, so it loads once the workspaces are read.
+  setWorkspaces(await fetchWorkspaces().then((w) => w.items, () => null))
+  const { router } = await import("@/router")
   createRoot(document.getElementById("root")!).render(
     <StrictMode>
       <QueryClientProvider client={queryClient}>

@@ -4,8 +4,8 @@ import { ArrowLeft } from "@phosphor-icons/react"
 import mark from "@/assets/brand/mark.svg"
 import { DataTable } from "@/components/data-table"
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query"
-import { ApiError, callQuery, callPagesQuery, issuesQuery } from "@/lib/api"
-import { BUDGET_MS } from "@/lib/thresholds"
+import { ApiError, callQuery, callPagesQuery, issuesQuery, projectSettingsQuery } from "@/lib/api"
+import { DEFAULTS, applyThresholds } from "@/lib/thresholds"
 import { cn } from "@/lib/utils"
 import { CallView } from "@/features/call/call-view"
 import { columns, rowOf, serverSort, type Row } from "@/features/calls/calls-page"
@@ -39,7 +39,7 @@ function Anatomy() {
   if (!stats.data) return <Note>{stats.isError ? "Turn anatomy could not be loaded." : "Loading turn anatomy."}</Note>
   const s = stats.data as CallStats
   const realtime = s.agents.filter((a) => a.stages.some((st) => st.stage === "Realtime")).map((a) => a.name ?? (a.key === null ? "Agent not identified" : "Unnamed agent"))
-  return <TurnAnatomy lanes={lanesFrom(s.stages, realtime)} e2e={s.answers.p50Ms} turns={s.anatomyTurns} budget={BUDGET_MS} />
+  return <TurnAnatomy lanes={lanesFrom(s.stages, realtime)} e2e={s.answers.p50Ms} turns={s.anatomyTurns} budget={s.answers.budgetMs} />
 }
 
 const Note = ({ children }: { children: React.ReactNode }) => <p className="py-10 text-center text-[13px] text-muted-foreground">{children}</p>
@@ -113,15 +113,21 @@ export function EmbedPage() {
   const navigate = useNavigate()
   const meta = widgets.find((w) => w.id === widget)
   const go = (to: string, call?: string) => navigate({ to: "/embed/$widget", params: { widget: to }, search: { theme: search.theme, call } } as never)
+  // A widget judges calls against the project's thresholds, as the console does, so it waits for them.
+  const settings = useQuery(projectSettingsQuery())
+  const thresholds = settings.data?.thresholds ?? DEFAULTS
+  applyThresholds(thresholds)
 
   return (
     <div className="flex min-h-svh flex-col bg-background text-foreground">
-      <main className="flex-1 p-4">
-        {widget === "answer-time" && <AnswerTime />}
-        {widget === "turn-anatomy" && <Anatomy />}
-        {widget === "calls" && <Calls open={(id) => go("call", id)} />}
-        {widget === "call" && <OneCall callId={search.call} back={() => go("calls")} />}
-        {widget === "issues" && <Issues />}
+      <main key={`${thresholds.answerMs}-${thresholds.joinMs}-${thresholds.ttsStartMs}`} className="flex-1 p-4">
+        {settings.isPending && <Note>Loading the project's settings.</Note>}
+        {settings.isError && <Note>Project settings could not be read, so checks use the default thresholds.</Note>}
+        {!settings.isPending && widget === "answer-time" && <AnswerTime />}
+        {!settings.isPending && widget === "turn-anatomy" && <Anatomy />}
+        {!settings.isPending && widget === "calls" && <Calls open={(id) => go("call", id)} />}
+        {!settings.isPending && widget === "call" && <OneCall callId={search.call} back={() => go("calls")} />}
+        {!settings.isPending && widget === "issues" && <Issues />}
         {!meta && (
           <div className="py-10 text-center text-[13px] text-muted-foreground">
             <p>{`No widget named ${widget ?? ""}.`}</p>

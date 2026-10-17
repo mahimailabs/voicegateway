@@ -8,6 +8,7 @@ import capacityRaw from "@/mocks/capacity.json"
 import snapshotRaw from "@/mocks/project-snapshot.json"
 import workersRaw from "@/mocks/workers.json"
 import probesRaw from "@/mocks/network-probe.json"
+import { recordingId } from "./recordings"
 
 // The LiveKit reads the mock API serves, adapted from the captured fixtures to the contract
 // (docs/api/openapi.yaml). Captured times are Unix seconds; the contract carries RFC 3339 UTC. Fields
@@ -56,7 +57,7 @@ export function sip(): Sip {
 
 // The media server read. The capture keeps some times in milliseconds (createdMs, joinedAtMs,
 // createdAtMs, startedAtMs, versionMs, inviteMs) and the rest in seconds; both become RFC 3339. A
-// recording's id is its playback URL, the only identifier the capture has (as for calls).
+// recording's id is its file name, as for calls (recordings.ts).
 export function mediaServer(): MediaServer {
   type At = { t: number; [k: string]: unknown }
   type R = Record<string, unknown> & {
@@ -87,7 +88,7 @@ export function mediaServer(): MediaServer {
         ...(sip ? { sip: (({ inviteMs, statuses, ...x }) => ({ ...x, invitedAt: isoMs(inviteMs), statuses: statuses.map(at) }))(sip) } : {}),
       })),
       dispatches: dispatches && dispatches.map(({ createdAtMs, jobs, ...x }) => ({ ...x, createdAt: isoMs(createdAtMs), jobs: jobs.map(({ startedAtMs, statuses, ...j }) => ({ ...j, startedAt: isoMs(startedAtMs), statuses: statuses.map(at) })) })),
-      recording: recording && { ...recording, id: recording.url },
+      recording: recording && { ...recording, id: recordingId(recording.url) },
     })),
   } as MediaServer
 }
