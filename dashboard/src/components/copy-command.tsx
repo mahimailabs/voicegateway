@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button"
 export function CopyCommand({ text, label }: { text: string; label: string }) {
   const [copied, setCopied] = useState(false)
   return (
-    <div className="relative rounded-lg bg-foreground py-3 pr-12 pl-4 font-mono text-[12px] leading-relaxed break-all whitespace-pre-wrap text-background">
+    <div className="relative rounded-lg bg-foreground py-3 pr-12 pl-4 text-left font-mono text-[12px] leading-relaxed break-all whitespace-pre-wrap text-background">
       <code aria-label={label}>{text}</code>
       <Button
         type="button"

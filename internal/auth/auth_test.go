@@ -579,11 +579,16 @@ func TestAddressLimitsByIPv6PrefixAndSuccessesAreFree(t *testing.T) {
 func TestUntrustedProxyIsWarnedAboutOnce(t *testing.T) {
 	f := newFixture(t)
 	routes := f.service().Routes()
+	// An untrusted proxy terminating TLS forwards plain HTTP: refused, and warned about.
+	rq := request{from: "172.18.0.1", headers: map[string]string{"X-Forwarded-For": "203.0.113.9", "X-Forwarded-Proto": "https"}}
 	for range 2 {
-		f.do(routes, http.MethodPost, "/auth/sign-in", signIn("ada@example.com", "wrong"),
-			request{from: "172.18.0.1", tls: true, headers: map[string]string{"X-Forwarded-For": "203.0.113.9"}})
+		res := f.do(routes, http.MethodPost, "/auth/sign-in", signIn("ada@example.com", "wrong"), rq)
+		b, _ := io.ReadAll(res.Body)
+		if res.StatusCode != http.StatusBadRequest || !strings.Contains(string(b), "https_required") || !strings.Contains(string(b), "VOICEGATEWAY_TRUSTED_PROXIES") {
+			t.Fatalf("status %d, body %s; want 400 https_required naming VOICEGATEWAY_TRUSTED_PROXIES", res.StatusCode, b)
+		}
 	}
-	if n := strings.Count(f.logs.String(), "VOICEGATEWAY_TRUSTED_PROXIES"); n != 1 {
+	if n := strings.Count(f.logs.String(), "set VOICEGATEWAY_TRUSTED_PROXIES"); n != 1 {
 		t.Errorf("warnings = %d, want 1", n)
 	}
 }

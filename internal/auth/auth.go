@@ -144,8 +144,15 @@ func (s *Service) signIn(w http.ResponseWriter, r *http.Request) {
 	// A Secure cookie set over plain HTTP is dropped by the browser, so sign-in would loop
 	// silently, and the password would cross the network in clear; away from localhost, say HTTPS
 	// is required instead.
+	// Before the HTTPS check: an untrusted proxy that terminates TLS forwards plain HTTP, and is the
+	// one most worth naming.
+	s.warnUntrustedProxy(r)
 	if !s.passwordMayTravel(r) {
-		writeError(w, http.StatusBadRequest, "https_required", "sign-in needs HTTPS when the console is not on localhost")
+		msg := "sign-in needs HTTPS when the console is not on localhost"
+		if strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https") && !isTrusted(peerAddress(r), s.Trusted) {
+			msg += "; a proxy says it received HTTPS, but it is not in VOICEGATEWAY_TRUSTED_PROXIES"
+		}
+		writeError(w, http.StatusBadRequest, "https_required", msg)
 		return
 	}
 	var c credentials
@@ -153,7 +160,6 @@ func (s *Service) signIn(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_request", "email and password are required")
 		return
 	}
-	s.warnUntrustedProxy(r)
 	if err := s.Users.ForgetSignIns(ctx); err != nil {
 		s.fail(w, err)
 		return
