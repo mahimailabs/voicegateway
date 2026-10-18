@@ -1,28 +1,28 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1039" height="146" viewBox="0 0 1039 146" font-family="'DejaVu Sans Mono', 'Menlo', 'Consolas', 'Liberation Mono', 'Courier New', monospace" font-size="14px">
   <defs>
-    <marker id="r8e4438e4-arrow-7c83a0" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-      <path d="M 0 0 L 10 5 L 0 10 z" fill="#7c83a0"/>
+    <marker id="rc410d861-arrow-86868b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#86868b"/>
     </marker>
   </defs>
   <rect x="0" y="0" width="1039" height="146" fill="#ffffff"/>
-  <path d="M48 40 H153 a8 8 0 0 1 8 8 V98 a8 8 0 0 1 -8 8 H48 a8 8 0 0 1 -8 -8 V48 a8 8 0 0 1 8 -8 Z" fill="#ffffff" stroke="#8a90a8"/>
-  <text x="100.5" y="68.4" fill="#1f2328" text-anchor="middle">Your script</text>
-  <text x="100.5" y="87.4" fill="#1f2328" text-anchor="middle">CI job</text>
+  <path d="M48 40 H153 a8 8 0 0 1 8 8 V98 a8 8 0 0 1 -8 8 H48 a8 8 0 0 1 -8 -8 V48 a8 8 0 0 1 8 -8 Z" fill="#ffffff" stroke="#d2d2d7"/>
+  <text x="100.5" y="68.4" fill="#1d1d1f" text-anchor="middle">Your script</text>
+  <text x="100.5" y="87.4" fill="#1d1d1f" text-anchor="middle">CI job</text>
   <path d="M485.4 40 H632.4 a8 8 0 0 1 8 8 V98 a8 8 0 0 1 -8 8 H485.4 a8 8 0 0 1 -8 -8 V48 a8 8 0 0 1 8 -8 Z" fill="#ffffff" stroke="#0071e3"/>
-  <text x="558.9" y="68.4" fill="#1f2328" text-anchor="middle">VoiceGateway API</text>
-  <text x="558.9" y="87.4" fill="#1f2328" text-anchor="middle">/api/v1</text>
-  <path d="M762.8 40 H990.8 a8 8 0 0 1 8 8 V98 a8 8 0 0 1 -8 8 H762.8 a8 8 0 0 1 -8 -8 V48 a8 8 0 0 1 8 -8 Z" fill="#ffffff" stroke="#8a90a8"/>
-  <text x="852.8" y="77.9" fill="#1f2328" text-anchor="middle">Your project's calls</text>
+  <text x="558.9" y="68.4" fill="#1d1d1f" text-anchor="middle">VoiceGateway API</text>
+  <text x="558.9" y="87.4" fill="#1d1d1f" text-anchor="middle">/api/v1</text>
+  <path d="M762.8 40 H990.8 a8 8 0 0 1 8 8 V98 a8 8 0 0 1 -8 8 H762.8 a8 8 0 0 1 -8 -8 V48 a8 8 0 0 1 8 -8 Z" fill="#ffffff" stroke="#d2d2d7"/>
+  <text x="852.8" y="77.9" fill="#1d1d1f" text-anchor="middle">Your project's calls</text>
   <g transform="translate(946.8 54) scale(1.58333)">
-    <path d="M3 6.4 v11.2 a9 3.4 0 0 0 18 0 v-11.2 Z" fill="#d6d9e6" stroke="#57606a" stroke-width="1.1" stroke-linejoin="round"/>
-    <path d="M3 6.4 a9 3.4 0 0 1 18 0 a9 3.4 0 0 1 -18 0 Z" fill="#d6d9e6" stroke="#57606a" stroke-width="1.1" stroke-linejoin="round"/>
-    <path d="M3 11 a9 3.4 0 0 0 18 0" fill="none" stroke="#57606a" stroke-width="1.1" stroke-linejoin="round"/>
-    <path d="M3 15.6 a9 3.4 0 0 0 18 0" fill="none" stroke="#57606a" stroke-width="1.1" stroke-linejoin="round"/>
+    <path d="M3 6.4 v11.2 a9 3.4 0 0 0 18 0 v-11.2 Z" fill="#e5e5ea" stroke="#1d1d1f" stroke-width="1.1" stroke-linejoin="round"/>
+    <path d="M3 6.4 a9 3.4 0 0 1 18 0 a9 3.4 0 0 1 -18 0 Z" fill="#e5e5ea" stroke="#1d1d1f" stroke-width="1.1" stroke-linejoin="round"/>
+    <path d="M3 11 a9 3.4 0 0 0 18 0" fill="none" stroke="#1d1d1f" stroke-width="1.1" stroke-linejoin="round"/>
+    <path d="M3 15.6 a9 3.4 0 0 0 18 0" fill="none" stroke="#1d1d1f" stroke-width="1.1" stroke-linejoin="round"/>
   </g>
-  <path d="M 161 73 C 287.56 73, 350.84 73, 466.2 73 L 477.4 73" fill="none" stroke="#7c83a0" stroke-width="1.6" marker-end="url(#r8e4438e4-arrow-7c83a0)"/>
+  <path d="M 161 73 C 287.56 73, 350.84 73, 466.2 73 L 477.4 73" fill="none" stroke="#86868b" stroke-width="1.6" marker-end="url(#rc410d861-arrow-86868b)"/>
   <rect x="190.8" y="63.5" width="254" height="19" fill="#ffffff"/>
-  <text x="317.8" y="77.9" fill="#1f2328" text-anchor="middle">Authorization: Bearer vgk_...</text>
-  <path d="M 640.4 73 C 686.16 73, 709.04 73, 743.6 73 L 754.8 73" fill="none" stroke="#7c83a0" stroke-width="1.6" marker-end="url(#r8e4438e4-arrow-7c83a0)"/>
+  <text x="317.8" y="77.9" fill="#1d1d1f" text-anchor="middle">Authorization: Bearer vgk_...</text>
+  <path d="M 640.4 73 C 686.16 73, 709.04 73, 743.6 73 L 754.8 73" fill="none" stroke="#86868b" stroke-width="1.6" marker-end="url(#rc410d861-arrow-86868b)"/>
   <rect x="670.2" y="63.5" width="52" height="19" fill="#ffffff"/>
-  <text x="696.2" y="77.9" fill="#1f2328" text-anchor="middle">reads</text>
+  <text x="696.2" y="77.9" fill="#1d1d1f" text-anchor="middle">reads</text>
 </svg>

@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256" role="img" aria-labelledby="mergepoint-title">
+  <title id="mergepoint-title">VoiceGateway Mergepoint</title>
+  <path fill="#f5f5f7" d="M16 24H80L136 80H240V104H128L16 48ZM16 232H80L136 176H240V152H128L16 208Z"/>
+  <path fill="#1F96AA" d="M16 104H96L128 120H240V136H128L96 152H16Z"/>
+</svg>

@@ -2,41 +2,52 @@
 @import 'fumadocs-ui/css/neutral.css';
 @import 'fumadocs-ui/css/preset.css';
 @import 'fumadocs-openapi/css/preset.css';
-@import '../../theme.css';
 
 /*
- * Tokens come from ../../theme.css, shared with site/web. This file only maps
- * Fumadocs' variables onto them and themes the browser surfaces.
+ * The console's palette, "The Clean Room" (DESIGN.md, dashboard/src/index.css), mapped onto
+ * Fumadocs' variables. Light first, Apple blue as the one accent.
  */
 @theme inline {
-  --font-sans: var(--font-space-grotesk), ui-sans-serif, system-ui, sans-serif;
-  --font-mono: var(--font-jetbrains-mono), ui-monospace, monospace;
+  --font-sans: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Inter, sans-serif;
+  --font-mono: 'SF Mono', ui-monospace, 'JetBrains Mono', Menlo, monospace;
 }
 
-:root,
+:root {
+  --color-fd-background: #ffffff;
+  --color-fd-foreground: #1d1d1f;
+  --color-fd-muted: #f5f5f7;
+  --color-fd-muted-foreground: #6e6e73;
+  --color-fd-popover: #ffffff;
+  --color-fd-popover-foreground: #1d1d1f;
+  --color-fd-card: #ffffff;
+  --color-fd-card-foreground: #1d1d1f;
+  --color-fd-border: #e5e5ea;
+  --color-fd-primary: #0071e3;
+  --color-fd-primary-foreground: #ffffff;
+  --color-fd-secondary: #f5f5f7;
+  --color-fd-secondary-foreground: #1d1d1f;
+  --color-fd-accent: #e8f1fc;
+  --color-fd-accent-foreground: #1d1d1f;
+  --color-fd-ring: #0071e3;
+}
+
 .dark {
-  --color-fd-background: var(--vg-bg);
-  --color-fd-foreground: var(--vg-ink);
-  --color-fd-muted: var(--vg-surface);
-  --color-fd-muted-foreground: var(--vg-muted);
-  --color-fd-popover: var(--vg-popover);
-  --color-fd-popover-foreground: var(--vg-ink);
-  --color-fd-card: var(--vg-surface);
-  --color-fd-card-foreground: var(--vg-ink);
-  --color-fd-border: var(--vg-line);
-  --color-fd-primary: var(--vg-accent);
-  --color-fd-primary-foreground: var(--vg-bg);
-  --color-fd-secondary: var(--vg-surface);
-  --color-fd-secondary-foreground: var(--vg-ink);
-  --color-fd-accent: var(--vg-accent-soft);
-  --color-fd-accent-foreground: var(--vg-ink);
-  --color-fd-ring: var(--vg-accent);
-}
-
-.dark #nd-sidebar {
-  --color-fd-muted: var(--vg-surface);
-  --color-fd-secondary: #1c1c1c;
-  --color-fd-muted-foreground: var(--vg-muted);
+  --color-fd-background: #000000;
+  --color-fd-foreground: #f5f5f7;
+  --color-fd-muted: #1c1c1e;
+  --color-fd-muted-foreground: #a1a1a6;
+  --color-fd-popover: #2c2c2e;
+  --color-fd-popover-foreground: #f5f5f7;
+  --color-fd-card: #0a0a0a;
+  --color-fd-card-foreground: #f5f5f7;
+  --color-fd-border: #2c2c2e;
+  --color-fd-primary: #2997ff;
+  --color-fd-primary-foreground: #000000;
+  --color-fd-secondary: #1c1c1e;
+  --color-fd-secondary-foreground: #f5f5f7;
+  --color-fd-accent: #0b2340;
+  --color-fd-accent-foreground: #f5f5f7;
+  --color-fd-ring: #2997ff;
 }
 
 html {
@@ -62,8 +73,8 @@ html > body[data-scroll-locked] {
 h1,
 h2,
 h3 {
-  font-weight: 500;
-  letter-spacing: -0.03em;
+  font-weight: 600;
+  letter-spacing: -0.02em;
   text-wrap: balance;
 }
 
