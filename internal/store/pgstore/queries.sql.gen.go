@@ -1596,6 +1596,17 @@ func (q *Queries) RevokeOpenInvitation(ctx context.Context, arg RevokeOpenInvita
 	return err
 }
 
+const revokeOpenResets = `-- name: RevokeOpenResets :exec
+UPDATE invitations SET revoked_at = now()
+WHERE kind = 'reset' AND user_id = $1 AND accepted_at IS NULL AND revoked_at IS NULL
+`
+
+// A new reset link replaces every open one for the member, whichever organisation's admin made it.
+func (q *Queries) RevokeOpenResets(ctx context.Context, userID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, revokeOpenResets, userID)
+	return err
+}
+
 const revokeProjectKey = `-- name: RevokeProjectKey :execrows
 UPDATE project_keys SET revoked_at = COALESCE(revoked_at, now())
 WHERE organisation_id = $1 AND project_id = $2 AND key_id = $3
@@ -1614,6 +1625,16 @@ func (q *Queries) RevokeProjectKey(ctx context.Context, arg RevokeProjectKeyPara
 		return 0, err
 	}
 	return result.RowsAffected(), nil
+}
+
+const revokeUsedLink = `-- name: RevokeUsedLink :exec
+UPDATE invitations SET accepted_at = NULL, revoked_at = now() WHERE id = $1
+`
+
+// A reset link that fails its guard at use is revoked, not left looking accepted.
+func (q *Queries) RevokeUsedLink(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, revokeUsedLink, id)
+	return err
 }
 
 const sealedLiveKitSecret = `-- name: SealedLiveKitSecret :one
@@ -1985,7 +2006,7 @@ func (q *Queries) UpsertParticipant(ctx context.Context, arg UpsertParticipantPa
 const useInvitation = `-- name: UseInvitation :one
 UPDATE invitations SET accepted_at = now()
 WHERE token_sha256 = $1 AND accepted_at IS NULL AND revoked_at IS NULL AND expires_at > now()
-RETURNING id, kind, organisation_id, email, role, user_id
+RETURNING id, kind, organisation_id, email, role, user_id, invited_by
 `
 
 type UseInvitationRow struct {
@@ -1995,6 +2016,7 @@ type UseInvitationRow struct {
 	Email          string
 	Role           pgtype.Text
 	UserID         pgtype.UUID
+	InvitedBy      pgtype.UUID
 }
 
 // Uses a link once: anything but one row means it was used, revoked or expired meanwhile.
@@ -2008,6 +2030,7 @@ func (q *Queries) UseInvitation(ctx context.Context, tokenSha256 []byte) (UseInv
 		&i.Email,
 		&i.Role,
 		&i.UserID,
+		&i.InvitedBy,
 	)
 	return i, err
 }

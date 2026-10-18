@@ -82,6 +82,11 @@ func Web(ctx context.Context, c config.Config, log *slog.Logger) error {
 	// Without SMTP the service returns each link for the admin to copy; with it, links go by email
 	// only.
 	if c.SMTPURL != "" {
+		// An emailed link's base must not come from the request's Host header, which any admin's
+		// client sets: it would send the token to a host of their choosing.
+		if c.PublicURL == "" {
+			return errors.New("VOICEGATEWAY_SMTP_URL needs VOICEGATEWAY_PUBLIC_URL, the base of every emailed link")
+		}
 		m, err := mailer.New(c.SMTPURL, c.SMTPFrom)
 		if err != nil {
 			return err

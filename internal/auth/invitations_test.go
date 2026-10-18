@@ -52,7 +52,9 @@ func (f *fixture) web(m invite.Mailer) *inviteWeb {
 	s := f.service()
 	links := &invite.Service{Store: f.pg, Hash: auth.HashPassword, Verify: auth.VerifyPassword, Log: s.Log, Now: time.Now}
 	if m != nil {
+		// Web refuses SMTP without VOICEGATEWAY_PUBLIC_URL, so emailed links never take the Host.
 		links.Mailer = m
+		s.PublicURL = "https://voicegateway.example"
 	}
 	s.Links = links
 	apiRoutes := (&api.API{
@@ -622,6 +624,37 @@ func TestResetRefusedAcrossOrganisations(t *testing.T) {
 	}
 	if status, link, _, body := w.resetLink(w.signIn("admin-a@example.com"), "org-a", member); status != http.StatusCreated || link == nil {
 		t.Errorf("reset by an admin of A and B = %d %s, want 201 with a link", status, body)
+	}
+
+	// The guard runs again at use: a member who joins B after the link was made keeps their
+	// password, and the link is revoked.
+	f.addUser("later@example.com", "org-a", "member")
+	_, link, _, _ := w.resetLink(w.signIn("admin-b@example.com"), "org-a", f.userID("later@example.com"))
+	if link != nil {
+		t.Fatal("an admin of B alone made a reset link for a member of A")
+	}
+	f.addUser("only-a@example.com", "org-c", "admin")
+	if _, err := f.pg.AddMembership(context.Background(), "only-a@example.com", "org-a", "admin"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.pool.Exec(context.Background(), `DELETE FROM memberships WHERE user_id = (SELECT id FROM users WHERE email = 'only-a@example.com') AND organisation_id = 'org-c'`); err != nil {
+		t.Fatal(err)
+	}
+	_, link, _, _ = w.resetLink(w.signIn("only-a@example.com"), "org-a", f.userID("later@example.com"))
+	if link == nil {
+		t.Fatal("no reset link for a member of A only")
+	}
+	if _, err := f.pg.AddMembership(context.Background(), "later@example.com", "org-b", "viewer"); err != nil {
+		t.Fatal(err)
+	}
+	if res, _ := w.accept(tokenOf(*link), "a takeover password", request{tls: true}); res.StatusCode != http.StatusNotFound {
+		t.Errorf("a reset link used after the member joined B = %d, want 404", res.StatusCode)
+	}
+	if res := f.do(w.h, http.MethodPost, "/auth/sign-in", signIn("later@example.com", password), request{tls: true}); res.StatusCode != http.StatusNoContent {
+		t.Errorf("the member's own password after the refused reset = %d, want 204", res.StatusCode)
+	}
+	if n := f.count(`SELECT count(*) FROM invitations WHERE user_id = (SELECT id FROM users WHERE email = 'later@example.com') AND revoked_at IS NOT NULL AND accepted_at IS NULL`); n != 1 {
+		t.Errorf("%d revoked reset links for the member, want the refused one", n)
 	}
 }
 

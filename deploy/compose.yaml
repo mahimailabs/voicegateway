@@ -16,7 +16,8 @@ x-voicegateway-env: &voicegateway-env
   # Proxies whose X-Forwarded-For and X-Forwarded-Proto web believes, comma-separated.
   VOICEGATEWAY_TRUSTED_PROXIES: ${VOICEGATEWAY_TRUSTED_PROXIES:-}
   # SMTP for invitation and reset emails: smtps://user:pass@host:465, or smtp://user:pass@host:587
-  # with STARTTLS. Empty sends nothing, and Settings shows each link to copy.
+  # with STARTTLS. Needs VOICEGATEWAY_PUBLIC_URL, the base of every emailed link. Empty sends
+  # nothing, and Settings shows each link to copy.
   VOICEGATEWAY_SMTP_URL: ${VOICEGATEWAY_SMTP_URL:-}
   VOICEGATEWAY_SMTP_FROM: ${VOICEGATEWAY_SMTP_FROM:-}
   VOICEGATEWAY_LOG_LEVEL: ${VOICEGATEWAY_LOG_LEVEL:-info}

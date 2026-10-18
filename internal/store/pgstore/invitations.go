@@ -53,6 +53,15 @@ func (s *Store) createInvitation(ctx context.Context, in store.NewInvitation) (s
 	if err := q.RevokeOpenInvitation(ctx, RevokeOpenInvitationParams{OrganisationID: in.OrganisationID, Email: email, Kind: in.Kind}); err != nil {
 		return store.Invitation{}, err
 	}
+	if in.Kind == "reset" && in.UserID != nil {
+		u, err := uuid(*in.UserID)
+		if err != nil {
+			return store.Invitation{}, err
+		}
+		if err := q.RevokeOpenResets(ctx, u); err != nil {
+			return store.Invitation{}, err
+		}
+	}
 	params := InsertInvitationParams{
 		Kind: in.Kind, OrganisationID: in.OrganisationID, Email: email, TokenSha256: in.TokenSHA256,
 		Role: textOf(in.Role), IdempotencyKey: textOf(in.IdempotencyKey), ExpiresAt: timestamp(&in.ExpiresAt),
@@ -227,6 +236,24 @@ func (s *Store) AcceptInvitation(ctx context.Context, tokenSHA256 []byte, passwo
 	switch link.Kind {
 	case "reset":
 		userID = link.UserID
+		// The guard ResetLink ran when the link was made runs again now: the member may have
+		// joined another organisation since, or the admin who made it may have lost the role.
+		// A link that no longer passes is revoked and changes nothing else.
+		if link.InvitedBy.Valid {
+			ok, err := adminOfAll(ctx, q, link.InvitedBy, userID)
+			if err != nil {
+				return "", fmt.Errorf("accept reset: %w", err)
+			}
+			if !ok {
+				if err := q.RevokeUsedLink(ctx, link.ID); err != nil {
+					return "", fmt.Errorf("accept reset: %w", err)
+				}
+				if err := tx.Commit(ctx); err != nil {
+					return "", fmt.Errorf("accept reset: %w", err)
+				}
+				return "", store.ErrNotFound
+			}
+		}
 		if err := q.SetPasswordByID(ctx, SetPasswordByIDParams{ID: userID, PasswordHash: passwordHash}); err != nil {
 			return "", fmt.Errorf("accept reset: %w", err)
 		}
@@ -252,6 +279,28 @@ func (s *Store) AcceptInvitation(ctx context.Context, tokenSHA256 []byte, passwo
 		return "", fmt.Errorf("accept invitation: %w", err)
 	}
 	return userID.String(), nil
+}
+
+// adminOfAll reports whether by is an admin of every organisation user belongs to.
+func adminOfAll(ctx context.Context, q *Queries, by, user pgtype.UUID) (bool, error) {
+	theirs, err := q.OrganisationRoles(ctx, user)
+	if err != nil {
+		return false, err
+	}
+	mine, err := q.OrganisationRoles(ctx, by)
+	if err != nil {
+		return false, err
+	}
+	admin := map[string]bool{}
+	for _, r := range mine {
+		admin[r.OrganisationID] = r.Role == "admin"
+	}
+	for _, r := range theirs {
+		if !admin[r.OrganisationID] {
+			return false, nil
+		}
+	}
+	return true, nil
 }
 
 func invitationOf(id pgtype.UUID, kind, email string, role, invitedBy pgtype.Text, created, expires, emailed, accepted, revoked pgtype.Timestamptz) store.Invitation {

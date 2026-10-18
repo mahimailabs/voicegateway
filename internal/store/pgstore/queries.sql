@@ -418,6 +418,11 @@ UPDATE users SET password_hash = @password_hash WHERE id = @id AND password_hash
 UPDATE invitations SET revoked_at = now()
 WHERE organisation_id = @organisation_id AND email = @email AND kind = @kind AND accepted_at IS NULL AND revoked_at IS NULL;
 
+-- name: RevokeOpenResets :exec
+-- A new reset link replaces every open one for the member, whichever organisation's admin made it.
+UPDATE invitations SET revoked_at = now()
+WHERE kind = 'reset' AND user_id = @user_id AND accepted_at IS NULL AND revoked_at IS NULL;
+
 -- name: InsertInvitation :one
 INSERT INTO invitations (kind, organisation_id, email, role, user_id, token_sha256, invited_by, idempotency_key, expires_at)
 VALUES (@kind, @organisation_id, @email, sqlc.narg(role), sqlc.narg(user_id), @token_sha256, sqlc.narg(invited_by), sqlc.narg(idempotency_key), @expires_at)
@@ -456,7 +461,11 @@ WHERE i.token_sha256 = @token_sha256 AND i.accepted_at IS NULL AND i.revoked_at 
 -- Uses a link once: anything but one row means it was used, revoked or expired meanwhile.
 UPDATE invitations SET accepted_at = now()
 WHERE token_sha256 = @token_sha256 AND accepted_at IS NULL AND revoked_at IS NULL AND expires_at > now()
-RETURNING id, kind, organisation_id, email, role, user_id;
+RETURNING id, kind, organisation_id, email, role, user_id, invited_by;
+
+-- name: RevokeUsedLink :exec
+-- A reset link that fails its guard at use is revoked, not left looking accepted.
+UPDATE invitations SET accepted_at = NULL, revoked_at = now() WHERE id = @id;
 
 -- name: OrganisationRoles :many
 -- Every organisation a user belongs to, with their role: what a reset link's guard checks.

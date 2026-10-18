@@ -157,6 +157,7 @@ func (s *Service) Create(ctx context.Context, in Invite) (Created, error) {
 		if c, done, err := s.repeat(ctx, in, email); done || err != nil {
 			return c, err
 		}
+		return Created{}, ErrInvalid
 	}
 	if err != nil {
 		return Created{}, err
@@ -192,7 +193,9 @@ func (s *Service) repeat(ctx context.Context, in Invite, email string) (Created,
 // the requester is an admin of every organisation userID belongs to, so an admin of one
 // organisation cannot take over an account that also belongs to another. Errors:
 // store.ErrNotFound when userID is not a member of organisationID, and ErrOtherOrganisations
-// when they also belong to an organisation the requester does not administer.
+// when they also belong to an organisation the requester does not administer. by is nil only for
+// a caller with the whole install's authority (the command line, the 06e instance API), which
+// skips the guard; the API always passes the signed-in admin. Accepting runs the guard again.
 func (s *Service) ResetLink(ctx context.Context, organisationID, userID string, by *string, baseURL string) (Created, error) {
 	if baseURL == "" {
 		return Created{}, ErrInvalid
@@ -312,13 +315,23 @@ func (s *Service) Accept(ctx context.Context, token, password string, limit Sign
 		return store.Principal{}, TooManyAttempts{Wait: wait}
 	}
 	p, err := s.acceptInvite(ctx, link, sum, password, true)
-	if err != nil {
+	switch {
+	case errors.Is(err, ErrInvalidLink):
+		// The link was used meanwhile, before any password was tested: the try is not a failure.
+		s.forget(ctx, success, link.ID)
+		return store.Principal{}, err
+	case err != nil:
 		return store.Principal{}, err
 	}
-	if err := success(ctx); err != nil {
-		return store.Principal{}, err
-	}
+	s.forget(ctx, success, link.ID)
 	return p, nil
+}
+
+// forget clears the reserved tries. The link is already decided, so a failure only logs.
+func (s *Service) forget(ctx context.Context, success func(context.Context) error, id string) {
+	if err := success(ctx); err != nil {
+		s.Log.Warn("invite: could not clear sign-in tries", "invitation_id", id, "err", err)
+	}
 }
 
 // acceptInvite creates the account or proves the existing one's password, then uses the link.
@@ -345,7 +358,13 @@ func (s *Service) acceptInvite(ctx context.Context, link store.OpenInvitation, s
 	}
 	p, err := s.use(ctx, link, sum, hash, "")
 	if errors.Is(err, store.ErrUserExists) && retry {
-		return s.acceptInvite(ctx, link, sum, password, false)
+		// A parallel accept created the account first. Its password, not this one, is the
+		// account's; a mismatch reads as the link being used, as the spec allows.
+		p, err := s.acceptInvite(ctx, link, sum, password, false)
+		if errors.Is(err, ErrWrongPassword) {
+			return store.Principal{}, ErrInvalidLink
+		}
+		return p, err
 	}
 	if errors.Is(err, store.ErrUserExists) {
 		return store.Principal{}, ErrInvalidLink
