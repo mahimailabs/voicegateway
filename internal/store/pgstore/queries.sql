@@ -265,16 +265,45 @@ INSERT INTO users (email, password_hash) VALUES (@email, @password_hash) RETURNI
 INSERT INTO memberships (user_id, organisation_id, role) VALUES (@user_id, @organisation_id, @role);
 
 -- name: UserByEmail :one
-SELECT id, email, password_hash FROM users WHERE email = @email;
+SELECT id, email, password_hash, password_version FROM users WHERE email = @email;
 
 -- name: UserByID :one
-SELECT id, email FROM users WHERE id = @id;
+SELECT id, email, password_version FROM users WHERE id = @id;
+
+-- name: SetPassword :execrows
+-- A new password, and a new password_version, so every session from before is signed out.
+UPDATE users SET password_hash = @password_hash, password_version = password_version + 1 WHERE email = @email;
+
+-- name: OrganisationMembers :many
+SELECT u.id AS user_id, u.email, m.role
+FROM memberships m JOIN users u ON u.id = m.user_id
+WHERE m.organisation_id = @organisation_id
+ORDER BY u.email;
+
+-- name: LockOrganisation :one
+-- Serialises role changes in one organisation until the transaction ends, so the last-admin check
+-- and the write see the same admins.
+SELECT id FROM organisations WHERE id = @id FOR UPDATE;
+
+-- name: CountAdmins :one
+SELECT count(*) FROM memberships WHERE organisation_id = @organisation_id AND role = 'admin';
+
+-- name: SetMemberRole :execrows
+UPDATE memberships SET role = @role WHERE organisation_id = @organisation_id AND user_id = @user_id;
+
+-- name: RemoveMembership :execrows
+DELETE FROM memberships WHERE organisation_id = @organisation_id AND user_id = @user_id;
 
 -- name: Memberships :many
 SELECT organisation_id, role FROM memberships WHERE user_id = @user_id ORDER BY organisation_id;
 
 -- name: Membership :one
 SELECT role FROM memberships WHERE user_id = @user_id AND organisation_id = @organisation_id;
+
+-- name: MemberOf :one
+SELECT u.id AS user_id, u.email, m.role
+FROM memberships m JOIN users u ON u.id = m.user_id
+WHERE m.organisation_id = @organisation_id AND m.user_id = @user_id;
 
 -- name: LockSignInKey :exec
 -- Serialises reservations for one key until the transaction ends.

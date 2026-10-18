@@ -123,44 +123,78 @@ func projectCommand() *cobra.Command {
 	return cmd
 }
 
-// userCommand adds accounts. The first admin of an install is made here, so there is no open
-// sign-up window (decision 0027). The password comes from VOICEGATEWAY_USER_PASSWORD or a prompt,
-// never a flag, so it stays out of shell history and process listings.
+// userCommand adds accounts and resets passwords. The first admin of an install is made here, so
+// there is no open sign-up window (decision 0027). A password comes from
+// VOICEGATEWAY_USER_PASSWORD or a prompt, never a flag, so it stays out of shell history and
+// process listings.
 func userCommand() *cobra.Command {
-	var email, org string
+	var email, org, role string
 	var admin bool
 	add := &cobra.Command{
 		Use:   "add",
-		Short: "Add a user (password from VOICEGATEWAY_USER_PASSWORD or a prompt)",
+		Short: "Add a user to an organisation (a new account's password from VOICEGATEWAY_USER_PASSWORD or a prompt)",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			if !admin {
-				return errors.New("only --admin users can be added until invitations land (phase 06b)")
+			if admin {
+				if cmd.Flags().Changed("role") && role != "admin" {
+					return errors.New("--admin and --role " + role + " disagree")
+				}
+				role = "admin"
+			}
+			if role == "" {
+				return errors.New("set --role admin, member or viewer, or --admin")
 			}
 			c, err := config.Load(os.Getenv)
 			if err != nil {
 				return fmt.Errorf("configuration:\n%w", err)
 			}
-			password := os.Getenv("VOICEGATEWAY_USER_PASSWORD")
-			if password == "" {
-				if password, err = promptPassword(cmd); err != nil {
-					return err
-				}
-			}
-			if _, err := app.AddUser(cmd.Context(), c, email, org, password); err != nil {
+			created, err := app.AddUser(cmd.Context(), c, email, org, role, func() (string, error) { return readPassword(cmd) })
+			if err != nil {
 				return fmt.Errorf("add user: %w", err)
 			}
-			_, err = fmt.Fprintf(cmd.OutOrStdout(), "added admin %s to organisation %s\n", strings.ToLower(strings.TrimSpace(email)), org)
+			what := "added"
+			if !created {
+				what = "added the existing account"
+			}
+			_, err = fmt.Fprintf(cmd.OutOrStdout(), "%s %s to organisation %s as %s\n", what, strings.ToLower(strings.TrimSpace(email)), org, role)
 			return err
 		},
 	}
 	f := add.Flags()
 	f.StringVar(&email, "email", "", "the user's email address")
 	f.StringVar(&org, "org", "default", "organisation id")
-	f.BoolVar(&admin, "admin", false, "make the user an admin of the organisation")
+	f.StringVar(&role, "role", "", "admin, member or viewer")
+	f.BoolVar(&admin, "admin", false, "shorthand for --role admin")
+
+	reset := &cobra.Command{
+		Use:   "reset-password",
+		Short: "Set a new password and sign the user out everywhere (password from VOICEGATEWAY_USER_PASSWORD or a prompt)",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			c, err := config.Load(os.Getenv)
+			if err != nil {
+				return fmt.Errorf("configuration:\n%w", err)
+			}
+			if err := app.ResetPassword(cmd.Context(), c, email, func() (string, error) { return readPassword(cmd) }); err != nil {
+				return fmt.Errorf("reset password: %w", err)
+			}
+			_, err = fmt.Fprintf(cmd.OutOrStdout(), "reset the password of %s and signed them out everywhere\n", strings.ToLower(strings.TrimSpace(email)))
+			return err
+		},
+	}
+	reset.Flags().StringVar(&email, "email", "", "the user's email address")
+
 	cmd := &cobra.Command{Use: "user", Short: "Manage users"}
-	cmd.AddCommand(add)
+	cmd.AddCommand(add, reset)
 	return cmd
+}
+
+// readPassword reads a password from VOICEGATEWAY_USER_PASSWORD, or else prompts for it.
+func readPassword(cmd *cobra.Command) (string, error) {
+	if pw := os.Getenv("VOICEGATEWAY_USER_PASSWORD"); pw != "" {
+		return pw, nil
+	}
+	return promptPassword(cmd)
 }
 
 // promptPassword reads a password twice from the terminal without echoing it.

@@ -3,25 +3,27 @@
 extends:
   - spec
 rules:
-  rule/reads-only:
+  rule/operation-tags:
     subject:
-      type: PathItem
+      type: Operation
+      property: tags
     assertions:
-      disallowed: [post, put, patch, delete]
-    message: This contract is limited to reads.
+      defined: true
+      enum: ["Console reads", "Console writes"]
+    message: Every operation is a Console read or a Console write; check-sources ties each to its method.
   rule/typed-errors:
     subject:
       type: Responses
     assertions:
       required: ["400", "401", "403", "404", "500", "503"]
-    message: Every read answers 400, 401, 403, 404, 500 and 503 with a typed error.
+    message: Every operation answers 400, 401, 403, 404, 500 and 503 with a typed error.
   rule/access-policy:
     subject:
       type: Operation
       property: x-access
     assertions:
       defined: true
-    message: Every read declares its authorisation policy in x-access.
+    message: Every operation declares its authorisation policy in x-access.
   rule/camel-case-properties:
     subject:
       type: SchemaProperties

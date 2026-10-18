@@ -2,7 +2,7 @@ openapi: 3.1.1
 info:
   title: VoiceGateway console read contract
   version: 1.0.0
-  description: "Issue #321 console read contract. Read models normalise captured LiveKit evidence; native LiveKit clients/protocol messages remain the source, never reimplemented. No Go implementation, generated TypeScript or MSW in this PR. Browser authentication transport is deliberately unresolved; x-access states mandatory authorisation policy, not anonymous access. See coverage.md and upstream-sources.md for provenance and missing-data rules."
+  description: "Issue #321 console read contract. Read models normalise captured LiveKit evidence; native LiveKit clients/protocol messages remain the source, never reimplemented. No Go implementation, generated TypeScript or MSW in this PR. A browser signs in with a session cookie (decision 0027); x-access states mandatory authorisation policy, not anonymous access. Member writes are tagged Console writes. See coverage.md and upstream-sources.md for provenance and missing-data rules."
   license:
     name: MIT
     identifier: MIT
@@ -12,6 +12,8 @@ servers:
 tags:
   - name: Console reads
     description: Authorised project-scoped console data.
+  - name: Console writes
+    description: Organisation changes a signed-in Admin makes (phase 06b).
 paths:
   /api/v1/org/{orgId}/project/{projectId}/calls:
     get:
@@ -23,7 +25,7 @@ paths:
         principal: organisation_member
         minimumRole: Viewer
         projectIsolation: required
-        browserSessionTransport: not_selected
+        browserSessionTransport: session_cookie
         scope: project
       x-embed-access:
         credential: embed_token
@@ -32,7 +34,7 @@ paths:
         projectIsolation: required
         originAllowList: required
         readOnly: true
-      description: "Requires authenticated organisation membership and permission to read the named project. Browser session transport is intentionally not selected by #321. Credential absence is 401, denied membership is 403, cross-project resource ids are not_found. Server-side LiveKit credentials must never reach the browser."
+      description: "Requires authenticated organisation membership and permission to read the named project. A browser signs in with the session cookie (decision 0027); the role gate admits the minimumRole and above. Credential absence is 401, denied membership is 403, cross-project resource ids are not_found. Server-side LiveKit credentials must never reach the browser."
       parameters:
         - $ref: "#/components/parameters/OrganisationId"
         - $ref: "#/components/parameters/ProjectId"
@@ -200,7 +202,7 @@ paths:
         principal: organisation_member
         minimumRole: Viewer
         projectIsolation: required
-        browserSessionTransport: not_selected
+        browserSessionTransport: session_cookie
         scope: project
       x-embed-access:
         credential: embed_token
@@ -209,7 +211,7 @@ paths:
         projectIsolation: required
         originAllowList: required
         readOnly: true
-      description: "Requires authenticated organisation membership and permission to read the named project. Browser session transport is intentionally not selected by #321. Credential absence is 401, denied membership is 403, cross-project resource ids are not_found. Server-side LiveKit credentials must never reach the browser."
+      description: "Requires authenticated organisation membership and permission to read the named project. A browser signs in with the session cookie (decision 0027); the role gate admits the minimumRole and above. Credential absence is 401, denied membership is 403, cross-project resource ids are not_found. Server-side LiveKit credentials must never reach the browser."
       parameters:
         - $ref: "#/components/parameters/OrganisationId"
         - $ref: "#/components/parameters/ProjectId"
@@ -249,7 +251,7 @@ paths:
         principal: organisation_member
         minimumRole: Viewer
         projectIsolation: required
-        browserSessionTransport: not_selected
+        browserSessionTransport: session_cookie
         scope: project
       x-embed-access:
         credential: embed_token
@@ -306,7 +308,7 @@ paths:
         principal: organisation_member
         minimumRole: Viewer
         projectIsolation: required
-        browserSessionTransport: not_selected
+        browserSessionTransport: session_cookie
         scope: project
       x-embed-access:
         credential: embed_token
@@ -362,7 +364,7 @@ paths:
         principal: organisation_member
         minimumRole: Viewer
         projectIsolation: required
-        browserSessionTransport: not_selected
+        browserSessionTransport: session_cookie
         scope: project
       description: "The Alerts page chart, rule counts and history. This is rule evaluation, not delivery history. Requires authenticated organisation membership and permission to read the named project. Credential absence is 401, denied membership is 403. Computed on the server over every stored record in the range; the console never totals pages of listCalls itself."
       parameters:
@@ -411,9 +413,9 @@ paths:
         principal: organisation_member
         minimumRole: Viewer
         projectIsolation: required
-        browserSessionTransport: not_selected
+        browserSessionTransport: session_cookie
         scope: project
-      description: "Requires authenticated organisation membership and permission to read the named project. Browser session transport is intentionally not selected by #321. Credential absence is 401, denied membership is 403, cross-project resource ids are not_found. Server-side LiveKit credentials must never reach the browser."
+      description: "Requires authenticated organisation membership and permission to read the named project. A browser signs in with the session cookie (decision 0027); the role gate admits the minimumRole and above. Credential absence is 401, denied membership is 403, cross-project resource ids are not_found. Server-side LiveKit credentials must never reach the browser."
       parameters:
         - $ref: "#/components/parameters/OrganisationId"
         - $ref: "#/components/parameters/ProjectId"
@@ -446,9 +448,9 @@ paths:
         principal: organisation_member
         minimumRole: Viewer
         projectIsolation: required
-        browserSessionTransport: not_selected
+        browserSessionTransport: session_cookie
         scope: project
-      description: "Requires authenticated organisation membership and permission to read the named project. Browser session transport is intentionally not selected by #321. Credential absence is 401, denied membership is 403, cross-project resource ids are not_found. Server-side LiveKit credentials must never reach the browser."
+      description: "Requires authenticated organisation membership and permission to read the named project. A browser signs in with the session cookie (decision 0027); the role gate admits the minimumRole and above. Credential absence is 401, denied membership is 403, cross-project resource ids are not_found. Server-side LiveKit credentials must never reach the browser."
       parameters:
         - $ref: "#/components/parameters/OrganisationId"
         - $ref: "#/components/parameters/ProjectId"
@@ -481,9 +483,9 @@ paths:
         principal: organisation_member
         minimumRole: Viewer
         projectIsolation: required
-        browserSessionTransport: not_selected
+        browserSessionTransport: session_cookie
         scope: project
-      description: "Requires authenticated organisation membership and permission to read the named project. Browser session transport is intentionally not selected by #321. Credential absence is 401, denied membership is 403, cross-project resource ids are not_found. Server-side LiveKit credentials must never reach the browser."
+      description: "Requires authenticated organisation membership and permission to read the named project. A browser signs in with the session cookie (decision 0027); the role gate admits the minimumRole and above. Credential absence is 401, denied membership is 403, cross-project resource ids are not_found. Server-side LiveKit credentials must never reach the browser."
       parameters:
         - $ref: "#/components/parameters/OrganisationId"
         - $ref: "#/components/parameters/ProjectId"
@@ -516,9 +518,9 @@ paths:
         principal: organisation_member
         minimumRole: Viewer
         projectIsolation: required
-        browserSessionTransport: not_selected
+        browserSessionTransport: session_cookie
         scope: project
-      description: "Requires authenticated organisation membership and permission to read the named project. Browser session transport is intentionally not selected by #321. Credential absence is 401, denied membership is 403, cross-project resource ids are not_found. Server-side LiveKit credentials must never reach the browser."
+      description: "Requires authenticated organisation membership and permission to read the named project. A browser signs in with the session cookie (decision 0027); the role gate admits the minimumRole and above. Credential absence is 401, denied membership is 403, cross-project resource ids are not_found. Server-side LiveKit credentials must never reach the browser."
       parameters:
         - $ref: "#/components/parameters/OrganisationId"
         - $ref: "#/components/parameters/ProjectId"
@@ -551,9 +553,9 @@ paths:
         principal: organisation_member
         minimumRole: Viewer
         projectIsolation: required
-        browserSessionTransport: not_selected
+        browserSessionTransport: session_cookie
         scope: project
-      description: "Requires authenticated organisation membership and permission to read the named project. Browser session transport is intentionally not selected by #321. Credential absence is 401, denied membership is 403, cross-project resource ids are not_found. Server-side LiveKit credentials must never reach the browser."
+      description: "Requires authenticated organisation membership and permission to read the named project. A browser signs in with the session cookie (decision 0027); the role gate admits the minimumRole and above. Credential absence is 401, denied membership is 403, cross-project resource ids are not_found. Server-side LiveKit credentials must never reach the browser."
       parameters:
         - $ref: "#/components/parameters/OrganisationId"
         - $ref: "#/components/parameters/ProjectId"
@@ -586,9 +588,9 @@ paths:
         principal: organisation_member
         minimumRole: Viewer
         projectIsolation: required
-        browserSessionTransport: not_selected
+        browserSessionTransport: session_cookie
         scope: project
-      description: "Requires authenticated organisation membership and permission to read the named project. Browser session transport is intentionally not selected by #321. Credential absence is 401, denied membership is 403, cross-project resource ids are not_found. Server-side LiveKit credentials must never reach the browser."
+      description: "Requires authenticated organisation membership and permission to read the named project. A browser signs in with the session cookie (decision 0027); the role gate admits the minimumRole and above. Credential absence is 401, denied membership is 403, cross-project resource ids are not_found. Server-side LiveKit credentials must never reach the browser."
       parameters:
         - $ref: "#/components/parameters/OrganisationId"
         - $ref: "#/components/parameters/ProjectId"
@@ -621,9 +623,9 @@ paths:
         principal: organisation_member
         minimumRole: Viewer
         projectIsolation: required
-        browserSessionTransport: not_selected
+        browserSessionTransport: session_cookie
         scope: project
-      description: "Requires authenticated organisation membership and permission to read the named project. Browser session transport is intentionally not selected by #321. Credential absence is 401, denied membership is 403, cross-project resource ids are not_found. Server-side LiveKit credentials must never reach the browser."
+      description: "Requires authenticated organisation membership and permission to read the named project. A browser signs in with the session cookie (decision 0027); the role gate admits the minimumRole and above. Credential absence is 401, denied membership is 403, cross-project resource ids are not_found. Server-side LiveKit credentials must never reach the browser."
       parameters:
         - $ref: "#/components/parameters/OrganisationId"
         - $ref: "#/components/parameters/ProjectId"
@@ -656,9 +658,9 @@ paths:
         principal: organisation_member
         minimumRole: Viewer
         projectIsolation: required
-        browserSessionTransport: not_selected
+        browserSessionTransport: session_cookie
         scope: project
-      description: "Requires authenticated organisation membership and permission to read the named project. Browser session transport is intentionally not selected by #321. Credential absence is 401, denied membership is 403, cross-project resource ids are not_found. Server-side LiveKit credentials must never reach the browser."
+      description: "Requires authenticated organisation membership and permission to read the named project. A browser signs in with the session cookie (decision 0027); the role gate admits the minimumRole and above. Credential absence is 401, denied membership is 403, cross-project resource ids are not_found. Server-side LiveKit credentials must never reach the browser."
       parameters:
         - $ref: "#/components/parameters/OrganisationId"
         - $ref: "#/components/parameters/ProjectId"
@@ -700,9 +702,9 @@ paths:
         principal: organisation_member
         minimumRole: Viewer
         projectIsolation: required
-        browserSessionTransport: not_selected
+        browserSessionTransport: session_cookie
         scope: project
-      description: "Requires authenticated organisation membership and permission to read the named project. Browser session transport is intentionally not selected by #321. Credential absence is 401, denied membership is 403, cross-project resource ids are not_found. Server-side LiveKit credentials must never reach the browser."
+      description: "Requires authenticated organisation membership and permission to read the named project. A browser signs in with the session cookie (decision 0027); the role gate admits the minimumRole and above. Credential absence is 401, denied membership is 403, cross-project resource ids are not_found. Server-side LiveKit credentials must never reach the browser."
       parameters:
         - $ref: "#/components/parameters/OrganisationId"
         - $ref: "#/components/parameters/ProjectId"
@@ -735,9 +737,9 @@ paths:
         principal: organisation_member
         minimumRole: Viewer
         projectIsolation: required
-        browserSessionTransport: not_selected
+        browserSessionTransport: session_cookie
         scope: project
-      description: "Requires authenticated organisation membership and permission to read the named project. Browser session transport is intentionally not selected by #321. Credential absence is 401, denied membership is 403, cross-project resource ids are not_found. Server-side LiveKit credentials must never reach the browser."
+      description: "Requires authenticated organisation membership and permission to read the named project. A browser signs in with the session cookie (decision 0027); the role gate admits the minimumRole and above. Credential absence is 401, denied membership is 403, cross-project resource ids are not_found. Server-side LiveKit credentials must never reach the browser."
       parameters:
         - $ref: "#/components/parameters/OrganisationId"
         - $ref: "#/components/parameters/ProjectId"
@@ -770,9 +772,9 @@ paths:
         principal: organisation_member
         minimumRole: Viewer
         projectIsolation: required
-        browserSessionTransport: not_selected
+        browserSessionTransport: session_cookie
         scope: project
-      description: "Requires authenticated organisation membership and permission to read the named project. Browser session transport is intentionally not selected by #321. Credential absence is 401, denied membership is 403, cross-project resource ids are not_found. Server-side LiveKit credentials must never reach the browser."
+      description: "Requires authenticated organisation membership and permission to read the named project. A browser signs in with the session cookie (decision 0027); the role gate admits the minimumRole and above. Credential absence is 401, denied membership is 403, cross-project resource ids are not_found. Server-side LiveKit credentials must never reach the browser."
       parameters:
         - $ref: "#/components/parameters/OrganisationId"
         - $ref: "#/components/parameters/ProjectId"
@@ -805,9 +807,9 @@ paths:
         principal: organisation_member
         minimumRole: Viewer
         projectIsolation: required
-        browserSessionTransport: not_selected
+        browserSessionTransport: session_cookie
         scope: project
-      description: "Requires authenticated organisation membership and permission to read the named project. Browser session transport is intentionally not selected by #321. Credential absence is 401, denied membership is 403, cross-project resource ids are not_found. Server-side LiveKit credentials must never reach the browser."
+      description: "Requires authenticated organisation membership and permission to read the named project. A browser signs in with the session cookie (decision 0027); the role gate admits the minimumRole and above. Credential absence is 401, denied membership is 403, cross-project resource ids are not_found. Server-side LiveKit credentials must never reach the browser."
       parameters:
         - $ref: "#/components/parameters/OrganisationId"
         - $ref: "#/components/parameters/ProjectId"
@@ -839,9 +841,9 @@ paths:
       x-access:
         principal: organisation_member
         minimumRole: Admin
-        browserSessionTransport: not_selected
+        browserSessionTransport: session_cookie
         scope: organisation
-      description: Requires Admin membership in the named organisation before reading pending invitations. This is an organisation-level read, not a selected-project read. Browser session transport remains unselected. Missing authentication is 401 and denied membership/role is 403. Do not reveal invitation addresses across organisations.
+      description: Requires Admin membership in the named organisation before reading pending invitations. This is an organisation-level read, not a selected-project read. A browser signs in with the session cookie (decision 0027). Missing authentication is 401 and denied membership/role is 403. Do not reveal invitation addresses across organisations.
       parameters:
         - $ref: "#/components/parameters/OrganisationId"
       responses:
@@ -863,6 +865,112 @@ paths:
           $ref: "#/components/responses/InternalError"
         "503":
           $ref: "#/components/responses/SourceUnavailable"
+  /api/v1/org/{orgId}/members:
+    get:
+      operationId: getMembers
+      summary: Read the organisation's members and their roles
+      tags:
+        - Console reads
+      x-access:
+        principal: organisation_member
+        minimumRole: Viewer
+        browserSessionTransport: session_cookie
+        scope: organisation
+      description: Requires membership in the named organisation; every role reads the member list, as a team list. A browser signs in with the session cookie (decision 0027). The interim API token names no user and is 403. Missing authentication is 401 and denied membership is 403. Members of other organisations are never returned.
+      parameters:
+        - $ref: "#/components/parameters/OrganisationId"
+      responses:
+        "200":
+          description: The organisation's members, ordered by email.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Members"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/SourceUnavailable"
+  /api/v1/org/{orgId}/members/{userId}:
+    patch:
+      operationId: updateMember
+      summary: Change a member's organisation role
+      tags:
+        - Console writes
+      x-access:
+        principal: organisation_member
+        minimumRole: Admin
+        browserSessionTransport: session_cookie
+        scope: organisation
+      description: Requires Admin membership in the named organisation. A userId that is not a member of this organisation is not_found. Demoting the organisation's only admin is 409 last_admin and changes nothing. The new role applies on the member's next request.
+      parameters:
+        - $ref: "#/components/parameters/OrganisationId"
+        - $ref: "#/components/parameters/UserId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MemberRoleChange"
+      responses:
+        "200":
+          description: The member with their new role.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Member"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/SourceUnavailable"
+    delete:
+      operationId: removeMember
+      summary: Remove a member from the organisation
+      tags:
+        - Console writes
+      x-access:
+        principal: organisation_member
+        minimumRole: Admin
+        browserSessionTransport: session_cookie
+        scope: organisation
+      description: Requires Admin membership in the named organisation. The user's account and their other organisations stay; they lose this organisation on their next request. A userId that is not a member is not_found. Removing the only admin is 409 last_admin.
+      parameters:
+        - $ref: "#/components/parameters/OrganisationId"
+        - $ref: "#/components/parameters/UserId"
+      responses:
+        "204":
+          description: Removed.
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/SourceUnavailable"
   /api/v1/workspaces:
     get:
       operationId: getWorkspaces
@@ -872,9 +980,9 @@ paths:
       x-access:
         principal: organisation_member
         minimumRole: Viewer
-        browserSessionTransport: not_selected
+        browserSessionTransport: session_cookie
         scope: principal
-      description: "Requires an authenticated principal. Return only organisations in which that principal is a member and projects they may read. No visible membership is an observed empty list, never an implicit default workspace. Browser session transport is intentionally unselected by #321; absence of valid authentication is 401."
+      description: "Requires an authenticated principal. Return only organisations in which that principal is a member and projects they may read. No visible membership is an observed empty list, never an implicit default workspace. A browser signs in with the session cookie (decision 0027); absence of valid authentication is 401."
       parameters: []
       responses:
         "200":
@@ -905,7 +1013,7 @@ paths:
         principal: organisation_member
         minimumRole: Viewer
         projectIsolation: required
-        browserSessionTransport: not_selected
+        browserSessionTransport: session_cookie
         scope: project
       x-embed-access:
         credential: embed_token
@@ -914,7 +1022,7 @@ paths:
         projectIsolation: required
         originAllowList: required
         readOnly: true
-      description: "Requires authenticated organisation membership and permission to read the named project. Browser session transport is intentionally not selected by #321. Credential absence is 401, denied membership is 403, cross-project resource ids are not_found. Server-side LiveKit credentials must never reach the browser. Resolve the recording id server-side only after project authorisation. Do not fetch an arbitrary request URL. Enforce retention and recording opt-in; never synthesise media for a call without an observed recording."
+      description: "Requires authenticated organisation membership and permission to read the named project. A browser signs in with the session cookie (decision 0027); the role gate admits the minimumRole and above. Credential absence is 401, denied membership is 403, cross-project resource ids are not_found. Server-side LiveKit credentials must never reach the browser. Resolve the recording id server-side only after project authorisation. Do not fetch an arbitrary request URL. Enforce retention and recording opt-in; never synthesise media for a call without an observed recording."
       parameters:
         - $ref: "#/components/parameters/OrganisationId"
         - $ref: "#/components/parameters/ProjectId"
@@ -3878,7 +3986,7 @@ components:
           type: string
           description: Stable error category.
           x-source: { kind: computed, file: docs/api/coverage.md, pointer: null, detail: Stable error category. }
-          enum: [ invalid_request, unauthenticated, forbidden, not_found, source_unavailable, internal_error, range_not_satisfiable ]
+          enum: [ invalid_request, unauthenticated, forbidden, not_found, source_unavailable, internal_error, range_not_satisfiable, last_admin ]
         message:
           type: string
           description: Safe human-readable explanation, excluding upstream credentials and request bodies.
@@ -4039,6 +4147,45 @@ components:
           type: string
           description: Requested organisation role, per decision 0019.
           x-source: { kind: configuration, file: dashboard/src/features/settings/settings-dialog.tsx, pointer: null, detail: "Requested organisation role, per decision 0019." }
+          enum: [ Admin, Member, Viewer ]
+    Member:
+      type: object
+      additionalProperties: false
+      required: [ userId, email, role ]
+      properties:
+        userId:
+          type: string
+          description: The member's user id.
+          x-source: { kind: configuration, file: migrations/postgres/00004_accounts.sql, pointer: null, detail: users.id. }
+        email:
+          type: string
+          format: email
+          description: The member's sign-in email, case-folded.
+          x-source: { kind: configuration, file: migrations/postgres/00004_accounts.sql, pointer: null, detail: users.email. }
+        role:
+          type: string
+          description: Organisation role, per decision 0019.
+          x-source: { kind: configuration, file: migrations/postgres/00004_accounts.sql, pointer: null, detail: memberships.role, stored lowercase. }
+          enum: [ Admin, Member, Viewer ]
+    Members:
+      type: object
+      additionalProperties: false
+      required: [ items ]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Member"
+          x-source: { kind: configuration, file: migrations/postgres/00004_accounts.sql, pointer: null, detail: The organisation's memberships, ordered by email. }
+    MemberRoleChange:
+      type: object
+      additionalProperties: false
+      required: [ role ]
+      properties:
+        role:
+          type: string
+          description: The new organisation role.
+          x-source: { kind: configuration, file: dashboard/src/features/settings/settings-dialog.tsx, pointer: null, detail: The role an Admin picks. }
           enum: [ Admin, Member, Viewer ]
     Invitations:
       type: object
@@ -4392,6 +4539,12 @@ components:
         application/json:
           schema:
             $ref: "#/components/schemas/Error"
+    Conflict:
+      description: last_admin; the change would leave the organisation without an admin.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
     InternalError:
       description: internal_error; never return an empty success result for this failure.
       content:
@@ -4405,6 +4558,14 @@ components:
           schema:
             $ref: "#/components/schemas/Error"
   parameters:
+    UserId:
+      name: userId
+      in: path
+      required: true
+      description: A member's user id; one outside the named organisation is not_found.
+      schema:
+        type: string
+        minLength: 1
     OrganisationId:
       name: orgId
       in: path

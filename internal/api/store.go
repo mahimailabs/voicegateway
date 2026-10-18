@@ -37,7 +37,10 @@ type Layers interface {
 	LatestSIP(ctx context.Context, organisationID, projectID string) (store.SIPRead, error)
 }
 
-// Accounts reads what a signed-in user may see.
+// Accounts reads what a signed-in user may see, and changes an organisation's members.
 type Accounts interface {
 	Workspaces(ctx context.Context, userID string) ([]store.Workspace, error)
+	Members(ctx context.Context, organisationID string) ([]store.Member, error)
+	UpdateMember(ctx context.Context, organisationID, userID, role string) (store.Member, error)
+	RemoveMember(ctx context.Context, organisationID, userID string) error
 }

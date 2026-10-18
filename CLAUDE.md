@@ -33,6 +33,7 @@ Every task goes through the root Makefile.
 - Flat packages under `internal/`. Share only `event`, `stream`, `store`. No `utils/`, `common/`, `shared/`, `pkg/`.
 - Interfaces live in the package that uses them. Wiring is constructor injection in `internal/app` only.
 - The dashboard reads only through web's API, never a database.
+- Every `/api/v1` route is registered through `handle` with its minimum role in `internal/api/roles.go`; a test compares that table with the router and the contract's `x-access`.
 
 ## Code quality
 

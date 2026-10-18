@@ -15,6 +15,20 @@ export const setCurrentSession = (s: Session | null) => {
   current = s
 }
 
+export type Role = "Admin" | "Member" | "Viewer"
+
+const roleNames: Record<string, Role> = { admin: "Admin", member: "Member", viewer: "Viewer" }
+
+/**
+ * The signed-in user's role in an organisation, by the contract's name. With the mock there is no
+ * session and the console acts as an Admin, as before sign-in; signed in but not a member is null.
+ */
+export function roleIn(orgId: string): Role | null {
+  if (!current) return "Admin"
+  const role = current.organisations.find((o) => o.id === orgId)?.role
+  return role ? (roleNames[role] ?? null) : null
+}
+
 /** Reads who is signed in. No answer at all is an error the caller shows as such. */
 export async function fetchSession(): Promise<SessionRead> {
   const res = await fetch("/auth/session", { credentials: "same-origin" })

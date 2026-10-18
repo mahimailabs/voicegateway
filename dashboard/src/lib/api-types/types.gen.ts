@@ -1228,7 +1228,7 @@ export type Error = {
     /**
      * Stable error category.
      */
-    code: 'invalid_request' | 'unauthenticated' | 'forbidden' | 'not_found' | 'source_unavailable' | 'internal_error' | 'range_not_satisfiable';
+    code: 'invalid_request' | 'unauthenticated' | 'forbidden' | 'not_found' | 'source_unavailable' | 'internal_error' | 'range_not_satisfiable' | 'last_admin';
     /**
      * Safe human-readable explanation, excluding upstream credentials and request bodies.
      */
@@ -1323,6 +1323,32 @@ export type Invitation = {
     email: string;
     /**
      * Requested organisation role, per decision 0019.
+     */
+    role: 'Admin' | 'Member' | 'Viewer';
+};
+
+export type Member = {
+    /**
+     * The member's user id.
+     */
+    userId: string;
+    /**
+     * The member's sign-in email, case-folded.
+     */
+    email: string;
+    /**
+     * Organisation role, per decision 0019.
+     */
+    role: 'Admin' | 'Member' | 'Viewer';
+};
+
+export type Members = {
+    items: Array<Member>;
+};
+
+export type MemberRoleChange = {
+    /**
+     * The new organisation role.
      */
     role: 'Admin' | 'Member' | 'Viewer';
 };
@@ -1492,6 +1518,11 @@ export type Clock = unknown & {
      */
     alignment: 'observed' | 'inferred' | 'unknown';
 };
+
+/**
+ * A member's user id; one outside the named organisation is not_found.
+ */
+export type UserId = string;
 
 /**
  * Authorised orgId; the server must verify organisation/project ownership before any read.
@@ -2587,6 +2618,172 @@ export type GetInvitationsResponses = {
 };
 
 export type GetInvitationsResponse = GetInvitationsResponses[keyof GetInvitationsResponses];
+
+export type GetMembersData = {
+    body?: never;
+    path: {
+        /**
+         * Authorised orgId; the server must verify organisation/project ownership before any read.
+         */
+        orgId: string;
+    };
+    query?: never;
+    url: '/api/v1/org/{orgId}/members';
+};
+
+export type GetMembersErrors = {
+    /**
+     * invalid_request; never return an empty success result for this failure.
+     */
+    400: Error;
+    /**
+     * unauthenticated; never return an empty success result for this failure.
+     */
+    401: Error;
+    /**
+     * forbidden; never return an empty success result for this failure.
+     */
+    403: Error;
+    /**
+     * not_found; never return an empty success result for this failure.
+     */
+    404: Error;
+    /**
+     * internal_error; never return an empty success result for this failure.
+     */
+    500: Error;
+    /**
+     * source_unavailable; never return an empty success result for this failure.
+     */
+    503: Error;
+};
+
+export type GetMembersError = GetMembersErrors[keyof GetMembersErrors];
+
+export type GetMembersResponses = {
+    /**
+     * The organisation's members, ordered by email.
+     */
+    200: Members;
+};
+
+export type GetMembersResponse = GetMembersResponses[keyof GetMembersResponses];
+
+export type RemoveMemberData = {
+    body?: never;
+    path: {
+        /**
+         * Authorised orgId; the server must verify organisation/project ownership before any read.
+         */
+        orgId: string;
+        /**
+         * A member's user id; one outside the named organisation is not_found.
+         */
+        userId: string;
+    };
+    query?: never;
+    url: '/api/v1/org/{orgId}/members/{userId}';
+};
+
+export type RemoveMemberErrors = {
+    /**
+     * invalid_request; never return an empty success result for this failure.
+     */
+    400: Error;
+    /**
+     * unauthenticated; never return an empty success result for this failure.
+     */
+    401: Error;
+    /**
+     * forbidden; never return an empty success result for this failure.
+     */
+    403: Error;
+    /**
+     * not_found; never return an empty success result for this failure.
+     */
+    404: Error;
+    /**
+     * last_admin; the change would leave the organisation without an admin.
+     */
+    409: Error;
+    /**
+     * internal_error; never return an empty success result for this failure.
+     */
+    500: Error;
+    /**
+     * source_unavailable; never return an empty success result for this failure.
+     */
+    503: Error;
+};
+
+export type RemoveMemberError = RemoveMemberErrors[keyof RemoveMemberErrors];
+
+export type RemoveMemberResponses = {
+    /**
+     * Removed.
+     */
+    204: void;
+};
+
+export type RemoveMemberResponse = RemoveMemberResponses[keyof RemoveMemberResponses];
+
+export type UpdateMemberData = {
+    body: MemberRoleChange;
+    path: {
+        /**
+         * Authorised orgId; the server must verify organisation/project ownership before any read.
+         */
+        orgId: string;
+        /**
+         * A member's user id; one outside the named organisation is not_found.
+         */
+        userId: string;
+    };
+    query?: never;
+    url: '/api/v1/org/{orgId}/members/{userId}';
+};
+
+export type UpdateMemberErrors = {
+    /**
+     * invalid_request; never return an empty success result for this failure.
+     */
+    400: Error;
+    /**
+     * unauthenticated; never return an empty success result for this failure.
+     */
+    401: Error;
+    /**
+     * forbidden; never return an empty success result for this failure.
+     */
+    403: Error;
+    /**
+     * not_found; never return an empty success result for this failure.
+     */
+    404: Error;
+    /**
+     * last_admin; the change would leave the organisation without an admin.
+     */
+    409: Error;
+    /**
+     * internal_error; never return an empty success result for this failure.
+     */
+    500: Error;
+    /**
+     * source_unavailable; never return an empty success result for this failure.
+     */
+    503: Error;
+};
+
+export type UpdateMemberError = UpdateMemberErrors[keyof UpdateMemberErrors];
+
+export type UpdateMemberResponses = {
+    /**
+     * The member with their new role.
+     */
+    200: Member;
+};
+
+export type UpdateMemberResponse = UpdateMemberResponses[keyof UpdateMemberResponses];
 
 export type GetWorkspacesData = {
     body?: never;

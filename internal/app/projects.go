@@ -97,29 +97,70 @@ func AddProject(ctx context.Context, c config.Config, in ProjectInput) (store.Pr
 	})
 }
 
-// AddUser creates an account with the admin role in one organisation, for the first admin of an
-// install (decision 0027). The password comes from the caller, never a flag.
-func AddUser(ctx context.Context, c config.Config, email, organisationID, password string) (string, error) {
+// AddUser gives an email a role in one organisation: admin for the first admin of an install
+// (decision 0027), or member or viewer (phase 06b). A new email gets an account, with the password
+// password returns; an email that has one gets a membership, and password is not called. A user
+// already in the organisation is store.ErrMemberExists, and nothing changes. It reports whether
+// an account was created.
+func AddUser(ctx context.Context, c config.Config, email, organisationID, role string, password func() (string, error)) (bool, error) {
 	email = strings.TrimSpace(email)
 	if email == "" || !strings.Contains(email, "@") {
-		return "", errors.New("--email must be an email address")
+		return false, errors.New("--email must be an email address")
 	}
-	if len(password) < minPassword {
-		return "", fmt.Errorf("the password must be at least %d characters", minPassword)
+	if role != "admin" && role != "member" && role != "viewer" {
+		return false, errors.New("--role must be admin, member or viewer")
 	}
 	if organisationID == "" {
 		organisationID = "default"
 	}
-	hash, err := auth.HashPassword(ctx, password)
+	pool, err := pgxpool.New(ctx, c.PostgresURL)
 	if err != nil {
-		return "", err
+		return false, fmt.Errorf("postgres: %w", redactErr(err, c.PostgresURL))
+	}
+	defer pool.Close()
+	pg := pgstore.NewStore(pool, nil)
+	if _, err := pg.UserByEmail(ctx, email); err == nil {
+		_, err := pg.AddMembership(ctx, email, organisationID, role)
+		return false, err
+	} else if !errors.Is(err, store.ErrNotFound) {
+		return false, err
+	}
+	hash, err := newPasswordHash(ctx, password)
+	if err != nil {
+		return false, err
+	}
+	if _, err := pg.AddUser(ctx, email, hash, organisationID, role); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+// ResetPassword sets a new password for an account and signs it out of every session (phase 06b):
+// decision 0027's reset by an admin, and the way back in for a lone admin. An unknown email is
+// store.ErrNotFound.
+func ResetPassword(ctx context.Context, c config.Config, email string, password func() (string, error)) error {
+	hash, err := newPasswordHash(ctx, password)
+	if err != nil {
+		return err
 	}
 	pool, err := pgxpool.New(ctx, c.PostgresURL)
 	if err != nil {
-		return "", fmt.Errorf("postgres: %w", redactErr(err, c.PostgresURL))
+		return fmt.Errorf("postgres: %w", redactErr(err, c.PostgresURL))
 	}
 	defer pool.Close()
-	return pgstore.NewStore(pool, nil).AddUser(ctx, email, hash, organisationID, "admin")
+	return pgstore.NewStore(pool, nil).SetPassword(ctx, strings.TrimSpace(email), hash)
+}
+
+// newPasswordHash reads a password and hashes it, refusing one shorter than minPassword.
+func newPasswordHash(ctx context.Context, password func() (string, error)) (string, error) {
+	pw, err := password()
+	if err != nil {
+		return "", err
+	}
+	if len(pw) < minPassword {
+		return "", fmt.Errorf("the password must be at least %d characters", minPassword)
+	}
+	return auth.HashPassword(ctx, pw)
 }
 
 // minPassword is the shortest password accepted.

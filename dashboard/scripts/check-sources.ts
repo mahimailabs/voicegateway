@@ -1,5 +1,5 @@
 // Contract rules that need the evidence files or the dashboard code. Redocly checks the rest
-// (redocly.yaml): reads only, typed errors, an x-access policy, camelCase names and x-source on
+// (redocly.yaml): operation tags, typed errors, an x-access policy, camelCase names and x-source on
 // every property. No library resolves our evidence pointers, clock bindings, access scopes or
 // page-to-endpoint coverage, so those are built here.
 import fs from "node:fs"
@@ -119,6 +119,8 @@ export function checkSpec(spec: Doc, repo = root) {
       const operation = (item as Doc)[method]
       if (!operation) continue
       if (operation["x-access"]?.principal !== "organisation_member") fail(name, "missing mandatory authorisation policy")
+      const expectedTag = method === "get" ? "Console reads" : "Console writes"
+      if (!(operation.tags ?? []).includes(expectedTag)) fail(name, `a ${method} must be tagged ${expectedTag}`)
       const expectedScope = name.includes("{projectId}") ? "project" : name.includes("{orgId}") ? "organisation" : "principal"
       if (operation["x-access"]?.scope !== expectedScope) fail(name, "access scope does not match the resource boundary")
       if (!["Viewer", "Member", "Admin"].includes(operation["x-access"]?.minimumRole)) fail(name, "missing supported organisation role")
@@ -142,7 +144,7 @@ export function checkCoverage(spec: Doc, repo = root, inventory?: Declared[], su
   inventory ??= JSON.parse(fs.readFileSync(path.join(repo, "docs/api/readers.json"), "utf8")) as Declared[]
   surfaces ??= JSON.parse(fs.readFileSync(path.join(repo, "docs/api/surfaces.json"), "utf8")) as Surfaces
   const paths = Object.values((spec.paths ?? {}) as Record<string, Doc>)
-  const operationIds = new Set(paths.flatMap((p) => (p.get ? [p.get.operationId as string] : [])))
+  const operationIds = new Set(paths.flatMap((p) => ["get", "post", "put", "patch", "delete"].flatMap((m) => (p[m] ? [p[m].operationId as string] : []))))
   const actual: Reader[] = []
   function visit(directory: string) {
     for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {

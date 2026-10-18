@@ -118,8 +118,9 @@ type SignInAttempt struct {
 }
 
 type User struct {
-	ID           pgtype.UUID
-	Email        string
-	PasswordHash string
-	CreatedAt    pgtype.Timestamptz
+	ID              pgtype.UUID
+	Email           string
+	PasswordHash    string
+	CreatedAt       pgtype.Timestamptz
+	PasswordVersion int32
 }

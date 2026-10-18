@@ -11,6 +11,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/mahimailabs/voicegateway/internal/store"
 )
@@ -69,7 +70,7 @@ func (s *Store) UserByEmail(ctx context.Context, email string) (store.User, erro
 	if err != nil {
 		return store.User{}, fmt.Errorf("user by email: %w", err)
 	}
-	return store.User{ID: row.ID.String(), Email: row.Email, PasswordHash: row.PasswordHash}, nil
+	return store.User{ID: row.ID.String(), Email: row.Email, PasswordHash: row.PasswordHash, PasswordVersion: int(row.PasswordVersion)}, nil
 }
 
 // Principal loads a user's email and organisation roles, or store.ErrNotFound.
@@ -89,7 +90,7 @@ func (s *Store) Principal(ctx context.Context, userID string) (store.Principal, 
 	if err != nil {
 		return store.Principal{}, fmt.Errorf("memberships: %w", err)
 	}
-	p := store.Principal{UserID: u.ID.String(), Email: u.Email, Roles: map[string]string{}}
+	p := store.Principal{UserID: u.ID.String(), Email: u.Email, Roles: map[string]string{}, PasswordVersion: int(u.PasswordVersion)}
 	for _, r := range rows {
 		p.Roles[r.OrganisationID] = r.Role
 	}
@@ -201,6 +202,136 @@ func (s *Store) Workspaces(ctx context.Context, userID string) ([]store.Workspac
 		}
 	}
 	return out, nil
+}
+
+// AddMembership gives an existing account a role in another organisation. An unknown email or
+// organisation is store.ErrNotFound; a user already in it is store.ErrMemberExists.
+func (s *Store) AddMembership(ctx context.Context, email, organisationID, role string) (string, error) {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return "", fmt.Errorf("add membership: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	q := s.q.WithTx(tx)
+	ok, err := q.OrganisationExists(ctx, organisationID)
+	if err != nil {
+		return "", fmt.Errorf("add membership: %w", err)
+	}
+	if !ok {
+		return "", fmt.Errorf("organisation %s: %w", organisationID, store.ErrNotFound)
+	}
+	u, err := q.UserByEmail(ctx, foldEmail(email))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", fmt.Errorf("user %s: %w", foldEmail(email), store.ErrNotFound)
+	}
+	if err != nil {
+		return "", fmt.Errorf("add membership: %w", err)
+	}
+	if err := q.AddMembership(ctx, AddMembershipParams{UserID: u.ID, OrganisationID: organisationID, Role: role}); err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == uniqueViolation {
+			return "", store.ErrMemberExists
+		}
+		return "", fmt.Errorf("add membership: %w", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return "", fmt.Errorf("add membership: %w", err)
+	}
+	return u.ID.String(), nil
+}
+
+// SetPassword replaces an account's password and moves its password_version on, which signs the
+// user out of every session. An unknown email is store.ErrNotFound.
+func (s *Store) SetPassword(ctx context.Context, email, passwordHash string) error {
+	n, err := s.q.SetPassword(ctx, SetPasswordParams{Email: foldEmail(email), PasswordHash: passwordHash})
+	if err != nil {
+		return fmt.Errorf("set password: %w", err)
+	}
+	if n == 0 {
+		return fmt.Errorf("user %s: %w", foldEmail(email), store.ErrNotFound)
+	}
+	return nil
+}
+
+// Members returns an organisation's members, ordered by email.
+func (s *Store) Members(ctx context.Context, organisationID string) ([]store.Member, error) {
+	rows, err := s.q.OrganisationMembers(ctx, organisationID)
+	if err != nil {
+		return nil, fmt.Errorf("members: %w", err)
+	}
+	out := make([]store.Member, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, store.Member{UserID: r.UserID.String(), Email: r.Email, Role: r.Role})
+	}
+	return out, nil
+}
+
+// UpdateMember sets a member's role. A user who is not a member of the organisation is
+// store.ErrNotFound; demoting its last admin is store.ErrLastAdmin.
+func (s *Store) UpdateMember(ctx context.Context, organisationID, userID, role string) (store.Member, error) {
+	var out store.Member
+	err := s.changeMember(ctx, organisationID, userID, role != "admin", func(q *Queries, id pgtype.UUID) error {
+		if _, err := q.SetMemberRole(ctx, SetMemberRoleParams{OrganisationID: organisationID, UserID: id, Role: role}); err != nil {
+			return err
+		}
+		m, err := q.MemberOf(ctx, MemberOfParams{OrganisationID: organisationID, UserID: id})
+		out = store.Member{UserID: m.UserID.String(), Email: m.Email, Role: m.Role}
+		return err
+	})
+	return out, err
+}
+
+// RemoveMember removes a user from an organisation; their account and sessions stay. A user who is
+// not a member is store.ErrNotFound; removing the last admin is store.ErrLastAdmin.
+func (s *Store) RemoveMember(ctx context.Context, organisationID, userID string) error {
+	return s.changeMember(ctx, organisationID, userID, true, func(q *Queries, id pgtype.UUID) error {
+		_, err := q.RemoveMembership(ctx, RemoveMembershipParams{OrganisationID: organisationID, UserID: id})
+		return err
+	})
+}
+
+// changeMember runs one change to a membership in a transaction that first locks the organisation
+// row, so concurrent changes are serialised, then refuses when the change takes the admin role
+// from the organisation's only admin.
+func (s *Store) changeMember(ctx context.Context, organisationID, userID string, losesAdmin bool, change func(*Queries, pgtype.UUID) error) error {
+	id, err := uuid(userID)
+	if err != nil {
+		return store.ErrNotFound
+	}
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("change member: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	q := s.q.WithTx(tx)
+	if _, err := q.LockOrganisation(ctx, organisationID); errors.Is(err, pgx.ErrNoRows) {
+		return store.ErrNotFound
+	} else if err != nil {
+		return fmt.Errorf("change member: %w", err)
+	}
+	m, err := q.MemberOf(ctx, MemberOfParams{OrganisationID: organisationID, UserID: id})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return store.ErrNotFound
+	}
+	if err != nil {
+		return fmt.Errorf("change member: %w", err)
+	}
+	if losesAdmin && m.Role == "admin" {
+		n, err := q.CountAdmins(ctx, organisationID)
+		if err != nil {
+			return fmt.Errorf("change member: %w", err)
+		}
+		if n <= 1 {
+			return store.ErrLastAdmin
+		}
+	}
+	if err := change(q, id); err != nil {
+		return fmt.Errorf("change member: %w", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("change member: %w", err)
+	}
+	return nil
 }
 
 func foldEmail(email string) string { return strings.ToLower(strings.TrimSpace(email)) }

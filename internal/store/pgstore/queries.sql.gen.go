@@ -261,6 +261,17 @@ func (q *Queries) CloseIdleCalls(ctx context.Context, idleSince pgtype.Timestamp
 	return result.RowsAffected(), nil
 }
 
+const countAdmins = `-- name: CountAdmins :one
+SELECT count(*) FROM memberships WHERE organisation_id = $1 AND role = 'admin'
+`
+
+func (q *Queries) CountAdmins(ctx context.Context, organisationID string) (int64, error) {
+	row := q.db.QueryRow(ctx, countAdmins, organisationID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const countUsers = `-- name: CountUsers :one
 SELECT count(*) FROM users
 `
@@ -684,6 +695,19 @@ func (q *Queries) ListSnapshot(ctx context.Context, id string) (ListSnapshotRow,
 	return i, err
 }
 
+const lockOrganisation = `-- name: LockOrganisation :one
+SELECT id FROM organisations WHERE id = $1 FOR UPDATE
+`
+
+// Serialises role changes in one organisation until the transaction ends, so the last-admin check
+// and the write see the same admins.
+func (q *Queries) LockOrganisation(ctx context.Context, id string) (string, error) {
+	row := q.db.QueryRow(ctx, lockOrganisation, id)
+	var id_2 string
+	err := row.Scan(&id_2)
+	return id_2, err
+}
+
 const lockSignInKey = `-- name: LockSignInKey :exec
 SELECT pg_advisory_xact_lock(hashtext(concat($1::text, '/', $2::text)))
 `
@@ -708,6 +732,30 @@ UPDATE calls SET summary_stale_at = now() WHERE id = ANY($1::uuid[])
 func (q *Queries) MarkStale(ctx context.Context, ids []pgtype.UUID) error {
 	_, err := q.db.Exec(ctx, markStale, ids)
 	return err
+}
+
+const memberOf = `-- name: MemberOf :one
+SELECT u.id AS user_id, u.email, m.role
+FROM memberships m JOIN users u ON u.id = m.user_id
+WHERE m.organisation_id = $1 AND m.user_id = $2
+`
+
+type MemberOfParams struct {
+	OrganisationID string
+	UserID         pgtype.UUID
+}
+
+type MemberOfRow struct {
+	UserID pgtype.UUID
+	Email  string
+	Role   string
+}
+
+func (q *Queries) MemberOf(ctx context.Context, arg MemberOfParams) (MemberOfRow, error) {
+	row := q.db.QueryRow(ctx, memberOf, arg.OrganisationID, arg.UserID)
+	var i MemberOfRow
+	err := row.Scan(&i.UserID, &i.Email, &i.Role)
+	return i, err
 }
 
 const membership = `-- name: Membership :one
@@ -795,6 +843,39 @@ func (q *Queries) OrganisationExists(ctx context.Context, id string) (bool, erro
 	var exists bool
 	err := row.Scan(&exists)
 	return exists, err
+}
+
+const organisationMembers = `-- name: OrganisationMembers :many
+SELECT u.id AS user_id, u.email, m.role
+FROM memberships m JOIN users u ON u.id = m.user_id
+WHERE m.organisation_id = $1
+ORDER BY u.email
+`
+
+type OrganisationMembersRow struct {
+	UserID pgtype.UUID
+	Email  string
+	Role   string
+}
+
+func (q *Queries) OrganisationMembers(ctx context.Context, organisationID string) ([]OrganisationMembersRow, error) {
+	rows, err := q.db.Query(ctx, organisationMembers, organisationID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []OrganisationMembersRow
+	for rows.Next() {
+		var i OrganisationMembersRow
+		if err := rows.Scan(&i.UserID, &i.Email, &i.Role); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const projectByID = `-- name: ProjectByID :one
@@ -941,6 +1022,23 @@ func (q *Queries) RecordSignInAttempt(ctx context.Context, arg RecordSignInAttem
 	return id, err
 }
 
+const removeMembership = `-- name: RemoveMembership :execrows
+DELETE FROM memberships WHERE organisation_id = $1 AND user_id = $2
+`
+
+type RemoveMembershipParams struct {
+	OrganisationID string
+	UserID         pgtype.UUID
+}
+
+func (q *Queries) RemoveMembership(ctx context.Context, arg RemoveMembershipParams) (int64, error) {
+	result, err := q.db.Exec(ctx, removeMembership, arg.OrganisationID, arg.UserID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const sealedLiveKitSecret = `-- name: SealedLiveKitSecret :one
 SELECT livekit_api_secret_sealed
 FROM projects
@@ -957,6 +1055,42 @@ func (q *Queries) SealedLiveKitSecret(ctx context.Context, arg SealedLiveKitSecr
 	var livekit_api_secret_sealed []byte
 	err := row.Scan(&livekit_api_secret_sealed)
 	return livekit_api_secret_sealed, err
+}
+
+const setMemberRole = `-- name: SetMemberRole :execrows
+UPDATE memberships SET role = $1 WHERE organisation_id = $2 AND user_id = $3
+`
+
+type SetMemberRoleParams struct {
+	Role           string
+	OrganisationID string
+	UserID         pgtype.UUID
+}
+
+func (q *Queries) SetMemberRole(ctx context.Context, arg SetMemberRoleParams) (int64, error) {
+	result, err := q.db.Exec(ctx, setMemberRole, arg.Role, arg.OrganisationID, arg.UserID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const setPassword = `-- name: SetPassword :execrows
+UPDATE users SET password_hash = $1, password_version = password_version + 1 WHERE email = $2
+`
+
+type SetPasswordParams struct {
+	PasswordHash string
+	Email        string
+}
+
+// A new password, and a new password_version, so every session from before is signed out.
+func (q *Queries) SetPassword(ctx context.Context, arg SetPasswordParams) (int64, error) {
+	result, err := q.db.Exec(ctx, setPassword, arg.PasswordHash, arg.Email)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const signInAttemptsSince = `-- name: SignInAttemptsSince :one
@@ -1166,35 +1300,42 @@ func (q *Queries) UpsertParticipant(ctx context.Context, arg UpsertParticipantPa
 }
 
 const userByEmail = `-- name: UserByEmail :one
-SELECT id, email, password_hash FROM users WHERE email = $1
+SELECT id, email, password_hash, password_version FROM users WHERE email = $1
 `
 
 type UserByEmailRow struct {
-	ID           pgtype.UUID
-	Email        string
-	PasswordHash string
+	ID              pgtype.UUID
+	Email           string
+	PasswordHash    string
+	PasswordVersion int32
 }
 
 func (q *Queries) UserByEmail(ctx context.Context, email string) (UserByEmailRow, error) {
 	row := q.db.QueryRow(ctx, userByEmail, email)
 	var i UserByEmailRow
-	err := row.Scan(&i.ID, &i.Email, &i.PasswordHash)
+	err := row.Scan(
+		&i.ID,
+		&i.Email,
+		&i.PasswordHash,
+		&i.PasswordVersion,
+	)
 	return i, err
 }
 
 const userByID = `-- name: UserByID :one
-SELECT id, email FROM users WHERE id = $1
+SELECT id, email, password_version FROM users WHERE id = $1
 `
 
 type UserByIDRow struct {
-	ID    pgtype.UUID
-	Email string
+	ID              pgtype.UUID
+	Email           string
+	PasswordVersion int32
 }
 
 func (q *Queries) UserByID(ctx context.Context, id pgtype.UUID) (UserByIDRow, error) {
 	row := q.db.QueryRow(ctx, userByID, id)
 	var i UserByIDRow
-	err := row.Scan(&i.ID, &i.Email)
+	err := row.Scan(&i.ID, &i.Email, &i.PasswordVersion)
 	return i, err
 }
 

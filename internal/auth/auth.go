@@ -39,8 +39,13 @@ const (
 	maxSignInBody   = 4 << 10
 )
 
-// sessionUser is the session key holding the signed-in user's id.
-const sessionUser = "user"
+// sessionUser is the session key holding the signed-in user's id; sessionPasswordVersion holds
+// the user's password_version at sign-in. A 06a session has none, which reads as 0, the version
+// of a password never reset.
+const (
+	sessionUser            = "user"
+	sessionPasswordVersion = "password_version"
+)
 
 // Service answers /auth and gates /api/v1.
 type Service struct {
@@ -213,6 +218,7 @@ func (s *Service) signIn(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	m.Put(ctx, sessionUser, u.ID)
+	m.Put(ctx, sessionPasswordVersion, u.PasswordVersion)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -273,9 +279,11 @@ func (s *Service) session(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, body)
 }
 
-// userPrincipal returns the signed-in user of the request's session, when there is one.
+// userPrincipal returns the signed-in user of the request's session, when there is one. A session
+// from before the user's last password change is deleted and reads as signed out.
 func (s *Service) userPrincipal(r *http.Request) (store.Principal, bool, error) {
-	id := s.manager(r).GetString(r.Context(), sessionUser)
+	m := s.manager(r)
+	id := m.GetString(r.Context(), sessionUser)
 	if id == "" {
 		return store.Principal{}, false, nil
 	}
@@ -285,6 +293,12 @@ func (s *Service) userPrincipal(r *http.Request) (store.Principal, bool, error) 
 	}
 	if err != nil {
 		return store.Principal{}, false, err
+	}
+	if m.GetInt(r.Context(), sessionPasswordVersion) != p.PasswordVersion {
+		if err := m.Destroy(r.Context()); err != nil {
+			return store.Principal{}, false, err
+		}
+		return store.Principal{}, false, nil
 	}
 	return p, true, nil
 }

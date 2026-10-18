@@ -31,6 +31,12 @@ var ErrBadRow = errors.New("row refused by storage")
 // ErrNotFound means no record matched.
 var ErrNotFound = errors.New("not found")
 
+// ErrLastAdmin means a change would leave an organisation without an admin.
+var ErrLastAdmin = errors.New("an organisation needs at least one admin")
+
+// ErrMemberExists means the user already belongs to the organisation.
+var ErrMemberExists = errors.New("the user is already a member of this organisation")
+
 // Event is one ingested envelope as the worker stores it, with what joining it to a call found.
 type Event struct {
 	OrganisationID string
@@ -254,6 +260,9 @@ type Principal struct {
 	Roles map[string]string
 	// Token is true for the interim bearer token.
 	Token bool
+	// PasswordVersion is the user's current password_version; a session holding another is signed
+	// out.
+	PasswordVersion int
 }
 
 type principalKey struct{}
@@ -271,8 +280,14 @@ func PrincipalFrom(ctx context.Context) (Principal, bool) {
 
 // User is an account as sign-in reads it.
 type User struct {
-	ID, Email    string
-	PasswordHash string
+	ID, Email       string
+	PasswordHash    string
+	PasswordVersion int
+}
+
+// Member is one user's membership of an organisation; Role is the stored admin, member or viewer.
+type Member struct {
+	UserID, Email, Role string
 }
 
 // Workspace is an organisation a user belongs to, with its projects.
