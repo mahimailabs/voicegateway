@@ -25,9 +25,14 @@ dashboard-lint: ## Run the dashboard lint and TypeScript checks
 typecheck: ## Run the dashboard TypeScript check
 	cd $(DASHBOARD) && npx --no-install tsc -b --noEmit
 
-up: ## Start the six-service stack; creates deploy/.env with random secrets on first run
+up: ## Start the six-service stack; creates deploy/.env with random secrets on first run. VOICEGATEWAY_IMAGE=<published image> pulls it instead of building
 	tools/scripts/dev-env.sh deploy/.env
+ifdef VOICEGATEWAY_IMAGE
+	VOICEGATEWAY_IMAGE=$(VOICEGATEWAY_IMAGE) $(COMPOSE) --env-file deploy/.env pull migrate web worker
+	VOICEGATEWAY_IMAGE=$(VOICEGATEWAY_IMAGE) $(COMPOSE) --env-file deploy/.env up -d --no-build --wait
+else
 	$(COMPOSE) --env-file deploy/.env up -d --build --wait
+endif
 
 down: ## Stop the stack (data volumes are kept)
 	$(COMPOSE) --env-file deploy/.env down

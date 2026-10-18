@@ -85,14 +85,16 @@ services:
   # Applies pending migrations once, then exits; web and worker wait for it to succeed.
   migrate:
     build: { context: .., dockerfile: deploy/Dockerfile }
-    image: voicegateway:dev
+    # VOICEGATEWAY_IMAGE runs a published image instead of building one, for example
+    # ghcr.io/mahimailabs/voicegateway:1.0.0-preview.1 (see docs/self-hosting.md).
+    image: ${VOICEGATEWAY_IMAGE:-voicegateway:dev}
     command: ["migrate"]
     environment: *voicegateway-env
     restart: "no"
     depends_on: *voicegateway-depends
 
   web:
-    image: voicegateway:dev
+    image: ${VOICEGATEWAY_IMAGE:-voicegateway:dev}
     command: ["web"]
     environment: *voicegateway-env
     ports: ["${VOICEGATEWAY_WEB_PORT:-8080}:8080"]
@@ -101,7 +103,7 @@ services:
       migrate: { condition: service_completed_successfully }
 
   worker:
-    image: voicegateway:dev
+    image: ${VOICEGATEWAY_IMAGE:-voicegateway:dev}
     command: ["worker"]
     environment: *voicegateway-env
     depends_on:
