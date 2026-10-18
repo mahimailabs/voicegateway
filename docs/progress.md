@@ -7,7 +7,7 @@ A fresh session reads this to know where the project stands.
 
 ## Current Phase
 
-Phase 06d: invitations and password reset links. Spec: docs/specs/phase06d-invitations.md (PR #407).
+Phase 06e: the instance API. Spec: docs/specs/phase06e-instance-api.md (PR #403).
 
 ## Done
 
@@ -352,6 +352,20 @@ Manual check: the pair reviewer reports it passed on Compose behind HTTPS ([#387
 
 Next: 06d, invitation links.
 
+### 2026-10-18: phase 06d, invitations and password reset links (in review, #407)
+
+An admin invites by email with a role, and makes password reset links for members (spec `docs/specs/phase06d-invitations.md`, decision 0027). Not done until the pair review and the manual check pass.
+
+What changed:
+- **Postgres 00009 `invitations`:** kind invite or reset, the token's SHA-256 only, state derived from its times. One open link per organisation, email and kind (a partial unique index); a create revokes the open one in the same transaction, after taking the organisation's row lock, so parallel creates leave exactly one.
+- **`internal/invite`:** `Create`, `ResetLink`, `Look` and `Accept`, with the spec's signatures and an optional idempotency key for the 06e instance API. Links are `<base>/invite#<token>`, 7 days for an invite and 24 hours for a reset. A reset is refused unless the requester administers every organisation the member belongs to.
+- **API:** `getInvitations` (now with id, kind, state, times and invitedBy), `createInvitation`, `revokeInvitation` and `createPasswordReset`, all Admin, in the role table. Error codes `already_member` and `member_of_other_organisations`.
+- **Accept:** `GET /auth/invitation` (token in `X-Invitation-Token`) and `POST /auth/invitation/accept`, with sign-in's HTTPS rule, cross-origin refusal and its limiter, keyed by the invitation's email and the client address. One answer, 404 `invitation_invalid`, for every link that does not work. Hashing runs before one conditional UPDATE uses the link.
+- **Email:** `VOICEGATEWAY_SMTP_URL` and `VOICEGATEWAY_SMTP_FROM` with `wneessen/go-mail` v0.8.1. With SMTP set no answer ever carries a link; a failed send logs its class only. go-mail never offers a password over unencrypted SMTP, so a password to a plain loopback server fails as `auth`.
+- **From my own review:** a reset link runs its cross-organisation guard again when used, and is revoked if the member joined an organisation its admin does not run, or the admin lost the role. A new reset replaces every open one for the member. SMTP needs `VOICEGATEWAY_PUBLIC_URL`, so an emailed link never takes its base from a request's Host. A lost race reads as 404, never 401, and a loser's try is not counted as a failed sign-in.
+- **From the pair review and CodeRabbit:** the reset guard fails closed (no requester, or an admin since deleted, allows a member of the link's organisation alone), and at use the member must still belong to that organisation. A reset locks the member's row, so resets from two organisations at once leave one open link. The invitations list is three columns that wrap, so Revoke is in view at pane widths 343, 632 and 820 px, and a member's Password reset and Remove share one row menu.
+- **Console:** `/invite#<token>` renders before the session gate, drops the fragment, and asks for one password. People's Invite form calls `createInvitation` (link once without SMTP; "Emailed to", or Resend after a failed send), the invitations list is a DataTable with its state filter and sort in the URL (`urlPrefix`), and members have a Password reset action. `vg.invites` is gone; the mock serves the new operations in memory.
+
 ### 2026-10-18: worker endpoint dial guard
 
 The worker checks every address it dials for a worker metrics endpoint, after DNS, with `code.dny.dev/ssrf` v0.3.0 (the 05d follow-up: an SSRF guard before any API or console form can add endpoints).
@@ -368,6 +382,10 @@ The pair's audit of 06a, 06b and the gate, items 1 to 4; items 5 and 6 had alrea
 - **Hash concurrency:** capped at max(1, GOMAXPROCS/4), since each argon2id hash runs 4 threads, and GOMAXPROCS follows a container's CPU limit where NumCPU does not. Known limit: with GOMAXPROCS of 3 or less there is one hashing slot, so a flood of unknown-email sign-ins from many addresses (each compares a dummy hash) can queue real sign-ins behind it; the per-address limit slows any one source, not many.
 - **Stored hash parameters:** bounded when read (passes 1 to 10, memory up to 1 GiB, threads 1 to 16, salt and key lengths), and a sign-in re-hashes a password stored with other parameters, keeping `password_version`. The rehash write replaces only the hash the sign-in verified, so a password reset that lands in between always wins. Measured: one hash at t=3, m=64 MiB, p=4 takes 30 to 43 ms on an Apple M4 (3 runs of 20).
 - **Kept hand-rolled, as the audit recommends:** the Postgres sign-in limiter (counts shared across replicas, failures only, refunded on success: no library does that), the client address parsing (about 100 tested lines; the one library is quiet and the /64 bucketing is ours), and the role table (three roles, enforced by a test; casbin adds a policy language for no gain). The sign-in CTE waits until after V1.
+
+### 2026-10-18: calls UI regression tests (#324)
+
+Added Testing Library tests around the real Calls page and drawer with the existing MSW handlers: every captured list row across pagination, room/date/duration values, archive and restore, date and shared room filters, call-id navigation, loading/empty/error/retry/not-found states, captured transcript and turn response times, and LLM token usage including the distinction between missing usage and reported zero. All 146 dashboard tests pass locally in about 8 seconds; dashboard lint, application TypeScript, an additional type check of the new tests, and the production build pass. Existing Dashboard CI already runs the suite; its test step passed in 28 seconds on run 39165147240. Review follow-up covers both latest-call lookup and active-list error recovery. No product source or dependencies changed. Phase01's older participant-count list assertion and TTS-usage assertion remain specification/UI gaps: participant count is shown in the drawer, and TTS timing is shown but a TTS usage field is not. These are not claimed complete by this test PR.
 
 ### 2026-10-18: Phase 0, old Python release retired
 

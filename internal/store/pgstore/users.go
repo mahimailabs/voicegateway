@@ -16,8 +16,8 @@ import (
 	"github.com/mahimailabs/voicegateway/internal/store"
 )
 
-// ErrUserExists means an account with that email already exists.
-var ErrUserExists = errors.New("a user with that email exists")
+// ErrUserExists means an account with that email already exists. It is store.ErrUserExists.
+var ErrUserExists = store.ErrUserExists
 
 // CountUsers returns how many accounts exist.
 func (s *Store) CountUsers(ctx context.Context) (int64, error) {

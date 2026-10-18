@@ -24,7 +24,9 @@ import (
 	"github.com/mahimailabs/voicegateway/internal/console"
 	"github.com/mahimailabs/voicegateway/internal/event"
 	"github.com/mahimailabs/voicegateway/internal/ingest"
+	"github.com/mahimailabs/voicegateway/internal/invite"
 	"github.com/mahimailabs/voicegateway/internal/join"
+	"github.com/mahimailabs/voicegateway/internal/mailer"
 	"github.com/mahimailabs/voicegateway/internal/obs"
 	"github.com/mahimailabs/voicegateway/internal/scrape"
 	"github.com/mahimailabs/voicegateway/internal/seal"
@@ -76,10 +78,26 @@ func Web(ctx context.Context, c config.Config, log *slog.Logger) error {
 	// Sessions are written only when they change, or when their expiry has moved 5 minutes; the
 	// idle timeout would otherwise rewrite the row on every request.
 	secure, plain := auth.NewSessions(auth.NewQuietStore(pgxstore.New(pool), 5*time.Minute))
+	links := &invite.Service{Store: projects, Hash: auth.HashPassword, Verify: auth.VerifyPassword, Log: log, Now: time.Now}
+	// Without SMTP the service returns each link for the admin to copy; with it, links go by email
+	// only.
+	if c.SMTPURL != "" {
+		// An emailed link's base must not come from the request's Host header, which any admin's
+		// client sets: it would send the token to a host of their choosing.
+		if c.PublicURL == "" {
+			return errors.New("VOICEGATEWAY_SMTP_URL needs VOICEGATEWAY_PUBLIC_URL, the base of every emailed link")
+		}
+		m, err := mailer.New(c.SMTPURL, c.SMTPFrom)
+		if err != nil {
+			return err
+		}
+		links.Mailer = m
+	}
 	accounts := &auth.Service{
 		Users: projects, Secure: secure, Plain: plain, Trusted: trusted,
 		PublicHTTPS: strings.HasPrefix(strings.ToLower(c.PublicURL), "https://"),
-		Log:         log, Now: time.Now,
+		PublicURL:   c.PublicURL, Links: links,
+		Log: log, Now: time.Now,
 	}
 
 	mux := http.NewServeMux()
@@ -96,6 +114,7 @@ func Web(ctx context.Context, c config.Config, log *slog.Logger) error {
 	mux.Handle("/auth/", accounts.Routes())
 	mux.Handle("/api/v1/", (&api.API{
 		Projects: projects, Calls: projects, Traces: events, Layers: events, Endpoints: projects, Accounts: projects, Stats: projects, Keys: projects, NewKey: auth.NewKey, Log: log, Now: time.Now, Gate: accounts.Gate,
+		Invitations: projects, Inviter: NewInviter(links), LinkBase: accounts.LinkBase,
 		AnswerBudgetMs: c.AnswerBudgetMs,
 	}).Routes())
 	if c.ConsoleDir != "" {
@@ -103,8 +122,7 @@ func Web(ctx context.Context, c config.Config, log *slog.Logger) error {
 		if _, err := fs.Stat(dist, "index.html"); err != nil {
 			return fmt.Errorf("VOICEGATEWAY_CONSOLE_DIR %q holds no built console: %w", c.ConsoleDir, err)
 		}
-		// The least specific pattern: every route above wins over it.
-		mux.Handle("/", console.Handler(dist))
+		mountConsole(mux, dist)
 	}
 
 	srv := &http.Server{
@@ -329,6 +347,14 @@ func warnRetiredToken(getenv func(string) string, log *slog.Logger) {
 	if getenv("VOICEGATEWAY_API_TOKEN") != "" {
 		log.Warn("VOICEGATEWAY_API_TOKEN is no longer used and is ignored; create a project key with voicegateway key create, or in Settings, Access, API keys, then remove the variable")
 	}
+}
+
+// mountConsole serves the built console on the least specific pattern, so every route registered
+// on mux wins over it. The accept page holds a token in its fragment, so it sends no Referer and
+// is never cached.
+func mountConsole(mux *http.ServeMux, dist fs.FS) {
+	mux.Handle("/", console.Handler(dist))
+	mux.Handle("GET /invite", auth.LinkHeaders(console.Handler(dist)))
 }
 
 // handlePost registers each POST-only route, and a 405 for any other method on its path.

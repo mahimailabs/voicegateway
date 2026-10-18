@@ -897,7 +897,7 @@ paths:
   /api/v1/org/{orgId}/invitations:
     get:
       operationId: getInvitations
-      summary: Read pending organisation invitations
+      summary: Read the organisation's invitations and password reset links
       tags:
         - Console reads
       x-access:
@@ -905,16 +905,86 @@ paths:
         minimumRole: Admin
         browserSessionTransport: session_cookie
         scope: organisation
-      description: Requires Admin membership in the named organisation before reading pending invitations. This is an organisation-level read, not a selected-project read. A browser signs in with the session cookie (decision 0027). Missing authentication is 401 and denied membership/role is 403. Do not reveal invitation addresses across organisations.
+      description: Requires Admin membership in the named organisation. Lists invitations and password reset links, newest first, with each one's state (pending, accepted, revoked or expired), derived from its times and never stored. Never a token or a link. A browser signs in with the session cookie (decision 0027). Missing authentication is 401 and denied membership/role is 403. Do not reveal invitation addresses across organisations.
       parameters:
         - $ref: "#/components/parameters/OrganisationId"
       responses:
         "200":
-          description: Authorised read result. Null means unreported, never zero. Source-specific coverage limits remain visible.
+          description: The organisation's invitations and reset links. Null means unknown, never empty.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Invitations"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/SourceUnavailable"
+    post:
+      operationId: createInvitation
+      summary: Invite someone to the organisation by email
+      tags:
+        - Console writes
+      x-access:
+        principal: organisation_member
+        minimumRole: Admin
+        browserSessionTransport: session_cookie
+        scope: organisation
+      description: Requires Admin membership in the named organisation. Replaces any open invitation for that email here. With SMTP set, the link is emailed and link is always null, whether the send succeeded or not, so nobody who can invite can claim an address they do not control; to resend, create again. Without SMTP, link is the full link, in this answer only. The server stores the SHA-256 of the token, which travels in the link's fragment. An email whose account is already a member is 409 already_member.
+      parameters:
+        - $ref: "#/components/parameters/OrganisationId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/InvitationCreate"
+      responses:
+        "201":
+          description: The invitation, and its link when SMTP is not set.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreatedInvitation"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/SourceUnavailable"
+  /api/v1/org/{orgId}/invitations/{invitationId}:
+    delete:
+      operationId: revokeInvitation
+      summary: Revoke an invitation or a password reset link
+      tags:
+        - Console writes
+      x-access:
+        principal: organisation_member
+        minimumRole: Admin
+        browserSessionTransport: session_cookie
+        scope: organisation
+      description: Requires Admin membership in the named organisation. Revoking twice is 204 both times; an accepted link stays accepted. An id from another organisation is not_found.
+      parameters:
+        - $ref: "#/components/parameters/OrganisationId"
+        - $ref: "#/components/parameters/InvitationId"
+      responses:
+        "204":
+          description: Revoked.
         "400":
           $ref: "#/components/responses/BadRequest"
         "401":
@@ -1019,6 +1089,42 @@ paths:
       responses:
         "204":
           description: Removed.
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/SourceUnavailable"
+  /api/v1/org/{orgId}/members/{userId}/password-reset:
+    post:
+      operationId: createPasswordReset
+      summary: Make a password reset link for a member
+      tags:
+        - Console writes
+      x-access:
+        principal: organisation_member
+        minimumRole: Admin
+        browserSessionTransport: session_cookie
+        scope: organisation
+      description: Requires Admin membership in the named organisation. The link lasts 24 hours and replaces any open reset link for the member; using it sets a new password and signs the member out everywhere. With SMTP set it is emailed to the member and link is null; without SMTP, link is in this answer only. A userId that is not a member is not_found. A member who also belongs to an organisation the requester does not administer is 409 member_of_other_organisations, and no link is made.
+      parameters:
+        - $ref: "#/components/parameters/OrganisationId"
+        - $ref: "#/components/parameters/UserId"
+      responses:
+        "201":
+          description: The reset link's expiry, and the link when SMTP is not set.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreatedPasswordReset"
         "409":
           $ref: "#/components/responses/Conflict"
         "400":
@@ -4255,7 +4361,7 @@ components:
           type: string
           description: Stable error category.
           x-source: { kind: computed, file: docs/api/coverage.md, pointer: null, detail: Stable error category. }
-          enum: [ invalid_request, unauthenticated, forbidden, not_found, source_unavailable, internal_error, range_not_satisfiable, last_admin ]
+          enum: [ invalid_request, unauthenticated, forbidden, not_found, source_unavailable, internal_error, range_not_satisfiable, last_admin, already_member, member_of_other_organisations ]
         message:
           type: string
           description: Safe human-readable explanation, excluding upstream credentials and request bodies.
@@ -4404,19 +4510,103 @@ components:
           uniqueItems: true
     Invitation:
       type: object
+      x-source: { kind: configuration, file: migrations/postgres/00009_invitations.sql, pointer: null, detail: One invitations row, never its token. }
+      additionalProperties: false
+      required: [ id, kind, email, role, state, createdAt, expiresAt, invitedBy ]
+      properties:
+        id:
+          type: string
+          description: The invitation's id, used to revoke it.
+          x-source: { kind: configuration, file: migrations/postgres/00009_invitations.sql, pointer: null, detail: "invitations.id." }
+        kind:
+          type: string
+          enum: [ invite, reset ]
+          description: An invitation to join, or a password reset link for a member.
+          x-source: { kind: configuration, file: migrations/postgres/00009_invitations.sql, pointer: null, detail: "invitations.kind." }
+        email:
+          type: string
+          format: email
+          description: The invited address, or the member's for a reset; a pending invitation does not prove the email arrived.
+          x-source: { kind: configuration, file: migrations/postgres/00009_invitations.sql, pointer: null, detail: "invitations.email, case-folded." }
+        role:
+          type: [ string, "null" ]
+          enum: [ Admin, Member, Viewer, null ]
+          description: The organisation role the invitation grants, per decision 0019.
+          x-null-reason: A password reset grants no role.
+          x-source: { kind: configuration, file: migrations/postgres/00009_invitations.sql, pointer: null, detail: "invitations.role, null for a reset." }
+        state:
+          type: string
+          enum: [ pending, accepted, revoked, expired ]
+          description: Derived at the read, never stored. accepted when used, revoked when revoked or replaced, expired once past expiresAt, otherwise pending.
+          x-source: { kind: computed, file: internal/store/store.go, pointer: null, detail: "Invitation.State over accepted_at, revoked_at and expires_at." }
+        createdAt:
+          type: string
+          format: date-time
+          description: When the link was made.
+          x-source: { kind: configuration, file: migrations/postgres/00009_invitations.sql, pointer: null, detail: "invitations.created_at." }
+        expiresAt:
+          type: string
+          format: date-time
+          description: When the link stops working; 7 days for an invite, 24 hours for a reset.
+          x-source: { kind: configuration, file: migrations/postgres/00009_invitations.sql, pointer: null, detail: "invitations.expires_at." }
+        invitedBy:
+          type: [ string, "null" ]
+          description: The email of the admin who made the link.
+          x-null-reason: Made from the command line or the instance API, or by an account since deleted.
+          x-source: { kind: configuration, file: migrations/postgres/00009_invitations.sql, pointer: null, detail: "users.email of invitations.invited_by." }
+    InvitationCreate:
+      type: object
       additionalProperties: false
       required: [ email, role ]
       properties:
         email:
           type: string
-          description: Requested invite address; a pending record does not prove email delivery.
-          x-source: { kind: configuration, file: dashboard/src/features/settings/settings-dialog.tsx, pointer: null, detail: Requested invite address; a pending record does not prove email delivery. }
           format: email
+          description: The address to invite; case-folded when stored.
+          x-source: { kind: configuration, file: migrations/postgres/00009_invitations.sql, pointer: null, detail: "invitations.email." }
         role:
           type: string
-          description: Requested organisation role, per decision 0019.
-          x-source: { kind: configuration, file: dashboard/src/features/settings/settings-dialog.tsx, pointer: null, detail: "Requested organisation role, per decision 0019." }
           enum: [ Admin, Member, Viewer ]
+          description: The organisation role to grant, per decision 0019.
+          x-source: { kind: configuration, file: dashboard/src/features/settings/settings-dialog.tsx, pointer: null, detail: The role an Admin picks. }
+    CreatedInvitation:
+      type: object
+      additionalProperties: false
+      required: [ invitation, link, emailed ]
+      properties:
+        invitation:
+          $ref: "#/components/schemas/Invitation"
+          x-source: { kind: configuration, file: migrations/postgres/00009_invitations.sql, pointer: null, detail: The stored invitation, never its token. }
+        link:
+          type: [ string, "null" ]
+          format: uri
+          description: "<base>/invite#<token>, the only time the full link exists."
+          x-null-reason: SMTP is set, so the link went by email to its address only, whether or not the send succeeded.
+          x-source: { kind: computed, file: internal/invite/invite.go, pointer: null, detail: "VOICEGATEWAY_PUBLIC_URL or the request's scheme and Host, /invite#, and the token." }
+        emailed:
+          type: boolean
+          description: True when the email was sent; false without SMTP, or when the send failed.
+          x-source: { kind: computed, file: internal/invite/invite.go, pointer: null, detail: The SMTP send's outcome. }
+    CreatedPasswordReset:
+      type: object
+      additionalProperties: false
+      required: [ link, expiresAt, emailed ]
+      properties:
+        link:
+          type: [ string, "null" ]
+          format: uri
+          description: "<base>/invite#<token>, the only time the full link exists."
+          x-null-reason: SMTP is set, so the link went by email to the member only, whether or not the send succeeded.
+          x-source: { kind: computed, file: internal/invite/invite.go, pointer: null, detail: "VOICEGATEWAY_PUBLIC_URL or the request's scheme and Host, /invite#, and the token." }
+        expiresAt:
+          type: string
+          format: date-time
+          description: When the link stops working, 24 hours after it was made.
+          x-source: { kind: configuration, file: migrations/postgres/00009_invitations.sql, pointer: null, detail: "invitations.expires_at." }
+        emailed:
+          type: boolean
+          description: True when the email was sent; false without SMTP, or when the send failed.
+          x-source: { kind: computed, file: internal/invite/invite.go, pointer: null, detail: The SMTP send's outcome. }
     ProjectKey:
       type: object
       additionalProperties: false
@@ -4571,7 +4761,7 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/Invitation"
-          x-source: { kind: configuration, file: dashboard/src/features/settings/settings-dialog.tsx, pointer: null, detail: Pending invitations for this organisation. Do not expose to members without Admin permission. }
+          x-source: { kind: configuration, file: migrations/postgres/00009_invitations.sql, pointer: null, detail: "The organisation's invitations and reset links, newest first, at most 500. Do not expose to members without Admin permission." }
     WorkspaceProject:
       type: object
       additionalProperties: false
@@ -4915,7 +5105,7 @@ components:
           schema:
             $ref: "#/components/schemas/Error"
     Conflict:
-      description: last_admin; the change would leave the organisation without an admin.
+      description: last_admin, the change would leave the organisation without an admin; already_member, the invited email's account is a member already; member_of_other_organisations, a reset's member belongs to an organisation the requester does not administer.
       content:
         application/json:
           schema:
@@ -4941,6 +5131,14 @@ components:
       schema:
         type: string
         pattern: "^[a-z2-7]{12}$"
+    InvitationId:
+      name: invitationId
+      in: path
+      required: true
+      description: An invitation's id; one from another organisation, or any other value, is not_found.
+      schema:
+        type: string
+        minLength: 1
     UserId:
       name: userId
       in: path

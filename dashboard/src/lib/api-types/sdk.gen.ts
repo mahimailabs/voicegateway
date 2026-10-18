@@ -2,7 +2,7 @@
 
 import type { Client, ClientMeta, Options as Options2, RequestResult, TDataShape } from './client';
 import { client } from './client.gen';
-import type { CreateProjectKeyData, CreateProjectKeyErrors, CreateProjectKeyResponses, GetAlertSetupData, GetAlertSetupErrors, GetAlertSetupResponses, GetCallData, GetCallErrors, GetCallResponses, GetCallStatsData, GetCallStatsErrors, GetCallStatsResponses, GetCapacityData, GetCapacityErrors, GetCapacityResponses, GetCloudAgentsData, GetCloudAgentsErrors, GetCloudAgentsResponses, GetEgressData, GetEgressErrors, GetEgressResponses, GetIngressData, GetIngressErrors, GetIngressResponses, GetInvitationsData, GetInvitationsErrors, GetInvitationsResponses, GetIssueDispositionsData, GetIssueDispositionsErrors, GetIssueDispositionsResponses, GetMediaServerData, GetMediaServerErrors, GetMediaServerResponses, GetMembersData, GetMembersErrors, GetMembersResponses, GetProjectSettingsData, GetProjectSettingsErrors, GetProjectSettingsResponses, GetProjectSnapshotData, GetProjectSnapshotErrors, GetProjectSnapshotResponses, GetProviderProbesData, GetProviderProbesErrors, GetProviderProbesResponses, GetRecordingMediaData, GetRecordingMediaErrors, GetRecordingMediaResponses, GetSipData, GetSipErrors, GetSipResponses, GetWorkersData, GetWorkersErrors, GetWorkersResponses, GetWorkspacesData, GetWorkspacesErrors, GetWorkspacesResponses, ListAlertEventsData, ListAlertEventsErrors, ListAlertEventsResponses, ListCallsData, ListCallsErrors, ListCallsResponses, ListIssuesData, ListIssuesErrors, ListIssuesResponses, ListProjectKeysData, ListProjectKeysErrors, ListProjectKeysResponses, RemoveMemberData, RemoveMemberErrors, RemoveMemberResponses, RevokeProjectKeyData, RevokeProjectKeyErrors, RevokeProjectKeyResponses, UpdateMemberData, UpdateMemberErrors, UpdateMemberResponses } from './types.gen';
+import type { CreateInvitationData, CreateInvitationErrors, CreateInvitationResponses, CreatePasswordResetData, CreatePasswordResetErrors, CreatePasswordResetResponses, CreateProjectKeyData, CreateProjectKeyErrors, CreateProjectKeyResponses, GetAlertSetupData, GetAlertSetupErrors, GetAlertSetupResponses, GetCallData, GetCallErrors, GetCallResponses, GetCallStatsData, GetCallStatsErrors, GetCallStatsResponses, GetCapacityData, GetCapacityErrors, GetCapacityResponses, GetCloudAgentsData, GetCloudAgentsErrors, GetCloudAgentsResponses, GetEgressData, GetEgressErrors, GetEgressResponses, GetIngressData, GetIngressErrors, GetIngressResponses, GetInvitationsData, GetInvitationsErrors, GetInvitationsResponses, GetIssueDispositionsData, GetIssueDispositionsErrors, GetIssueDispositionsResponses, GetMediaServerData, GetMediaServerErrors, GetMediaServerResponses, GetMembersData, GetMembersErrors, GetMembersResponses, GetProjectSettingsData, GetProjectSettingsErrors, GetProjectSettingsResponses, GetProjectSnapshotData, GetProjectSnapshotErrors, GetProjectSnapshotResponses, GetProviderProbesData, GetProviderProbesErrors, GetProviderProbesResponses, GetRecordingMediaData, GetRecordingMediaErrors, GetRecordingMediaResponses, GetSipData, GetSipErrors, GetSipResponses, GetWorkersData, GetWorkersErrors, GetWorkersResponses, GetWorkspacesData, GetWorkspacesErrors, GetWorkspacesResponses, ListAlertEventsData, ListAlertEventsErrors, ListAlertEventsResponses, ListCallsData, ListCallsErrors, ListCallsResponses, ListIssuesData, ListIssuesErrors, ListIssuesResponses, ListProjectKeysData, ListProjectKeysErrors, ListProjectKeysResponses, RemoveMemberData, RemoveMemberErrors, RemoveMemberResponses, RevokeInvitationData, RevokeInvitationErrors, RevokeInvitationResponses, RevokeProjectKeyData, RevokeProjectKeyErrors, RevokeProjectKeyResponses, UpdateMemberData, UpdateMemberErrors, UpdateMemberResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -274,9 +274,9 @@ export const getAlertSetup = <ThrowOnError extends boolean = false>(options: Opt
 });
 
 /**
- * Read pending organisation invitations
+ * Read the organisation's invitations and password reset links
  *
- * Requires Admin membership in the named organisation before reading pending invitations. This is an organisation-level read, not a selected-project read. A browser signs in with the session cookie (decision 0027). Missing authentication is 401 and denied membership/role is 403. Do not reveal invitation addresses across organisations.
+ * Requires Admin membership in the named organisation. Lists invitations and password reset links, newest first, with each one's state (pending, accepted, revoked or expired), derived from its times and never stored. Never a token or a link. A browser signs in with the session cookie (decision 0027). Missing authentication is 401 and denied membership/role is 403. Do not reveal invitation addresses across organisations.
  */
 export const getInvitations = <ThrowOnError extends boolean = false>(options: Options<GetInvitationsData, ThrowOnError>): RequestResult<GetInvitationsResponses, GetInvitationsErrors, ThrowOnError> => (options.client ?? client).get<GetInvitationsResponses, GetInvitationsErrors, ThrowOnError>({
     security: [{
@@ -285,6 +285,40 @@ export const getInvitations = <ThrowOnError extends boolean = false>(options: Op
             type: 'apiKey'
         }],
     url: '/api/v1/org/{orgId}/invitations',
+    ...options
+});
+
+/**
+ * Invite someone to the organisation by email
+ *
+ * Requires Admin membership in the named organisation. Replaces any open invitation for that email here. With SMTP set, the link is emailed and link is always null, whether the send succeeded or not, so nobody who can invite can claim an address they do not control; to resend, create again. Without SMTP, link is the full link, in this answer only. The server stores the SHA-256 of the token, which travels in the link's fragment. An email whose account is already a member is 409 already_member.
+ */
+export const createInvitation = <ThrowOnError extends boolean = false>(options: Options<CreateInvitationData, ThrowOnError>): RequestResult<CreateInvitationResponses, CreateInvitationErrors, ThrowOnError> => (options.client ?? client).post<CreateInvitationResponses, CreateInvitationErrors, ThrowOnError>({
+    security: [{
+            in: 'cookie',
+            name: 'vg_session',
+            type: 'apiKey'
+        }],
+    url: '/api/v1/org/{orgId}/invitations',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Revoke an invitation or a password reset link
+ *
+ * Requires Admin membership in the named organisation. Revoking twice is 204 both times; an accepted link stays accepted. An id from another organisation is not_found.
+ */
+export const revokeInvitation = <ThrowOnError extends boolean = false>(options: Options<RevokeInvitationData, ThrowOnError>): RequestResult<RevokeInvitationResponses, RevokeInvitationErrors, ThrowOnError> => (options.client ?? client).delete<RevokeInvitationResponses, RevokeInvitationErrors, ThrowOnError>({
+    security: [{
+            in: 'cookie',
+            name: 'vg_session',
+            type: 'apiKey'
+        }],
+    url: '/api/v1/org/{orgId}/invitations/{invitationId}',
     ...options
 });
 
@@ -335,6 +369,21 @@ export const updateMember = <ThrowOnError extends boolean = false>(options: Opti
         'Content-Type': 'application/json',
         ...options.headers
     }
+});
+
+/**
+ * Make a password reset link for a member
+ *
+ * Requires Admin membership in the named organisation. The link lasts 24 hours and replaces any open reset link for the member; using it sets a new password and signs the member out everywhere. With SMTP set it is emailed to the member and link is null; without SMTP, link is in this answer only. A userId that is not a member is not_found. A member who also belongs to an organisation the requester does not administer is 409 member_of_other_organisations, and no link is made.
+ */
+export const createPasswordReset = <ThrowOnError extends boolean = false>(options: Options<CreatePasswordResetData, ThrowOnError>): RequestResult<CreatePasswordResetResponses, CreatePasswordResetErrors, ThrowOnError> => (options.client ?? client).post<CreatePasswordResetResponses, CreatePasswordResetErrors, ThrowOnError>({
+    security: [{
+            in: 'cookie',
+            name: 'vg_session',
+            type: 'apiKey'
+        }],
+    url: '/api/v1/org/{orgId}/members/{userId}/password-reset',
+    ...options
 });
 
 /**

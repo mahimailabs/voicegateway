@@ -79,6 +79,8 @@
     "assets": [],
     "browserStorage": false,
     "operations": [
+      "createInvitation",
+      "createPasswordReset",
       "createProjectKey",
       "getAlertSetup",
       "getCall",
@@ -102,6 +104,7 @@
       "listIssues",
       "listProjectKeys",
       "removeMember",
+      "revokeInvitation",
       "revokeProjectKey",
       "updateMember"
     ]
@@ -113,12 +116,11 @@
     "browserStorage": true,
     "operations": [
       "getAlertSetup",
-      "getInvitations",
       "getIssueDispositions",
       "getProjectSettings"
     ],
     "assetNotes": {},
-    "exclusion": "The console's writes (thresholds, issue decisions, alert setup, invitations) kept in this browser until web stores them; the console reads them back only through these operations, which the mock serves from the same storage."
+    "exclusion": "The console's writes (thresholds, issue decisions, alert setup) kept in this browser until web stores them; the console reads them back only through these operations, which the mock serves from the same storage."
   },
   {
     "file": "dashboard/src/mocks/browser.ts",
@@ -209,6 +211,8 @@
     "assets": [],
     "browserStorage": false,
     "operations": [
+      "createInvitation",
+      "createPasswordReset",
       "createProjectKey",
       "getAlertSetup",
       "getCall",
@@ -233,6 +237,7 @@
       "listIssues",
       "listProjectKeys",
       "removeMember",
+      "revokeInvitation",
       "revokeProjectKey",
       "updateMember"
     ],
@@ -341,6 +346,21 @@
     "operations": [],
     "assetNotes": {},
     "exclusion": "Starts the mock API with import() only in development or with VITE_MOCK_API=on; reads nothing itself."
+  },
+  {
+    "file": "dashboard/src/lib/invitation.ts",
+    "fixtures": [],
+    "assets": [
+      "/auth/invitation",
+      "/auth/invitation/accept"
+    ],
+    "browserStorage": false,
+    "operations": [],
+    "assetNotes": {
+      "/auth/invitation": "What an invitation or reset link is for, by its token in a header (phase 06d); not a console read.",
+      "/auth/invitation/accept": "Uses a link with a password and signs in (phase 06d); a write, not a console read."
+    },
+    "exclusion": "Accepting invitation and reset links, from web's /auth routes (decision 0027, phase 06d); not part of the read contract."
   },
   {
     "file": "dashboard/src/lib/session.ts",
