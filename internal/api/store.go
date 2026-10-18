@@ -35,6 +35,12 @@ type Layers interface {
 	Participants(ctx context.Context, organisationID, projectID string, roomSIDs []string) ([]store.ParticipantSeen, error)
 	ParticipantChanges(ctx context.Context, organisationID, projectID string, roomSIDs []string) ([]store.ParticipantChange, error)
 	LatestSIP(ctx context.Context, organisationID, projectID string) (store.SIPRead, error)
+	EgressSince(ctx context.Context, organisationID, projectID string, since time.Time, limit int) ([]store.EgressSeen, error)
+	EgressChanges(ctx context.Context, organisationID, projectID string, ids []string) ([]store.StatusChange, error)
+	EgressWebhooks(ctx context.Context, organisationID, projectID string, ids []string, since time.Time) ([]store.WebhookStatus, error)
+	IngressSince(ctx context.Context, organisationID, projectID string, since time.Time, limit int) ([]store.IngressSeen, error)
+	IngressChanges(ctx context.Context, organisationID, projectID string, ids []string) ([]store.StatusChange, error)
+	IngressWebhooks(ctx context.Context, organisationID, projectID string, ids []string, since time.Time) ([]store.WebhookStatus, error)
 }
 
 // Accounts reads what a signed-in user may see.

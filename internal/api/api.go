@@ -57,6 +57,8 @@ func (a *API) Routes() http.Handler {
 		r.Get("/calls/{callId}", a.getCall)
 		r.Get("/media-server", a.mediaServer)
 		r.Get("/sip", a.sip)
+		r.Get("/egress", a.egress)
+		r.Get("/ingress", a.ingress)
 	})
 	return r
 }

@@ -2230,7 +2230,7 @@ components:
                       type: [ string, "null" ]
                       format: date-time
                       x-null-reason: The capture or source did not report this value. Preserve null rather than a protobuf default or guessed zero.
-                      x-source: { kind: computed, file: dashboard/src/mocks/egress.json, pointer: /egress/0/history/0/t, detail: UTC observer sampling time in seconds; does not claim exact transition time. }
+                      x-source: { kind: computed, file: dashboard/src/mocks/egress.json, pointer: /egress/0/history/0/t, detail: "LiveKit's own time of the change when reported (EgressInfo.updated_at in a sample or webhook, else the webhook's created_at); otherwise the worker's read time, which does not claim the exact transition time. Captures used the observer sampling time." }
                     status:
                       type: string
                       x-source: { kind: livekit_api, file: dashboard/src/mocks/egress.json, pointer: /egress/0/history/0/status, detail: Egress ListEgress sampled response or captured rejection; request credentials excluded }
@@ -2241,6 +2241,44 @@ components:
                 type: [ boolean, "null" ]
                 x-null-reason: The capture or source did not report this value. Preserve null rather than a protobuf default or guessed zero.
                 x-source: { kind: livekit_api, file: dashboard/src/mocks/egress.json, pointer: /egress/0/sampled, detail: Egress ListEgress sampled response or captured rejection; request credentials excluded }
+              streams:
+                type: array
+                description: "One entry per stream output (#345), so a failed stream shows while the egress keeps running. Absent from captures made before the worker read egress."
+                items:
+                  type: object
+                  additionalProperties: false
+                  properties:
+                    host:
+                      type: [ string, "null" ]
+                      x-null-reason: LiveKit reported a stream URL the worker could not read, so nothing of it is kept.
+                      description: "StreamInfo.url reduced to its scheme and host, such as rtmps://live.example.com. The path, user, query and stream key are dropped before storage; a shorthand URL such as mux://<key> keeps its scheme only."
+                      x-source: { kind: computed, file: internal/scrape/egress.go, pointer: null, detail: "EgressInfo.stream_results[].url (protocol v1.52.1 StreamInfo field 1) from server-sdk-go v2.19.0 EgressClient.ListEgress; deprecated EgressInfo.stream used only when stream_results is empty. Reduced to scheme and host before storage." }
+                    status:
+                      type: string
+                      x-source: { kind: computed, file: internal/scrape/egress.go, pointer: null, detail: "StreamInfo.status (protocol v1.52.1 StreamInfo.Status enum name) from EgressClient.ListEgress." }
+                    error:
+                      type: [ string, "null" ]
+                      x-null-reason: LiveKit reported no error for this stream.
+                      x-source: { kind: computed, file: internal/scrape/egress.go, pointer: null, detail: "StreamInfo.error from EgressClient.ListEgress, with any URL cut to its scheme and host and any request credential removed before storage." }
+                    startedAt:
+                      type: [ string, "null" ]
+                      format: date-time
+                      x-null-reason: LiveKit reported no start time (zero) for this stream.
+                      x-source: { kind: computed, file: internal/scrape/egress.go, pointer: null, detail: "StreamInfo.started_at, Unix nanoseconds; zero is null." }
+                    endedAt:
+                      type: [ string, "null" ]
+                      format: date-time
+                      x-null-reason: The stream has not ended, or LiveKit reported no end time.
+                      x-source: { kind: computed, file: internal/scrape/egress.go, pointer: null, detail: "StreamInfo.ended_at, Unix nanoseconds; zero is null." }
+                  required: [ host, status, error, startedAt, endedAt ]
+                  x-source: { kind: computed, file: internal/scrape/egress.go, pointer: null, detail: "One protocol v1.52.1 StreamInfo of EgressInfo.stream_results from EgressClient.ListEgress, redacted before storage." }
+                x-source: { kind: livekit_api, file: dashboard/src/mocks/egress.json, pointer: /egress/0/streams, detail: "EgressInfo.stream_results from server-sdk-go v2.19.0 EgressClient.ListEgress; empty for an egress with no stream output." }
+              outcome:
+                type: [ string, "null" ]
+                enum: [ recorded, cut_short, lost, null ]
+                x-null-reason: The egress has not ended yet.
+                description: "What happened to the recording once the egress ended (#345). EGRESS_LIMIT_REACHED reads as cut_short, recording cut short: LiveKit keeps the recording up to the time limit. EGRESS_FAILED and EGRESS_ABORTED read as lost; EGRESS_COMPLETE as recorded."
+                x-source: { kind: computed, file: internal/api/egress.go, pointer: null, detail: "Mapped from EgressInfo.status (protocol v1.52.1 EgressStatus) of the latest sample." }
             required: [ id, room, status, startedAt, endedAt, error, details, request, file, history, sampled ]
             x-source: { kind: livekit_api, file: dashboard/src/mocks/egress.json, pointer: /egress/0, detail: Egress ListEgress sampled response or captured rejection; request credentials excluded }
           x-source: { kind: livekit_api, file: dashboard/src/mocks/egress.json, pointer: /egress, detail: Egress ListEgress sampled response or captured rejection; request credentials excluded }
@@ -2264,6 +2302,9 @@ components:
             required: [ at, case, error ]
             x-source: { kind: livekit_api, file: dashboard/src/mocks/egress.json, pointer: /rejected/0, detail: Egress ListEgress sampled response or captured rejection; request credentials excluded }
           x-source: { kind: livekit_api, file: dashboard/src/mocks/egress.json, pointer: /rejected, detail: Egress ListEgress sampled response or captured rejection; request credentials excluded }
+        sourceStatus:
+          $ref: "#/components/schemas/SourceStatus"
+          x-source: { kind: computed, file: internal/api/egress.go, pointer: null, detail: "Freshness of the egress samples, from ClickHouse layer_reads." }
       required: [ source, egress, rejected ]
       x-source: { kind: livekit_api, file: dashboard/src/mocks/egress.json, pointer: "", detail: Egress ListEgress sampled response or captured rejection; request credentials excluded }
     Ingress:
@@ -2421,7 +2462,7 @@ components:
                       type: [ string, "null" ]
                       format: date-time
                       x-null-reason: The capture or source did not report this value. Preserve null rather than a protobuf default or guessed zero.
-                      x-source: { kind: computed, file: dashboard/src/mocks/ingress.json, pointer: /ingress/0/history/0/t, detail: UTC observer sampling time in seconds; does not claim exact transition time. }
+                      x-source: { kind: computed, file: dashboard/src/mocks/ingress.json, pointer: /ingress/0/history/0/t, detail: "LiveKit's own time of the change when reported (IngressState.updated_at in a sample or webhook, else the webhook's created_at); otherwise the worker's read time, which does not claim the exact transition time. Captures used the observer sampling time." }
                     status:
                       type: string
                       x-source: { kind: livekit_api, file: dashboard/src/mocks/ingress.json, pointer: /ingress/0/history/0/status, detail: Ingress ListIngress sampled response; stream credentials excluded }
@@ -2431,6 +2472,9 @@ components:
             required: [ id, name, inputType, url, room, participant, transcoding, reusable, enabled, status, error, startedAt, endedAt, audioIn, videoIn, createdAt, published, history ]
             x-source: { kind: livekit_api, file: dashboard/src/mocks/ingress.json, pointer: /ingress/0, detail: Ingress ListIngress sampled response; stream credentials excluded }
           x-source: { kind: livekit_api, file: dashboard/src/mocks/ingress.json, pointer: /ingress, detail: Ingress ListIngress sampled response; stream credentials excluded }
+        sourceStatus:
+          $ref: "#/components/schemas/SourceStatus"
+          x-source: { kind: computed, file: internal/api/ingress.go, pointer: null, detail: "Freshness of the ingress samples, from ClickHouse layer_reads." }
       required: [ source, ingress ]
       x-source: { kind: livekit_api, file: dashboard/src/mocks/ingress.json, pointer: "", detail: Ingress ListIngress sampled response; stream credentials excluded }
     ProjectSnapshot:

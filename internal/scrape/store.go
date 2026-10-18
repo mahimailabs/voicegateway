@@ -30,6 +30,16 @@ type SIPSamples interface {
 	StoreSIPRead(ctx context.Context, read store.LayerRead, sip *store.SIP) error
 }
 
+// EgressSamples stores an egress read and, when it succeeded, what it saw.
+type EgressSamples interface {
+	StoreEgressRead(ctx context.Context, read store.LayerRead, egress []store.EgressSample) error
+}
+
+// IngressSamples stores an ingress read and, when it succeeded, what it saw.
+type IngressSamples interface {
+	StoreIngressRead(ctx context.Context, read store.LayerRead, ingress []store.IngressSample) error
+}
+
 // Locker takes a lock for ttl if nobody holds it, so one worker reads a layer per interval, and
 // swaps a value shared by the workers, returning the one before.
 type Locker interface {
@@ -46,6 +56,8 @@ type LiveKit interface {
 	ListSIPOutboundTrunk(ctx context.Context) ([]*livekit.SIPOutboundTrunkInfo, error)
 	ListSIPDispatchRule(ctx context.Context) ([]*livekit.SIPDispatchRuleInfo, error)
 	ListPhoneNumbers(ctx context.Context) ([]*livekit.PhoneNumber, error)
+	ListEgress(ctx context.Context) ([]*livekit.EgressInfo, error)
+	ListIngress(ctx context.Context) ([]*livekit.IngressInfo, error)
 }
 
 // Dial returns a LiveKit client for one project.
@@ -58,6 +70,8 @@ func DialSDK(url, apiKey, apiSecret string) LiveKit {
 		dispatches: lksdk.NewAgentDispatchServiceClient(url, apiKey, apiSecret),
 		sip:        lksdk.NewSIPClient(url, apiKey, apiSecret),
 		numbers:    lksdk.NewPhoneNumberClient(url, apiKey, apiSecret),
+		egress:     lksdk.NewEgressClient(url, apiKey, apiSecret),
+		ingress:    lksdk.NewIngressClient(url, apiKey, apiSecret),
 	}
 }
 
@@ -66,6 +80,8 @@ type sdkClient struct {
 	dispatches *lksdk.AgentDispatchClient
 	sip        *lksdk.SIPClient
 	numbers    *lksdk.PhoneNumberClient
+	egress     *lksdk.EgressClient
+	ingress    *lksdk.IngressClient
 }
 
 func (c sdkClient) ListRooms(ctx context.Context) ([]*livekit.Room, error) {
@@ -119,6 +135,46 @@ func (c sdkClient) ListPhoneNumbers(ctx context.Context) ([]*livekit.PhoneNumber
 		req.PageToken = next
 	}
 	return nil, fmt.Errorf("phone numbers: more than %d pages", maxNumberPages)
+}
+
+// maxListPages bounds the egress and ingress pages one read follows. LiveKit answers the first page
+// with every item today; the page token is followed in case a server pages.
+const maxListPages = 100
+
+func (c sdkClient) ListEgress(ctx context.Context) ([]*livekit.EgressInfo, error) {
+	var out []*livekit.EgressInfo
+	req := &livekit.ListEgressRequest{}
+	for range maxListPages {
+		res, err := c.egress.ListEgress(ctx, req)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, res.GetItems()...)
+		next := res.GetNextPageToken()
+		if next.GetToken() == "" {
+			return out, nil
+		}
+		req.PageToken = next
+	}
+	return nil, fmt.Errorf("egress: more than %d pages", maxListPages)
+}
+
+func (c sdkClient) ListIngress(ctx context.Context) ([]*livekit.IngressInfo, error) {
+	var out []*livekit.IngressInfo
+	req := &livekit.ListIngressRequest{}
+	for range maxListPages {
+		res, err := c.ingress.ListIngress(ctx, req)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, res.GetItems()...)
+		next := res.GetNextPageToken()
+		if next.GetToken() == "" {
+			return out, nil
+		}
+		req.PageToken = next
+	}
+	return nil, fmt.Errorf("ingress: more than %d pages", maxListPages)
 }
 
 // RedisLock is a Locker over Redis SET NX with an expiry.

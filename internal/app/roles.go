@@ -187,6 +187,30 @@ func Worker(ctx context.Context, c config.Config, log *slog.Logger) error {
 		}).Run(gctx)
 	})
 	g.Go(func() error {
+		return (&scrape.EgressScraper{
+			Projects: pgstore.NewStore(pool, sealer),
+			Samples:  events,
+			Lock:     &scrape.RedisLock{Client: rdb},
+			Dial:     scrape.DialSDK,
+			Log:      log,
+			Now:      time.Now,
+			Every:    15 * time.Second,
+			Timeout:  10 * time.Second,
+		}).Run(gctx)
+	})
+	g.Go(func() error {
+		return (&scrape.IngressScraper{
+			Projects: pgstore.NewStore(pool, sealer),
+			Samples:  events,
+			Lock:     &scrape.RedisLock{Client: rdb},
+			Dial:     scrape.DialSDK,
+			Log:      log,
+			Now:      time.Now,
+			Every:    15 * time.Second,
+			Timeout:  10 * time.Second,
+		}).Run(gctx)
+	})
+	g.Go(func() error {
 		every(gctx, sweepEvery, "sweep", joiner.Sweep, log)
 		return nil
 	})

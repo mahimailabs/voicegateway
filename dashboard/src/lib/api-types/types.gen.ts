@@ -392,12 +392,30 @@ export type Egress = {
             status: string;
         }>;
         sampled: boolean | null;
+        /**
+         * One entry per stream output (#345), so a failed stream shows while the egress keeps running. Absent from captures made before the worker read egress.
+         */
+        streams?: Array<{
+            /**
+             * StreamInfo.url reduced to its scheme and host, such as rtmps://live.example.com. The path, user, query and stream key are dropped before storage; a shorthand URL such as mux://<key> keeps its scheme only.
+             */
+            host: string | null;
+            status: string;
+            error: string | null;
+            startedAt: string | null;
+            endedAt: string | null;
+        }>;
+        /**
+         * What happened to the recording once the egress ended (#345). EGRESS_LIMIT_REACHED reads as cut_short, recording cut short: LiveKit keeps the recording up to the time limit. EGRESS_FAILED and EGRESS_ABORTED read as lost; EGRESS_COMPLETE as recorded.
+         */
+        outcome?: 'recorded' | 'cut_short' | 'lost' | null;
     }>;
     rejected: Array<{
         at: string | null;
         case: string;
         error: string;
     }>;
+    sourceStatus?: SourceStatus;
 };
 
 export type Ingress = {
@@ -461,6 +479,7 @@ export type Ingress = {
             status: string;
         }>;
     }>;
+    sourceStatus?: SourceStatus;
 };
 
 export type ProjectSnapshot = {
