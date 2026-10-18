@@ -23,140 +23,300 @@ export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends 
  *
  * Requires authenticated organisation membership and permission to read the named project. A browser signs in with the session cookie (decision 0027); the role gate admits the minimumRole and above. Credential absence is 401, denied membership is 403, cross-project resource ids are not_found. Server-side LiveKit credentials must never reach the browser.
  */
-export const listCalls = <ThrowOnError extends boolean = false>(options: Options<ListCallsData, ThrowOnError>): RequestResult<ListCallsResponses, ListCallsErrors, ThrowOnError> => (options.client ?? client).get<ListCallsResponses, ListCallsErrors, ThrowOnError>({ url: '/api/v1/org/{orgId}/project/{projectId}/calls', ...options });
+export const listCalls = <ThrowOnError extends boolean = false>(options: Options<ListCallsData, ThrowOnError>): RequestResult<ListCallsResponses, ListCallsErrors, ThrowOnError> => (options.client ?? client).get<ListCallsResponses, ListCallsErrors, ThrowOnError>({
+    security: [{
+            in: 'cookie',
+            name: 'vg_session',
+            type: 'apiKey'
+        }, { scheme: 'bearer', type: 'http' }],
+    url: '/api/v1/org/{orgId}/project/{projectId}/calls',
+    ...options
+});
 
 /**
  * Read one conversation and its reported turns, events, spans and recording
  *
  * Requires authenticated organisation membership and permission to read the named project. A browser signs in with the session cookie (decision 0027); the role gate admits the minimumRole and above. Credential absence is 401, denied membership is 403, cross-project resource ids are not_found. Server-side LiveKit credentials must never reach the browser.
  */
-export const getCall = <ThrowOnError extends boolean = false>(options: Options<GetCallData, ThrowOnError>): RequestResult<GetCallResponses, GetCallErrors, ThrowOnError> => (options.client ?? client).get<GetCallResponses, GetCallErrors, ThrowOnError>({ url: '/api/v1/org/{orgId}/project/{projectId}/calls/{callId}', ...options });
+export const getCall = <ThrowOnError extends boolean = false>(options: Options<GetCallData, ThrowOnError>): RequestResult<GetCallResponses, GetCallErrors, ThrowOnError> => (options.client ?? client).get<GetCallResponses, GetCallErrors, ThrowOnError>({
+    security: [{
+            in: 'cookie',
+            name: 'vg_session',
+            type: 'apiKey'
+        }, { scheme: 'bearer', type: 'http' }],
+    url: '/api/v1/org/{orgId}/project/{projectId}/calls/{callId}',
+    ...options
+});
 
 /**
  * Totals, answer times and stage timings over calls in a range
  *
  * Overview figures, the agent rows, Turn anatomy and the answer-time and turn-anatomy widgets. Requires authenticated organisation membership and permission to read the named project. Credential absence is 401, denied membership is 403. Computed on the server over every stored record in the range; the console never totals pages of listCalls itself.
  */
-export const getCallStats = <ThrowOnError extends boolean = false>(options: Options<GetCallStatsData, ThrowOnError>): RequestResult<GetCallStatsResponses, GetCallStatsErrors, ThrowOnError> => (options.client ?? client).get<GetCallStatsResponses, GetCallStatsErrors, ThrowOnError>({ url: '/api/v1/org/{orgId}/project/{projectId}/call-stats', ...options });
+export const getCallStats = <ThrowOnError extends boolean = false>(options: Options<GetCallStatsData, ThrowOnError>): RequestResult<GetCallStatsResponses, GetCallStatsErrors, ThrowOnError> => (options.client ?? client).get<GetCallStatsResponses, GetCallStatsErrors, ThrowOnError>({
+    security: [{
+            in: 'cookie',
+            name: 'vg_session',
+            type: 'apiKey'
+        }, { scheme: 'bearer', type: 'http' }],
+    url: '/api/v1/org/{orgId}/project/{projectId}/call-stats',
+    ...options
+});
 
 /**
  * Issues grouped across calls, agents and the phone bridge in a range
  *
  * The Issues page, the issues widget, issue counts and the command palette. Dispositions stay in getIssueDispositions. Requires authenticated organisation membership and permission to read the named project. Credential absence is 401, denied membership is 403. Computed on the server over every stored record in the range; the console never totals pages of listCalls itself.
  */
-export const listIssues = <ThrowOnError extends boolean = false>(options: Options<ListIssuesData, ThrowOnError>): RequestResult<ListIssuesResponses, ListIssuesErrors, ThrowOnError> => (options.client ?? client).get<ListIssuesResponses, ListIssuesErrors, ThrowOnError>({ url: '/api/v1/org/{orgId}/project/{projectId}/issues', ...options });
+export const listIssues = <ThrowOnError extends boolean = false>(options: Options<ListIssuesData, ThrowOnError>): RequestResult<ListIssuesResponses, ListIssuesErrors, ThrowOnError> => (options.client ?? client).get<ListIssuesResponses, ListIssuesErrors, ThrowOnError>({
+    security: [{
+            in: 'cookie',
+            name: 'vg_session',
+            type: 'apiKey'
+        }, { scheme: 'bearer', type: 'http' }],
+    url: '/api/v1/org/{orgId}/project/{projectId}/issues',
+    ...options
+});
 
 /**
  * What each alert rule would have fired on in a range
  *
  * The Alerts page chart, rule counts and history. This is rule evaluation, not delivery history. Requires authenticated organisation membership and permission to read the named project. Credential absence is 401, denied membership is 403. Computed on the server over every stored record in the range; the console never totals pages of listCalls itself.
  */
-export const listAlertEvents = <ThrowOnError extends boolean = false>(options: Options<ListAlertEventsData, ThrowOnError>): RequestResult<ListAlertEventsResponses, ListAlertEventsErrors, ThrowOnError> => (options.client ?? client).get<ListAlertEventsResponses, ListAlertEventsErrors, ThrowOnError>({ url: '/api/v1/org/{orgId}/project/{projectId}/alert-events', ...options });
+export const listAlertEvents = <ThrowOnError extends boolean = false>(options: Options<ListAlertEventsData, ThrowOnError>): RequestResult<ListAlertEventsResponses, ListAlertEventsErrors, ThrowOnError> => (options.client ?? client).get<ListAlertEventsResponses, ListAlertEventsErrors, ThrowOnError>({
+    security: [{
+            in: 'cookie',
+            name: 'vg_session',
+            type: 'apiKey'
+        }, { scheme: 'bearer', type: 'http' }],
+    url: '/api/v1/org/{orgId}/project/{projectId}/alert-events',
+    ...options
+});
 
 /**
  * Read sampled rooms, participants, tracks, dispatches and watch coverage
  *
  * Requires authenticated organisation membership and permission to read the named project. A browser signs in with the session cookie (decision 0027); the role gate admits the minimumRole and above. Credential absence is 401, denied membership is 403, cross-project resource ids are not_found. Server-side LiveKit credentials must never reach the browser.
  */
-export const getMediaServer = <ThrowOnError extends boolean = false>(options: Options<GetMediaServerData, ThrowOnError>): RequestResult<GetMediaServerResponses, GetMediaServerErrors, ThrowOnError> => (options.client ?? client).get<GetMediaServerResponses, GetMediaServerErrors, ThrowOnError>({ url: '/api/v1/org/{orgId}/project/{projectId}/media-server', ...options });
+export const getMediaServer = <ThrowOnError extends boolean = false>(options: Options<GetMediaServerData, ThrowOnError>): RequestResult<GetMediaServerResponses, GetMediaServerErrors, ThrowOnError> => (options.client ?? client).get<GetMediaServerResponses, GetMediaServerErrors, ThrowOnError>({
+    security: [{
+            in: 'cookie',
+            name: 'vg_session',
+            type: 'apiKey'
+        }, { scheme: 'bearer', type: 'http' }],
+    url: '/api/v1/org/{orgId}/project/{projectId}/media-server',
+    ...options
+});
 
 /**
  * Read known Cloud deployments and versions
  *
  * Requires authenticated organisation membership and permission to read the named project. A browser signs in with the session cookie (decision 0027); the role gate admits the minimumRole and above. Credential absence is 401, denied membership is 403, cross-project resource ids are not_found. Server-side LiveKit credentials must never reach the browser.
  */
-export const getCloudAgents = <ThrowOnError extends boolean = false>(options: Options<GetCloudAgentsData, ThrowOnError>): RequestResult<GetCloudAgentsResponses, GetCloudAgentsErrors, ThrowOnError> => (options.client ?? client).get<GetCloudAgentsResponses, GetCloudAgentsErrors, ThrowOnError>({ url: '/api/v1/org/{orgId}/project/{projectId}/agents', ...options });
+export const getCloudAgents = <ThrowOnError extends boolean = false>(options: Options<GetCloudAgentsData, ThrowOnError>): RequestResult<GetCloudAgentsResponses, GetCloudAgentsErrors, ThrowOnError> => (options.client ?? client).get<GetCloudAgentsResponses, GetCloudAgentsErrors, ThrowOnError>({
+    security: [{
+            in: 'cookie',
+            name: 'vg_session',
+            type: 'apiKey'
+        }, { scheme: 'bearer', type: 'http' }],
+    url: '/api/v1/org/{orgId}/project/{projectId}/agents',
+    ...options
+});
 
 /**
  * Read reported worker metric samples
  *
  * Requires authenticated organisation membership and permission to read the named project. A browser signs in with the session cookie (decision 0027); the role gate admits the minimumRole and above. Credential absence is 401, denied membership is 403, cross-project resource ids are not_found. Server-side LiveKit credentials must never reach the browser.
  */
-export const getWorkers = <ThrowOnError extends boolean = false>(options: Options<GetWorkersData, ThrowOnError>): RequestResult<GetWorkersResponses, GetWorkersErrors, ThrowOnError> => (options.client ?? client).get<GetWorkersResponses, GetWorkersErrors, ThrowOnError>({ url: '/api/v1/org/{orgId}/project/{projectId}/workers', ...options });
+export const getWorkers = <ThrowOnError extends boolean = false>(options: Options<GetWorkersData, ThrowOnError>): RequestResult<GetWorkersResponses, GetWorkersErrors, ThrowOnError> => (options.client ?? client).get<GetWorkersResponses, GetWorkersErrors, ThrowOnError>({
+    security: [{
+            in: 'cookie',
+            name: 'vg_session',
+            type: 'apiKey'
+        }, { scheme: 'bearer', type: 'http' }],
+    url: '/api/v1/org/{orgId}/project/{projectId}/workers',
+    ...options
+});
 
 /**
  * Read redacted SIP configuration and phone-number projections
  *
  * Requires authenticated organisation membership and permission to read the named project. A browser signs in with the session cookie (decision 0027); the role gate admits the minimumRole and above. Credential absence is 401, denied membership is 403, cross-project resource ids are not_found. Server-side LiveKit credentials must never reach the browser.
  */
-export const getSip = <ThrowOnError extends boolean = false>(options: Options<GetSipData, ThrowOnError>): RequestResult<GetSipResponses, GetSipErrors, ThrowOnError> => (options.client ?? client).get<GetSipResponses, GetSipErrors, ThrowOnError>({ url: '/api/v1/org/{orgId}/project/{projectId}/sip', ...options });
+export const getSip = <ThrowOnError extends boolean = false>(options: Options<GetSipData, ThrowOnError>): RequestResult<GetSipResponses, GetSipErrors, ThrowOnError> => (options.client ?? client).get<GetSipResponses, GetSipErrors, ThrowOnError>({
+    security: [{
+            in: 'cookie',
+            name: 'vg_session',
+            type: 'apiKey'
+        }, { scheme: 'bearer', type: 'http' }],
+    url: '/api/v1/org/{orgId}/project/{projectId}/sip',
+    ...options
+});
 
 /**
  * Read observed egress state and rejections
  *
  * Requires authenticated organisation membership and permission to read the named project. A browser signs in with the session cookie (decision 0027); the role gate admits the minimumRole and above. Credential absence is 401, denied membership is 403, cross-project resource ids are not_found. Server-side LiveKit credentials must never reach the browser.
  */
-export const getEgress = <ThrowOnError extends boolean = false>(options: Options<GetEgressData, ThrowOnError>): RequestResult<GetEgressResponses, GetEgressErrors, ThrowOnError> => (options.client ?? client).get<GetEgressResponses, GetEgressErrors, ThrowOnError>({ url: '/api/v1/org/{orgId}/project/{projectId}/egress', ...options });
+export const getEgress = <ThrowOnError extends boolean = false>(options: Options<GetEgressData, ThrowOnError>): RequestResult<GetEgressResponses, GetEgressErrors, ThrowOnError> => (options.client ?? client).get<GetEgressResponses, GetEgressErrors, ThrowOnError>({
+    security: [{
+            in: 'cookie',
+            name: 'vg_session',
+            type: 'apiKey'
+        }, { scheme: 'bearer', type: 'http' }],
+    url: '/api/v1/org/{orgId}/project/{projectId}/egress',
+    ...options
+});
 
 /**
  * Read observed ingress state and published media
  *
  * Requires authenticated organisation membership and permission to read the named project. A browser signs in with the session cookie (decision 0027); the role gate admits the minimumRole and above. Credential absence is 401, denied membership is 403, cross-project resource ids are not_found. Server-side LiveKit credentials must never reach the browser.
  */
-export const getIngress = <ThrowOnError extends boolean = false>(options: Options<GetIngressData, ThrowOnError>): RequestResult<GetIngressResponses, GetIngressErrors, ThrowOnError> => (options.client ?? client).get<GetIngressResponses, GetIngressErrors, ThrowOnError>({ url: '/api/v1/org/{orgId}/project/{projectId}/ingress', ...options });
+export const getIngress = <ThrowOnError extends boolean = false>(options: Options<GetIngressData, ThrowOnError>): RequestResult<GetIngressResponses, GetIngressErrors, ThrowOnError> => (options.client ?? client).get<GetIngressResponses, GetIngressErrors, ThrowOnError>({
+    security: [{
+            in: 'cookie',
+            name: 'vg_session',
+            type: 'apiKey'
+        }, { scheme: 'bearer', type: 'http' }],
+    url: '/api/v1/org/{orgId}/project/{projectId}/ingress',
+    ...options
+});
 
 /**
  * Read a project connection snapshot and opt-in observation
  *
  * Requires authenticated organisation membership and permission to read the named project. A browser signs in with the session cookie (decision 0027); the role gate admits the minimumRole and above. Credential absence is 401, denied membership is 403, cross-project resource ids are not_found. Server-side LiveKit credentials must never reach the browser.
  */
-export const getProjectSnapshot = <ThrowOnError extends boolean = false>(options: Options<GetProjectSnapshotData, ThrowOnError>): RequestResult<GetProjectSnapshotResponses, GetProjectSnapshotErrors, ThrowOnError> => (options.client ?? client).get<GetProjectSnapshotResponses, GetProjectSnapshotErrors, ThrowOnError>({ url: '/api/v1/org/{orgId}/project/{projectId}/snapshot', ...options });
+export const getProjectSnapshot = <ThrowOnError extends boolean = false>(options: Options<GetProjectSnapshotData, ThrowOnError>): RequestResult<GetProjectSnapshotResponses, GetProjectSnapshotErrors, ThrowOnError> => (options.client ?? client).get<GetProjectSnapshotResponses, GetProjectSnapshotErrors, ThrowOnError>({
+    security: [{
+            in: 'cookie',
+            name: 'vg_session',
+            type: 'apiKey'
+        }, { scheme: 'bearer', type: 'http' }],
+    url: '/api/v1/org/{orgId}/project/{projectId}/snapshot',
+    ...options
+});
 
 /**
  * Read the captured capacity run and its limitations
  *
  * Requires authenticated organisation membership and permission to read the named project. A browser signs in with the session cookie (decision 0027); the role gate admits the minimumRole and above. Credential absence is 401, denied membership is 403, cross-project resource ids are not_found. Server-side LiveKit credentials must never reach the browser.
  */
-export const getCapacity = <ThrowOnError extends boolean = false>(options: Options<GetCapacityData, ThrowOnError>): RequestResult<GetCapacityResponses, GetCapacityErrors, ThrowOnError> => (options.client ?? client).get<GetCapacityResponses, GetCapacityErrors, ThrowOnError>({ url: '/api/v1/org/{orgId}/project/{projectId}/capacity', ...options });
+export const getCapacity = <ThrowOnError extends boolean = false>(options: Options<GetCapacityData, ThrowOnError>): RequestResult<GetCapacityResponses, GetCapacityErrors, ThrowOnError> => (options.client ?? client).get<GetCapacityResponses, GetCapacityErrors, ThrowOnError>({
+    security: [{
+            in: 'cookie',
+            name: 'vg_session',
+            type: 'apiKey'
+        }, { scheme: 'bearer', type: 'http' }],
+    url: '/api/v1/org/{orgId}/project/{projectId}/capacity',
+    ...options
+});
 
 /**
  * Read recorded host-to-provider probe observations
  *
  * Requires authenticated organisation membership and permission to read the named project. A browser signs in with the session cookie (decision 0027); the role gate admits the minimumRole and above. Credential absence is 401, denied membership is 403, cross-project resource ids are not_found. Server-side LiveKit credentials must never reach the browser.
  */
-export const getProviderProbes = <ThrowOnError extends boolean = false>(options: Options<GetProviderProbesData, ThrowOnError>): RequestResult<GetProviderProbesResponses, GetProviderProbesErrors, ThrowOnError> => (options.client ?? client).get<GetProviderProbesResponses, GetProviderProbesErrors, ThrowOnError>({ url: '/api/v1/org/{orgId}/project/{projectId}/provider-probes', ...options });
+export const getProviderProbes = <ThrowOnError extends boolean = false>(options: Options<GetProviderProbesData, ThrowOnError>): RequestResult<GetProviderProbesResponses, GetProviderProbesErrors, ThrowOnError> => (options.client ?? client).get<GetProviderProbesResponses, GetProviderProbesErrors, ThrowOnError>({
+    security: [{
+            in: 'cookie',
+            name: 'vg_session',
+            type: 'apiKey'
+        }, { scheme: 'bearer', type: 'http' }],
+    url: '/api/v1/org/{orgId}/project/{projectId}/provider-probes',
+    ...options
+});
 
 /**
  * Read configured budgets, retention and embed origins
  *
  * Requires authenticated organisation membership and permission to read the named project. A browser signs in with the session cookie (decision 0027); the role gate admits the minimumRole and above. Credential absence is 401, denied membership is 403, cross-project resource ids are not_found. Server-side LiveKit credentials must never reach the browser.
  */
-export const getProjectSettings = <ThrowOnError extends boolean = false>(options: Options<GetProjectSettingsData, ThrowOnError>): RequestResult<GetProjectSettingsResponses, GetProjectSettingsErrors, ThrowOnError> => (options.client ?? client).get<GetProjectSettingsResponses, GetProjectSettingsErrors, ThrowOnError>({ url: '/api/v1/org/{orgId}/project/{projectId}/settings', ...options });
+export const getProjectSettings = <ThrowOnError extends boolean = false>(options: Options<GetProjectSettingsData, ThrowOnError>): RequestResult<GetProjectSettingsResponses, GetProjectSettingsErrors, ThrowOnError> => (options.client ?? client).get<GetProjectSettingsResponses, GetProjectSettingsErrors, ThrowOnError>({
+    security: [{
+            in: 'cookie',
+            name: 'vg_session',
+            type: 'apiKey'
+        }, { scheme: 'bearer', type: 'http' }],
+    url: '/api/v1/org/{orgId}/project/{projectId}/settings',
+    ...options
+});
 
 /**
  * Read saved issue decisions
  *
  * Requires authenticated organisation membership and permission to read the named project. A browser signs in with the session cookie (decision 0027); the role gate admits the minimumRole and above. Credential absence is 401, denied membership is 403, cross-project resource ids are not_found. Server-side LiveKit credentials must never reach the browser.
  */
-export const getIssueDispositions = <ThrowOnError extends boolean = false>(options: Options<GetIssueDispositionsData, ThrowOnError>): RequestResult<GetIssueDispositionsResponses, GetIssueDispositionsErrors, ThrowOnError> => (options.client ?? client).get<GetIssueDispositionsResponses, GetIssueDispositionsErrors, ThrowOnError>({ url: '/api/v1/org/{orgId}/project/{projectId}/issue-dispositions', ...options });
+export const getIssueDispositions = <ThrowOnError extends boolean = false>(options: Options<GetIssueDispositionsData, ThrowOnError>): RequestResult<GetIssueDispositionsResponses, GetIssueDispositionsErrors, ThrowOnError> => (options.client ?? client).get<GetIssueDispositionsResponses, GetIssueDispositionsErrors, ThrowOnError>({
+    security: [{
+            in: 'cookie',
+            name: 'vg_session',
+            type: 'apiKey'
+        }, { scheme: 'bearer', type: 'http' }],
+    url: '/api/v1/org/{orgId}/project/{projectId}/issue-dispositions',
+    ...options
+});
 
 /**
  * Read saved alert rule configuration
  *
  * Requires authenticated organisation membership and permission to read the named project. A browser signs in with the session cookie (decision 0027); the role gate admits the minimumRole and above. Credential absence is 401, denied membership is 403, cross-project resource ids are not_found. Server-side LiveKit credentials must never reach the browser.
  */
-export const getAlertSetup = <ThrowOnError extends boolean = false>(options: Options<GetAlertSetupData, ThrowOnError>): RequestResult<GetAlertSetupResponses, GetAlertSetupErrors, ThrowOnError> => (options.client ?? client).get<GetAlertSetupResponses, GetAlertSetupErrors, ThrowOnError>({ url: '/api/v1/org/{orgId}/project/{projectId}/alert-setup', ...options });
+export const getAlertSetup = <ThrowOnError extends boolean = false>(options: Options<GetAlertSetupData, ThrowOnError>): RequestResult<GetAlertSetupResponses, GetAlertSetupErrors, ThrowOnError> => (options.client ?? client).get<GetAlertSetupResponses, GetAlertSetupErrors, ThrowOnError>({
+    security: [{
+            in: 'cookie',
+            name: 'vg_session',
+            type: 'apiKey'
+        }, { scheme: 'bearer', type: 'http' }],
+    url: '/api/v1/org/{orgId}/project/{projectId}/alert-setup',
+    ...options
+});
 
 /**
  * Read pending organisation invitations
  *
  * Requires Admin membership in the named organisation before reading pending invitations. This is an organisation-level read, not a selected-project read. A browser signs in with the session cookie (decision 0027). Missing authentication is 401 and denied membership/role is 403. Do not reveal invitation addresses across organisations.
  */
-export const getInvitations = <ThrowOnError extends boolean = false>(options: Options<GetInvitationsData, ThrowOnError>): RequestResult<GetInvitationsResponses, GetInvitationsErrors, ThrowOnError> => (options.client ?? client).get<GetInvitationsResponses, GetInvitationsErrors, ThrowOnError>({ url: '/api/v1/org/{orgId}/invitations', ...options });
+export const getInvitations = <ThrowOnError extends boolean = false>(options: Options<GetInvitationsData, ThrowOnError>): RequestResult<GetInvitationsResponses, GetInvitationsErrors, ThrowOnError> => (options.client ?? client).get<GetInvitationsResponses, GetInvitationsErrors, ThrowOnError>({
+    security: [{
+            in: 'cookie',
+            name: 'vg_session',
+            type: 'apiKey'
+        }],
+    url: '/api/v1/org/{orgId}/invitations',
+    ...options
+});
 
 /**
  * Read the organisation's members and their roles
  *
  * Requires membership in the named organisation; every role reads the member list, as a team list. A browser signs in with the session cookie (decision 0027). A project API key names no user and is 403. Missing authentication is 401 and denied membership is 403. Members of other organisations are never returned.
  */
-export const getMembers = <ThrowOnError extends boolean = false>(options: Options<GetMembersData, ThrowOnError>): RequestResult<GetMembersResponses, GetMembersErrors, ThrowOnError> => (options.client ?? client).get<GetMembersResponses, GetMembersErrors, ThrowOnError>({ url: '/api/v1/org/{orgId}/members', ...options });
+export const getMembers = <ThrowOnError extends boolean = false>(options: Options<GetMembersData, ThrowOnError>): RequestResult<GetMembersResponses, GetMembersErrors, ThrowOnError> => (options.client ?? client).get<GetMembersResponses, GetMembersErrors, ThrowOnError>({
+    security: [{
+            in: 'cookie',
+            name: 'vg_session',
+            type: 'apiKey'
+        }],
+    url: '/api/v1/org/{orgId}/members',
+    ...options
+});
 
 /**
  * Remove a member from the organisation
  *
  * Requires Admin membership in the named organisation. The user's account and their other organisations stay; they lose this organisation on their next request. A userId that is not a member is not_found. Removing the only admin is 409 last_admin.
  */
-export const removeMember = <ThrowOnError extends boolean = false>(options: Options<RemoveMemberData, ThrowOnError>): RequestResult<RemoveMemberResponses, RemoveMemberErrors, ThrowOnError> => (options.client ?? client).delete<RemoveMemberResponses, RemoveMemberErrors, ThrowOnError>({ url: '/api/v1/org/{orgId}/members/{userId}', ...options });
+export const removeMember = <ThrowOnError extends boolean = false>(options: Options<RemoveMemberData, ThrowOnError>): RequestResult<RemoveMemberResponses, RemoveMemberErrors, ThrowOnError> => (options.client ?? client).delete<RemoveMemberResponses, RemoveMemberErrors, ThrowOnError>({
+    security: [{
+            in: 'cookie',
+            name: 'vg_session',
+            type: 'apiKey'
+        }],
+    url: '/api/v1/org/{orgId}/members/{userId}',
+    ...options
+});
 
 /**
  * Change a member's organisation role
@@ -164,6 +324,11 @@ export const removeMember = <ThrowOnError extends boolean = false>(options: Opti
  * Requires Admin membership in the named organisation. A userId that is not a member of this organisation is not_found. Demoting the organisation's only admin is 409 last_admin and changes nothing. The new role applies on the member's next request.
  */
 export const updateMember = <ThrowOnError extends boolean = false>(options: Options<UpdateMemberData, ThrowOnError>): RequestResult<UpdateMemberResponses, UpdateMemberErrors, ThrowOnError> => (options.client ?? client).patch<UpdateMemberResponses, UpdateMemberErrors, ThrowOnError>({
+    security: [{
+            in: 'cookie',
+            name: 'vg_session',
+            type: 'apiKey'
+        }],
     url: '/api/v1/org/{orgId}/members/{userId}',
     ...options,
     headers: {
@@ -177,7 +342,15 @@ export const updateMember = <ThrowOnError extends boolean = false>(options: Opti
  *
  * Requires Admin membership in the named organisation. Lists the project's API keys, newest first, revoked ones included, never a secret. A project API key itself is 403 here (decision 0027, phase 06c).
  */
-export const listProjectKeys = <ThrowOnError extends boolean = false>(options: Options<ListProjectKeysData, ThrowOnError>): RequestResult<ListProjectKeysResponses, ListProjectKeysErrors, ThrowOnError> => (options.client ?? client).get<ListProjectKeysResponses, ListProjectKeysErrors, ThrowOnError>({ url: '/api/v1/org/{orgId}/project/{projectId}/keys', ...options });
+export const listProjectKeys = <ThrowOnError extends boolean = false>(options: Options<ListProjectKeysData, ThrowOnError>): RequestResult<ListProjectKeysResponses, ListProjectKeysErrors, ThrowOnError> => (options.client ?? client).get<ListProjectKeysResponses, ListProjectKeysErrors, ThrowOnError>({
+    security: [{
+            in: 'cookie',
+            name: 'vg_session',
+            type: 'apiKey'
+        }],
+    url: '/api/v1/org/{orgId}/project/{projectId}/keys',
+    ...options
+});
 
 /**
  * Create an API key for the project
@@ -185,6 +358,11 @@ export const listProjectKeys = <ThrowOnError extends boolean = false>(options: O
  * Requires Admin membership in the named organisation. The answer holds the full key, the only time it is shown; the server stores the SHA-256 of its secret. A key reads this project only, as a read-only Viewer.
  */
 export const createProjectKey = <ThrowOnError extends boolean = false>(options: Options<CreateProjectKeyData, ThrowOnError>): RequestResult<CreateProjectKeyResponses, CreateProjectKeyErrors, ThrowOnError> => (options.client ?? client).post<CreateProjectKeyResponses, CreateProjectKeyErrors, ThrowOnError>({
+    security: [{
+            in: 'cookie',
+            name: 'vg_session',
+            type: 'apiKey'
+        }],
     url: '/api/v1/org/{orgId}/project/{projectId}/keys',
     ...options,
     headers: {
@@ -198,18 +376,42 @@ export const createProjectKey = <ThrowOnError extends boolean = false>(options: 
  *
  * Requires Admin membership in the named organisation. Revoking twice is 204 both times; a key id from another project is not_found. A revoked key answers 401 on its next request.
  */
-export const revokeProjectKey = <ThrowOnError extends boolean = false>(options: Options<RevokeProjectKeyData, ThrowOnError>): RequestResult<RevokeProjectKeyResponses, RevokeProjectKeyErrors, ThrowOnError> => (options.client ?? client).delete<RevokeProjectKeyResponses, RevokeProjectKeyErrors, ThrowOnError>({ url: '/api/v1/org/{orgId}/project/{projectId}/keys/{keyId}', ...options });
+export const revokeProjectKey = <ThrowOnError extends boolean = false>(options: Options<RevokeProjectKeyData, ThrowOnError>): RequestResult<RevokeProjectKeyResponses, RevokeProjectKeyErrors, ThrowOnError> => (options.client ?? client).delete<RevokeProjectKeyResponses, RevokeProjectKeyErrors, ThrowOnError>({
+    security: [{
+            in: 'cookie',
+            name: 'vg_session',
+            type: 'apiKey'
+        }],
+    url: '/api/v1/org/{orgId}/project/{projectId}/keys/{keyId}',
+    ...options
+});
 
 /**
  * Read authorised organisation and project choices
  *
  * Requires an authenticated principal. Return only organisations in which that principal is a member and projects they may read. No visible membership is an observed empty list, never an implicit default workspace. A browser signs in with the session cookie (decision 0027); absence of valid authentication is 401.
  */
-export const getWorkspaces = <ThrowOnError extends boolean = false>(options?: Options<GetWorkspacesData, ThrowOnError>): RequestResult<GetWorkspacesResponses, GetWorkspacesErrors, ThrowOnError> => (options?.client ?? client).get<GetWorkspacesResponses, GetWorkspacesErrors, ThrowOnError>({ url: '/api/v1/workspaces', ...options });
+export const getWorkspaces = <ThrowOnError extends boolean = false>(options?: Options<GetWorkspacesData, ThrowOnError>): RequestResult<GetWorkspacesResponses, GetWorkspacesErrors, ThrowOnError> => (options?.client ?? client).get<GetWorkspacesResponses, GetWorkspacesErrors, ThrowOnError>({
+    security: [{
+            in: 'cookie',
+            name: 'vg_session',
+            type: 'apiKey'
+        }, { scheme: 'bearer', type: 'http' }],
+    url: '/api/v1/workspaces',
+    ...options
+});
 
 /**
  * Read retained opt-in recording audio
  *
  * Requires authenticated organisation membership and permission to read the named project. A browser signs in with the session cookie (decision 0027); the role gate admits the minimumRole and above. Credential absence is 401, denied membership is 403, cross-project resource ids are not_found. Server-side LiveKit credentials must never reach the browser. Resolve the recording id server-side only after project authorisation. Do not fetch an arbitrary request URL. Enforce retention and recording opt-in; never synthesise media for a call without an observed recording.
  */
-export const getRecordingMedia = <ThrowOnError extends boolean = false>(options: Options<GetRecordingMediaData, ThrowOnError>): RequestResult<GetRecordingMediaResponses, GetRecordingMediaErrors, ThrowOnError> => (options.client ?? client).get<GetRecordingMediaResponses, GetRecordingMediaErrors, ThrowOnError>({ url: '/api/v1/org/{orgId}/project/{projectId}/recordings/{recordingId}', ...options });
+export const getRecordingMedia = <ThrowOnError extends boolean = false>(options: Options<GetRecordingMediaData, ThrowOnError>): RequestResult<GetRecordingMediaResponses, GetRecordingMediaErrors, ThrowOnError> => (options.client ?? client).get<GetRecordingMediaResponses, GetRecordingMediaErrors, ThrowOnError>({
+    security: [{
+            in: 'cookie',
+            name: 'vg_session',
+            type: 'apiKey'
+        }, { scheme: 'bearer', type: 'http' }],
+    url: '/api/v1/org/{orgId}/project/{projectId}/recordings/{recordingId}',
+    ...options
+});
