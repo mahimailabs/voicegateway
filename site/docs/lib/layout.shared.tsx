@@ -1,4 +1,5 @@
 import type { BaseLayoutProps } from 'fumadocs-ui/layouts/shared';
+import { DiscordLogo } from '@phosphor-icons/react/ssr';
 import { appName, gitConfig } from './shared';
 
 // The console's wordmark (dashboard/src/assets/brand), one file per theme.
@@ -14,6 +15,16 @@ function Wordmark() {
 export function baseOptions(): BaseLayoutProps {
   return {
     nav: { title: <Wordmark /> },
+    links: [
+      {
+        type: 'icon',
+        label: 'Discord',
+        text: 'Discord',
+        icon: <DiscordLogo weight="fill" />,
+        url: 'https://discord.gg/ysFaF4uSB',
+        external: true,
+      },
+    ],
     githubUrl: `https://github.com/${gitConfig.user}/${gitConfig.repo}`,
   };
 }
