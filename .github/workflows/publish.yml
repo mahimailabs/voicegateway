@@ -1,9 +1,8 @@
 name: Publish Python Package
 
+# The v*.*.* tags now release the Go image (docker-publish.yml), so this legacy package publishes
+# only from a manual run against a tag.
 on:
-  push:
-    tags:
-      - 'v*.*.*'
   workflow_dispatch:
 
 jobs:
