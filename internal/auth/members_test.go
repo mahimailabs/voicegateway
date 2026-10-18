@@ -227,7 +227,7 @@ func TestRolesGateEveryRoute(t *testing.T) {
 	}
 
 	token := s.Token
-	for _, path := range reads[1:5] {
+	for _, path := range reads[1:7] {
 		if status, _ := f.send(web, call{method: http.MethodGet, path: path, token: token}); status != http.StatusOK {
 			t.Errorf("token GET %s = %d, want 200", path, status)
 		}

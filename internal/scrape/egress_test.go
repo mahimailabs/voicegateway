@@ -82,7 +82,7 @@ func TestEgressProjectionDropsSecrets(t *testing.T) {
 			Url: "rtmp://live.example.test/app/stream-key-5f6e", Status: livekit.StreamInfo_FAILED,
 			Error: "dial rtmp://live.example.test/app/stream-key-5f6e: refused",
 		}},
-		FileResults: []*livekit.FileInfo{{Filename: "call-+15551234567.ogg", Location: "https://bucket.s3.example.test/call.ogg?X-Amz-Signature=s3-secret-71ab"}},
+		FileResults: []*livekit.FileInfo{{Filename: "call-+15551234567.ogg", Size: 48213, Location: "https://bucket.s3.example.test/call.ogg?X-Amz-Signature=s3-secret-71ab"}},
 		Error:       "upload failed with s3-access-3e9f and gcp-credentials-5b8c; azure-key-6e1a ali-secret-4c9d proxy-pass-1a2b hook-signing-3b4a s3-metadata-6c5d",
 		Details:     "End reason: stream-key-5f6e, caller +15559876543",
 	}
@@ -120,7 +120,7 @@ func TestEgressProjectionDropsSecrets(t *testing.T) {
 		strings.Join(req.Outputs, ",") != "fileOutputs,streamOutputs,segmentOutputs,imageOutputs" {
 		t.Errorf("request = %+v", req)
 	}
-	if got.File == nil || !equal(got.File.BucketHost, ptr("bucket.s3.example.test")) || got.File.SizeBytes == nil {
+	if got.File == nil || !equal(got.File.BucketHost, ptr("bucket.s3.example.test")) || !equal(got.File.SizeBytes, ptr(int64(48213))) {
 		t.Errorf("file = %+v, want the bucket host and the size of an ended egress", got.File)
 	}
 }
@@ -139,5 +139,19 @@ func TestEgressUnreportedStaysNull(t *testing.T) {
 	}
 	if got.Request.Kind != "" || got.Request.AudioOnly != nil || got.Request.Storage != "" || len(got.Request.Outputs) != 0 {
 		t.Errorf("request = %+v, want nothing reported", got.Request)
+	}
+}
+
+// An egress that ended without writing its file reports size 0 from the protobuf default: unknown, not
+// an empty file.
+func TestEgressFailedFileSizeStaysNull(t *testing.T) {
+	for _, status := range []livekit.EgressStatus{livekit.EgressStatus_EGRESS_FAILED, livekit.EgressStatus_EGRESS_ABORTED} {
+		got := projectEgress(&livekit.EgressInfo{
+			EgressId: "EG_4", Status: status,
+			FileResults: []*livekit.FileInfo{{Filename: "f.ogg"}},
+		})
+		if got.File == nil || got.File.SizeBytes != nil {
+			t.Errorf("%s file = %+v, want size null", status, got.File)
+		}
 	}
 }
