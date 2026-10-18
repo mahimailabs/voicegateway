@@ -1517,20 +1517,25 @@ func (q *Queries) TransactionTime(ctx context.Context) (pgtype.Timestamptz, erro
 	return at, err
 }
 
-const updatePasswordHash = `-- name: UpdatePasswordHash :exec
-UPDATE users SET password_hash = $1 WHERE id = $2
+const updatePasswordHash = `-- name: UpdatePasswordHash :execrows
+UPDATE users SET password_hash = $1 WHERE id = $2 AND password_hash = $3
 `
 
 type UpdatePasswordHashParams struct {
 	PasswordHash string
 	ID           pgtype.UUID
+	VerifiedHash string
 }
 
 // The same password hashed again with current parameters: not a new password, so password_version
-// stays and no session is signed out.
-func (q *Queries) UpdatePasswordHash(ctx context.Context, arg UpdatePasswordHashParams) error {
-	_, err := q.db.Exec(ctx, updatePasswordHash, arg.PasswordHash, arg.ID)
-	return err
+// stays and no session is signed out. Only if the hash is still the one the sign-in verified, so a
+// password reset that lands in between is never overwritten with the old password.
+func (q *Queries) UpdatePasswordHash(ctx context.Context, arg UpdatePasswordHashParams) (int64, error) {
+	result, err := q.db.Exec(ctx, updatePasswordHash, arg.PasswordHash, arg.ID, arg.VerifiedHash)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const upsertCallByJobID = `-- name: UpsertCallByJobID :one

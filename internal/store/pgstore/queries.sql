@@ -407,7 +407,8 @@ FROM users u LEFT JOIN memberships m ON m.user_id = u.id
 WHERE u.id = @id
 ORDER BY m.organisation_id;
 
--- name: UpdatePasswordHash :exec
+-- name: UpdatePasswordHash :execrows
 -- The same password hashed again with current parameters: not a new password, so password_version
--- stays and no session is signed out.
-UPDATE users SET password_hash = @password_hash WHERE id = @id;
+-- stays and no session is signed out. Only if the hash is still the one the sign-in verified, so a
+-- password reset that lands in between is never overwritten with the old password.
+UPDATE users SET password_hash = @password_hash WHERE id = @id AND password_hash = @verified_hash;

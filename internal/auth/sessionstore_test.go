@@ -2,6 +2,8 @@ package auth
 
 import (
 	"context"
+	"crypto/sha256"
+	"fmt"
 	"testing"
 	"time"
 )
@@ -109,5 +111,26 @@ func TestQuietStoreSkipsUnchangedCommits(t *testing.T) {
 				t.Errorf("writes = %d, want %d", inner.commits, tt.writes)
 			}
 		})
+	}
+}
+
+// A cookie the store does not hold costs no memory: scs passes any cookie value through, so 10,000
+// forged tokens leave nothing behind. A found session is kept under its token's hash, not the token.
+func TestQuietStoreRemembersOnlyFoundSessions(t *testing.T) {
+	ctx := context.Background()
+	inner := newMemSessions()
+	q := NewQuietStore(inner, 5*time.Minute)
+	for i := range 10_000 {
+		if _, found, _ := q.FindCtx(ctx, fmt.Sprintf("forged-%d", i)); found {
+			t.Fatal("a forged token was found")
+		}
+	}
+	if n := len(q.seen); n != 0 {
+		t.Fatalf("%d entries after 10,000 unknown tokens, want 0", n)
+	}
+	inner.replicaWrite("real-token", []byte("a"), time.Now())
+	_, _, _ = q.FindCtx(ctx, "real-token")
+	if _, ok := q.seen[sha256.Sum256([]byte("real-token"))]; !ok || len(q.seen) != 1 {
+		t.Errorf("a found session is not kept under its token's hash (entries %d)", len(q.seen))
 	}
 }

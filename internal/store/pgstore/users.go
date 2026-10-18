@@ -242,17 +242,20 @@ func (s *Store) AddMembership(ctx context.Context, email, organisationID, role s
 	return u.ID.String(), nil
 }
 
-// UpdatePasswordHash stores the same password hashed again with current parameters. It is not a
-// new password, so password_version stays and no session is signed out.
-func (s *Store) UpdatePasswordHash(ctx context.Context, userID, passwordHash string) error {
+// UpdatePasswordHash stores the same password hashed again with current parameters, only while the
+// stored hash is still verifiedHash, the one the sign-in checked. It is not a new password, so
+// password_version stays and no session is signed out. If the hash changed meanwhile, a password
+// reset landed, and it reports false and changes nothing.
+func (s *Store) UpdatePasswordHash(ctx context.Context, userID, verifiedHash, passwordHash string) (bool, error) {
 	id, err := uuid(userID)
 	if err != nil {
-		return fmt.Errorf("update password hash: %w", err)
+		return false, fmt.Errorf("update password hash: %w", err)
 	}
-	if err := s.q.UpdatePasswordHash(ctx, UpdatePasswordHashParams{ID: id, PasswordHash: passwordHash}); err != nil {
-		return fmt.Errorf("update password hash: %w", err)
+	n, err := s.q.UpdatePasswordHash(ctx, UpdatePasswordHashParams{ID: id, PasswordHash: passwordHash, VerifiedHash: verifiedHash})
+	if err != nil {
+		return false, fmt.Errorf("update password hash: %w", err)
 	}
-	return nil
+	return n == 1, nil
 }
 
 // SetPassword replaces an account's password and moves its password_version on, which signs the

@@ -112,3 +112,51 @@ func TestSignInRehashesOldParameters(t *testing.T) {
 	}
 	f.signedIn(f.service(), "ada@example.com") // the rehashed password still signs in
 }
+
+// #388 review: a password reset that lands between a sign-in's check and its rehash write wins. The
+// rehash only replaces the hash the sign-in verified, so the reset's hash stays and the new password
+// signs in.
+func TestRehashNeverOverwritesAReset(t *testing.T) {
+	f := newFixture(t)
+	f.addUser("ada@example.com", "default", "admin")
+	ctx := context.Background()
+	u, err := f.pg.UserByEmail(ctx, "ada@example.com") // what the sign-in verified
+	if err != nil {
+		t.Fatal(err)
+	}
+	const fresh = "a brand new long password"
+	resetHash, err := auth.HashPassword(ctx, fresh)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.pg.SetPassword(ctx, "ada@example.com", resetHash); err != nil { // the reset lands now
+		t.Fatal(err)
+	}
+	rehash, err := auth.HashPassword(ctx, password)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stored, err := f.pg.UpdatePasswordHash(ctx, u.ID, u.PasswordHash, rehash) // the sign-in's rehash
+	if err != nil || stored {
+		t.Fatalf("rehash after a reset: stored %v, err %v; want not stored", stored, err)
+	}
+	var now string
+	if err := f.pool.QueryRow(ctx, `SELECT password_hash FROM users WHERE id = $1`, u.ID).Scan(&now); err != nil {
+		t.Fatal(err)
+	}
+	if now != resetHash {
+		t.Error("the rehash overwrote the reset")
+	}
+	routes := f.service().Routes()
+	if res := f.do(routes, http.MethodPost, "/auth/sign-in", signIn("ada@example.com", fresh), request{tls: true}); res.StatusCode != http.StatusNoContent {
+		t.Errorf("the reset password = %d, want 204", res.StatusCode)
+	}
+	if res := f.do(routes, http.MethodPost, "/auth/sign-in", signIn("ada@example.com", password), request{tls: true}); res.StatusCode != http.StatusUnauthorized {
+		t.Errorf("the old password = %d, want 401", res.StatusCode)
+	}
+	// Without a reset in between, the rehash is stored.
+	u2, _ := f.pg.UserByEmail(ctx, "ada@example.com")
+	if ok, err := f.pg.UpdatePasswordHash(ctx, u2.ID, u2.PasswordHash, resetHash); err != nil || !ok {
+		t.Errorf("rehash with no reset in between: stored %v, err %v; want stored", ok, err)
+	}
+}

@@ -13,7 +13,8 @@ import (
 // scs marks every loaded session modified, so each API call rewrites the session row only to move
 // its expiry (scs v2.9.0 data.go). QuietStore skips that commit while the session's bytes are the
 // ones this request read and the expiry has moved less than Slack past the last one this process
-// wrote. scs has no option for this.
+// wrote. scs has no option for this. It keeps an entry only for a session the store found or this
+// process wrote, keyed by the token's SHA-256, so forged cookies cannot grow it.
 //
 // Skipping is always safe: the row already holds these bytes, and an expiry at most Slack older
 // than the newest is harmless against a 12-hour idle timeout. After a restart, or for a session
@@ -25,7 +26,7 @@ type QuietStore struct {
 	now   func() time.Time
 
 	mu   sync.Mutex
-	seen map[string]seenSession
+	seen map[[sha256.Size]byte]seenSession
 	ops  int
 }
 
@@ -42,34 +43,41 @@ const sweepEvery = 1024
 
 // NewQuietStore wraps inner, skipping commits whose expiry moved less than slack.
 func NewQuietStore(inner scs.CtxStore, slack time.Duration) *QuietStore {
-	return &QuietStore{inner: inner, slack: slack, now: time.Now, seen: map[string]seenSession{}}
+	return &QuietStore{inner: inner, slack: slack, now: time.Now, seen: map[[sha256.Size]byte]seenSession{}}
 }
 
-// FindCtx reads a session and remembers which bytes the row held.
+// FindCtx reads a session and remembers which bytes the row held. A token the store does not hold
+// is not remembered: scs passes any cookie value through, so an unknown one must not cost memory.
 func (q *QuietStore) FindCtx(ctx context.Context, token string) ([]byte, bool, error) {
 	b, found, err := q.inner.FindCtx(ctx, token)
-	if err != nil {
+	if err != nil || !found {
+		q.forget(token)
 		return b, found, err
 	}
+	key := sha256.Sum256([]byte(token))
 	q.mu.Lock()
 	defer q.mu.Unlock()
-	e := q.seen[token]
-	e.readOK = found
-	if found {
-		e.read = sha256.Sum256(b)
-	}
-	e.touched = q.now()
-	q.seen[token] = e
+	e := q.seen[key]
+	e.read, e.readOK, e.touched = sha256.Sum256(b), true, q.now()
+	q.seen[key] = e
 	q.sweep()
-	return b, found, nil
+	return b, true, nil
+}
+
+// forget drops what is known of a token, if anything.
+func (q *QuietStore) forget(token string) {
+	key := sha256.Sum256([]byte(token))
+	q.mu.Lock()
+	delete(q.seen, key)
+	q.mu.Unlock()
 }
 
 // CommitCtx writes a session unless the row already holds these bytes and the expiry moved less
 // than the slack past the last one written here.
 func (q *QuietStore) CommitCtx(ctx context.Context, token string, b []byte, expiry time.Time) error {
-	h := sha256.Sum256(b)
+	h, key := sha256.Sum256(b), sha256.Sum256([]byte(token))
 	q.mu.Lock()
-	e, ok := q.seen[token]
+	e, ok := q.seen[key]
 	skip := ok && e.readOK && e.read == h && !e.committed.IsZero() && expiry.Sub(e.committed) < q.slack
 	q.mu.Unlock()
 	if skip {
@@ -80,16 +88,14 @@ func (q *QuietStore) CommitCtx(ctx context.Context, token string, b []byte, expi
 	}
 	q.mu.Lock()
 	defer q.mu.Unlock()
-	q.seen[token] = seenSession{read: h, readOK: true, committed: expiry, touched: q.now()}
+	q.seen[key] = seenSession{read: h, readOK: true, committed: expiry, touched: q.now()}
 	q.sweep()
 	return nil
 }
 
 // DeleteCtx deletes a session and forgets it.
 func (q *QuietStore) DeleteCtx(ctx context.Context, token string) error {
-	q.mu.Lock()
-	delete(q.seen, token)
-	q.mu.Unlock()
+	q.forget(token)
 	return q.inner.DeleteCtx(ctx, token)
 }
 

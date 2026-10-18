@@ -31,7 +31,7 @@ type Users interface {
 	ForgetSignIns(ctx context.Context) error
 	ProjectKey(ctx context.Context, keyID string) (store.StoredKey, error)
 	TouchProjectKey(ctx context.Context, keyID string) error
-	UpdatePasswordHash(ctx context.Context, userID, passwordHash string) error
+	UpdatePasswordHash(ctx context.Context, userID, verifiedHash, passwordHash string) (bool, error)
 }
 
 // Sign-in limits (spec 06a): attempts counted per email and per client address over a 15-minute
@@ -222,7 +222,8 @@ func (s *Service) signIn(w http.ResponseWriter, r *http.Request) {
 	if NeedsRehash(u.PasswordHash) {
 		if hash, err := HashPassword(ctx, c.Password); err != nil {
 			s.Log.Warn("auth: could not rehash a password", "err", err)
-		} else if err := s.Users.UpdatePasswordHash(ctx, u.ID, hash); err != nil {
+		} else if _, err := s.Users.UpdatePasswordHash(ctx, u.ID, u.PasswordHash, hash); err != nil {
+			// Not stored is fine too: a reset since the check changed the hash, and it wins.
 			s.Log.Warn("auth: could not store a rehashed password", "err", err)
 		}
 	}
