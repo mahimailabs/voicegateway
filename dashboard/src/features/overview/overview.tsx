@@ -278,14 +278,16 @@ function OverviewView({ stats, cloud: cloudRead, media, sip: sipQ, egress: egres
             const p50 = st.answerP50Ms
             const perCall = st.calls.map((c) => ({ id: c.callId, room: c.room, p50: c.answerP50Ms }))
             return (
-              <button
-                key={r.key}
-                type="button"
-                onClick={() => r.agent && navigate({ to: "/agents", search: { agent: r.key } as never })}
-                className={cn("space-y-4 rounded-xl border p-4 text-left transition-colors", r.agent ? "hover:border-foreground/20 hover:bg-muted/30" : "cursor-default")}
-              >
+              // A card, not a button: it holds the strip's buttons, which open calls. The agent's name
+              // opens the agent.
+              <div key={r.key} className={cn("space-y-4 rounded-xl border p-4 text-left transition-colors", r.agent && "hover:border-foreground/20 hover:bg-muted/30")}>
                 <span className="flex items-start justify-between gap-3">
-                  <span className="flex items-center gap-2.5">
+                  <button
+                    type="button"
+                    disabled={!r.agent}
+                    onClick={() => r.agent && navigate({ to: "/agents", search: { agent: r.key } as never })}
+                    className={cn("flex items-center gap-2.5 text-left", !r.agent && "cursor-default")}
+                  >
                     <span className="flex size-9 items-center justify-center rounded-lg border bg-background">{r.agent ? r.agent.cloud ? <Cloud size={17} /> : <Robot size={17} /> : <Users size={17} />}</span>
                     <span>
                       <span className="block text-[14px] font-semibold">{r.name}</span>
@@ -294,7 +296,7 @@ function OverviewView({ stats, cloud: cloudRead, media, sip: sipQ, egress: egres
                         {r.agent && TEST_AGENTS.has(r.name) ? " · our test agent" : ""}
                       </span>
                     </span>
-                  </span>
+                  </button>
                   <span className="flex gap-1.5 pt-1">
                     {[...new Set(st.models.map((m) => providerOfModel(m)).filter((x): x is string => x !== null))].map((prov) => (
                       <ProviderLogo key={prov} provider={prov} model={st.models.filter((m) => providerOfModel(m) === prov).join(", ")} size={16} />
@@ -326,7 +328,7 @@ function OverviewView({ stats, cloud: cloudRead, media, sip: sipQ, egress: egres
                     {join !== null && <span className="tnum">{`joins in ${join.toFixed(1)} s`}</span>}
                   </span>
                 </span>
-              </button>
+              </div>
             )
           })}
         </div>

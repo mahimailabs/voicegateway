@@ -176,19 +176,16 @@ func bucketCount(read store.StatsRead, start, end time.Time, n int) *int {
 	return &n
 }
 
-// dayCounts is one entry per UTC day of the range, oldest first.
+// dayCounts is one entry per UTC day of the range, oldest first. The first and last day hold only
+// the part inside the range.
 func dayCounts(read store.StatsRead, from, to time.Time) []statsDayCount {
+	per := map[time.Time]int{}
+	for _, c := range read.Calls {
+		per[c.StartAt.Truncate(statsDay)]++
+	}
 	out := []statsDayCount{}
 	for d := from.Truncate(statsDay); d.Before(to); d = d.Add(statsDay) {
-		e := statsDayCount{Date: d.Format(time.DateOnly)}
-		n := 0
-		for _, c := range read.Calls {
-			if !c.StartAt.Before(d) && c.StartAt.Before(d.Add(statsDay)) {
-				n++
-			}
-		}
-		e.CallCount = bucketCount(read, d, d.Add(statsDay), n)
-		out = append(out, e)
+		out = append(out, statsDayCount{Date: d.Format(time.DateOnly), CallCount: bucketCount(read, d, d.Add(statsDay), per[d])})
 	}
 	return out
 }
@@ -201,20 +198,15 @@ func hourCounts(read store.StatsRead, from, to time.Time) []statsHour {
 	if n := int(last.Sub(first)/time.Hour) + 1; n > maxStatsHours {
 		first = last.Add(-time.Duration(maxStatsHours-1) * time.Hour)
 	}
+	calls, answers := map[time.Time]int{}, map[time.Time][]float64{}
+	for _, c := range read.Calls {
+		h := c.StartAt.Truncate(time.Hour)
+		calls[h]++
+		answers[h] = append(answers[h], c.AnswerMs...)
+	}
 	out := []statsHour{}
 	for h := first; !h.After(last); h = h.Add(time.Hour) {
-		e := statsHour{Hour: h.Format(time.RFC3339)}
-		var answers []float64
-		n := 0
-		for _, c := range read.Calls {
-			if !c.StartAt.Before(h) && c.StartAt.Before(h.Add(time.Hour)) {
-				n++
-				answers = append(answers, c.AnswerMs...)
-			}
-		}
-		e.CallCount = bucketCount(read, h, h.Add(time.Hour), n)
-		e.AnswerP50Ms = median(answers)
-		out = append(out, e)
+		out = append(out, statsHour{Hour: h.Format(time.RFC3339), CallCount: bucketCount(read, h, h.Add(time.Hour), calls[h]), AnswerP50Ms: median(answers[h])})
 	}
 	return out
 }
@@ -225,8 +217,13 @@ func answersOf(calls []store.StatsCall, budget float64) statsAnswers {
 	out := statsAnswers{BudgetMs: budget, Values: []answerValue{}}
 	var all []float64
 	over := 0
-	for i := len(calls) - 1; i >= 0; i-- {
-		c := calls[i]
+	// Most recent call first, ties by id, as listCalls orders them, so the cut at 5,000 keeps the
+	// same calls the Calls list shows first.
+	recent := slices.Clone(calls)
+	slices.SortStableFunc(recent, func(a, b store.StatsCall) int {
+		return cmp.Or(b.StartAt.Compare(a.StartAt), cmp.Compare(a.ID, b.ID))
+	})
+	for _, c := range recent {
 		for _, ms := range c.AnswerMs {
 			all = append(all, ms)
 			if ms > budget {

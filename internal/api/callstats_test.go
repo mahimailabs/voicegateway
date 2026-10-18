@@ -80,10 +80,11 @@ type statsBody struct {
 		ValuesTruncated   bool
 	}
 	Agents []struct {
-		Key         *string
-		CallCount   *int
-		AnswerP50Ms *float64
-		Calls       []struct{ CallID string }
+		Key            *string
+		CallCount      *int
+		AnswerP50Ms    *float64
+		Calls          []struct{ CallID string }
+		CallsTruncated bool
 	}
 }
 
@@ -163,8 +164,12 @@ func TestCallStatsAnswers(t *testing.T) {
 	if fmt.Sprint(p50s) != "[alpha:200 beta:400]" {
 		t.Errorf("agent medians = %v, want [alpha:200 beta:400]", p50s)
 	}
-	if len(s.Answers.Values) != 4 || val(s.Answers.Values[0].Ms) != "300" {
-		t.Errorf("values = %d, first %s; want 4, the most recent call's first turn (300)", len(s.Answers.Values), val(s.Answers.Values[0].Ms))
+	var order []string
+	for _, v := range s.Answers.Values {
+		order = append(order, val(v.Ms))
+	}
+	if fmt.Sprint(order) != "[300 400 100 200]" {
+		t.Errorf("values = %v, want [300 400 100 200]: the most recent call first, each call's turns in order", order)
 	}
 
 	many := make([]float64, 5001)
@@ -177,6 +182,46 @@ func TestCallStatsAnswers(t *testing.T) {
 	}
 	if len(s.Answers.Values) != 5000 || !s.Answers.ValuesTruncated || val(s.Answers.Turns) != "5005" {
 		t.Errorf("values %d, truncated %v, turns %s; want 5000, true, 5005", len(s.Answers.Values), s.Answers.ValuesTruncated, val(s.Answers.Turns))
+	}
+}
+
+// Check 2, the percentile rule exactly: over 1 to 10 the console's p90 is the value at rank
+// ceil(0.9 n) = 9, which a max, floor or rounding rule would put at 10; its median is the
+// upper-middle value, 6.
+func TestCallStatsPercentileRule(t *testing.T) {
+	f := newFixture(t)
+	f.connectedAt(statsDay0.Add(-24 * time.Hour))
+	f.statsCall(statsDay0.Add(time.Hour), "web", "alpha", 1, 2, 3, 4, 5, 6, 7, 8, 9, 10)
+	var s statsBody
+	if code := f.get(f.statsAPI(), statsPath(f.project, statsDay0, statsDay0.Add(24*time.Hour)), &s); code != http.StatusOK {
+		t.Fatalf("status %d", code)
+	}
+	if got := val(s.Answers.P50Ms) + "/" + val(s.Answers.P90Ms); got != "6/9" {
+		t.Errorf("p50/p90 = %s, want 6/9", got)
+	}
+}
+
+// An agent's strip holds its most recent 500 calls, oldest first, and says it was cut; callCount
+// counts all of them. A call starting exactly at the range's end is outside it.
+func TestCallStatsAgentStripAndExclusiveEnd(t *testing.T) {
+	f := newFixture(t)
+	f.connectedAt(statsDay0.Add(-24 * time.Hour))
+	var ids []string
+	for i := range 501 {
+		ids = append(ids, f.statsCall(statsDay0.Add(time.Duration(i)*time.Minute), "web", "alpha"))
+	}
+	end := statsDay0.Add(24 * time.Hour)
+	f.statsCall(end, "web", "alpha")
+	var s statsBody
+	if code := f.get(f.statsAPI(), statsPath(f.project, statsDay0, end), &s); code != http.StatusOK {
+		t.Fatalf("status %d", code)
+	}
+	if val(s.CallCount) != "501" {
+		t.Errorf("callCount = %s, want 501: a call at the range's end is outside it", val(s.CallCount))
+	}
+	a := s.Agents[0]
+	if len(a.Calls) != 500 || !a.CallsTruncated || val(a.CallCount) != "501" || a.Calls[0].CallID != ids[1] || a.Calls[499].CallID != ids[500] {
+		t.Errorf("strip: %d calls, truncated %v, callCount %s; want the most recent 500, oldest first, truncated, of 501", len(a.Calls), a.CallsTruncated, val(a.CallCount))
 	}
 }
 
@@ -255,6 +300,7 @@ func TestCallStatsUnknownsStayUnknown(t *testing.T) {
 	f := newFixture(t)
 	f.connectedAt(statsDay0.Add(-24 * time.Hour))
 	f.statsCall(statsDay0.Add(time.Hour), "web", "alpha", 400)
+	f.statsCall(statsDay0.Add(2*time.Hour), "", "", 500)
 	var raw map[string]any
 	if code := f.get(f.statsAPI(), statsPath(f.project, statsDay0, statsDay0.Add(24*time.Hour)), &raw); code != http.StatusOK {
 		t.Fatalf("status %d", code)
@@ -269,10 +315,16 @@ func TestCallStatsUnknownsStayUnknown(t *testing.T) {
 			t.Errorf("issueCounts.%s = %v, want null", k, v)
 		}
 	}
-	agent := raw["agents"].([]any)[0].(map[string]any)
-	for _, k := range []string{"stages", "chain", "providers", "issues", "anatomyTurns", "name"} {
-		if agent[k] != nil {
-			t.Errorf("agent %s = %v, want null", k, agent[k])
+	agents := raw["agents"].([]any)
+	if len(agents) != 2 {
+		t.Fatalf("agents = %d, want alpha and the row with no agent", len(agents))
+	}
+	for _, a := range agents {
+		agent := a.(map[string]any)
+		for _, k := range []string{"stages", "chain", "providers", "issues", "anatomyTurns", "name"} {
+			if agent[k] != nil {
+				t.Errorf("agent %v %s = %v, want null", agent["key"], k, agent[k])
+			}
 		}
 	}
 }

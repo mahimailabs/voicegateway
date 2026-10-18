@@ -141,7 +141,7 @@ test("a read that fails with 500 shows its error, and the rest still render", as
 test("a block in an agent's per-call strip opens that call", async () => {
   webIn04e()
   const router = show()
-  await userEvent.setup().click(await screen.findByRole("link", { name: "Open the call in room-two" }))
+  await userEvent.setup().click(await screen.findByRole("button", { name: "Open the call in room-two" }))
   await waitFor(() => expect(router.state.location.pathname).toBe("/calls/c-2"))
   expect(await screen.findByText("call c-2")).toBeTruthy()
 })

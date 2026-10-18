@@ -205,7 +205,7 @@ export function AppShell() {
           )}
         </main>
       </SidebarInset>
-      <SettingsDialog open={settingsOpen} onOpenChange={closeSettings} page={settingsParam} onPageChange={openSettings} orgOnly={unknown} />
+      <SettingsDialog open={settingsOpen} onOpenChange={closeSettings} page={settingsParam} onPageChange={openSettings} orgOnly={unknown && orgSettings} />
       <CommandPalette open={palette} onOpenChange={setPalette} pages={pages} onSettings={() => openSettings()} onShortcuts={() => setShortcuts(true)} />
       <ShortcutsDialog open={shortcuts} onOpenChange={setShortcuts} pages={pages} />
       <Toaster position="bottom-right" duration={8000} />
