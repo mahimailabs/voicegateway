@@ -19,7 +19,7 @@ An operator's program, holding one instance token, creates an organisation, invi
 - **A fourth scope, `instance`**, in `routeAccess`, with the minimum role `Instance`:
   - A request with the instance token is an instance principal. It names no user and no organisation.
   - An instance principal may call `instance` routes only; every other `/api/v1` route answers it 403 `forbidden`.
-  - A session or a project API key on an `instance` route answers 403 `forbidden`. No credential answers 401.
+  - A session or a project API key on an `instance` route answers 403 `forbidden`. No credential or an invalid token answers 401.
   - The contract's `x-access.minimumRole` is `Instance` on these operations, and `TestEveryRouteHasAMinimumRole` covers them.
 - **Operations** in `docs/api/openapi.yaml`, tagged `Instance`, each with `x-access` and `x-source`, `additionalProperties: false` on every new schema. Handlers live in `ee/instance`; `internal/app` wires them; `internal/api` registers them through `handle`.
   - `putOrganisation` `PUT /api/v1/instance/organisations/{orgId}` with `{name}`: 201 with the organisation when created, 200 when it already exists. A different name renames it. An id that breaks the pattern, or an empty name, is 400 `invalid_request`.
@@ -51,7 +51,7 @@ An operator's program, holding one instance token, creates an organisation, invi
 ## Acceptance Checks
 
 1. Given `VOICEGATEWAY_INSTANCE_TOKEN` unset, then each of the 3 instance operations answers 404 with and without a Bearer (measured by `TestInstanceAPIOffWithoutToken`).
-2. Given the token set, then each instance operation answers 401 with no credential, 403 with a session of an Admin, 403 with a project API key, and 403 with a wrong token of the same length; and the instance token answers 403 on `getWorkspaces`, `getMembers` and `listCalls` (3 × 4 + 3 = 15 cases, measured by `TestInstanceScopeIsItsOwn`).
+2. Given the token set, then each instance operation answers 401 with no credential, 403 with a session of an Admin, 403 with a project API key, and 401 with a wrong token of the same length; and the instance token answers 403 on `getWorkspaces`, `getMembers` and `listCalls` (3 × 4 + 3 = 15 cases, measured by `TestInstanceScopeIsItsOwn`).
 3. Given `putOrganisation` sent 10 times in parallel for one id, then exactly 1 organisation row exists, exactly 1 answer is 201 and 9 are 200 (measured by `TestPutOrganisationIsIdempotent`).
 4. Given a new organisation and no SMTP, when `createOrganisationInvitation` runs for an admin email, then the answer is 201 with `emailed` false and a link, and opening that link with 06d's accept, with a 12-character password, makes the user an Admin of that organisation and of no other; `getOrganisation` then reports `admins` 1 and `pendingInvitations` 0 (measured by `TestFirstAdminJoinsByInvitation`).
 5. Given an SMTP sink, when 10 invitation requests with one `Idempotency-Key` run in parallel for one email, then 1 open invitation exists, exactly 1 email is sent, 1 answer is 201 and 9 are 200 with `link` null. The same key with another email is 400. A new key revokes the first link (refused at accept) and the new one works (measured by `TestInvitationIsNotDuplicated`).
