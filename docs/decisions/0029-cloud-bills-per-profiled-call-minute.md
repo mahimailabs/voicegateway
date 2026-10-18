@@ -17,7 +17,9 @@ Decision 0024 sells VoiceGateway Cloud self-serve through Stripe and left the bi
 
 Option 3. Cloud bills per profiled call minute: the duration of each call VoiceGateway recorded telemetry for, from room start to room end as stored on the call record, summed per organisation per billing period. The count comes from VoiceGateway's own records and is reported to Stripe, as 0024 requires.
 
-- A call with unknown duration is neither billed as zero minutes nor guessed. It is counted once its end is known. A call that never gets an end is not billed.
+- A call whose end was observed is billed from start to end. A call closed as inferred is billed from start to its last activity, a lower bound that never overcharges, and is labelled inferred wherever its minutes are shown. An open call is counted once it closes. A call with no start time is not billed.
+- A call counts in the billing period that holds its end.
+- Seconds are summed per organisation per period, then rounded down to whole minutes once.
 - Plans carry a monthly minute allowance. Over it, ingest answers with a clear refusal, never a silent drop (0024).
 - Prices live in Stripe, not in this repository.
 
