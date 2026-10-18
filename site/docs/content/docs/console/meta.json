@@ -1,1 +1,1 @@
-{ "title": "Your calls", "pages": ["overview", "calls", "issues", "alerts", "live"] }
+{"title": "Your calls", "description": "Every page of the console, one picture each.", "icon": "Phone", "root": true, "pages": ["overview", "calls", "issues", "alerts", "live"]}

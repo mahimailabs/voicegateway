@@ -14,6 +14,16 @@ await generateFiles({
   meta: true,
   beforeWrite(files) {
     const meta = files.find((f) => f.path.endsWith('meta.json'));
-    if (meta) meta.content = JSON.stringify({ title: 'API reference', ...JSON.parse(meta.content) }, null, 2);
+    if (meta) meta.content = JSON.stringify(
+          {
+            title: 'API reference',
+            description: 'Every call the console makes, for your own scripts.',
+            icon: 'Code',
+            root: true,
+            ...JSON.parse(meta.content),
+          },
+          null,
+          2,
+        );
   },
 });

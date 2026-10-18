@@ -11,6 +11,7 @@
     "types:check": "node scripts/generate-api.mjs && next typegen && tsc --noEmit"
   },
   "dependencies": {
+    "@phosphor-icons/react": "2.1.10",
     "cn": "0.4.0",
     "fumadocs-core": "16.17.5",
     "fumadocs-mdx": "15.4.7",
