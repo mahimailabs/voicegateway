@@ -6,6 +6,9 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/webhook"
+
 	"github.com/mahimailabs/voicegateway/internal/event"
 	"github.com/mahimailabs/voicegateway/internal/store"
 )
@@ -210,21 +213,21 @@ type webhookRead struct {
 var (
 	egressWebhooks = webhookRead{
 		what:       "egress webhooks",
-		events:     []string{"egress_started", "egress_updated", "egress_ended"},
+		events:     []string{webhook.EventEgressStarted, webhook.EventEgressUpdated, webhook.EventEgressEnded},
 		id:         `'egressInfo', 'egressId'`,
 		status:     `'egressInfo', 'status'`,
 		updatedAt:  `'egressInfo', 'updatedAt'`,
 		state:      `'egressInfo'`,
-		zeroStatus: "EGRESS_STARTING",
+		zeroStatus: livekit.EgressStatus_EGRESS_STARTING.String(),
 	}
 	ingressWebhooks = webhookRead{
 		what:       "ingress webhooks",
-		events:     []string{"ingress_started", "ingress_ended"},
+		events:     []string{webhook.EventIngressStarted, webhook.EventIngressEnded},
 		id:         `'ingressInfo', 'ingressId'`,
 		status:     `'ingressInfo', 'state', 'status'`,
 		updatedAt:  `'ingressInfo', 'state', 'updatedAt'`,
 		state:      `'ingressInfo', 'state'`,
-		zeroStatus: "ENDPOINT_INACTIVE",
+		zeroStatus: livekit.IngressState_ENDPOINT_INACTIVE.String(),
 	}
 )
 

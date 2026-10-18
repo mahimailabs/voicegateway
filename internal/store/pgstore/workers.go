@@ -34,10 +34,7 @@ func (s *Store) AddWorkerEndpoint(ctx context.Context, organisationID, projectID
 			return store.WorkerEndpoint{}, fmt.Errorf("%w: %s", store.ErrEndpointExists, e.ID)
 		}
 	}
-	id, err := endpointID()
-	if err != nil {
-		return store.WorkerEndpoint{}, err
-	}
+	id := endpointID()
 	sealed, err := s.sealer.Seal([]byte(rawURL), endpointSealContext(organisationID, projectID, id))
 	if err != nil {
 		return store.WorkerEndpoint{}, fmt.Errorf("seal worker metrics URL: %w", err)
@@ -121,17 +118,10 @@ func endpointHost(raw string) (string, error) {
 	return scheme + "://" + strings.ToLower(u.Host), nil
 }
 
-// endpointID makes an endpoint id such as we_k3j9x0a1b2c4.
-func endpointID() (string, error) {
-	const alphabet = "abcdefghijklmnopqrstuvwxyz0123456789"
-	var b [12]byte
-	if _, err := rand.Read(b[:]); err != nil {
-		return "", fmt.Errorf("endpoint id: %w", err)
-	}
-	for i := range b {
-		b[i] = alphabet[int(b[i])%len(alphabet)]
-	}
-	return "we_" + string(b[:]), nil
+// endpointID makes an endpoint id such as we_k3j9x2a7b2c4: 12 characters of crypto/rand.Text,
+// lowercased (60 random bits).
+func endpointID() string {
+	return "we_" + strings.ToLower(rand.Text()[:12])
 }
 
 // endpointSealContext binds a sealed URL to its row.

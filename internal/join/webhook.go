@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/livekit/protocol/livekit"
+	"github.com/livekit/protocol/webhook"
 	"google.golang.org/protobuf/encoding/protojson"
 
 	"github.com/mahimailabs/voicegateway/internal/store"
@@ -67,7 +68,7 @@ func (j *Joiner) webhook(ctx context.Context, r *store.Event) error {
 			return err
 		}
 	}
-	if ev.GetEvent() == "room_finished" {
+	if ev.GetEvent() == webhook.EventRoomFinished {
 		return j.Calls.FinishCall(ctx, id, at)
 	}
 	return nil
@@ -95,7 +96,7 @@ func (j *Joiner) participant(ctx context.Context, r *store.Event, callID, name s
 		return nil
 	}
 	var left *time.Time
-	if name == "participant_left" || name == "participant_connection_aborted" {
+	if name == webhook.EventParticipantLeft || name == webhook.EventParticipantConnectionAborted {
 		left = at
 	}
 	return j.Calls.UpsertParticipant(ctx, store.Participant{

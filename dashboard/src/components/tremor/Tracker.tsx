@@ -1,7 +1,7 @@
 // Tremor Tracker [v1.0.0]
 
 import React from "react"
-import * as HoverCardPrimitives from "@radix-ui/react-hover-card"
+import { HoverCard as HoverCardPrimitives } from "radix-ui"
 
 import { cx } from "./cx"
 
