@@ -3119,14 +3119,14 @@ components:
               minimum: 0
               x-unit: count
               description: "Matching calls with channel console."
-              x-null-reason: "Unknown when part of the range is not stored."
+              x-null-reason: "Unknown when part of the range is not stored, and until a stored source tells this channel apart, which none does yet."
               x-source: { kind: computed, file: dashboard/src/mocks/summaries.ts, pointer: null, detail: "Matching calls with channel console." }
             local:
               type: [ integer, "null" ]
               minimum: 0
               x-unit: count
               description: "Matching calls with channel local."
-              x-null-reason: "Unknown when part of the range is not stored."
+              x-null-reason: "Unknown when part of the range is not stored, and until a stored source tells this channel apart, which none does yet."
               x-source: { kind: computed, file: dashboard/src/mocks/summaries.ts, pointer: null, detail: "Matching calls with channel local." }
             unknown:
               type: [ integer, "null" ]

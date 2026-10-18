@@ -116,7 +116,8 @@ test("the call figures and agent cards render while five reads are not served", 
   const tiles = screen.getByText("LiveKit project").closest("section")!
   for (const tile of ["Egress", "Ingress"]) expect(within(within(tiles).getByText(tile).closest("a")!).getByText(NOT_SERVED)).toBeTruthy()
   expect(within(screen.getByText("Model providers").closest("section")!).getByText(NOT_SERVED)).toBeTruthy()
-  expect(within(screen.getByText("Live wire").closest("section")!).getByText(NOT_SERVED)).toBeTruthy()
+  // The Live wire names the read it lacks.
+  expect(within(screen.getByText("Live wire").closest("section")!).getByText(`Provider probes: ${NOT_SERVED}`)).toBeTruthy()
   expect(screen.getByText("0.90 s", { selector: "p" })).toBeTruthy()
   expect(screen.getByText("2 calls captured in the last 7 days", { exact: false })).toBeTruthy()
   expect(screen.getAllByText("Unnamed agent").length).toBeGreaterThan(0)

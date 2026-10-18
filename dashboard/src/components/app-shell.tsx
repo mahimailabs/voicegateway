@@ -37,7 +37,7 @@ import {
 import { ThemeToggle } from "@/components/theme"
 import { UserMenu } from "@/components/user-menu"
 import { useQuery } from "@tanstack/react-query"
-import { callCountQuery, projectSettingsQuery } from "@/lib/api"
+import { ApiError, callCountQuery, projectSettingsQuery } from "@/lib/api"
 import { DEFAULTS, applyThresholds } from "@/lib/thresholds"
 import { PageState, errorText } from "@/components/page-state"
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty"
@@ -199,7 +199,9 @@ export function AppShell() {
             <NoSuchProject />
           ) : (
             <>
-              {settings.isError && <p className="rounded-lg border bg-muted px-3 py-2 text-[13px] text-muted-foreground">{`Project settings could not be read, so checks use the default thresholds. ${errorText(settings.error)}`}</p>}
+              {settings.isError && (
+                <p className="rounded-lg border bg-muted px-3 py-2 text-[13px] text-muted-foreground">{`Project settings could not be read, so checks use the default thresholds. ${settings.error instanceof ApiError && settings.error.status === 404 ? "Not served by this server yet." : errorText(settings.error)}`}</p>
+              )}
               {settings.isPending ? <PageState icon={Settings} loading title="Loading the project's settings" /> : <Outlet key={`${thresholds.answerMs}-${thresholds.joinMs}-${thresholds.ttsStartMs}`} />}
             </>
           )}

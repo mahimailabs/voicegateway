@@ -44,7 +44,7 @@ export function wireData(rows: Row[], { stats, ms: rooms, sip, probes: probe }: 
       issues: plain || undefined,
       tip: plain ? `${plain} SIP trunks carry audio unencrypted (plain RTP)` : "Every SIP leg encrypted",
     },
-    { id: "media", kind: "media", y: -20, title: "Media server", sub: `${rooms.rooms.length} rooms watched`, tip: "LiveKit Cloud" },
+    { id: "media", kind: "media", y: -20, title: "Media server", sub: `${rooms.rooms.length} ${rooms.rooms.length === 1 ? "room" : "rooms"} watched`, tip: "LiveKit Cloud" },
   ]
   // Calls that reached an agent through the media server without a phone leg; unknown if any count is.
   // No unidentified row means none of those calls; a row with an unknown count leaves the rest unknown.

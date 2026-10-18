@@ -346,7 +346,7 @@ func TestListCallsChannelsAndUnstoredFilters(t *testing.T) {
 	if got["room-RM_SIP"] != "phone" || got["room-RM_WEB"] != "web" || got["room-RM_NONE"] != "unknown" {
 		t.Errorf("channels = %v", got)
 	}
-	if b := p.Totals.ByChannel; *b.Phone != 1 || *b.Web != 1 || *b.Unknown != 1 || *b.Console != 0 || *b.Local != 0 {
+	if b := p.Totals.ByChannel; *b.Phone != 1 || *b.Web != 1 || *b.Unknown != 1 || b.Console != nil || b.Local != nil {
 		t.Errorf("byChannel = %+v", b)
 	}
 	for _, q := range []url.Values{{"issues": {"high"}}, {"tag": {"x"}}, {"archived": {"true"}}, {"recorded": {"true"}}} {

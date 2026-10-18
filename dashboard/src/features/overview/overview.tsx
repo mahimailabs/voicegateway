@@ -75,6 +75,7 @@ function fleetRows(fleet: Agent[], stats: CallStats): FleetRow[] {
 }
 
 const ms = (v: number | null) => (v === null ? "unknown" : fmtMs(v))
+const plural = (n: number, one: string) => `${n} ${n === 1 ? one : `${one}s`}`
 const sumOrNull = (xs: (number | null)[]) => (xs.some((x) => x === null) ? null : xs.reduce<number>((n, x) => n + (x ?? 0), 0))
 
 function Section({ title, to, link, children, className }: { title: string; to?: string; link?: string; children: React.ReactNode; className?: string }) {
@@ -178,7 +179,7 @@ function OverviewView({ stats, cloud: cloudRead, media, sip: sipQ, egress: egres
 
   const sip = sipRead as unknown as SipData | undefined
   const wire = useMemo(() => (rooms && sip && probe ? wireData(rows, { stats, ms: rooms, sip, probes: probe }, BUDGET_MS) : null), [rows, stats, rooms, sip, probe])
-  const wireMissing = [media, sipQ, probesQ].find((q) => !q.data)
+  const wireMissing = ([["Media server", media], ["Phone bridge", sipQ], ["Provider probes", probesQ]] as const).find(([, q]) => !q.data)
   const chainAll: ChainScope | null = stats.chain && { key: "all", name: "All agents", chain: stats.chain, turns: stats.anatomyTurns, calls: stats.callCount, e2e: p50, joins: [] }
   const chainGroups: ChainScope[] = active
     .filter((r) => (pick === "all" || r.key === pick) && r.stats!.chain)
@@ -209,7 +210,7 @@ function OverviewView({ stats, cloud: cloudRead, media, sip: sipQ, egress: egres
           <span className={cn("size-2 rounded-full", highs === null ? "bg-muted-foreground/40" : highs ? "bg-destructive" : "bg-good")} />
           {highs === null ? "High issues unknown" : highs ? `${highs} high issues` : "No high issues"}
           <span className="text-border">|</span>
-          {`${rooms ? `${rooms.rooms.length} rooms watched · ` : ""}${stats.callCount === null ? "calls unknown" : `${stats.callCount} calls captured`} in the last 7 days`}
+          {`${rooms ? `${plural(rooms.rooms.length, "room")} watched · ` : ""}${stats.callCount === null ? "calls unknown" : `${plural(stats.callCount, "call")} captured`} in the last 7 days`}
         </span>
       </header>
 
@@ -234,7 +235,7 @@ function OverviewView({ stats, cloud: cloudRead, media, sip: sipQ, egress: egres
       </div>
 
       <Section title="Live wire">
-        {wire ? <LiveWire nodes={wire.nodes} links={wire.links} live={wire.live} trackers={wire.trackers} /> : <Unavailable query={wireMissing ?? media} />}
+        {wire ? <LiveWire nodes={wire.nodes} links={wire.links} live={wire.live} trackers={wire.trackers} /> : <Unavailable query={wireMissing ? wireMissing[1] : media} what={wireMissing ? wireMissing[0] : "Media server"} />}
       </Section>
 
       <Section title="Turn anatomy">
@@ -303,19 +304,19 @@ function OverviewView({ stats, cloud: cloudRead, media, sip: sipQ, egress: egres
                     ))}
                   </span>
                 </span>
-                <span className="flex items-end justify-between gap-4">
+                <span className="flex flex-wrap items-end justify-between gap-x-4 gap-y-3">
                   <span>
                     <span className={cn("block text-[30px] leading-none font-semibold tracking-[-0.03em] tnum", p50 !== null && p50 > BUDGET_MS && "text-destructive")}>{p50 === null ? "Unknown" : fmtS(p50)}</span>
                     <span className="mt-1 block text-[12px] text-muted-foreground">median answer</span>
                   </span>
-                  <span className="grid grid-cols-3 gap-4 text-right">
+                  <span className="ml-auto flex flex-wrap justify-end gap-x-4 gap-y-2 text-right">
                     {[
-                      ["calls", st.callCount === null ? "unknown" : String(st.callCount)],
-                      ["issues", st.issues === null ? "unknown" : String(st.issues + failed)],
-                      ["at once", peak === null ? "unknown" : String(peak)],
+                      ["calls", st.callCount === null ? "Unknown" : String(st.callCount)],
+                      ["issues", st.issues === null ? "Unknown" : String(st.issues + failed)],
+                      ["at once", peak === null ? "Unknown" : String(peak)],
                     ].map(([k, v]) => (
-                      <span key={k}>
-                        <span className={cn("block text-[15px] font-semibold tnum", k === "issues" && v !== "0" && "text-destructive", v === "unknown" && "text-[13px] font-normal text-muted-foreground")}>{v}</span>
+                      <span key={k} className="min-w-12">
+                        <span className={cn("block text-[15px] font-semibold whitespace-nowrap tnum", k === "issues" && v !== "0" && v !== "Unknown" && "text-destructive", v === "Unknown" && "text-[13px] font-normal text-muted-foreground")}>{v}</span>
                         <span className="block text-[11px] text-muted-foreground">{k}</span>
                       </span>
                     ))}
