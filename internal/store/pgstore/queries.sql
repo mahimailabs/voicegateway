@@ -412,3 +412,77 @@ ORDER BY m.organisation_id;
 -- stays and no session is signed out. Only if the hash is still the one the sign-in verified, so a
 -- password reset that lands in between is never overwritten with the old password.
 UPDATE users SET password_hash = @password_hash WHERE id = @id AND password_hash = @verified_hash;
+
+-- name: RevokeOpenInvitation :exec
+-- Creating a link replaces the open one for the same organisation, email and kind.
+UPDATE invitations SET revoked_at = now()
+WHERE organisation_id = @organisation_id AND email = @email AND kind = @kind AND accepted_at IS NULL AND revoked_at IS NULL;
+
+-- name: InsertInvitation :one
+INSERT INTO invitations (kind, organisation_id, email, role, user_id, token_sha256, invited_by, idempotency_key, expires_at)
+VALUES (@kind, @organisation_id, @email, sqlc.narg(role), sqlc.narg(user_id), @token_sha256, sqlc.narg(invited_by), sqlc.narg(idempotency_key), @expires_at)
+RETURNING id, created_at;
+
+-- name: InvitationByIdempotencyKey :one
+SELECT i.id, i.kind, i.email, i.role, i.created_at, i.expires_at, i.emailed_at, i.accepted_at, i.revoked_at, u.email AS invited_by_email
+FROM invitations i LEFT JOIN users u ON u.id = i.invited_by
+WHERE i.organisation_id = @organisation_id AND i.idempotency_key = @idempotency_key;
+
+-- name: MarkInvitationEmailed :exec
+UPDATE invitations SET emailed_at = now() WHERE id = @id;
+
+-- name: ListInvitations :many
+SELECT i.id, i.kind, i.email, i.role, i.created_at, i.expires_at, i.emailed_at, i.accepted_at, i.revoked_at, u.email AS invited_by_email
+FROM invitations i LEFT JOIN users u ON u.id = i.invited_by
+WHERE i.organisation_id = @organisation_id
+ORDER BY i.created_at DESC, i.id
+LIMIT 500;
+
+-- name: RevokeInvitation :execrows
+-- Revoking twice keeps the first time; an accepted link stays accepted.
+UPDATE invitations SET revoked_at = COALESCE(revoked_at, now())
+WHERE organisation_id = @organisation_id AND id = @id AND accepted_at IS NULL;
+
+-- name: InvitationExists :one
+SELECT EXISTS (SELECT 1 FROM invitations WHERE organisation_id = @organisation_id AND id = @id);
+
+-- name: OpenInvitationByToken :one
+-- The accept screen's read: an open, unexpired link, with its organisation's name.
+SELECT i.id, i.kind, i.organisation_id, o.name AS organisation_name, i.email, i.role, i.user_id
+FROM invitations i JOIN organisations o ON o.id = i.organisation_id
+WHERE i.token_sha256 = @token_sha256 AND i.accepted_at IS NULL AND i.revoked_at IS NULL AND i.expires_at > now();
+
+-- name: UseInvitation :one
+-- Uses a link once: anything but one row means it was used, revoked or expired meanwhile.
+UPDATE invitations SET accepted_at = now()
+WHERE token_sha256 = @token_sha256 AND accepted_at IS NULL AND revoked_at IS NULL AND expires_at > now()
+RETURNING id, kind, organisation_id, email, role, user_id;
+
+-- name: OrganisationRoles :many
+-- Every organisation a user belongs to, with their role: what a reset link's guard checks.
+SELECT organisation_id, role FROM memberships WHERE user_id = @user_id;
+
+-- name: SetPasswordByID :exec
+-- A reset: the new password and a new password_version, signing every other session out.
+UPDATE users SET password_hash = @password_hash, password_version = password_version + 1 WHERE id = @id;
+
+-- name: CreateUserIfAbsent :one
+-- A new account from an invite. A parallel accept that created the same email first wins: this
+-- returns no row, and the caller signs that account in only if the password matches.
+INSERT INTO users (email, password_hash) VALUES (@email, @password_hash)
+ON CONFLICT (email) DO NOTHING
+RETURNING id;
+
+-- name: AddMembershipIfAbsent :exec
+-- An invite for someone already a member keeps their role.
+INSERT INTO memberships (user_id, organisation_id, role) VALUES (@user_id, @organisation_id, @role)
+ON CONFLICT (user_id, organisation_id) DO NOTHING;
+
+-- name: IsMemberByEmail :one
+SELECT EXISTS (
+    SELECT 1 FROM memberships m JOIN users u ON u.id = m.user_id
+    WHERE m.organisation_id = @organisation_id AND u.email = @email
+);
+
+-- name: OrganisationName :one
+SELECT name FROM organisations WHERE id = $1;

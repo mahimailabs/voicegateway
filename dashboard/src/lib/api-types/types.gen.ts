@@ -1262,7 +1262,7 @@ export type Error = {
     /**
      * Stable error category.
      */
-    code: 'invalid_request' | 'unauthenticated' | 'forbidden' | 'not_found' | 'source_unavailable' | 'internal_error' | 'range_not_satisfiable' | 'last_admin';
+    code: 'invalid_request' | 'unauthenticated' | 'forbidden' | 'not_found' | 'source_unavailable' | 'internal_error' | 'range_not_satisfiable' | 'last_admin' | 'already_member' | 'member_of_other_organisations';
     /**
      * Safe human-readable explanation, excluding upstream credentials and request bodies.
      */
@@ -1352,13 +1352,75 @@ export type ProjectSettings = {
 
 export type Invitation = {
     /**
-     * Requested invite address; a pending record does not prove email delivery.
+     * The invitation's id, used to revoke it.
+     */
+    id: string;
+    /**
+     * An invitation to join, or a password reset link for a member.
+     */
+    kind: 'invite' | 'reset';
+    /**
+     * The invited address, or the member's for a reset; a pending invitation does not prove the email arrived.
      */
     email: string;
     /**
-     * Requested organisation role, per decision 0019.
+     * The organisation role the invitation grants, per decision 0019.
+     */
+    role: 'Admin' | 'Member' | 'Viewer' | null;
+    /**
+     * Derived at the read, never stored. accepted when used, revoked when revoked or replaced, expired once past expiresAt, otherwise pending.
+     */
+    state: 'pending' | 'accepted' | 'revoked' | 'expired';
+    /**
+     * When the link was made.
+     */
+    createdAt: string;
+    /**
+     * When the link stops working; 7 days for an invite, 24 hours for a reset.
+     */
+    expiresAt: string;
+    /**
+     * The email of the admin who made the link.
+     */
+    invitedBy: string | null;
+};
+
+export type InvitationCreate = {
+    /**
+     * The address to invite; case-folded when stored.
+     */
+    email: string;
+    /**
+     * The organisation role to grant, per decision 0019.
      */
     role: 'Admin' | 'Member' | 'Viewer';
+};
+
+export type CreatedInvitation = {
+    invitation: Invitation;
+    /**
+     * <base>/invite#<token>, the only time the full link exists.
+     */
+    link: string | null;
+    /**
+     * True when the email was sent; false without SMTP, or when the send failed.
+     */
+    emailed: boolean;
+};
+
+export type CreatedPasswordReset = {
+    /**
+     * <base>/invite#<token>, the only time the full link exists.
+     */
+    link: string | null;
+    /**
+     * When the link stops working, 24 hours after it was made.
+     */
+    expiresAt: string;
+    /**
+     * True when the email was sent; false without SMTP, or when the send failed.
+     */
+    emailed: boolean;
 };
 
 export type ProjectKey = {
@@ -1634,6 +1696,11 @@ export type Clock = unknown & {
  * A project key's id, the 12 characters after vgk_; one from another project is not_found, and any other value is invalid_request.
  */
 export type KeyId = string;
+
+/**
+ * An invitation's id; one from another organisation, or any other value, is not_found.
+ */
+export type InvitationId = string;
 
 /**
  * A member's user id; one outside the named organisation is not_found.
@@ -2728,12 +2795,120 @@ export type GetInvitationsError = GetInvitationsErrors[keyof GetInvitationsError
 
 export type GetInvitationsResponses = {
     /**
-     * Authorised read result. Null means unreported, never zero. Source-specific coverage limits remain visible.
+     * The organisation's invitations and reset links. Null means unknown, never empty.
      */
     200: Invitations;
 };
 
 export type GetInvitationsResponse = GetInvitationsResponses[keyof GetInvitationsResponses];
+
+export type CreateInvitationData = {
+    body: InvitationCreate;
+    path: {
+        /**
+         * Authorised orgId; the server must verify organisation/project ownership before any read.
+         */
+        orgId: string;
+    };
+    query?: never;
+    url: '/api/v1/org/{orgId}/invitations';
+};
+
+export type CreateInvitationErrors = {
+    /**
+     * invalid_request; never return an empty success result for this failure.
+     */
+    400: Error;
+    /**
+     * unauthenticated; never return an empty success result for this failure.
+     */
+    401: Error;
+    /**
+     * forbidden; never return an empty success result for this failure.
+     */
+    403: Error;
+    /**
+     * not_found; never return an empty success result for this failure.
+     */
+    404: Error;
+    /**
+     * last_admin, the change would leave the organisation without an admin; already_member, the invited email's account is a member already; member_of_other_organisations, a reset's member belongs to an organisation the requester does not administer.
+     */
+    409: Error;
+    /**
+     * internal_error; never return an empty success result for this failure.
+     */
+    500: Error;
+    /**
+     * source_unavailable; never return an empty success result for this failure.
+     */
+    503: Error;
+};
+
+export type CreateInvitationError = CreateInvitationErrors[keyof CreateInvitationErrors];
+
+export type CreateInvitationResponses = {
+    /**
+     * The invitation, and its link when SMTP is not set.
+     */
+    201: CreatedInvitation;
+};
+
+export type CreateInvitationResponse = CreateInvitationResponses[keyof CreateInvitationResponses];
+
+export type RevokeInvitationData = {
+    body?: never;
+    path: {
+        /**
+         * Authorised orgId; the server must verify organisation/project ownership before any read.
+         */
+        orgId: string;
+        /**
+         * An invitation's id; one from another organisation, or any other value, is not_found.
+         */
+        invitationId: string;
+    };
+    query?: never;
+    url: '/api/v1/org/{orgId}/invitations/{invitationId}';
+};
+
+export type RevokeInvitationErrors = {
+    /**
+     * invalid_request; never return an empty success result for this failure.
+     */
+    400: Error;
+    /**
+     * unauthenticated; never return an empty success result for this failure.
+     */
+    401: Error;
+    /**
+     * forbidden; never return an empty success result for this failure.
+     */
+    403: Error;
+    /**
+     * not_found; never return an empty success result for this failure.
+     */
+    404: Error;
+    /**
+     * internal_error; never return an empty success result for this failure.
+     */
+    500: Error;
+    /**
+     * source_unavailable; never return an empty success result for this failure.
+     */
+    503: Error;
+};
+
+export type RevokeInvitationError = RevokeInvitationErrors[keyof RevokeInvitationErrors];
+
+export type RevokeInvitationResponses = {
+    /**
+     * Revoked.
+     */
+    204: void;
+};
+
+export type RevokeInvitationResponse = RevokeInvitationResponses[keyof RevokeInvitationResponses];
 
 export type GetMembersData = {
     body?: never;
@@ -2819,7 +2994,7 @@ export type RemoveMemberErrors = {
      */
     404: Error;
     /**
-     * last_admin; the change would leave the organisation without an admin.
+     * last_admin, the change would leave the organisation without an admin; already_member, the invited email's account is a member already; member_of_other_organisations, a reset's member belongs to an organisation the requester does not administer.
      */
     409: Error;
     /**
@@ -2877,7 +3052,7 @@ export type UpdateMemberErrors = {
      */
     404: Error;
     /**
-     * last_admin; the change would leave the organisation without an admin.
+     * last_admin, the change would leave the organisation without an admin; already_member, the invited email's account is a member already; member_of_other_organisations, a reset's member belongs to an organisation the requester does not administer.
      */
     409: Error;
     /**
@@ -2900,6 +3075,64 @@ export type UpdateMemberResponses = {
 };
 
 export type UpdateMemberResponse = UpdateMemberResponses[keyof UpdateMemberResponses];
+
+export type CreatePasswordResetData = {
+    body?: never;
+    path: {
+        /**
+         * Authorised orgId; the server must verify organisation/project ownership before any read.
+         */
+        orgId: string;
+        /**
+         * A member's user id; one outside the named organisation is not_found.
+         */
+        userId: string;
+    };
+    query?: never;
+    url: '/api/v1/org/{orgId}/members/{userId}/password-reset';
+};
+
+export type CreatePasswordResetErrors = {
+    /**
+     * invalid_request; never return an empty success result for this failure.
+     */
+    400: Error;
+    /**
+     * unauthenticated; never return an empty success result for this failure.
+     */
+    401: Error;
+    /**
+     * forbidden; never return an empty success result for this failure.
+     */
+    403: Error;
+    /**
+     * not_found; never return an empty success result for this failure.
+     */
+    404: Error;
+    /**
+     * last_admin, the change would leave the organisation without an admin; already_member, the invited email's account is a member already; member_of_other_organisations, a reset's member belongs to an organisation the requester does not administer.
+     */
+    409: Error;
+    /**
+     * internal_error; never return an empty success result for this failure.
+     */
+    500: Error;
+    /**
+     * source_unavailable; never return an empty success result for this failure.
+     */
+    503: Error;
+};
+
+export type CreatePasswordResetError = CreatePasswordResetErrors[keyof CreatePasswordResetErrors];
+
+export type CreatePasswordResetResponses = {
+    /**
+     * The reset link's expiry, and the link when SMTP is not set.
+     */
+    201: CreatedPasswordReset;
+};
+
+export type CreatePasswordResetResponse = CreatePasswordResetResponses[keyof CreatePasswordResetResponses];
 
 export type ListProjectKeysData = {
     body?: never;

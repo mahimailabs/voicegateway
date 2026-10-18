@@ -61,6 +61,10 @@ type Service struct {
 	// PublicHTTPS is true when VOICEGATEWAY_PUBLIC_URL is https: every session cookie is then
 	// Secure. It says nothing of how a request arrived, so it never lifts https_required.
 	PublicHTTPS bool
+	// PublicURL is VOICEGATEWAY_PUBLIC_URL, an invitation link's base when set.
+	PublicURL string
+	// Links reads and uses invitation links; nil serves no /auth/invitation routes.
+	Links Links
 	// Compare compares two SHA-256 hashes in constant time and reports 1 when they are equal; nil
 	// is subtle.ConstantTimeCompare. Tests count the comparisons through it.
 	Compare func(x, y []byte) int
@@ -127,7 +131,8 @@ func (s *Service) Sessions(h http.Handler) http.Handler {
 	})
 }
 
-// Routes returns /auth/sign-in, /auth/sign-out and /auth/session, with sessions loaded. It starts
+// Routes returns /auth/sign-in, /auth/sign-out, /auth/session and, with Links set, the two
+// /auth/invitation routes, with sessions loaded. It starts
 // building the dummy hash in the background, so web listens at once and the first unknown email
 // takes no longer than the rest; a sign-in that comes first waits for the same hash.
 func (s *Service) Routes() http.Handler {
@@ -140,6 +145,10 @@ func (s *Service) Routes() http.Handler {
 	mux.HandleFunc("POST /auth/sign-in", s.signIn)
 	mux.HandleFunc("POST /auth/sign-out", s.signOut)
 	mux.HandleFunc("GET /auth/session", s.session)
+	if s.Links != nil {
+		mux.Handle("GET /auth/invitation", LinkHeaders(http.HandlerFunc(s.invitation)))
+		mux.Handle("POST /auth/invitation/accept", LinkHeaders(http.HandlerFunc(s.acceptInvitation)))
+	}
 	return s.Sessions(mux)
 }
 

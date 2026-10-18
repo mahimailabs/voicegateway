@@ -26,6 +26,23 @@ func (q *Queries) AddMembership(ctx context.Context, arg AddMembershipParams) er
 	return err
 }
 
+const addMembershipIfAbsent = `-- name: AddMembershipIfAbsent :exec
+INSERT INTO memberships (user_id, organisation_id, role) VALUES ($1, $2, $3)
+ON CONFLICT (user_id, organisation_id) DO NOTHING
+`
+
+type AddMembershipIfAbsentParams struct {
+	UserID         pgtype.UUID
+	OrganisationID string
+	Role           string
+}
+
+// An invite for someone already a member keeps their role.
+func (q *Queries) AddMembershipIfAbsent(ctx context.Context, arg AddMembershipIfAbsentParams) error {
+	_, err := q.db.Exec(ctx, addMembershipIfAbsent, arg.UserID, arg.OrganisationID, arg.Role)
+	return err
+}
+
 const callByID = `-- name: CallByID :one
 SELECT l.id, l.room_name, l.room_sid, l.job_id, l.started_at, l.ended_at, l.end_state, l.first_seen_at,
        l.participants, l.servable, l.summarized::boolean AS summarized
@@ -373,6 +390,26 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (pgtype.
 	return id, err
 }
 
+const createUserIfAbsent = `-- name: CreateUserIfAbsent :one
+INSERT INTO users (email, password_hash) VALUES ($1, $2)
+ON CONFLICT (email) DO NOTHING
+RETURNING id
+`
+
+type CreateUserIfAbsentParams struct {
+	Email        string
+	PasswordHash string
+}
+
+// A new account from an invite. A parallel accept that created the same email first wins: this
+// returns no row, and the caller signs that account in only if the password matches.
+func (q *Queries) CreateUserIfAbsent(ctx context.Context, arg CreateUserIfAbsentParams) (pgtype.UUID, error) {
+	row := q.db.QueryRow(ctx, createUserIfAbsent, arg.Email, arg.PasswordHash)
+	var id pgtype.UUID
+	err := row.Scan(&id)
+	return id, err
+}
+
 const createWorkerEndpoint = `-- name: CreateWorkerEndpoint :one
 INSERT INTO project_worker_endpoints (organisation_id, project_id, id, host, url_sealed)
 VALUES ($1, $2, $3, $4, $5)
@@ -539,6 +576,123 @@ type HealCallParams struct {
 func (q *Queries) HealCall(ctx context.Context, arg HealCallParams) error {
 	_, err := q.db.Exec(ctx, healCall, arg.RoomName, arg.FirstSeenAt, arg.ID)
 	return err
+}
+
+const insertInvitation = `-- name: InsertInvitation :one
+INSERT INTO invitations (kind, organisation_id, email, role, user_id, token_sha256, invited_by, idempotency_key, expires_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+RETURNING id, created_at
+`
+
+type InsertInvitationParams struct {
+	Kind           string
+	OrganisationID string
+	Email          string
+	Role           pgtype.Text
+	UserID         pgtype.UUID
+	TokenSha256    []byte
+	InvitedBy      pgtype.UUID
+	IdempotencyKey pgtype.Text
+	ExpiresAt      pgtype.Timestamptz
+}
+
+type InsertInvitationRow struct {
+	ID        pgtype.UUID
+	CreatedAt pgtype.Timestamptz
+}
+
+func (q *Queries) InsertInvitation(ctx context.Context, arg InsertInvitationParams) (InsertInvitationRow, error) {
+	row := q.db.QueryRow(ctx, insertInvitation,
+		arg.Kind,
+		arg.OrganisationID,
+		arg.Email,
+		arg.Role,
+		arg.UserID,
+		arg.TokenSha256,
+		arg.InvitedBy,
+		arg.IdempotencyKey,
+		arg.ExpiresAt,
+	)
+	var i InsertInvitationRow
+	err := row.Scan(&i.ID, &i.CreatedAt)
+	return i, err
+}
+
+const invitationByIdempotencyKey = `-- name: InvitationByIdempotencyKey :one
+SELECT i.id, i.kind, i.email, i.role, i.created_at, i.expires_at, i.emailed_at, i.accepted_at, i.revoked_at, u.email AS invited_by_email
+FROM invitations i LEFT JOIN users u ON u.id = i.invited_by
+WHERE i.organisation_id = $1 AND i.idempotency_key = $2
+`
+
+type InvitationByIdempotencyKeyParams struct {
+	OrganisationID string
+	IdempotencyKey pgtype.Text
+}
+
+type InvitationByIdempotencyKeyRow struct {
+	ID             pgtype.UUID
+	Kind           string
+	Email          string
+	Role           pgtype.Text
+	CreatedAt      pgtype.Timestamptz
+	ExpiresAt      pgtype.Timestamptz
+	EmailedAt      pgtype.Timestamptz
+	AcceptedAt     pgtype.Timestamptz
+	RevokedAt      pgtype.Timestamptz
+	InvitedByEmail pgtype.Text
+}
+
+func (q *Queries) InvitationByIdempotencyKey(ctx context.Context, arg InvitationByIdempotencyKeyParams) (InvitationByIdempotencyKeyRow, error) {
+	row := q.db.QueryRow(ctx, invitationByIdempotencyKey, arg.OrganisationID, arg.IdempotencyKey)
+	var i InvitationByIdempotencyKeyRow
+	err := row.Scan(
+		&i.ID,
+		&i.Kind,
+		&i.Email,
+		&i.Role,
+		&i.CreatedAt,
+		&i.ExpiresAt,
+		&i.EmailedAt,
+		&i.AcceptedAt,
+		&i.RevokedAt,
+		&i.InvitedByEmail,
+	)
+	return i, err
+}
+
+const invitationExists = `-- name: InvitationExists :one
+SELECT EXISTS (SELECT 1 FROM invitations WHERE organisation_id = $1 AND id = $2)
+`
+
+type InvitationExistsParams struct {
+	OrganisationID string
+	ID             pgtype.UUID
+}
+
+func (q *Queries) InvitationExists(ctx context.Context, arg InvitationExistsParams) (bool, error) {
+	row := q.db.QueryRow(ctx, invitationExists, arg.OrganisationID, arg.ID)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}
+
+const isMemberByEmail = `-- name: IsMemberByEmail :one
+SELECT EXISTS (
+    SELECT 1 FROM memberships m JOIN users u ON u.id = m.user_id
+    WHERE m.organisation_id = $1 AND u.email = $2
+)
+`
+
+type IsMemberByEmailParams struct {
+	OrganisationID string
+	Email          string
+}
+
+func (q *Queries) IsMemberByEmail(ctx context.Context, arg IsMemberByEmailParams) (bool, error) {
+	row := q.db.QueryRow(ctx, isMemberByEmail, arg.OrganisationID, arg.Email)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
 }
 
 const keyWorkspace = `-- name: KeyWorkspace :one
@@ -746,6 +900,58 @@ func (q *Queries) ListCalls(ctx context.Context, arg ListCallsParams) ([]ListCal
 	return items, nil
 }
 
+const listInvitations = `-- name: ListInvitations :many
+SELECT i.id, i.kind, i.email, i.role, i.created_at, i.expires_at, i.emailed_at, i.accepted_at, i.revoked_at, u.email AS invited_by_email
+FROM invitations i LEFT JOIN users u ON u.id = i.invited_by
+WHERE i.organisation_id = $1
+ORDER BY i.created_at DESC, i.id
+LIMIT 500
+`
+
+type ListInvitationsRow struct {
+	ID             pgtype.UUID
+	Kind           string
+	Email          string
+	Role           pgtype.Text
+	CreatedAt      pgtype.Timestamptz
+	ExpiresAt      pgtype.Timestamptz
+	EmailedAt      pgtype.Timestamptz
+	AcceptedAt     pgtype.Timestamptz
+	RevokedAt      pgtype.Timestamptz
+	InvitedByEmail pgtype.Text
+}
+
+func (q *Queries) ListInvitations(ctx context.Context, organisationID string) ([]ListInvitationsRow, error) {
+	rows, err := q.db.Query(ctx, listInvitations, organisationID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListInvitationsRow
+	for rows.Next() {
+		var i ListInvitationsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Kind,
+			&i.Email,
+			&i.Role,
+			&i.CreatedAt,
+			&i.ExpiresAt,
+			&i.EmailedAt,
+			&i.AcceptedAt,
+			&i.RevokedAt,
+			&i.InvitedByEmail,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listProjectKeys = `-- name: ListProjectKeys :many
 SELECT k.key_id, k.name, k.created_at, u.email AS created_by, k.last_used_at, k.revoked_at
 FROM project_keys k LEFT JOIN users u ON u.id = k.created_by
@@ -891,6 +1097,15 @@ func (q *Queries) LockSignInKey(ctx context.Context, arg LockSignInKeyParams) er
 	return err
 }
 
+const markInvitationEmailed = `-- name: MarkInvitationEmailed :exec
+UPDATE invitations SET emailed_at = now() WHERE id = $1
+`
+
+func (q *Queries) MarkInvitationEmailed(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, markInvitationEmailed, id)
+	return err
+}
+
 const markStale = `-- name: MarkStale :exec
 UPDATE calls SET summary_stale_at = now() WHERE id = ANY($1::uuid[])
 `
@@ -973,6 +1188,38 @@ func (q *Queries) OpenCallInRoom(ctx context.Context, arg OpenCallInRoomParams) 
 	return id, err
 }
 
+const openInvitationByToken = `-- name: OpenInvitationByToken :one
+SELECT i.id, i.kind, i.organisation_id, o.name AS organisation_name, i.email, i.role, i.user_id
+FROM invitations i JOIN organisations o ON o.id = i.organisation_id
+WHERE i.token_sha256 = $1 AND i.accepted_at IS NULL AND i.revoked_at IS NULL AND i.expires_at > now()
+`
+
+type OpenInvitationByTokenRow struct {
+	ID               pgtype.UUID
+	Kind             string
+	OrganisationID   string
+	OrganisationName string
+	Email            string
+	Role             pgtype.Text
+	UserID           pgtype.UUID
+}
+
+// The accept screen's read: an open, unexpired link, with its organisation's name.
+func (q *Queries) OpenInvitationByToken(ctx context.Context, tokenSha256 []byte) (OpenInvitationByTokenRow, error) {
+	row := q.db.QueryRow(ctx, openInvitationByToken, tokenSha256)
+	var i OpenInvitationByTokenRow
+	err := row.Scan(
+		&i.ID,
+		&i.Kind,
+		&i.OrganisationID,
+		&i.OrganisationName,
+		&i.Email,
+		&i.Role,
+		&i.UserID,
+	)
+	return i, err
+}
+
 const organisationExists = `-- name: OrganisationExists :one
 SELECT EXISTS (SELECT 1 FROM organisations WHERE id = $1)
 `
@@ -1007,6 +1254,47 @@ func (q *Queries) OrganisationMembers(ctx context.Context, organisationID string
 	for rows.Next() {
 		var i OrganisationMembersRow
 		if err := rows.Scan(&i.UserID, &i.Email, &i.Role); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const organisationName = `-- name: OrganisationName :one
+SELECT name FROM organisations WHERE id = $1
+`
+
+func (q *Queries) OrganisationName(ctx context.Context, id string) (string, error) {
+	row := q.db.QueryRow(ctx, organisationName, id)
+	var name string
+	err := row.Scan(&name)
+	return name, err
+}
+
+const organisationRoles = `-- name: OrganisationRoles :many
+SELECT organisation_id, role FROM memberships WHERE user_id = $1
+`
+
+type OrganisationRolesRow struct {
+	OrganisationID string
+	Role           string
+}
+
+// Every organisation a user belongs to, with their role: what a reset link's guard checks.
+func (q *Queries) OrganisationRoles(ctx context.Context, userID pgtype.UUID) ([]OrganisationRolesRow, error) {
+	rows, err := q.db.Query(ctx, organisationRoles, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []OrganisationRolesRow
+	for rows.Next() {
+		var i OrganisationRolesRow
+		if err := rows.Scan(&i.OrganisationID, &i.Role); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -1272,6 +1560,42 @@ func (q *Queries) RemoveMembership(ctx context.Context, arg RemoveMembershipPara
 	return result.RowsAffected(), nil
 }
 
+const revokeInvitation = `-- name: RevokeInvitation :execrows
+UPDATE invitations SET revoked_at = COALESCE(revoked_at, now())
+WHERE organisation_id = $1 AND id = $2 AND accepted_at IS NULL
+`
+
+type RevokeInvitationParams struct {
+	OrganisationID string
+	ID             pgtype.UUID
+}
+
+// Revoking twice keeps the first time; an accepted link stays accepted.
+func (q *Queries) RevokeInvitation(ctx context.Context, arg RevokeInvitationParams) (int64, error) {
+	result, err := q.db.Exec(ctx, revokeInvitation, arg.OrganisationID, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const revokeOpenInvitation = `-- name: RevokeOpenInvitation :exec
+UPDATE invitations SET revoked_at = now()
+WHERE organisation_id = $1 AND email = $2 AND kind = $3 AND accepted_at IS NULL AND revoked_at IS NULL
+`
+
+type RevokeOpenInvitationParams struct {
+	OrganisationID string
+	Email          string
+	Kind           string
+}
+
+// Creating a link replaces the open one for the same organisation, email and kind.
+func (q *Queries) RevokeOpenInvitation(ctx context.Context, arg RevokeOpenInvitationParams) error {
+	_, err := q.db.Exec(ctx, revokeOpenInvitation, arg.OrganisationID, arg.Email, arg.Kind)
+	return err
+}
+
 const revokeProjectKey = `-- name: RevokeProjectKey :execrows
 UPDATE project_keys SET revoked_at = COALESCE(revoked_at, now())
 WHERE organisation_id = $1 AND project_id = $2 AND key_id = $3
@@ -1344,6 +1668,21 @@ func (q *Queries) SetPassword(ctx context.Context, arg SetPasswordParams) (int64
 		return 0, err
 	}
 	return result.RowsAffected(), nil
+}
+
+const setPasswordByID = `-- name: SetPasswordByID :exec
+UPDATE users SET password_hash = $1, password_version = password_version + 1 WHERE id = $2
+`
+
+type SetPasswordByIDParams struct {
+	PasswordHash string
+	ID           pgtype.UUID
+}
+
+// A reset: the new password and a new password_version, signing every other session out.
+func (q *Queries) SetPasswordByID(ctx context.Context, arg SetPasswordByIDParams) error {
+	_, err := q.db.Exec(ctx, setPasswordByID, arg.PasswordHash, arg.ID)
+	return err
 }
 
 const signInAttemptsSince = `-- name: SignInAttemptsSince :one
@@ -1641,6 +1980,36 @@ func (q *Queries) UpsertParticipant(ctx context.Context, arg UpsertParticipantPa
 		arg.LeftAt,
 	)
 	return err
+}
+
+const useInvitation = `-- name: UseInvitation :one
+UPDATE invitations SET accepted_at = now()
+WHERE token_sha256 = $1 AND accepted_at IS NULL AND revoked_at IS NULL AND expires_at > now()
+RETURNING id, kind, organisation_id, email, role, user_id
+`
+
+type UseInvitationRow struct {
+	ID             pgtype.UUID
+	Kind           string
+	OrganisationID string
+	Email          string
+	Role           pgtype.Text
+	UserID         pgtype.UUID
+}
+
+// Uses a link once: anything but one row means it was used, revoked or expired meanwhile.
+func (q *Queries) UseInvitation(ctx context.Context, tokenSha256 []byte) (UseInvitationRow, error) {
+	row := q.db.QueryRow(ctx, useInvitation, tokenSha256)
+	var i UseInvitationRow
+	err := row.Scan(
+		&i.ID,
+		&i.Kind,
+		&i.OrganisationID,
+		&i.Email,
+		&i.Role,
+		&i.UserID,
+	)
+	return i, err
 }
 
 const userByEmail = `-- name: UserByEmail :one

@@ -1,5 +1,5 @@
 import { http, HttpResponse, type PathParams } from "msw"
-import type { AlertEvents, AlertSetup, Call, CallPage, CallStats, CreatedProjectKey, Invitations, IssueDispositions, Member, Members, ProjectKeys, IssueList, ProjectSettings, ProviderProbes, Workers, CapacityRun, CloudAgents, Egress, Error as ApiErrorBody, Ingress, MediaServer, ProjectSnapshot, Sip, Workspaces } from "@/lib/api-types"
+import type { AlertEvents, AlertSetup, Call, CallPage, CallStats, CreatedInvitation, CreatedPasswordReset, CreatedProjectKey, Invitations, IssueDispositions, Member, Members, ProjectKeys, IssueList, ProjectSettings, ProviderProbes, Workers, CapacityRun, CloudAgents, Egress, Error as ApiErrorBody, Ingress, MediaServer, ProjectSnapshot, Sip, Workspaces } from "@/lib/api-types"
 import { callStats } from "./call-stats"
 import { capturedCalls } from "./fixtures"
 import { alertEvents, issueList } from "./insights"
@@ -7,7 +7,7 @@ import { capacity, cloudAgents, egress, ingress, mediaServer, projectSnapshot, p
 import { summarize } from "./summaries"
 import { matchesFilters, parseFilters, sortCalls, totals } from "./calls-query"
 import { playbackUrl, recordingMedia } from "./recordings"
-import { alertSetup, changeMember, createKey, invitations, issueDispositions, members, projectKeys, projectSettings, revokeKey } from "./settings"
+import { alertSetup, changeMember, createKey, invitations, invite, issueDispositions, members, passwordReset, projectKeys, projectSettings, revokeInvitation, revokeKey } from "./settings"
 import { knownOrg, knownProject, workspaces } from "./workspaces"
 
 // Everything but the paging parameters, in a stable order, so a cursor can name what it was issued for.
@@ -115,7 +115,6 @@ export const handlers = [
   http.get<PathParams, never, ProjectSettings | ApiErrorBody>(`${project}/settings`, ({ params }) => (known(params) ? HttpResponse.json(projectSettings()) : fail(404, "not_found", "No such project."))),
   http.get<PathParams, never, IssueDispositions | ApiErrorBody>(`${project}/issue-dispositions`, ({ params }) => (known(params) ? HttpResponse.json(issueDispositions()) : fail(404, "not_found", "No such project."))),
   http.get<PathParams, never, AlertSetup | ApiErrorBody>(`${project}/alert-setup`, ({ params }) => (known(params) ? HttpResponse.json(alertSetup()) : fail(404, "not_found", "No such project."))),
-  http.get<PathParams, never, Invitations | ApiErrorBody>("*/api/v1/org/:orgId/invitations", ({ params }) => (knownOrg(params.orgId) ? HttpResponse.json(invitations()) : fail(404, "not_found", "No such organisation."))),
   http.get<PathParams, never, Workspaces>("*/api/v1/workspaces", () => HttpResponse.json(workspaces())),
 
   // Project API keys, in memory (settings.ts).
@@ -129,6 +128,25 @@ export const handlers = [
   http.delete<PathParams, never, ApiErrorBody>(`${project}/keys/:keyId`, ({ params }) => {
     if (!known(params)) return fail(404, "not_found", "No such project.")
     return revokeKey(String(params.projectId), String(params.keyId)) ? new HttpResponse(null, { status: 204 }) : fail(404, "not_found", "No such key in this project.")
+  }),
+
+  // Invitations and reset links, in memory (settings.ts), as web without SMTP answers them.
+  http.get<PathParams, never, Invitations | ApiErrorBody>("*/api/v1/org/:orgId/invitations", ({ params }) => (knownOrg(params.orgId) ? HttpResponse.json(invitations()) : fail(404, "not_found", "No such organisation."))),
+  http.post<PathParams, { email?: string; role?: string }, CreatedInvitation | ApiErrorBody>("*/api/v1/org/:orgId/invitations", async ({ params, request }) => {
+    if (!knownOrg(params.orgId)) return fail(404, "not_found", "No such organisation.")
+    const { email, role } = await request.json()
+    if (typeof email !== "string" || !/^[^\s@]+@[^\s@]+$/.test(email) || (role !== "Admin" && role !== "Member" && role !== "Viewer")) return fail(400, "invalid_request", "email and a role of Admin, Member or Viewer are required")
+    const out = invite(email, role)
+    return out === "already_member" ? fail(409, "already_member", "that email's account is already a member of this organisation") : HttpResponse.json(out, { status: 201 })
+  }),
+  http.delete<PathParams, never, ApiErrorBody>("*/api/v1/org/:orgId/invitations/:invitationId", ({ params }) => {
+    if (!knownOrg(params.orgId)) return fail(404, "not_found", "No such organisation.")
+    return revokeInvitation(String(params.invitationId)) ? new HttpResponse(null, { status: 204 }) : fail(404, "not_found", "no such invitation in this organisation")
+  }),
+  http.post<PathParams, never, CreatedPasswordReset | ApiErrorBody>("*/api/v1/org/:orgId/members/:userId/password-reset", ({ params }) => {
+    if (!knownOrg(params.orgId)) return fail(404, "not_found", "No such organisation.")
+    const out = passwordReset(String(params.userId))
+    return out === "not_found" ? fail(404, "not_found", "no such member of this organisation") : HttpResponse.json(out, { status: 201 })
   }),
 
   // Members, in memory (settings.ts), with web's refusals.

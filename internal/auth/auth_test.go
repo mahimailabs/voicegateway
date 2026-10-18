@@ -545,6 +545,26 @@ func TestNoSecretInLogs(t *testing.T) {
 	f.send(web, call{method: http.MethodGet, path: "/api/v1/org/default/project/logs/calls", token: created[:len(created)-2] + "xx"})
 	failing := (&api.API{Projects: f.pg, Calls: f.pg, Traces: emptyTraces{}, Accounts: failingAccounts{Accounts: f.pg}, Log: s.Log, Now: time.Now, Gate: s.Gate}).Routes()
 	f.send(failing, call{method: http.MethodGet, path: members, cookie: c})
+	// Phase 06d: links made, read, refused and used without SMTP, a reset, and a failed send whose
+	// SMTP URL holds a password.
+	iw := f.web(nil)
+	invited := iw.link(c, "default", "invitee@example.com", "Member")
+	iw.look(tokenOf(invited))
+	iw.accept(tokenOf(invited), "too short", request{tls: true})
+	joined := sessionCookie(func() *http.Response { r, _ := iw.accept(tokenOf(invited), newPassword, request{tls: true}); return r }())
+	iw.accept(tokenOf(invited), newPassword, request{tls: true})
+	existing := iw.link(c, "default", "elsewhere@example.com", "Viewer")
+	f.addUser("elsewhere@example.com", "other-org", "viewer")
+	iw.accept(tokenOf(existing), "a wrong one", request{tls: true})
+	_, resetLink, _, _ := iw.resetLink(c, "default", f.userID("invitee@example.com"))
+	const fromReset = "set through a reset link"
+	iw.accept(tokenOf(*resetLink), fromReset, request{tls: true})
+	down := f.web(unreachableMailer(t))
+	down.invite(c, "default", "unsent@example.com", "Viewer")
+	down.resetLink(c, "default", f.userID("invitee@example.com"))
+	if !strings.Contains(f.logs.String(), `"class":"unreachable"`) {
+		t.Error("the failed send did not log")
+	}
 	logs := f.logs.String()
 	if logs == "" {
 		t.Fatal("no log lines to check: the error path did not log")
@@ -552,7 +572,10 @@ func TestNoSecretInLogs(t *testing.T) {
 	if !strings.Contains(logs, "members") {
 		t.Error("the failing member store did not log")
 	}
-	for _, secret := range []string{password, "a wrong one", c.Value, key, key[len(key)-43:], created, created[len(created)-43:], reset, bob.Value} {
+	for _, secret := range []string{
+		password, "a wrong one", c.Value, key, key[len(key)-43:], created, created[len(created)-43:], reset, bob.Value,
+		invited, tokenOf(invited), existing, tokenOf(existing), *resetLink, tokenOf(*resetLink), newPassword, fromReset, joined.Value, smtpPassword,
+	} {
 		if strings.Contains(logs, secret) {
 			t.Errorf("a log line holds a secret %q", secret)
 		}

@@ -27,6 +27,7 @@ require (
 	github.com/testcontainers/testcontainers-go/modules/postgres v0.44.0
 	github.com/testcontainers/testcontainers-go/modules/redis v0.44.0
 	github.com/twitchtv/twirp v8.1.3+incompatible
+	github.com/wneessen/go-mail v0.8.1
 	go.opentelemetry.io/collector/pdata v1.68.0
 	golang.org/x/crypto v0.58.0
 	golang.org/x/sync v0.24.0

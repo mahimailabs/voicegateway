@@ -128,7 +128,7 @@ An organisation admin invites someone by email with a role. The invitee gets the
   - The URL looks like `smtps://user:pass@host:465` or `smtp://user:pass@host:587`. The second form requires STARTTLS, and plain SMTP is refused unless the host is loopback.
   - It is sent with `github.com/wneessen/go-mail` v0.8.1, exactly pinned.
   - The message is plain text: the organisation, the role, the link and its expiry.
-  - The SMTP password and the link never appear in logs. A send failure logs its class only (unreachable, auth, rejected). The invitation still stands, and the answer says `emailed: false` with the link.
+  - The SMTP password and the link never appear in logs. A send failure logs its class only (unreachable, tls, auth, rejected). The invitation still stands, and the answer says `emailed: false` with `link: null`.
   - Without the setting, nothing is sent and the console shows the link to copy. The alerts email channel will use this same setting.
 - **Console** (`dashboard/`), with `VITE_MOCK_API=off`:
   - **`/invite#<token>`:** shows the organisation and role, then one password field. A reset says "Set a new password".
@@ -251,4 +251,4 @@ These are my recommendations; change any before building.
 - **The spec's file name** is `phase06d-invitations.md`, matching the other 06 specs, rather than `06d-invitations.md`.
 - **Idempotency:** an optional `IdempotencyKey` on `Invite`, per organisation, so the 06e instance API's retries return the first invitation instead of revoking an emailed link. Without a key, a repeat create replaces the open link.
 - **No account hint on the accept page:** one password field for everyone, and the same answer from `GET /auth/invitation` whether or not an account exists.
-- **Size:** this is one phase's work, in line with 06a. If the build runs long, email (checks 11 and 12) can move to a follow-up, with links copied by hand meanwhile.
+- **Size:** this is one phase's work, in line with 06a. If the build runs long, email (checks 11 and 12) can move to a follow-up, with links copied by hand meanwhile. Cloud must not run 06d without check 12 (no link returned while SMTP is set), even if email moves to a follow-up.

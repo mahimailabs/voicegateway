@@ -2,6 +2,7 @@
 import { cleanup, render, screen, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
+import { Outlet, RouterProvider, createMemoryHistory, createRootRoute, createRoute, createRouter } from "@tanstack/react-router"
 import { seen } from "./fetch-call.ts"
 import { afterEach, beforeAll, expect, test, vi } from "vitest"
 
@@ -64,7 +65,16 @@ function signedInAs(role: string) {
   setCurrentSession({ email: "ada@example.com", organisations: [{ id: "default", role }] })
 }
 
-const show = (ui: React.ReactNode) => render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>{ui}</QueryClientProvider>)
+// Under a router: the invitations list keeps its filter and sort in the URL.
+function show(ui: React.ReactNode) {
+  const root = createRootRoute({ component: () => <Outlet /> })
+  const router = createRouter({ routeTree: root.addChildren([createRoute({ getParentRoute: () => root, path: "/", component: () => ui })]), history: createMemoryHistory({ initialEntries: ["/"] }) })
+  return render(
+    <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+      <RouterProvider router={router} />
+    </QueryClientProvider>,
+  )
+}
 
 test("an Admin sees every member, with a role picker on each and Remove on all but their own", async () => {
   serve()
@@ -111,10 +121,10 @@ test("a Viewer sees the list with no role picker, no Remove and no Invite form",
   expect(screen.queryByRole("form", { name: "Invite people" })).toBeNull()
 })
 
-test("the Role row shows the signed-in user's role", () => {
+test("the Role row shows the signed-in user's role", async () => {
   signedInAs("member")
   show(<Account />)
-  expect(screen.getByText("Role").closest("[data-slot=item]")?.textContent).toContain("Member")
+  expect((await screen.findByText("Role")).closest("[data-slot=item]")?.textContent).toContain("Member")
 })
 
 test("demoting yourself reads the session again and hides the admin controls", async () => {
