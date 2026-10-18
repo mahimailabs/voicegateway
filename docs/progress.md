@@ -15,6 +15,7 @@ Phase 1: the console, UI first. Spec: docs/specs/phase01-console.md.
 | --- | --- | --- | --- |
 | Setup | none | PRODUCT.md, ARCHITECTURE.md, DESIGN.md (The Clean Room seed), CLAUDE.md and decisions 0005 to 0013 written for the Go platform | 2026-10-12 |
 | Go spike | none | Four gates passed: ingest (0 lost in 12 runs), LiveKit webhooks in Go, Agents spans joined to calls, ocb collector build. Results in decision 0009 | 2026-10-11 |
+| 05c egress and ingress | docs/specs/phase05-livekit-layers.md | The worker lists egress and ingress per project every 15 s and stores redacted projections (ClickHouse 00006); getEgress and getIngress serve them with sourceStatus and histories joined with stored webhooks; Egress gains streams and outcome (#345, LIMIT_REACHED reads as cut_short). Checks 8 (TestEgressLive) and 9 (TestIngressLive) pass against livekit-server --dev 1.13.3, with LiveKit's own IOInfo client playing the egress and ingress services | 2026-10-18 |
 
 ## In progress (Phase 1)
 
