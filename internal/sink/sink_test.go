@@ -382,3 +382,97 @@ func TestChunksByBytes(t *testing.T) {
 		t.Fatalf("chunk sizes = %v, want [2 1 1 1]", sizes)
 	}
 }
+
+// Egress and Ingress webhooks, shaped as LiveKit (protocol v1.52.1) sends them, carrying every
+// secret a start request or an ingress can hold.
+const (
+	egressStarted = `{"event":"egress_started","egressInfo":{"egressId":"EG_1","roomId":"RM_1","roomName":"call-1","status":"EGRESS_ACTIVE","startedAt":"1700000000000000000",` +
+		`"roomComposite":{"roomName":"call-1","layout":"speaker","customBaseUrl":"https://layouts.example.com/?token=sec-layout-token",` +
+		`"fileOutputs":[{"filepath":"calls/call-1.mp4","s3":{"accessKey":"sec-s3-access","secret":"sec-s3-secret","sessionToken":"sec-s3-session","assumeRoleExternalId":"sec-s3-external","bucket":"recordings","proxy":{"url":"http://sec-proxy-user:sec-proxy-pass@proxy.example.com:3128","username":"sec-proxy-user","password":"sec-proxy-pass"}}}],` +
+		`"streamOutputs":[{"protocol":"RTMP","urls":["rtmp://a.rtmp.youtube.com/live2/sec-rtmp-key","mux://sec-mux-key"]}],` +
+		`"webhooks":[{"url":"https://hooks.example.com/egress?sig=sec-hook-query","signingKey":"sec-hook-signing"}]},` +
+		`"streamResults":[{"url":"rtmp://a.rtmp.youtube.com/live2/sec-rtmp-key","status":"FAILED","error":"publish sec-rtmp-key refused"},{"url":"mux://sec-mux-key","status":"ACTIVE"}],` +
+		`"error":"could not reach rtmp://a.rtmp.youtube.com/live2/sec-rtmp-key for caller +15559876543","details":"mux key sec-mux-key, hook sec-hook-signing"},` +
+		`"id":"EV_EG_1","createdAt":"1700000000"}`
+	egressEnded = `{"event":"egress_ended","egressInfo":{"egressId":"EG_2","roomId":"RM_1","roomName":"call-1","status":"EGRESS_COMPLETE","startedAt":"1700000000000000000","endedAt":"1700000060000000000",` +
+		`"egress":{"roomName":"call-1","web":{"url":"https://app.example.com/view/sec-web-path?token=sec-web-token"},` +
+		`"outputs":[{"file":{"filepath":"calls/call-1.ogg"},"storage":{"gcp":{"credentials":"sec-gcp-credentials","bucket":"recordings"}}},` +
+		`{"segments":{"filenamePrefix":"calls/call-1"},"storage":{"azure":{"accountName":"sec-azure-account","accountKey":"sec-azure-key","containerName":"recordings"}}},` +
+		`{"images":{"filenamePrefix":"calls/call-1"},"storage":{"aliOSS":{"accessKey":"sec-oss-access","secret":"sec-oss-secret","bucket":"recordings"}}}],` +
+		`"storage":{"s3":{"accessKey":"sec-default-access","secret":"sec-default-secret","bucket":"recordings"}},` +
+		`"webhooks":[{"url":"https://hooks.example.com/egress","signingKey":"sec-v2-signing"}]},` +
+		`"fileResults":[{"filename":"calls/call-1.ogg","location":"https://recordings.s3.amazonaws.com/calls/call-1.ogg?X-Amz-Signature=sec-presigned","size":"2048"}],` +
+		`"segmentResults":[{"playlistName":"calls/call-1.m3u8","playlistLocation":"https://recordings.blob.core.windows.net/calls/call-1.m3u8?sig=sec-sas"}]},` +
+		`"id":"EV_EG_2","createdAt":"1700000060"}`
+	ingressStarted = `{"event":"ingress_started","ingressInfo":{"ingressId":"IN_1","name":"desk","streamKey":"sec-ingress-key","url":"https://whip.example.com/w/sec-whip-token","inputType":"WHIP_INPUT",` +
+		`"roomName":"call-1","participantIdentity":"sip_+15551234567","participantName":"sec-name Jane Caller","participantMetadata":"{\"crm\":\"sec-metadata\"}",` +
+		`"state":{"status":"ENDPOINT_PUBLISHING","error":"stream key sec-ingress-key from +15551234567 rejected at rtmp://ingest.example.com/live/sec-ingress-key","roomId":"RM_1","startedAt":"1700000000000000000","tracks":[{"sid":"TR_1","type":"AUDIO","name":"caller +15551234567"}]}},` +
+		`"id":"EV_IN_1","createdAt":"1700000000"}`
+	ingressEnded = `{"event":"ingress_ended","ingressInfo":{"ingressId":"IN_2","name":"pull","streamKey":"sec-ingress-key-2","url":"rtmp://ingest.example.com/x","inputType":"RTMP_INPUT",` +
+		`"roomName":"call-1","participantIdentity":"streamer","participantName":"sec-name-2","participantMetadata":"sec-metadata-2",` +
+		`"state":{"status":"ENDPOINT_COMPLETE","roomId":"RM_1","endedAt":"1700000060000000000"}},` +
+		`"id":"EV_IN_2","createdAt":"1700000060"}`
+)
+
+// An Egress or Ingress webhook is stored with none of its credentials, stream keys, tokens, names,
+// metadata or full phone numbers; its ids, room, status and the hosts it streamed to remain.
+func TestSinkStripsEgressAndIngressSecrets(t *testing.T) {
+	f := newFixture(t)
+	tests := []struct {
+		id, body string
+		secrets  []string
+		keep     []string
+	}{
+		{
+			"EV_EG_1", egressStarted,
+			[]string{"sec-layout-token", "sec-s3-access", "sec-s3-secret", "sec-s3-session", "sec-s3-external", "sec-proxy-user", "sec-proxy-pass", "sec-rtmp-key", "sec-mux-key", "sec-hook-query", "sec-hook-signing", "9876543", "/live2"},
+			[]string{
+				`"event":"egress_started"`, `"egressId":"EG_1"`, `"roomId":"RM_1"`, `"roomName":"call-1"`, `"status":"EGRESS_ACTIVE"`, `"url":"rtmp://a.rtmp.youtube.com"`, `"url":"mux://"`, `"createdAt":"1700000000"`,
+				`"error":"could not reach rtmp://a.rtmp.youtube.com for caller •••• 6543"`, `"error":"publish [redacted] refused"`, `"details":"mux key [redacted], hook [redacted]"`,
+			},
+		},
+		{
+			"EV_EG_2", egressEnded,
+			[]string{"sec-web-path", "sec-web-token", "sec-gcp-credentials", "sec-azure-account", "sec-azure-key", "sec-oss-access", "sec-oss-secret", "sec-default-access", "sec-default-secret", "sec-v2-signing", "sec-presigned", "sec-sas"},
+			[]string{`"event":"egress_ended"`, `"egressId":"EG_2"`, `"roomId":"RM_1"`, `"status":"EGRESS_COMPLETE"`, `"filename":"calls/call-1.ogg"`, `X-Amz-Signature=`, `"playlistName":"calls/call-1.m3u8"`},
+		},
+		{
+			"EV_IN_1", ingressStarted,
+			[]string{"sec-ingress-key", "sec-whip-token", "sec-name", "sec-metadata", "5551234567", "/live/"},
+			[]string{`"event":"ingress_started"`, `"ingressId":"IN_1"`, `"roomName":"call-1"`, `"url":"https://whip.example.com"`, `"participantIdentity":"sip_•••• 4567"`, `"name":"caller •••• 4567"`, `"status":"ENDPOINT_PUBLISHING"`, `"roomId":"RM_1"`, `"error":"stream key [redacted] from •••• 4567 rejected at rtmp://ingest.example.com"`},
+		},
+		{
+			"EV_IN_2", ingressEnded,
+			[]string{"sec-ingress-key-2", "sec-name-2", "sec-metadata-2"},
+			[]string{`"event":"ingress_ended"`, `"ingressId":"IN_2"`, `"url":"rtmp://ingest.example.com"`, `"participantIdentity":"streamer"`, `"status":"ENDPOINT_COMPLETE"`},
+		},
+	}
+	for _, tt := range tests {
+		f.append(t, event.KindLiveKitWebhook, tt.id, tt.body)
+	}
+	run(t, f.sink("w1", f.events), func() bool { return f.streamLen() == 0 })
+	if n := f.rdb.XLen(context.Background(), stream.DeadLetters(stream.Ingest)).Val(); n != 0 {
+		t.Fatalf("dead letters = %d, want 0", n)
+	}
+	for _, tt := range tests {
+		t.Run(tt.id, func(t *testing.T) {
+			var payload string
+			if err := f.ch.QueryRow(context.Background(), "SELECT payload FROM events WHERE event_id = ?", tt.id).Scan(&payload); err != nil {
+				t.Fatal(err)
+			}
+			for _, s := range tt.secrets {
+				if strings.Contains(payload, s) {
+					t.Errorf("stored payload holds %q", s)
+				}
+			}
+			for _, k := range tt.keep {
+				if !strings.Contains(payload, k) {
+					t.Errorf("stored payload lost %s", k)
+				}
+			}
+			if t.Failed() {
+				t.Logf("stored payload = %s", payload)
+			}
+		})
+	}
+}
