@@ -4,7 +4,7 @@ The site at <https://docs.voicegateway.dev>: a [Fumadocs](https://fumadocs.dev) 
 
 ```bash
 npm ci
-npm run dev     # http://localhost:3000/docs
+npm run dev     # http://localhost:3000
 npm run build   # static export in ./out
 npx wrangler deploy   # serves ./out at docs.voicegateway.dev (wrangler.jsonc)
 ```

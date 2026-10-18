@@ -8,7 +8,7 @@ await generateFiles({
   output: './content/docs/api',
   includeDescription: true,
   index: {
-    url: (file) => `/docs/api/${file.split('/').pop().replace(/\.mdx$/, '')}`,
+    url: (file) => `/api/${file.split('/').pop().replace(/\.mdx$/, '')}`,
     items: [{ path: 'index.mdx', title: 'API reference', description: 'Every call the console makes, for your own scripts.' }],
   },
   meta: true,
