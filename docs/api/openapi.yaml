@@ -1,8 +1,15 @@
 openapi: 3.1.1
 info:
-  title: VoiceGateway console read contract
+  title: VoiceGateway API
   version: 1.0.0
-  description: "Issue #321 console read contract. Read models normalise captured LiveKit evidence; native LiveKit clients/protocol messages remain the source, never reimplemented. No Go implementation, generated TypeScript or MSW in this PR. A browser signs in with a session cookie (decision 0027); x-access states mandatory authorisation policy, not anonymous access. Member writes are tagged Console writes. See coverage.md and upstream-sources.md for provenance and missing-data rules."
+  description: |-
+    The API behind the VoiceGateway console, for an organisation's LiveKit projects: calls and their
+    turns, issues, alerts, and what VoiceGateway reads of each LiveKit layer (media server, agent
+    workers, SIP, egress and ingress), plus its members and their roles.
+
+    Sign in to the console first: requests use its session cookie, and each operation names the
+    lowest organisation role it needs. Project paths take the organisation and project ids shown in
+    the console's address bar. Times are RFC 3339; a value no source reported is null, never zero.
   license:
     name: MIT
     identifier: MIT
