@@ -8,10 +8,12 @@
     "prebuild": "node scripts/generate-api.mjs",
     "build": "next build",
     "start": "serve out",
+    "test": "vitest run",
     "types:check": "node scripts/generate-api.mjs && next typegen && tsc --noEmit"
   },
   "dependencies": {
     "@phosphor-icons/react": "2.1.10",
+    "class-variance-authority": "0.7.1",
     "cn": "0.4.0",
     "fumadocs-core": "16.17.5",
     "fumadocs-mdx": "15.4.7",
@@ -19,10 +21,12 @@
     "fumadocs-ui": "npm:@fumadocs/base-ui@16.17.5",
     "lucide-react": "1.59.0",
     "next": "16.3.8",
+    "posthog-js": "1.399.0",
     "react": "19.3.1",
     "react-dom": "19.3.1",
     "shiki": "4.5.0",
-    "yaml": "2.9.1"
+    "yaml": "2.9.1",
+    "zod": "4.6.7"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "4.3.3",
@@ -33,6 +37,7 @@
     "postcss": "8.5.30",
     "serve": "14.2.6",
     "tailwindcss": "4.3.3",
-    "typescript": "7.0.2"
+    "typescript": "7.0.2",
+    "vitest": "5.0.5"
   }
 }

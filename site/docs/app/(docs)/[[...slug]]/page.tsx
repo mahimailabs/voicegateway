@@ -10,6 +10,7 @@ import {
 import { notFound } from 'next/navigation';
 import { getMDXComponents } from '@/components/mdx';
 import { OpenAPIPage } from '@/components/api-page';
+import { PageFeedback } from '@/components/page-feedback';
 import { openapi } from '@/lib/openapi';
 import type { Metadata } from 'next';
 import { createRelativeLink } from 'fumadocs-ui/mdx';
@@ -45,6 +46,7 @@ export default async function Page(props: PageProps<'/[[...slug]]'>) {
           })}
         />
       </DocsBody>
+      <PageFeedback />
     </DocsPage>
   );
 }
