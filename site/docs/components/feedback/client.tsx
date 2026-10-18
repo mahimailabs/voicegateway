@@ -3,7 +3,8 @@
 // fuma-nama/fumadocs@7b2b93d), the component `npx @fumadocs/cli add feedback`
 // installs. Only the page feedback is kept. Local edits: the question reads "Was
 // this page helpful?", the message is optional so a thumbs up or down alone is
-// sent, and the GitHub link shows only when the action returns one.
+// sent, the GitHub link shows only when the action returns one, and localStorage
+// access is guarded for private modes that block it.
 import { cn } from '@/lib/cn';
 import { buttonVariants } from 'fumadocs-ui/components/ui/button';
 import { ThumbsDown, ThumbsUp } from 'lucide-react';
@@ -181,18 +182,26 @@ function useSubmissionStorage<Result>(key: string, validate: (v: unknown) => Res
   const validateCallback = useEffectEvent(validate);
 
   useEffect(() => {
-    const item = localStorage.getItem(storageKey);
-    if (item === null) return;
-    const validated = validateCallback(JSON.parse(item));
+    try {
+      const item = localStorage.getItem(storageKey);
+      if (item === null) return;
+      const validated = validateCallback(JSON.parse(item));
 
-    if (validated !== null) setValue(validated);
+      if (validated !== null) setValue(validated);
+    } catch {
+      // Storage blocked (some private modes) or a corrupt entry: show the form.
+    }
   }, [storageKey]);
 
   return {
     previous: value,
     setPrevious(result: Result | null) {
-      if (result) localStorage.setItem(storageKey, JSON.stringify(result));
-      else localStorage.removeItem(storageKey);
+      try {
+        if (result) localStorage.setItem(storageKey, JSON.stringify(result));
+        else localStorage.removeItem(storageKey);
+      } catch {
+        // Storage blocked: remember the answer for this page view only.
+      }
 
       setValue(result);
     },

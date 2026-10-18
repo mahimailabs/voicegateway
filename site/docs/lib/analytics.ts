@@ -23,6 +23,8 @@ export function initializeAnalytics(): Promise<PostHog | null> {
       autocapture: false,
       disable_surveys: true,
       disable_session_recording: true,
+      // No feature flags here, so skip the /flags request.
+      advanced_disable_flags: true,
       before_send: event => {
         if (event) event.properties.site = SITE;
         return event;
@@ -59,4 +61,16 @@ export function linkEvent(href: string, origin: string): { name: string; destina
     : AI_HOSTS.has(host) ? 'ask_ai_click'
     : 'outbound_click';
   return { name, destination: target.origin + target.pathname };
+}
+
+/**
+ * Names the event for a click on a button, or null. fumadocs-ui renders the code block
+ * copy button with its label in an sr-only span ("Copy Text", then "Copied Text"), and
+ * the page action as "Copy Markdown".
+ */
+export function buttonEvent(text: string | null | undefined, inFigure: boolean): string | null {
+  const label = text?.trim();
+  if (inFigure && (label === 'Copy Text' || label === 'Copied Text')) return 'code_copy';
+  if (label === 'Copy Markdown' || label === 'Copied Markdown') return 'markdown_copy';
+  return null;
 }

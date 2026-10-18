@@ -24,15 +24,18 @@ export default function DefaultSearchDialog(props: SharedProps) {
     }),
   });
 
-  // One event per query someone settles on, with how many pages matched: searches
-  // with no results are the pages the docs are missing.
+  // One event per query someone settles on, with how many pages matched and the first
+  // one: searches with no results, or the wrong top page, are what the docs are missing.
   const settled = search.trim();
-  const results = query.isLoading || query.data === 'empty' || !query.data ? null : query.data.filter((item) => item.type === 'page').length;
+  // Orama matches any one term, so the count runs high; the top page shows what the query found.
+  const pages = query.isLoading || query.data === 'empty' || !query.data ? null : query.data.filter((item) => item.type === 'page');
+  const results = pages?.length ?? null;
+  const top = pages?.[0]?.url ?? '';
   useEffect(() => {
     if (settled.length < 2 || results === null) return;
-    const timer = setTimeout(() => void track('docs_search', { query: settled.slice(0, 100), results }), 1500);
+    const timer = setTimeout(() => void track('docs_search', { query: settled.slice(0, 100), results, top }), 1500);
     return () => clearTimeout(timer);
-  }, [settled, results]);
+  }, [settled, results, top]);
 
   return (
     <SearchDialog search={search} onSearchChange={setSearch} isLoading={query.isLoading} {...props}>
