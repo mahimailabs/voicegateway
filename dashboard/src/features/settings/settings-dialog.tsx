@@ -1,5 +1,5 @@
 import { useState } from "react"
-import { useQuery } from "@tanstack/react-query"
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { EnvelopeSimple as Envelope, WebhooksLogo, Buildings, Database, Key as KeyIcon, Clock, Copy, EnvelopeSimple, GearSix, FrameCorners, Lock, UsersThree, X, Plug, Plus, TreeStructure, User } from "@phosphor-icons/react"
 import type { Icon } from "@phosphor-icons/react"
 import { toast } from "sonner"
@@ -21,8 +21,9 @@ import { NewProjectDialog } from "@/components/new-project-dialog"
 import { currentOrg, currentScope, scopePrefix, useUrlState } from "@/lib/url-state"
 import { type WidgetId, widgets } from "@/features/embed/widgets"
 import { DEFAULTS, type Thresholds as T } from "@/lib/thresholds"
-import { callTotalsQuery, invitationsQuery, latestMatchingCallQuery, mediaServerQuery, projectSettingsQuery } from "@/lib/api"
-import type { Invitation, Invitations, ProjectSettings } from "@/lib/api-types"
+import { ApiError, callTotalsQuery, invitationsQuery, latestMatchingCallQuery, mediaServerQuery, membersQuery, projectSettingsQuery, removeMember, updateMember } from "@/lib/api"
+import type { Invitation, Invitations, Member, ProjectSettings } from "@/lib/api-types"
+import { refreshSession, roleIn, useSession } from "@/lib/session"
 import { useLocalSave } from "@/lib/local-store"
 import { errorText } from "@/components/page-state"
 
@@ -127,15 +128,18 @@ function ServerUrl() {
 
 // --- Pages ---
 
-function Account() {
+export function Account() {
   const { theme, set } = useTheme()
+  const session = useSession()
+  const email = session?.email
+  const role = roleIn(org().id, session)
   return (
     <>
       <Header title="Account" description="You, and how the console looks for you." />
-      <Group label="Profile" footer="Sign-in arrives with the server.">
+      <Group label="Profile">
         <Row title="Name" value={<NotSet />} />
-        <Row title="Email" value={<NotSet />} />
-        <Row title="Role" description="Everyone signed in is an admin in the open-source edition." value="Admin" last />
+        <Row title="Email" value={email ?? <NotSet />} />
+        <Row title="Role" description={`Your role across ${org().name}.`} value={role ?? <Muted>Not a member</Muted>} last />
       </Group>
       <Group label="Appearance" footer="Kept in this browser.">
         <Row
@@ -190,8 +194,6 @@ function Organisation() {
   )
 }
 
-// Invites wait in this browser until the Phase 2 server sends them (decision 0019); getInvitations
-// reads them back.
 type Role = Invitation["role"]
 type Invite = Invitation
 
@@ -201,7 +203,94 @@ const roles: { role: Role; description: string }[] = [
   { role: "Viewer", description: "Reads calls and traces; changes nothing." },
 ]
 
-function People() {
+export function People() {
+  const isAdmin = roleIn(org().id, useSession()) === "Admin"
+  return (
+    <>
+      <Header title="People" description="Who can sign in, and what each person can do across the organisation." />
+      {isAdmin && <Invites />}
+      <MemberList isAdmin={isAdmin} />
+      <Group label="Roles">
+        {roles.map((r) => (
+          <Row key={r.role} title={r.role} description={r.description} />
+        ))}
+        <Row icon={Lock} muted title="Roles per project" description="A different role in each project is VoiceGateway Enterprise." last />
+      </Group>
+    </>
+  )
+}
+
+export const LAST_ADMIN = "An organisation needs at least one admin."
+
+// The members from getMembers. An Admin changes roles and removes people, never themselves; the
+// server refuses leaving no admin (last_admin), shown here.
+function MemberList({ isAdmin }: { isAdmin: boolean }) {
+  const read = useQuery(membersQuery())
+  const qc = useQueryClient()
+  const me = useSession()?.email
+  const [problem, setProblem] = useState<string | null>(null)
+  const list = read.data?.items ?? []
+  const done = {
+    onSuccess: (_: unknown, v: string | { userId: string }) => {
+      setProblem(null)
+      // A change to your own role changes what this console may show you.
+      const self = list.find((m) => m.userId === (typeof v === "string" ? v : v.userId))?.email === me
+      return Promise.all([qc.invalidateQueries({ queryKey: membersQuery().queryKey }), self ? refreshSession().catch(() => undefined) : undefined])
+    },
+    onError: (e: Error) => setProblem(e instanceof ApiError && e.code === "last_admin" ? LAST_ADMIN : errorText(e)),
+  }
+  const change = useMutation({ mutationFn: (v: { userId: string; role: Member["role"] }) => updateMember(v.userId, v.role), ...done })
+  const remove = useMutation({ mutationFn: (userId: string) => removeMember(userId), ...done })
+  return (
+    <Group label="Members">
+      {!read.isSuccess && <Row title="Members" description={read.isError ? errorText(read.error) : undefined} value={read.isError ? "Could not be read" : "Loading"} last />}
+      {list.map((m, k) => {
+        const self = m.email === me
+        return (
+          <Row
+            key={m.userId}
+            title={self ? `${m.email} (you)` : m.email}
+            value={
+              isAdmin ? (
+                <div className="flex items-center gap-2">
+                  <Select value={m.role} onValueChange={(v) => change.mutate({ userId: m.userId, role: v as Member["role"] })}>
+                    <SelectTrigger size="sm" className="w-28" aria-label={`Role of ${m.email}`}>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {roles.map((r) => (
+                        <SelectItem key={r.role} value={r.role}>
+                          {r.role}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {!self && (
+                    <Button variant="ghost" size="sm" onClick={() => remove.mutate(m.userId)} aria-label={`Remove ${m.email}`}>
+                      Remove
+                    </Button>
+                  )}
+                </div>
+              ) : (
+                m.role
+              )
+            }
+            last={k === list.length - 1}
+          />
+        )
+      })}
+      {problem && (
+        <p role="alert" className="pt-3 text-[13px] text-destructive">
+          {problem}
+        </p>
+      )}
+    </Group>
+  )
+}
+
+// Invites wait in this browser until invitation links arrive (phase 06d); getInvitations reads
+// them back. Admins only, as getInvitations is.
+function Invites() {
   const read = useQuery(invitationsQuery())
   const setInvites = useLocalSave<Invite[], Invitations>("vg.invites", invitationsQuery().queryKey, (d) => d?.items ?? [])
   const list = read.data?.items ?? []
@@ -217,7 +306,6 @@ function People() {
   }
   return (
     <>
-      <Header title="People" description="Who can sign in, and what each person can do across the organisation." />
       <section className="pt-6">
         <form
           className="grid grid-cols-1 items-start gap-3 sm:grid-cols-[minmax(0,220px)_minmax(0,1fr)] sm:gap-8 border-b pb-6"
@@ -225,10 +313,11 @@ function People() {
             e.preventDefault()
             if (valid) invite()
           }}
+          aria-label="Invite people"
         >
           <div className="space-y-0.5">
             <p className="text-[14px] font-medium">Invite people</p>
-            <p className="text-[13px] text-muted-foreground">They get an email to join {org().name}. Sending starts with the server; until then invites wait here.</p>
+            <p className="text-[13px] text-muted-foreground">They get a link to join {org().name}. Links arrive with a later release; until then invites wait here.</p>
           </div>
           <div className="space-y-3">
             <InputGroup>
@@ -252,36 +341,30 @@ function People() {
           </div>
         </form>
       </section>
-      <Group label="People">
-        <Row title="You" description="Sign-in arrives with the server." value="Admin" last={list.length === 0 && read.isSuccess} />
-        {!read.isSuccess && <Row title="Invitations" description={read.isError ? errorText(read.error) : undefined} value={read.isError ? "Could not be read" : "Loading"} last />}
-        {list.map((i, k) => (
-          <Row
-            key={i.email}
-            title={i.email}
-            description={`${i.role} · invite pending`}
-            value={
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => {
-                  setInvites((current) => current.filter((x) => x.email !== i.email))
-                  toast(`Revoked the invite for ${i.email}`, { action: { label: "Undo", onClick: () => setInvites((current) => (current.some((x) => x.email === i.email) ? current : [...current, i])) } })
-                }}
-              >
-                Revoke
-              </Button>
-            }
-            last={k === list.length - 1}
-          />
-        ))}
-      </Group>
-      <Group label="Roles">
-        {roles.map((r) => (
-          <Row key={r.role} title={r.role} description={r.description} />
-        ))}
-        <Row icon={Lock} muted title="Roles per project" description="A different role in each project is VoiceGateway Enterprise." last />
-      </Group>
+      {list.length > 0 && (
+        <Group label="Pending invitations">
+          {list.map((i, k) => (
+            <Row
+              key={i.email}
+              title={i.email}
+              description={`${i.role} · invite pending`}
+              value={
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    setInvites((current) => current.filter((x) => x.email !== i.email))
+                    toast(`Revoked the invite for ${i.email}`, { action: { label: "Undo", onClick: () => setInvites((current) => (current.some((x) => x.email === i.email) ? current : [...current, i])) } })
+                  }}
+                >
+                  Revoke
+                </Button>
+              }
+              last={k === list.length - 1}
+            />
+          ))}
+        </Group>
+      )}
     </>
   )
 }

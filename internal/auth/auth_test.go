@@ -25,7 +25,9 @@ import (
 	tcpostgres "github.com/testcontainers/testcontainers-go/modules/postgres"
 
 	"github.com/mahimailabs/voicegateway/internal/api"
+	"github.com/mahimailabs/voicegateway/internal/app"
 	"github.com/mahimailabs/voicegateway/internal/auth"
+	"github.com/mahimailabs/voicegateway/internal/config"
 	"github.com/mahimailabs/voicegateway/internal/store"
 	"github.com/mahimailabs/voicegateway/internal/store/pgstore"
 	"github.com/mahimailabs/voicegateway/internal/turn"
@@ -38,6 +40,7 @@ const password = "correct horse battery staple"
 
 type fixture struct {
 	t    *testing.T
+	url  string
 	pool *pgxpool.Pool
 	pg   *pgstore.Store
 	logs *bytes.Buffer
@@ -71,7 +74,7 @@ func newFixture(t *testing.T) *fixture {
 	if _, err := pgstore.Migrate(ctx, pool); err != nil {
 		t.Fatal(err)
 	}
-	return &fixture{t: t, pool: pool, pg: pgstore.NewStore(pool, nil), logs: &bytes.Buffer{}}
+	return &fixture{t: t, url: url, pool: pool, pg: pgstore.NewStore(pool, nil), logs: &bytes.Buffer{}}
 }
 
 // service returns a sign-in service over the shared Postgres: each call is another web instance.
@@ -480,6 +483,13 @@ func loadContract(t *testing.T) validator.Validator {
 	return v
 }
 
+// failingAccounts is the account store failing on member reads, to reach the API's error path.
+type failingAccounts struct{ api.Accounts }
+
+func (failingAccounts) Members(context.Context, string) ([]store.Member, error) {
+	return nil, fmt.Errorf("members: dial tcp 127.0.0.1:5432: connection refused")
+}
+
 // failingUsers is the account store failing on lookups, to reach sign-in's error path.
 type failingUsers struct{ auth.Users }
 
@@ -501,11 +511,27 @@ func TestNoSecretInLogs(t *testing.T) {
 	// An error path, which logs: the account store fails during a sign-in.
 	broken := &auth.Service{Users: failingUsers{Users: f.pg}, Secure: s.Secure, Plain: s.Plain, Token: s.Token, Log: s.Log, Now: time.Now}
 	f.do(broken.Routes(), http.MethodPost, "/auth/sign-in", signIn("ada@example.com", password), request{tls: true})
+	// Phase 06b's flows: members read and changed, a password reset, and a failing member store.
+	f.addUser("bob@example.com", "default", "viewer")
+	web := f.membersAPI(s)
+	members := "/api/v1/org/default/members"
+	f.send(web, call{method: http.MethodGet, path: members, cookie: c})
+	f.send(web, call{method: http.MethodPatch, path: members + "/" + f.userID("bob@example.com"), body: `{"role":"Member"}`, cookie: c})
+	const reset = "a reset password, long enough"
+	if err := app.ResetPassword(context.Background(), config.Config{PostgresURL: f.url}, "bob@example.com", func() (string, error) { return reset, nil }); err != nil {
+		t.Fatal(err)
+	}
+	bob := sessionCookie(f.do(routes, http.MethodPost, "/auth/sign-in", signIn("bob@example.com", reset), request{tls: true}))
+	failing := (&api.API{Projects: f.pg, Calls: f.pg, Traces: emptyTraces{}, Accounts: failingAccounts{Accounts: f.pg}, Log: s.Log, Now: time.Now, Gate: s.Gate}).Routes()
+	f.send(failing, call{method: http.MethodGet, path: members, cookie: c})
 	logs := f.logs.String()
 	if logs == "" {
 		t.Fatal("no log lines to check: the error path did not log")
 	}
-	for _, secret := range []string{password, "a wrong one", c.Value, s.Token} {
+	if !strings.Contains(logs, "members") {
+		t.Error("the failing member store did not log")
+	}
+	for _, secret := range []string{password, "a wrong one", c.Value, s.Token, reset, bob.Value} {
 		if strings.Contains(logs, secret) {
 			t.Errorf("a log line holds a secret %q", secret)
 		}

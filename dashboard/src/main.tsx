@@ -7,7 +7,7 @@ import { ThemeProvider } from "@/components/theme"
 import { TooltipProvider } from "@/components/ui/tooltip"
 import { fetchWorkspaces, shouldRetry } from "@/lib/api"
 import { setWorkspaces } from "@/lib/workspaces"
-import { fetchSession, setCurrentSession } from "@/lib/session"
+import { fetchSession, setCurrentSession, setMockApi } from "@/lib/session"
 import "./index.css"
 
 // Captured data never changes while the page is open; refetching on focus would only flicker.
@@ -20,6 +20,7 @@ const queryClient = new QueryClient({ defaultOptions: { queries: { staleTime: In
 const mockApi = import.meta.env.VITE_MOCK_API === "on" || (import.meta.env.DEV && import.meta.env.VITE_MOCK_API !== "off")
 
 async function start() {
+  setMockApi(mockApi)
   if (mockApi) {
     try {
       const { startMockApi } = await import("@/mocks/browser")

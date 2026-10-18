@@ -1,5 +1,5 @@
 import { http, HttpResponse, type PathParams } from "msw"
-import type { AlertEvents, AlertSetup, Call, CallPage, CallStats, Invitations, IssueDispositions, IssueList, ProjectSettings, ProviderProbes, Workers, CapacityRun, CloudAgents, Egress, Error as ApiErrorBody, Ingress, MediaServer, ProjectSnapshot, Sip, Workspaces } from "@/lib/api-types"
+import type { AlertEvents, AlertSetup, Call, CallPage, CallStats, Invitations, IssueDispositions, Member, Members, IssueList, ProjectSettings, ProviderProbes, Workers, CapacityRun, CloudAgents, Egress, Error as ApiErrorBody, Ingress, MediaServer, ProjectSnapshot, Sip, Workspaces } from "@/lib/api-types"
 import { callStats } from "./call-stats"
 import { capturedCalls } from "./fixtures"
 import { alertEvents, issueList } from "./insights"
@@ -7,7 +7,7 @@ import { capacity, cloudAgents, egress, ingress, mediaServer, projectSnapshot, p
 import { summarize } from "./summaries"
 import { matchesFilters, parseFilters, sortCalls, totals } from "./calls-query"
 import { playbackUrl, recordingMedia } from "./recordings"
-import { alertSetup, invitations, issueDispositions, projectSettings } from "./settings"
+import { alertSetup, changeMember, invitations, issueDispositions, members, projectSettings } from "./settings"
 import { knownOrg, knownProject, workspaces } from "./workspaces"
 
 // Everything but the paging parameters, in a stable order, so a cursor can name what it was issued for.
@@ -117,6 +117,25 @@ export const handlers = [
   http.get<PathParams, never, AlertSetup | ApiErrorBody>(`${project}/alert-setup`, ({ params }) => (known(params) ? HttpResponse.json(alertSetup()) : fail(404, "not_found", "No such project."))),
   http.get<PathParams, never, Invitations | ApiErrorBody>("*/api/v1/org/:orgId/invitations", ({ params }) => (knownOrg(params.orgId) ? HttpResponse.json(invitations()) : fail(404, "not_found", "No such organisation."))),
   http.get<PathParams, never, Workspaces>("*/api/v1/workspaces", () => HttpResponse.json(workspaces())),
+
+  // Members, in memory (settings.ts), with web's refusals.
+  http.get<PathParams, never, Members | ApiErrorBody>("*/api/v1/org/:orgId/members", ({ params }) => (knownOrg(params.orgId) ? HttpResponse.json(members()) : fail(404, "not_found", "No such organisation."))),
+  http.patch<PathParams, { role?: string }, Member | ApiErrorBody>("*/api/v1/org/:orgId/members/:userId", async ({ params, request }) => {
+    if (!knownOrg(params.orgId)) return fail(404, "not_found", "No such organisation.")
+    const { role } = await request.json()
+    if (role !== "Admin" && role !== "Member" && role !== "Viewer") return fail(400, "invalid_request", "role must be Admin, Member or Viewer")
+    const out = changeMember(String(params.userId), role)
+    if (out === "not_found") return fail(404, "not_found", "No such member of this organisation.")
+    if (out === "last_admin") return fail(409, "last_admin", "An organisation needs at least one admin.")
+    return HttpResponse.json(out as Member)
+  }),
+  http.delete<PathParams, never, ApiErrorBody>("*/api/v1/org/:orgId/members/:userId", ({ params }) => {
+    if (!knownOrg(params.orgId)) return fail(404, "not_found", "No such organisation.")
+    const out = changeMember(String(params.userId), null)
+    if (out === "not_found") return fail(404, "not_found", "No such member of this organisation.")
+    if (out === "last_admin") return fail(409, "last_admin", "An organisation needs at least one admin.")
+    return new HttpResponse(null, { status: 204 })
+  }),
 
   // Recording audio, with byte ranges for the player.
   http.get(`${project}/recordings/:recordingId`, async ({ params, request }) => {

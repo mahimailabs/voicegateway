@@ -209,7 +209,7 @@ describe("Redocly contract rules", () => {
     expect(redocly(load())).toBe("")
   })
 
-  test("reject writes, missing errors and access, snake_case names and unattributed properties", () => {
+  test("reject untagged operations, missing errors and access, snake_case names and unattributed properties", () => {
     const spec = load()
     const list = spec.paths["/api/v1/org/{orgId}/project/{projectId}/calls"]
     delete list.get["x-access"]
@@ -219,6 +219,6 @@ describe("Redocly contract rules", () => {
     room.first_seen = room.firstSeenAt
     delete spec.components.schemas.Workers.properties.workers.items.properties.samples.items.properties.load["x-source"]
     const out = redocly(spec)
-    for (const rule of ["reads-only", "typed-errors", "access-policy", "camel-case-properties", "property-source"]) expect(out, rule).toContain(`rule/${rule}`)
+    for (const rule of ["operation-tags", "typed-errors", "access-policy", "camel-case-properties", "property-source"]) expect(out, rule).toContain(`rule/${rule}`)
   })
 })

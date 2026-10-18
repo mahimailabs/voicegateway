@@ -82,10 +82,13 @@
     "browserStorage": false,
     "operations": [
       "getCall",
-      "listCalls"
+      "getMembers",
+      "listCalls",
+      "removeMember",
+      "updateMember"
     ],
     "assetNotes": {
-      "<dynamic>": "getJSON: the console's reads through web's API."
+      "<dynamic>": "getJSON: the console's reads, and its member writes, through web's API."
     }
   },
   {
@@ -201,6 +204,7 @@
       "getInvitations",
       "getIssueDispositions",
       "getMediaServer",
+      "getMembers",
       "getProjectSettings",
       "getProjectSnapshot",
       "getProviderProbes",
@@ -210,7 +214,9 @@
       "getWorkspaces",
       "listAlertEvents",
       "listCalls",
-      "listIssues"
+      "listIssues",
+      "removeMember",
+      "updateMember"
     ],
     "assetNotes": {},
     "exclusion": "The mock API itself, answering the contract's paths."

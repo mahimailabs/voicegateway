@@ -1,6 +1,6 @@
 import { infiniteQueryOptions } from "@tanstack/react-query"
 import { currentScope } from "@/lib/url-state"
-import type { AlertEvents, AlertSetup, CapacityRun, Invitations, IssueDispositions, ProjectSettings, Workspaces, Call as GeneratedCall, CallPage, CallStats, ProviderProbes, Workers, CloudAgents, CallSummary, CallTotals, Egress, EndOfTurnEvent, Ingress, IssueList, MediaServer, ProjectSnapshot, Sip, ItemEvent, OverlapEvent, RecordingSegment, Span, StateEvent, TranscriptEvent, Turn } from "@/lib/api-types"
+import type { AlertEvents, AlertSetup, CapacityRun, Invitations, Member, Members, IssueDispositions, ProjectSettings, Workspaces, Call as GeneratedCall, CallPage, CallStats, ProviderProbes, Workers, CloudAgents, CallSummary, CallTotals, Egress, EndOfTurnEvent, Ingress, IssueList, MediaServer, ProjectSnapshot, Sip, ItemEvent, OverlapEvent, RecordingSegment, Span, StateEvent, TranscriptEvent, Turn } from "@/lib/api-types"
 
 export type { CallSummary, CallTotals, RecordingSegment, Span, Turn }
 export type SessionEvent = StateEvent | TranscriptEvent | EndOfTurnEvent | OverlapEvent | ItemEvent
@@ -22,13 +22,14 @@ export class ApiError extends Error {
 // The current project's API root. The console reads only through web's API (CLAUDE.md Boundaries).
 export const projectApi = () => `/api/v1/org/${currentScope().org}/project/${currentScope().project}`
 
-async function getJSON<T>(url: string): Promise<T> {
+async function getJSON<T>(url: string, init?: RequestInit): Promise<T> {
   let res: Response
   try {
-    res = await fetch(url, { headers: { Accept: "application/json" } })
+    res = await fetch(url, { ...init, headers: { Accept: "application/json", ...(init?.body ? { "Content-Type": "application/json" } : {}) } })
   } catch (e) {
     throw new ApiError(0, "network", e instanceof Error ? e.message : "No answer from the API")
   }
+  if (res.status === 204) return undefined as T
   // Anything but JSON came from something other than the API, such as the dev server answering
   // with the app's own page when no API runs.
   const noApi = () => new ApiError(0, "no_api", `No VoiceGateway API answered at ${url.split("?")[0]}.`)
@@ -148,3 +149,10 @@ export const issueDispositionsQuery = () => ({ queryKey: ["issue-dispositions", 
 export const alertSetupQuery = () => ({ queryKey: ["alert-setup", currentScope()], queryFn: () => getJSON<AlertSetup>(`${projectApi()}/alert-setup`) })
 export const invitationsQuery = () => ({ queryKey: ["invitations", currentScope().org], queryFn: () => getJSON<Invitations>(`/api/v1/org/${currentScope().org}/invitations`) })
 export const fetchWorkspaces = () => getJSON<Workspaces>("/api/v1/workspaces")
+
+// The organisation's members (phase 06b). Any member reads the list; an Admin changes roles and
+// removes people, and the server refuses taking away the last admin with last_admin.
+const membersApi = () => `/api/v1/org/${currentScope().org}/members`
+export const membersQuery = () => ({ queryKey: ["members", currentScope().org], queryFn: () => getJSON<Members>(membersApi()) })
+export const updateMember = (userId: string, role: Member["role"]) => getJSON<Member>(`${membersApi()}/${encodeURIComponent(userId)}`, { method: "PATCH", body: JSON.stringify({ role }) })
+export const removeMember = (userId: string) => getJSON<void>(`${membersApi()}/${encodeURIComponent(userId)}`, { method: "DELETE" })

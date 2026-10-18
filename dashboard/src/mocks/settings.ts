@@ -1,4 +1,4 @@
-import type { AlertRuleSetup, AlertSetup, Invitation, Invitations, IssueDisposition, IssueDispositions, ProjectSettings, Thresholds } from "@/lib/api-types"
+import type { AlertRuleSetup, AlertSetup, Invitation, Invitations, Member, Members, IssueDisposition, IssueDispositions, ProjectSettings, Thresholds } from "@/lib/api-types"
 import { readLocal } from "@/lib/local-store"
 
 // The settings reads, served from what the console saved in this browser (lib/local-store.ts) until
@@ -54,6 +54,27 @@ export function alertSetup(): AlertSetup {
       return { ruleId, on: typeof on === "boolean" ? on : true, to: Array.isArray(to) ? CHANNELS.filter((c) => to.includes(c)) : [] }
     }),
   }
+}
+
+// The organisation's members, held in memory for the mock: changes last until the page reloads.
+let memberList: Member[] = [
+  { userId: "u-ada", email: "ada@example.com", role: "Admin" },
+  { userId: "u-bob", email: "bob@example.com", role: "Member" },
+  { userId: "u-cat", email: "cat@example.com", role: "Viewer" },
+]
+export const members = (): Members => ({ items: [...memberList].sort((a, b) => a.email.localeCompare(b.email)) })
+
+/** Changes or removes a member as web does, refusing to leave no admin. */
+export function changeMember(userId: string, role: Member["role"] | null): Member | "not_found" | "last_admin" | null {
+  const m = memberList.find((x) => x.userId === userId)
+  if (!m) return "not_found"
+  if (m.role === "Admin" && role !== "Admin" && memberList.filter((x) => x.role === "Admin").length === 1) return "last_admin"
+  if (role === null) {
+    memberList = memberList.filter((x) => x.userId !== userId)
+    return null
+  }
+  memberList = memberList.map((x) => (x.userId === userId ? { ...x, role } : x))
+  return { ...m, role }
 }
 
 const ROLES = new Set<string>(["Admin", "Member", "Viewer"])

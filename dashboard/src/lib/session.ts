@@ -1,18 +1,61 @@
 // The signed-in session, from web's /auth routes (decision 0027, phase 06a). These are not console
 // reads, so they are not in docs/api/openapi.yaml.
 
+import { useSyncExternalStore } from "react"
+
 export type Session = { email: string; organisations: { id: string; role: string }[] }
 
 export type SessionRead = { signedIn: true; session: Session } | { signedIn: false; needsAdmin: boolean }
 
 let current: Session | null = null
+let mockApi = false
+const listeners = new Set<() => void>()
 
 /** The session read at start, for the account menu; null with the mock or when signed out. */
 export const currentSession = () => current
 
-/** Records the session read at start. */
+/** Records the session, and re-renders what reads it. */
 export const setCurrentSession = (s: Session | null) => {
   current = s
+  for (const l of listeners) l()
+}
+
+/** Marks the console as running on the mock API, which has no session and acts as an Admin. */
+export const setMockApi = (on: boolean) => {
+  mockApi = on
+}
+
+const subscribe = (l: () => void) => {
+  listeners.add(l)
+  return () => listeners.delete(l)
+}
+
+/** The session, re-rendering when it changes. */
+export const useSession = () => useSyncExternalStore(subscribe, currentSession)
+
+/** Reads the session again, after a change that may alter the signed-in user's own role. */
+export async function refreshSession(): Promise<void> {
+  const read = await fetchSession()
+  if (!read.signedIn) {
+    window.location.reload()
+    return
+  }
+  setCurrentSession(read.session)
+}
+
+export type Role = "Admin" | "Member" | "Viewer"
+
+const roleNames: Record<string, Role> = { admin: "Admin", member: "Member", viewer: "Viewer" }
+
+/**
+ * The signed-in user's role in an organisation, by the contract's name. With the mock there is no
+ * session and the console acts as an Admin, as before sign-in. Without a session, or outside the
+ * organisation, it is null: the console shows no admin controls it cannot vouch for.
+ */
+export function roleIn(orgId: string, session: Session | null = current): Role | null {
+  if (mockApi) return "Admin"
+  const role = session?.organisations.find((o) => o.id === orgId)?.role
+  return role ? (roleNames[role] ?? null) : null
 }
 
 /** Reads who is signed in. No answer at all is an error the caller shows as such. */

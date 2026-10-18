@@ -14,7 +14,7 @@ import (
 	"github.com/mahimailabs/voicegateway/internal/store"
 )
 
-// API serves the console's /api/v1 reads.
+// API serves the console's /api/v1 reads and its member writes.
 type API struct {
 	Projects Projects
 	Calls    Calls
@@ -50,14 +50,16 @@ func (a *API) Routes() http.Handler {
 	r.MethodNotAllowed(func(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, http.StatusMethodNotAllowed, codeInvalidRequest, "method not allowed")
 	})
-	r.Get("/api/v1/workspaces", a.getWorkspaces)
-	r.Route("/api/v1/org/{orgId}/project/{projectId}", func(r chi.Router) {
-		r.Use(member)
-		r.Get("/calls", a.listCalls)
-		r.Get("/calls/{callId}", a.getCall)
-		r.Get("/media-server", a.mediaServer)
-		r.Get("/sip", a.sip)
-	})
+	// Every route goes through handle, which puts it behind its minimum role in routeAccess.
+	const project = "/api/v1/org/{orgId}/project/{projectId}"
+	handle(r, http.MethodGet, "/api/v1/workspaces", a.getWorkspaces)
+	handle(r, http.MethodGet, project+"/calls", a.listCalls)
+	handle(r, http.MethodGet, project+"/calls/{callId}", a.getCall)
+	handle(r, http.MethodGet, project+"/media-server", a.mediaServer)
+	handle(r, http.MethodGet, project+"/sip", a.sip)
+	handle(r, http.MethodGet, "/api/v1/org/{orgId}/members", a.getMembers)
+	handle(r, http.MethodPatch, "/api/v1/org/{orgId}/members/{userId}", a.updateMember)
+	handle(r, http.MethodDelete, "/api/v1/org/{orgId}/members/{userId}", a.removeMember)
 	return r
 }
 
@@ -66,19 +68,6 @@ func requirePrincipal(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if _, ok := store.PrincipalFrom(r.Context()); !ok {
 			unauthenticated(w, r, "sign in, or send a valid API token")
-			return
-		}
-		next.ServeHTTP(w, r)
-	})
-}
-
-// member answers 403 a signed-in user outside the organisation in the path. The interim token
-// names no user and reads every organisation until 06c replaces it with project keys.
-func member(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		p, _ := store.PrincipalFrom(r.Context())
-		if !p.Token && p.Roles[chi.URLParam(r, "orgId")] == "" {
-			writeError(w, r, http.StatusForbidden, codeForbidden, "you are not a member of this organisation")
 			return
 		}
 		next.ServeHTTP(w, r)

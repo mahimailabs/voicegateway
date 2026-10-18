@@ -280,7 +280,7 @@ Checks 1 to 13 pass: Go on real Postgres, and the console with Vitest and Testin
 
 Manual check: the pair reviewer reports running it on the Compose stack behind an HTTPS proxy, and that `user add`, sign-in with a Secure cookie, sign-out then 401, and `https_required` by IP all passed. Still open: opening the two stored calls in the console.
 
-Next: 06b, members and roles (`docs/specs/phase06b-members-and-roles.md`). Then 06c, project API keys, and 06d, invitation links. Invitations were split out of 06b to keep it one session.
+Then: 06b, members and roles, followed by 06c, project API keys, and 06d, invitation links. Invitations were split out of 06b to keep it one session.
 
 Carried to the 06d spec, from the 06b reviews:
 - The link base is `VOICEGATEWAY_PUBLIC_URL` when set, otherwise the request's scheme and Host.
@@ -291,3 +291,23 @@ Carried to the 06d spec, from the 06b reviews:
 - Accepting as someone already a member uses up the invitation, keeps their role and signs them in.
 - Two parallel accepts that create the same new email must not answer 500.
 - Tests cover: create 400 and 409, the 12-character minimum, `https_required` on accept, revoke 204, and expiry through an injectable clock.
+- With SMTP configured, web emails the invitation, using the SMTP settings of the alerts email channel.
+- 06d ships in V1: Cloud organisation admins have no shell, so its console reset link is their decision 0027 reset.
+
+The plan task "Wire teams and projects" (`docs/specs/v1-connect-plan.md`) stays open until 06d merges.
+
+### 2026-10-18: phase 06b, members and roles
+
+Every `/api/v1` route admits only the roles that may use it (spec `docs/specs/phase06b-members-and-roles.md`, decisions 0019 and 0027).
+
+What changed:
+- **One role table:** `internal/api/roles.go` lists every route's minimum role and scope. Routes are registered only through it, and a route missing from the table answers 500, never openly. Every read needs Viewer, and the member writes need Admin.
+- **The interim token** keeps its project reads, gets 403 on organisation operations, and stays 401 on `getWorkspaces`.
+- **Members:** `getMembers`, `updateMember` and `removeMember`. Demoting or removing an organisation's only admin is 409 `last_admin`. The change locks the organisation row first, so two admins demoting each other at once leave one. A role change applies on the member's next request, since the principal is loaded on every request.
+- **CLI:** `voicegateway user add --role member|viewer`, and an existing account gets a membership without being asked for a password. `voicegateway user reset-password` sets a new password and signs the user out everywhere, through a `password_version` copied into the session.
+- **Contract:** the three operations, a `last_admin` error code, and session-cookie access text on every operation. The Redocly rule `reads-only` became `operation-tags`: a read is tagged Console reads and a write Console writes, and check-sources ties each to its method.
+- **Console:** Settings, People lists the members, with a role picker and Remove for Admins, never on their own row. A Member or Viewer sees it read-only, with no Invite form. The Account Role row shows the signed-in role. The mock serves the member reads and writes in memory.
+
+Checks 1 to 10 and 7a pass: Go on real Postgres, the route table against the router and the contract, and the console with Vitest. The manual check (a Viewer on the Compose stack behind HTTPS) is not run yet.
+
+Next: 06c, project API keys.
