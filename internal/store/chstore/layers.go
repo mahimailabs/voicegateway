@@ -6,15 +6,24 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/ClickHouse/clickhouse-go/v2"
+
 	"github.com/mahimailabs/voicegateway/internal/event"
 	"github.com/mahimailabs/voicegateway/internal/store"
 )
+
+// pollInsert marks a layer poller's insert asynchronous: each poll writes a few rows per project,
+// and ClickHouse buffers them into one part instead of making a part per poll. The insert still
+// returns only once the rows are written, so a read stored as good has its samples behind it.
+func pollInsert(ctx context.Context) context.Context {
+	return clickhouse.Context(ctx, clickhouse.WithSettings(clickhouse.Settings{"async_insert": 1, "wait_for_async_insert": 1}))
+}
 
 // StoreRead writes one layer read: its samples first, then the read itself, so a read recorded as
 // good always has its samples behind it.
 func (s *Store) StoreRead(ctx context.Context, read store.LayerRead, rooms []store.RoomSample, participants []store.ParticipantSample) error {
 	if len(rooms) > 0 {
-		batch, err := s.conn.PrepareBatch(ctx, `INSERT INTO room_samples (organisation_id, project_id, read_at, room_sid, room)`)
+		batch, err := s.conn.PrepareBatch(pollInsert(ctx), `INSERT INTO room_samples (organisation_id, project_id, read_at, room_sid, room)`)
 		if err != nil {
 			return fmt.Errorf("prepare room samples: %w", err)
 		}
@@ -34,7 +43,7 @@ func (s *Store) StoreRead(ctx context.Context, read store.LayerRead, rooms []sto
 		}
 	}
 	if len(participants) > 0 {
-		batch, err := s.conn.PrepareBatch(ctx,
+		batch, err := s.conn.PrepareBatch(pollInsert(ctx),
 			`INSERT INTO participant_samples (organisation_id, project_id, read_at, room_sid, participant_sid, state, sip_call_status, participant)`)
 		if err != nil {
 			return fmt.Errorf("prepare participant samples: %w", err)
@@ -60,7 +69,7 @@ func (s *Store) StoreRead(ctx context.Context, read store.LayerRead, rooms []sto
 // storeLayerRead records one read attempt.
 func (s *Store) storeLayerRead(ctx context.Context, read store.LayerRead) error {
 	// A batch, not Exec: Exec binds a time at whole seconds, and read_at keeps milliseconds.
-	batch, err := s.conn.PrepareBatch(ctx, `INSERT INTO layer_reads (organisation_id, project_id, layer, read_at, ok, error_class, every_ms)`)
+	batch, err := s.conn.PrepareBatch(pollInsert(ctx), `INSERT INTO layer_reads (organisation_id, project_id, layer, read_at, ok, error_class, every_ms)`)
 	if err != nil {
 		return fmt.Errorf("prepare layer read: %w", err)
 	}
