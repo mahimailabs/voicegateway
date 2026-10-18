@@ -1,0 +1,17 @@
+---
+title: Agent workers
+description: How busy each of your agent workers is.
+---
+
+<Picture src="/diagrams/layers-workers" alt="The layers of a call with Agent workers highlighted." />
+
+| You see | It comes from |
+| --- | --- |
+| Load and active jobs per worker | The worker's own metrics page |
+| Agents and versions on LiveKit Cloud | LiveKit Cloud |
+
+Add a self-hosted worker's metrics address:
+
+```bash
+voicegateway project workers add http://agent-host:8081/metrics --project production
+```

@@ -1,0 +1,16 @@
+---
+title: The layers at a glance
+description: Every part a voice call passes through.
+---
+
+<Picture src="/diagrams/layers-none" alt="Caller, phone bridge, media server, agent workers and models in a row, with Egress and Ingress below the media server." />
+
+VoiceGateway profiles each layer as it is. It changes nothing.
+
+<Cards>
+  <Card title="Models" href="/layers/models" description="Speech to text, the language model, text to speech." />
+  <Card title="Agent workers" href="/layers/agent-workers" description="How many calls each worker carries." />
+  <Card title="Media server" href="/layers/media-server" description="Rooms and participants on the LiveKit SFU." />
+  <Card title="Phone (SIP)" href="/layers/sip" description="Trunks, dispatch rules and phone calls." />
+  <Card title="Egress and Ingress" href="/layers/egress-ingress" description="Recordings and streams." />
+</Cards>

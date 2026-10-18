@@ -1,0 +1,1 @@
+{"title": "The layers", "description": "Models, agent workers, media server, phone and egress.", "icon": "Stack", "root": true, "pages": ["index", "models", "agent-workers", "media-server", "sip", "egress-ingress"]}

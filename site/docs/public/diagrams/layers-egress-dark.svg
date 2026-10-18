@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1090" height="322" viewBox="0 0 1090 322" font-family="'DejaVu Sans Mono', 'Menlo', 'Consolas', 'Liberation Mono', 'Courier New', monospace" font-size="14px">
+  <defs>
+    <marker id="rd4cf1ce7-arrow-8e8e93" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#8e8e93"/>
+    </marker>
+  </defs>
+  <rect x="0" y="0" width="1090" height="322" fill="#000000"/>
+  <path d="M48 40 H195 a8 8 0 0 1 8 8 V98 a8 8 0 0 1 -8 8 H48 a8 8 0 0 1 -8 -8 V48 a8 8 0 0 1 8 -8 Z" fill="#000000" stroke="#38383a"/>
+  <text x="121.5" y="68.4" fill="#f5f5f7" text-anchor="middle">Caller</text>
+  <text x="121.5" y="87.4" fill="#f5f5f7" text-anchor="middle">phone or browser</text>
+  <path d="M267 40 H380 a8 8 0 0 1 8 8 V98 a8 8 0 0 1 -8 8 H267 a8 8 0 0 1 -8 -8 V48 a8 8 0 0 1 8 -8 Z" fill="#000000" stroke="#38383a"/>
+  <text x="323.5" y="68.4" fill="#f5f5f7" text-anchor="middle">Phone bridge</text>
+  <text x="323.5" y="87.4" fill="#f5f5f7" text-anchor="middle">LiveKit SIP</text>
+  <path d="M452 40 H565 a8 8 0 0 1 8 8 V98 a8 8 0 0 1 -8 8 H452 a8 8 0 0 1 -8 -8 V48 a8 8 0 0 1 8 -8 Z" fill="#000000" stroke="#38383a"/>
+  <text x="508.5" y="68.4" fill="#f5f5f7" text-anchor="middle">Media server</text>
+  <text x="508.5" y="87.4" fill="#f5f5f7" text-anchor="middle">LiveKit SFU</text>
+  <path d="M637 40 H832 a8 8 0 0 1 8 8 V98 a8 8 0 0 1 -8 8 H637 a8 8 0 0 1 -8 -8 V48 a8 8 0 0 1 8 -8 Z" fill="#000000" stroke="#38383a"/>
+  <text x="710.5" y="68.4" fill="#f5f5f7" text-anchor="middle">Agent workers</text>
+  <text x="710.5" y="87.4" fill="#f5f5f7" text-anchor="middle">your voice agent</text>
+  <g transform="translate(788 54) scale(1.58333)">
+    <path d="M6.6 2.6 L11 4.800000000000001 L6.6 7 L2.1999999999999993 4.800000000000001 Z" fill="#38383a" stroke="#f5f5f7" stroke-width="1.1" stroke-linejoin="round"/>
+    <path d="M2.1999999999999993 4.800000000000001 L6.6 7 L6.6 11.4 L2.1999999999999993 9.200000000000001 Z" fill="#38383a" stroke="#f5f5f7" stroke-width="1.1" stroke-linejoin="round"/>
+    <path d="M11 4.800000000000001 L6.6 7 L6.6 11.4 L11 9.200000000000001 Z" fill="#38383a" stroke="#f5f5f7" stroke-width="1.1" stroke-linejoin="round"/>
+    <path d="M17.4 2.6 L21.799999999999997 4.800000000000001 L17.4 7 L12.999999999999998 4.800000000000001 Z" fill="#38383a" stroke="#f5f5f7" stroke-width="1.1" stroke-linejoin="round"/>
+    <path d="M12.999999999999998 4.800000000000001 L17.4 7 L17.4 11.4 L12.999999999999998 9.200000000000001 Z" fill="#38383a" stroke="#f5f5f7" stroke-width="1.1" stroke-linejoin="round"/>
+    <path d="M21.799999999999997 4.800000000000001 L17.4 7 L17.4 11.4 L21.799999999999997 9.200000000000001 Z" fill="#38383a" stroke="#f5f5f7" stroke-width="1.1" stroke-linejoin="round"/>
+    <path d="M12 11.6 L16.4 13.8 L12 16 L7.6 13.8 Z" fill="#38383a" stroke="#f5f5f7" stroke-width="1.1" stroke-linejoin="round"/>
+    <path d="M7.6 13.8 L12 16 L12 20.4 L7.6 18.2 Z" fill="#38383a" stroke="#f5f5f7" stroke-width="1.1" stroke-linejoin="round"/>
+    <path d="M16.4 13.8 L12 16 L12 20.4 L16.4 18.2 Z" fill="#38383a" stroke="#f5f5f7" stroke-width="1.1" stroke-linejoin="round"/>
+  </g>
+  <path d="M904 40 H1042 a8 8 0 0 1 8 8 V98 a8 8 0 0 1 -8 8 H904 a8 8 0 0 1 -8 -8 V48 a8 8 0 0 1 8 -8 Z" fill="#000000" stroke="#38383a"/>
+  <text x="973" y="68.4" fill="#f5f5f7" text-anchor="middle">Models</text>
+  <text x="973" y="87.4" fill="#f5f5f7" text-anchor="middle">STT · LLM · TTS</text>
+  <path d="M352.5 216 H664.5 a8 8 0 0 1 8 8 V274 a8 8 0 0 1 -8 8 H352.5 a8 8 0 0 1 -8 -8 V224 a8 8 0 0 1 8 -8 Z" fill="#000000" stroke="#2997ff"/>
+  <text x="484.5" y="244.4" fill="#f5f5f7" text-anchor="middle">Egress and Ingress</text>
+  <text x="484.5" y="263.4" fill="#f5f5f7" text-anchor="middle">recordings, streams in and out</text>
+  <g transform="translate(620.5 230) scale(1.58333)">
+    <path d="M12 2.6 L22 7.4 L12 12.2 L2 7.4 Z" fill="#38383a" stroke="#f5f5f7" stroke-width="1.1" stroke-linejoin="round"/>
+    <path d="M2 7.4 L12 12.2 L12 21 L2 16.2 Z" fill="#38383a" stroke="#f5f5f7" stroke-width="1.1" stroke-linejoin="round"/>
+    <path d="M22 7.4 L12 12.2 L12 21 L22 16.2 Z" fill="#38383a" stroke="#f5f5f7" stroke-width="1.1" stroke-linejoin="round"/>
+  </g>
+  <path d="M 203 73 C 227 73, 235 73, 247.8 73 L 259 73" fill="none" stroke="#8e8e93" stroke-width="1.6" marker-end="url(#rd4cf1ce7-arrow-8e8e93)"/>
+  <path d="M 388 73 C 412 73, 420 73, 432.8 73 L 444 73" fill="none" stroke="#8e8e93" stroke-width="1.6" marker-end="url(#rd4cf1ce7-arrow-8e8e93)"/>
+  <path d="M 573 73 C 597 73, 605 73, 617.8 73 L 629 73" fill="none" stroke="#8e8e93" stroke-width="1.6" marker-end="url(#rd4cf1ce7-arrow-8e8e93)"/>
+  <path d="M 840 73 C 864 73, 872 73, 884.8 73 L 896 73" fill="none" stroke="#8e8e93" stroke-width="1.6" marker-end="url(#rd4cf1ce7-arrow-8e8e93)"/>
+  <path d="M 508.5 106 C 508.5 150, 508.5 172, 508.5 204.8 L 508.5 216" fill="none" stroke="#8e8e93" stroke-width="1.6" stroke-dasharray="6.4 4.8" marker-end="url(#rd4cf1ce7-arrow-8e8e93)"/>
+</svg>

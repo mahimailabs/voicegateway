@@ -1,4 +1,11 @@
 {
   "title": "VoiceGateway",
-  "pages": ["index", "quickstart", "attach", "guard", "costs", "self-hosting"]
+  "pages": [
+    "(start)",
+    "console",
+    "layers",
+    "team",
+    "how-it-works",
+    "api"
+  ]
 }

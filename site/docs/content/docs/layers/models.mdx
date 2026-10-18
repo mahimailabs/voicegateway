@@ -1,0 +1,15 @@
+---
+title: Models
+description: Speech to text, the language model and text to speech.
+---
+
+<Picture src="/diagrams/layers-models" alt="The layers of a call with Models highlighted." />
+
+| You see | It comes from |
+| --- | --- |
+| Time to final transcript | The agent's spans |
+| Time to first token | The agent's spans |
+| Time to first audio | The agent's spans |
+| Tokens, audio seconds, characters | The agent's usage metrics |
+
+VoiceGateway never calls a model. Prices are not shown, only usage.

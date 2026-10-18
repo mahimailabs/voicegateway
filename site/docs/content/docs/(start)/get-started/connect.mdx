@@ -1,0 +1,45 @@
+---
+title: Connect your LiveKit project
+description: Point LiveKit and your agent at VoiceGateway.
+---
+
+<Picture src="/diagrams/connect" alt="LiveKit sends webhooks to VoiceGateway. The voice agent uploads its own data to VoiceGateway through LIVEKIT_OBSERVABILITY_URL." />
+
+One VoiceGateway project is one LiveKit project.
+
+<Steps>
+<Step>
+
+### Add the project
+
+```bash
+export LIVEKIT_URL=wss://your-project.livekit.cloud
+export LIVEKIT_API_KEY=...
+export LIVEKIT_API_SECRET=...
+make project-add NAME="Production"
+```
+
+The secret is stored encrypted and never shown again.
+
+</Step>
+<Step>
+
+### Point your agent at it
+
+```bash
+LIVEKIT_OBSERVABILITY_URL=http://<voicegateway-host>:8080
+```
+
+Start the agent session with `record=True`. No other code change.
+
+</Step>
+<Step>
+
+### Send LiveKit's webhooks
+
+In LiveKit, add a webhook to `https://<voicegateway-host>/livekit/webhook`, signed with the same API key. Without it, a call closes only after 2 hours with no activity, and its end time is marked as inferred.
+
+</Step>
+</Steps>
+
+LiveKit Cloud needs a public HTTPS address for VoiceGateway. See [reaching VoiceGateway from LiveKit](https://github.com/mahimailabs/voicegateway/blob/main/docs/self-hosting.md#reaching-voicegateway-from-livekit).
