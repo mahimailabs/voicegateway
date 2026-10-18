@@ -7,8 +7,8 @@ on:
   pull_request:
     paths:
       - 'collector.sh'
-      - 'src/voicegateway/tests/cli/test_collector_script.sh'
-      - 'src/voicegateway/tests/cli/_docker_stub.sh'
+      - 'tools/tests/test_collector_script.sh'
+      - 'tools/tests/_docker_stub.sh'
       - '.github/workflows/collector-script.yml'
   push:
     branches: [main]
@@ -22,7 +22,7 @@ jobs:
           persist-credentials: false
       - run: sudo apt-get update && sudo apt-get install -y shellcheck
       - run: shellcheck collector.sh
-      - run: bash src/voicegateway/tests/cli/test_collector_script.sh
+      - run: bash tools/tests/test_collector_script.sh
 
   boot:
     runs-on: ubuntu-latest   # has Docker + compose preinstalled

@@ -1,9 +1,9 @@
 name: Site
 
-# site/docs (docs.voicegateway.dev) and site/web (voicegateway.dev). ci.yml only
-# triggers on src/voicegateway/** and friends, so without this a site-only PR had
-# no gate: broken MDX, a type error or a bad import would merge clean and fail
-# the deploy.
+# site/docs (docs.voicegateway.dev) and site/web (voicegateway.dev). No other
+# workflow triggers on site/**, so without this a site-only PR had no gate:
+# broken MDX, a type error or a bad import would merge clean and fail the
+# deploy.
 
 on:
   pull_request:

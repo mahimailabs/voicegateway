@@ -7,7 +7,7 @@ A fresh session reads this to know where the project stands.
 
 ## Current Phase
 
-Phase 1: the console, UI first. Spec: docs/specs/phase01-console.md.
+Phase 06d: invitations and password reset links. Spec: docs/specs/phase06d-invitations.md (PR #407).
 
 ## Done
 
@@ -53,7 +53,7 @@ Phase 1: the console, UI first. Spec: docs/specs/phase01-console.md.
 Plan agreed 2026-10-15: a team builds V1 with Cloud (decision 0024) over 30 days, release target 5 Nov.
 
 1. Freeze the contract: finish Phase 1's OpenAPI spec with x-source, generated types and the mock API, so the lanes build against one interface.
-2. Build V1 on its own branch; main keeps the current release until V1 replaces it. Phase 0 (removing the old Python core) lands with that switch.
+2. Build V1 on its own branch; main keeps the current release until V1 replaces it. Phase 0 (removing the old Python core) is done (2026-10-18).
 3. Lanes in parallel: ingest and calls, projects and auth, LiveKit surfaces, actions (alerts, recordings, MCP, capacity test, embed tokens), Cloud control plane with Stripe self-serve, release hardening.
 4. One pinned tracking issue on GitHub, split into owned issues with acceptance checks.
 
@@ -70,7 +70,6 @@ Plan agreed 2026-10-15: a team builds V1 with Cloud (decision 0024) over 30 days
 
 ## Known Issues
 
-- The old Python code in src/ no longer matches the docs. It stays until Phase 0.
 - Docker Desktop on the dev Mac stopped starting new containers during the spike; it needs a restart.
 - Project MCP servers (shadcn, magicui) need a one-time approval in Claude Code. The gopls MCP server was removed on 2026-10-17: its fsnotify watcher opened one file handle per file in the tree (about 61,000) and exhausted the system file table.
 
@@ -369,3 +368,7 @@ The pair's audit of 06a, 06b and the gate, items 1 to 4; items 5 and 6 had alrea
 - **Hash concurrency:** capped at max(1, GOMAXPROCS/4), since each argon2id hash runs 4 threads, and GOMAXPROCS follows a container's CPU limit where NumCPU does not. Known limit: with GOMAXPROCS of 3 or less there is one hashing slot, so a flood of unknown-email sign-ins from many addresses (each compares a dummy hash) can queue real sign-ins behind it; the per-address limit slows any one source, not many.
 - **Stored hash parameters:** bounded when read (passes 1 to 10, memory up to 1 GiB, threads 1 to 16, salt and key lengths), and a sign-in re-hashes a password stored with other parameters, keeping `password_version`. The rehash write replaces only the hash the sign-in verified, so a password reset that lands in between always wins. Measured: one hash at t=3, m=64 MiB, p=4 takes 30 to 43 ms on an Apple M4 (3 runs of 20).
 - **Kept hand-rolled, as the audit recommends:** the Postgres sign-in limiter (counts shared across replicas, failures only, refunded on success: no library does that), the client address parsing (about 100 tested lines; the one library is quiet and the /64 bucketing is ours), and the role table (three roles, enforced by a test; casbin adds a policy language for no gain). The sign-in CTE waits until after V1.
+
+### 2026-10-18: Phase 0, old Python release retired
+
+The Python runtime (src/), its Alembic migrations, packaging, examples, benchmarks, Railway and Codecov config, the root docker-compose.yml, the legacy contributor guides, four specs for the old console and the six workflows that built, tested and published it are removed, as are the vg-* Claude commands that drove that code. The Go binary, deploy/, the Makefile and the Go, Dashboard, Site and Docker workflows read none of them. The public installers stay at the root (install.sh, collector.sh, docker-compose.collector.yml, docker-compose.autoupdate.yml) because voicegateway.dev serves the scripts; their shell tests moved to tools/tests/. site/web/public/demo stays as a frozen build of the retired console. Open: the installers still install the old Python collector.

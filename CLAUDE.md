@@ -17,15 +17,15 @@ Read these before any feature work. Do not restate their contents here.
 
 ## Stack
 
-Go 1.26 (one binary, `voicegateway`), Postgres 16, ClickHouse 26.1, Redis 8, an S3 bucket (SeaweedFS in Compose, decision 0026). Dashboard: React 19, TypeScript 6, Vite, Tailwind v4, shadcn/ui. SDK: Python 3.11 to 3.13. Exact versions live in go.mod, package.json, uv.lock and deploy/compose.yaml.
+Go 1.26 (one binary, `voicegateway`), Postgres 16, ClickHouse 26.1, Redis 8, an S3 bucket (SeaweedFS in Compose, decision 0026). Dashboard: React 19, TypeScript 6, Vite, Tailwind v4, shadcn/ui. SDK (planned, sdk/python): Python 3.11 to 3.13. Exact versions live in go.mod, dashboard/package.json and deploy/compose.yaml (the SDK's uv.lock once it lands).
 
 ## Commands
 
 Every task goes through the root Makefile.
 
-- Run locally: `make dev` (compose stack, web, worker, Vite dev server)
-- Test: `make test` (Go with `-race`, web, SDK); `make e2e` for test/
-- Lint and format: `make lint`; pre-commit runs the same on commit
+- Run locally: `make up` starts the six-service stack; `make dev` starts the Vite dev server
+- Test: `make test` (Go with `-race` and the dashboard Vitest tests)
+- Lint and format: `make lint` (Go lint plus oxlint and `tsc --noEmit`); pre-commit runs the Go hooks and file hygiene hooks only
 
 ## Boundaries
 
@@ -37,11 +37,11 @@ Every task goes through the root Makefile.
 
 ## Code quality
 
-- Every commit passes the pre-commit hooks. Go: gofumpt, goimports, golangci-lint (vet, staticcheck, errcheck, gosec), `go mod tidy` clean. `sdk/python`: ruff, ruff format, mypy. `dashboard/`: eslint, prettier, `tsc --noEmit`.
+- Every commit passes the pre-commit hooks. Go: gofumpt, goimports, golangci-lint (vet, staticcheck, errcheck, gosec), `go mod tidy` clean. `dashboard/`: oxlint, `tsc --noEmit`. `sdk/python` (once it lands): ruff, ruff format, mypy.
 - Tests prove behaviour; coverage is not the goal. One test per rule that matters (a join, an ack after insert, unknown is not zero). Table-driven, run with `-race`.
 - Container tests skip locally with `-short` or without Docker, but fail in CI (`CI` set) rather than skip, so they always run there.
 - Run the real thing instead of mocking it: Redis, ClickHouse and Postgres through testcontainers-go, webhooks from `livekit-server --dev`. Use `testing/synctest` for timers and batch flushes.
-- Frontend: Vitest with Testing Library, Playwright for user flows. Python SDK: pytest with LiveKit Agents' own test helpers (testing-livekit-agents skill).
+- Frontend: Vitest with Testing Library; Playwright for user flows once adopted (not installed yet). Python SDK, once it lands: pytest with LiveKit Agents' own test helpers (testing-livekit-agents skill).
 
 ## Before writing code
 
@@ -55,13 +55,13 @@ Every task goes through the root Makefile.
 
 ## Git identity
 
-- New branches use `feat/` or `fix/` prefixes, as requested by the maintainer.
+- New branches use `feat/`, `fix/` or `chore/` prefixes, as requested by the maintainer.
 
 - Author and commit as `mahimairaja <mahimairaja3@gmail.com>`. Use the `mahimairaja` account for GitHub comments, pull requests and other writes. Verify the active account before writing; never add a bot or agent co-author.
 
 ## Versions
 
-- Pin exact versions: the `go` and `toolchain` lines, dev tools (golangci-lint, sqlc, goose, gofumpt) as `tool` directives in go.mod, images by tag and digest, npm with save-exact and the lockfile, Python dev tools in uv.lock.
+- Pin exact versions: the `go` and `toolchain` lines, dev tools (golangci-lint, sqlc, goose, gofumpt) as `tool` directives in go.mod, images by tag and digest, npm with save-exact and the lockfile, the SDK's Python dev tools in its uv.lock.
 - Exception: the published Python SDK declares compatible ranges for runtime dependencies so it does not break users' installs. Its lockfile stays exact.
 
 ## Never do

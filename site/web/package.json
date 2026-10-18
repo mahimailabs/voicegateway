@@ -12,8 +12,7 @@
     "build": "astro build",
     "preview": "astro preview",
     "check": "wrangler types && astro check",
-    "deploy": "npm run build && wrangler deploy",
-    "sync-demo": "npm --prefix ../../src/dashboard/frontend run build:demo && rm -rf public/demo && cp -r ../../src/dashboard/frontend/dist-demo public/demo"
+    "deploy": "npm run build && wrangler deploy"
   },
   "dependencies": {
     "@astrojs/cloudflare": "^14.3.3",
