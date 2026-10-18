@@ -33,6 +33,7 @@ afterEach(() => {
 })
 afterAll(() => server.close())
 
+/** Render the real Calls routes with isolated query state and optional deep-link filters. */
 export async function showCalls(id?: string, search: Record<string, unknown> = {}) {
   const { CallsPage } = await import("../src/features/calls/calls-page")
   const root = createRootRoute({ component: () => <Outlet /> })

@@ -66,9 +66,9 @@ test("an empty project says no calls yet", async () => {
   expect(await screen.findByText("No calls yet")).toBeTruthy()
 })
 
-test("a failed read shows the error and Retry recovers", async () => {
+test.each([null, "false"])("a failed read (archived=%s) shows the error and Retry recovers", async (archived) => {
   server.use(http.get(`${project}/calls`, ({ request }) => {
-    if (!new URL(request.url).searchParams.has("archived")) return HttpResponse.json({ code: "internal_error", message: "Call storage unavailable", requestId: "test" }, { status: 500 })
+    if (new URL(request.url).searchParams.get("archived") === archived) return HttpResponse.json({ code: "internal_error", message: "Call storage unavailable", requestId: "test" }, { status: 500 })
   }))
   await showCalls()
   expect(await screen.findByText("Call storage unavailable")).toBeTruthy()
