@@ -58,6 +58,13 @@ func (s *Store) createInvitation(ctx context.Context, in store.NewInvitation) (s
 		if err != nil {
 			return store.Invitation{}, err
 		}
+		// The organisation lock covers one organisation; a reset replaces the member's open links in
+		// every one, so the member's row is locked too, and parallel resets leave one open link.
+		if _, err := q.LockUser(ctx, u); errors.Is(err, pgx.ErrNoRows) {
+			return store.Invitation{}, store.ErrNotFound
+		} else if err != nil {
+			return store.Invitation{}, err
+		}
 		if err := q.RevokeOpenResets(ctx, u); err != nil {
 			return store.Invitation{}, err
 		}
@@ -236,23 +243,23 @@ func (s *Store) AcceptInvitation(ctx context.Context, tokenSHA256 []byte, passwo
 	switch link.Kind {
 	case "reset":
 		userID = link.UserID
-		// The guard ResetLink ran when the link was made runs again now: the member may have
-		// joined another organisation since, or the admin who made it may have lost the role.
-		// A link that no longer passes is revoked and changes nothing else.
-		if link.InvitedBy.Valid {
-			ok, err := adminOfAll(ctx, q, link.InvitedBy, userID)
-			if err != nil {
+		// The guard ResetLink ran when the link was made runs again now, failing closed: the member
+		// must still belong to the link's organisation, and its admin (or, for a link made with no
+		// admin, the link's organisation alone) must cover every organisation they belong to. The
+		// member may have joined or left one since, or the admin lost the role. A link that no
+		// longer passes is revoked and changes nothing else.
+		ok, err := resetAllowed(ctx, q, link.OrganisationID, link.InvitedBy, userID)
+		if err != nil {
+			return "", fmt.Errorf("accept reset: %w", err)
+		}
+		if !ok {
+			if err := q.RevokeUsedLink(ctx, link.ID); err != nil {
 				return "", fmt.Errorf("accept reset: %w", err)
 			}
-			if !ok {
-				if err := q.RevokeUsedLink(ctx, link.ID); err != nil {
-					return "", fmt.Errorf("accept reset: %w", err)
-				}
-				if err := tx.Commit(ctx); err != nil {
-					return "", fmt.Errorf("accept reset: %w", err)
-				}
-				return "", store.ErrNotFound
+			if err := tx.Commit(ctx); err != nil {
+				return "", fmt.Errorf("accept reset: %w", err)
 			}
+			return "", store.ErrNotFound
 		}
 		if err := q.SetPasswordByID(ctx, SetPasswordByIDParams{ID: userID, PasswordHash: passwordHash}); err != nil {
 			return "", fmt.Errorf("accept reset: %w", err)
@@ -281,26 +288,32 @@ func (s *Store) AcceptInvitation(ctx context.Context, tokenSHA256 []byte, passwo
 	return userID.String(), nil
 }
 
-// adminOfAll reports whether by is an admin of every organisation user belongs to.
-func adminOfAll(ctx context.Context, q *Queries, by, user pgtype.UUID) (bool, error) {
+// resetAllowed is the reset guard at use: user still belongs to organisationID, and by is an
+// admin of every organisation user belongs to. With no by (the command line, the instance API,
+// or an admin since deleted), user must belong to organisationID alone.
+func resetAllowed(ctx context.Context, q *Queries, organisationID string, by, user pgtype.UUID) (bool, error) {
 	theirs, err := q.OrganisationRoles(ctx, user)
 	if err != nil {
 		return false, err
 	}
-	mine, err := q.OrganisationRoles(ctx, by)
-	if err != nil {
-		return false, err
-	}
 	admin := map[string]bool{}
-	for _, r := range mine {
-		admin[r.OrganisationID] = r.Role == "admin"
+	if by.Valid {
+		mine, err := q.OrganisationRoles(ctx, by)
+		if err != nil {
+			return false, err
+		}
+		for _, r := range mine {
+			admin[r.OrganisationID] = r.Role == "admin"
+		}
 	}
+	member := false
 	for _, r := range theirs {
-		if !admin[r.OrganisationID] {
+		member = member || r.OrganisationID == organisationID
+		if by.Valid && !admin[r.OrganisationID] || !by.Valid && r.OrganisationID != organisationID {
 			return false, nil
 		}
 	}
-	return true, nil
+	return member, nil
 }
 
 func invitationOf(id pgtype.UUID, kind, email string, role, invitedBy pgtype.Text, created, expires, emailed, accepted, revoked pgtype.Timestamptz) store.Invitation {

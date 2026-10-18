@@ -137,6 +137,7 @@ test("a Viewer sees no Invite form and no reset action", async () => {
   show()
   expect(await screen.findByText("bob@example.com")).toBeTruthy()
   expect(screen.queryByRole("form", { name: "Invite people" })).toBeNull()
-  expect(screen.queryByLabelText(/^Password reset for /)).toBeNull()
+  expect(screen.queryByLabelText(/^Actions for /)).toBeNull()
+  expect(screen.queryByText("Password reset")).toBeNull()
   expect(calls.some((c) => c.url.endsWith("/invitations"))).toBe(false)
 })

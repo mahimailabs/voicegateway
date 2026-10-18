@@ -256,6 +256,32 @@ func TestParallelCreatesOneOpenLink(t *testing.T) {
 	if working != 1 {
 		t.Errorf("%d links work, want exactly the stored one", working)
 	}
+
+	// Resets for one member from admins of two organisations at once leave one open link: the
+	// member's row lock serialises them across organisations.
+	f.addUser("both@example.com", "org-a", "member")
+	ctx := context.Background()
+	if _, err := f.pg.AddMembership(ctx, "both@example.com", "org-b", "member"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.pg.AddMembership(ctx, "admin@example.com", "org-b", "admin"); err != nil {
+		t.Fatal(err)
+	}
+	member := f.userID("both@example.com")
+	var resets sync.WaitGroup
+	by := f.userID("admin@example.com")
+	for i := range 10 {
+		org := []string{"org-a", "org-b"}[i%2]
+		resets.Go(func() {
+			if _, err := w.links.ResetLink(ctx, org, member, &by, "https://vg.example"); err != nil {
+				t.Errorf("ResetLink by an admin of both: %v", err)
+			}
+		})
+	}
+	resets.Wait()
+	if n := f.count(`SELECT count(*) FROM invitations WHERE kind = 'reset' AND user_id = $1 AND accepted_at IS NULL AND revoked_at IS NULL`, member); n != 1 {
+		t.Errorf("%d open reset links after parallel resets from two organisations, want 1", n)
+	}
 }
 
 // Acceptance check 3.
@@ -655,6 +681,29 @@ func TestResetRefusedAcrossOrganisations(t *testing.T) {
 	}
 	if n := f.count(`SELECT count(*) FROM invitations WHERE user_id = (SELECT id FROM users WHERE email = 'later@example.com') AND revoked_at IS NOT NULL AND accepted_at IS NULL`); n != 1 {
 		t.Errorf("%d revoked reset links for the member, want the refused one", n)
+	}
+
+	// With no requester (the command line, the instance API) the guard fails closed: a member of
+	// A and B gets no link.
+	ctx := context.Background()
+	if _, err := w.links.ResetLink(ctx, "org-a", member, nil, "https://vg.example"); !errors.Is(err, invite.ErrOtherOrganisations) {
+		t.Errorf("ResetLink with no requester for a member of A and B: %v, want ErrOtherOrganisations", err)
+	}
+
+	// A member removed after the link was made keeps their password, and the link is revoked.
+	f.addUser("leaving@example.com", "org-a", "member")
+	_, link, _, _ = w.resetLink(w.signIn("only-a@example.com"), "org-a", f.userID("leaving@example.com"))
+	if link == nil {
+		t.Fatal("no reset link for a member of A only")
+	}
+	if err := f.pg.RemoveMember(ctx, "org-a", f.userID("leaving@example.com")); err != nil {
+		t.Fatal(err)
+	}
+	if res, _ := w.accept(tokenOf(*link), "a takeover password", request{tls: true}); res.StatusCode != http.StatusNotFound {
+		t.Errorf("a reset link used after the member left A = %d, want 404", res.StatusCode)
+	}
+	if res := f.do(w.h, http.MethodPost, "/auth/sign-in", signIn("leaving@example.com", password), request{tls: true}); res.StatusCode != http.StatusNoContent {
+		t.Errorf("the removed member's own password = %d, want 204", res.StatusCode)
 	}
 }
 

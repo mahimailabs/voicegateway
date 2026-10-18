@@ -418,6 +418,10 @@ UPDATE users SET password_hash = @password_hash WHERE id = @id AND password_hash
 UPDATE invitations SET revoked_at = now()
 WHERE organisation_id = @organisation_id AND email = @email AND kind = @kind AND accepted_at IS NULL AND revoked_at IS NULL;
 
+-- name: LockUser :one
+-- Serialises reset links for one member, made by admins of different organisations at once.
+SELECT id FROM users WHERE id = @id FOR UPDATE;
+
 -- name: RevokeOpenResets :exec
 -- A new reset link replaces every open one for the member, whichever organisation's admin made it.
 UPDATE invitations SET revoked_at = now()

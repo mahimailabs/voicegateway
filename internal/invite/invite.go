@@ -193,9 +193,10 @@ func (s *Service) repeat(ctx context.Context, in Invite, email string) (Created,
 // the requester is an admin of every organisation userID belongs to, so an admin of one
 // organisation cannot take over an account that also belongs to another. Errors:
 // store.ErrNotFound when userID is not a member of organisationID, and ErrOtherOrganisations
-// when they also belong to an organisation the requester does not administer. by is nil only for
-// a caller with the whole install's authority (the command line, the 06e instance API), which
-// skips the guard; the API always passes the signed-in admin. Accepting runs the guard again.
+// when they also belong to an organisation the requester does not administer. by is nil for the
+// command line and the 06e instance API; the guard then fails closed and allows a member of
+// organisationID alone. Accepting runs the guard again, and also requires the member to still
+// belong to organisationID.
 func (s *Service) ResetLink(ctx context.Context, organisationID, userID string, by *string, baseURL string) (Created, error) {
 	if baseURL == "" {
 		return Created{}, ErrInvalid
@@ -204,19 +205,21 @@ func (s *Service) ResetLink(ctx context.Context, organisationID, userID string, 
 	if err != nil {
 		return Created{}, err
 	}
+	theirs, err := s.Store.OrganisationRoles(ctx, userID)
+	if err != nil {
+		return Created{}, err
+	}
+	mine := map[string]string{}
 	if by != nil {
-		theirs, err := s.Store.OrganisationRoles(ctx, userID)
-		if err != nil {
+		if mine, err = s.Store.OrganisationRoles(ctx, *by); err != nil {
 			return Created{}, err
 		}
-		mine, err := s.Store.OrganisationRoles(ctx, *by)
-		if err != nil {
-			return Created{}, err
-		}
-		for org := range theirs {
-			if mine[org] != "admin" {
-				return Created{}, ErrOtherOrganisations
-			}
+	}
+	for org := range theirs {
+		// With no requester, the rule is explicit rather than skipped: the member may belong to
+		// this organisation only.
+		if by != nil && mine[org] != "admin" || by == nil && org != organisationID {
+			return Created{}, ErrOtherOrganisations
 		}
 	}
 	token, sum, err := newToken()

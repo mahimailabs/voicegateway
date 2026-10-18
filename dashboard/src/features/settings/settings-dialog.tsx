@@ -1,12 +1,13 @@
 import { useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { CircleHalf, Stack, EnvelopeSimple as Envelope, WebhooksLogo, Buildings, Database, Key as KeyIcon, Clock, EnvelopeSimple, GearSix, FrameCorners, Lock, UsersThree, X, Plug, Plus, TreeStructure, User } from "@phosphor-icons/react"
+import { CircleHalf, DotsThree, Stack, EnvelopeSimple as Envelope, WebhooksLogo, Buildings, Database, Key as KeyIcon, Clock, EnvelopeSimple, GearSix, FrameCorners, Lock, UsersThree, X, Plug, Plus, TreeStructure, User } from "@phosphor-icons/react"
 import type { Icon } from "@phosphor-icons/react"
 import { toast } from "sonner"
 import { Badge } from "@/components/ui/badge"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { ProviderLogo } from "@/components/provider-logo"
 import { Button } from "@/components/ui/button"
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui/field"
 import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/input-group"
@@ -280,14 +281,21 @@ function MemberList({ isAdmin }: { isAdmin: boolean }) {
                     </SelectContent>
                   </Select>
                   {!self && (
-                    <Button variant="ghost" size="sm" onClick={() => reset.mutate(m)} disabled={reset.isPending} aria-label={`Password reset for ${m.email}`}>
-                      Password reset
-                    </Button>
-                  )}
-                  {!self && (
-                    <Button variant="ghost" size="sm" onClick={() => setRemoving(m)} aria-label={`Remove ${m.email}`}>
-                      Remove
-                    </Button>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="ghost" size="icon-sm" aria-label={`Actions for ${m.email}`}>
+                          <DotsThree />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem disabled={reset.isPending} onSelect={() => reset.mutate(m)}>
+                          Password reset
+                        </DropdownMenuItem>
+                        <DropdownMenuItem variant="destructive" onSelect={() => setRemoving(m)}>
+                          Remove
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   )}
                 </div>
               ) : (
@@ -437,16 +445,28 @@ const invitationFields: FilterField<Invitation>[] = [
   { id: "kind", label: "Kind", type: "select", icon: <Stack />, options: [{ value: "invite", label: "Invite" }, { value: "reset", label: "Password reset" }], get: (i) => i.kind },
 ]
 
+// Three columns, so Revoke stays in view in the Settings pane at every width: the role, who made
+// the link and when it expires sit under the email, and both wrap rather than widen the table.
 const invitationColumns = (revoke: (i: Invitation) => void): Columns<Invitation> => [
-  { id: "email", accessorFn: (i) => i.email, size: 220, header: ({ column }) => <DataGridColumnHeader title="Email" column={column} />, cell: ({ row }) => row.original.email },
-  { id: "role", accessorFn: (i) => i.role ?? "", size: 130, header: ({ column }) => <DataGridColumnHeader title="Role" column={column} />, cell: ({ row }) => (row.original.kind === "reset" ? "Password reset" : row.original.role) },
-  { id: "state", accessorFn: (i) => i.state, size: 100, header: ({ column }) => <DataGridColumnHeader title="State" column={column} />, cell: ({ row }) => row.original.state },
-  { id: "created", accessorFn: (i) => i.createdAt, size: 170, header: ({ column }) => <DataGridColumnHeader title="Created" column={column} />, cell: ({ row }) => when(row.original.createdAt) },
-  { id: "expires", accessorFn: (i) => i.expiresAt, size: 170, header: ({ column }) => <DataGridColumnHeader title="Expires" column={column} />, cell: ({ row }) => when(row.original.expiresAt) },
-  { id: "by", accessorFn: (i) => i.invitedBy ?? "", size: 180, header: ({ column }) => <DataGridColumnHeader title="By" column={column} />, cell: ({ row }) => row.original.invitedBy ?? <Muted>Unknown</Muted> },
+  {
+    id: "email",
+    accessorFn: (i) => i.email,
+    size: 180,
+    header: ({ column }) => <DataGridColumnHeader title="Invitation" column={column} />,
+    cell: ({ row }) => {
+      const i = row.original
+      return (
+        <span className="block min-w-0 whitespace-normal">
+          <span className="block break-all">{i.email}</span>
+          <span className="block text-[12px] text-muted-foreground">{`${i.kind === "reset" ? "Password reset" : i.role} · expires ${when(i.expiresAt)} · by ${i.invitedBy ?? "unknown"}`}</span>
+        </span>
+      )
+    },
+  },
+  { id: "state", accessorFn: (i) => i.state, size: 90, header: ({ column }) => <DataGridColumnHeader title="State" column={column} />, cell: ({ row }) => row.original.state },
   {
     id: "actions",
-    size: 90,
+    size: 76,
     enableSorting: false,
     header: () => null,
     cell: ({ row }) =>
@@ -458,8 +478,8 @@ const invitationColumns = (revoke: (i: Invitation) => void): Columns<Invitation>
   },
 ]
 
-// The organisation's invitations and reset links (getInvitations), newest first; the state filter
-// and the sort are in the URL. Revoke asks first.
+// The organisation's invitations and reset links (getInvitations), newest first as the server
+// sends them; the state filter and the sort are in the URL. Revoke asks first.
 function InvitationList() {
   const read = useQuery(invitationsQuery())
   const qc = useQueryClient()
@@ -476,7 +496,7 @@ function InvitationList() {
       {!read.isSuccess && <Row title="Invitations" description={read.isError ? errorText(read.error) : undefined} value={read.isError ? "Could not be read" : "Loading"} last />}
       {read.isSuccess && (
         <div className="pt-2">
-          <DataTable data={read.data.items} columns={columns} fields={invitationFields} getRowId={(i) => i.id} sort={[{ id: "created", desc: true }]} urlPrefix="invites." empty="No invitations match these filters." />
+          <DataTable data={read.data.items} columns={columns} fields={invitationFields} getRowId={(i) => i.id} phoneColumns={["email", "state", "actions"]} urlPrefix="invites." empty="No invitations match these filters." />
         </div>
       )}
       {problem && (
@@ -488,7 +508,7 @@ function InvitationList() {
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>{`Revoke the ${revoking?.kind === "reset" ? "reset link" : "invitation"} for ${revoking?.email ?? ""}?`}</DialogTitle>
-            <DialogDescription>Its link stops working at once. Make a new one to invite them again.</DialogDescription>
+            <DialogDescription>{revoking?.kind === "reset" ? "The link stops working at once. Make a new reset link if they still need one." : "The link stops working at once. Invite them again for a new one."}</DialogDescription>
           </DialogHeader>
           <DialogFooter>
             <Button variant="outline" onClick={() => setRevoking(null)}>

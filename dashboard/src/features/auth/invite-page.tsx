@@ -6,6 +6,8 @@ import { Input } from "@/components/ui/input"
 import { acceptInvitation, lookInvitation, type AcceptResult, type LookResult } from "@/lib/invitation"
 
 export const INVALID = "This invitation is no longer valid. Ask an admin for a new link."
+// After a reload the address holds no token: this page took it out of the address bar.
+export const NO_TOKEN = "This page holds no invitation. Open the link from your email or your admin again."
 export const EXISTING_ACCOUNT = "If you already have an account with this email, use its password."
 
 function message(r: AcceptResult): string | null {
@@ -37,7 +39,7 @@ export function readInviteToken(): string {
 
 /** The page an invitation or a password reset link opens (/invite#<token>). */
 export function InvitePage({ token, onAccepted }: { token: string; onAccepted: () => void }) {
-  const [look, setLook] = useState<LookResult | null>(token ? null : { kind: "invalid" })
+  const [look, setLook] = useState<LookResult | null>(null)
   const [password, setPassword] = useState("")
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -68,7 +70,12 @@ export function InvitePage({ token, onAccepted }: { token: string; onAccepted: (
           {pending && <CardDescription>{reset ? `For ${pending.email}. Setting it signs you out everywhere else.` : `As ${pending.role} for ${pending.email}.`}</CardDescription>}
         </CardHeader>
         <CardContent>
-          {look === null && <p className="text-sm text-muted-foreground">Reading the invitation</p>}
+          {!token && (
+            <p role="alert" className="text-sm text-destructive">
+              {NO_TOKEN}
+            </p>
+          )}
+          {token && look === null && <p className="text-sm text-muted-foreground">Reading the invitation</p>}
           {look?.kind === "invalid" && (
             <p role="alert" className="text-sm text-destructive">
               {INVALID}

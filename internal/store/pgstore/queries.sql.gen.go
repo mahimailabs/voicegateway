@@ -1097,6 +1097,18 @@ func (q *Queries) LockSignInKey(ctx context.Context, arg LockSignInKeyParams) er
 	return err
 }
 
+const lockUser = `-- name: LockUser :one
+SELECT id FROM users WHERE id = $1 FOR UPDATE
+`
+
+// Serialises reset links for one member, made by admins of different organisations at once.
+func (q *Queries) LockUser(ctx context.Context, id pgtype.UUID) (pgtype.UUID, error) {
+	row := q.db.QueryRow(ctx, lockUser, id)
+	var id_2 pgtype.UUID
+	err := row.Scan(&id_2)
+	return id_2, err
+}
+
 const markInvitationEmailed = `-- name: MarkInvitationEmailed :exec
 UPDATE invitations SET emailed_at = now() WHERE id = $1
 `
