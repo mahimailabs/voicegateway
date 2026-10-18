@@ -10,6 +10,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/mahimailabs/voicegateway/internal/store"
+	"github.com/mahimailabs/voicegateway/internal/turn"
 )
 
 // Bounds of getCallStats (spec 04e): the longest range, the hours byHour covers, and how many
@@ -206,7 +207,7 @@ func hourCounts(read store.StatsRead, from, to time.Time) []statsHour {
 	}
 	out := []statsHour{}
 	for h := first; !h.After(last); h = h.Add(time.Hour) {
-		out = append(out, statsHour{Hour: h.Format(time.RFC3339), CallCount: bucketCount(read, h, h.Add(time.Hour), calls[h]), AnswerP50Ms: median(answers[h])})
+		out = append(out, statsHour{Hour: h.Format(time.RFC3339), CallCount: bucketCount(read, h, h.Add(time.Hour), calls[h]), AnswerP50Ms: turn.Median(answers[h])})
 	}
 	return out
 }
@@ -237,7 +238,7 @@ func answersOf(calls []store.StatsCall, budget float64) statsAnswers {
 		}
 	}
 	out.Turns, out.OverBudget = ptr(len(all)), ptr(over)
-	out.P50Ms, out.P90Ms = median(all), p90(all)
+	out.P50Ms, out.P90Ms = turn.Median(all), p90(all)
 	return out
 }
 
@@ -295,23 +296,14 @@ func agentsOf(calls []store.StatsCall) []statsAgent {
 		}
 		strip := make([]agentCall, 0, len(recent))
 		for _, c := range recent {
-			strip = append(strip, agentCall{CallID: c.ID, Room: c.Room, AnswerP50Ms: median(c.AnswerMs)})
+			strip = append(strip, agentCall{CallID: c.ID, Room: c.Room, AnswerP50Ms: turn.Median(c.AnswerMs)})
 		}
 		out = append(out, statsAgent{
-			Key: g.key, CallCount: ptr(len(g.calls)), AnswerTurns: ptr(len(answers)), AnswerP50Ms: median(answers),
+			Key: g.key, CallCount: ptr(len(g.calls)), AnswerTurns: ptr(len(answers)), AnswerP50Ms: turn.Median(answers),
 			Models: models, Calls: strip, CallsTruncated: len(g.calls) > maxAgentCalls,
 		})
 	}
 	return out
-}
-
-// median is the console's rule (features/call/call-model.ts): the upper-middle value; nil for none.
-func median(xs []float64) *float64 {
-	if len(xs) == 0 {
-		return nil
-	}
-	s := slices.Sorted(slices.Values(xs))
-	return &s[len(s)/2]
 }
 
 // p90 is the console's rule (mocks/call-stats.ts): the value at rank ceil(0.9 n); nil for none.

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/livekit/protocol/livekit"
 
 	"github.com/mahimailabs/voicegateway/internal/store"
 )
@@ -57,12 +58,12 @@ const (
 
 func egressOutcome(status string) *string {
 	var o string
-	switch status {
-	case "EGRESS_COMPLETE":
+	switch egressStatus(status) {
+	case livekit.EgressStatus_EGRESS_COMPLETE:
 		o = outcomeRecorded
-	case "EGRESS_LIMIT_REACHED":
+	case livekit.EgressStatus_EGRESS_LIMIT_REACHED:
 		o = outcomeCutShort
-	case "EGRESS_FAILED", "EGRESS_ABORTED":
+	case livekit.EgressStatus_EGRESS_FAILED, livekit.EgressStatus_EGRESS_ABORTED:
 		o = outcomeLost
 	default:
 		return nil // still running
@@ -72,7 +73,20 @@ func egressOutcome(status string) *string {
 
 // egressRunning reports whether a status is one an egress passes through before it ends.
 func egressRunning(status string) bool {
-	return status == "EGRESS_STARTING" || status == "EGRESS_ACTIVE" || status == "EGRESS_ENDING"
+	switch egressStatus(status) {
+	case livekit.EgressStatus_EGRESS_STARTING, livekit.EgressStatus_EGRESS_ACTIVE, livekit.EgressStatus_EGRESS_ENDING:
+		return true
+	}
+	return false
+}
+
+// egressStatus reads a stored status name as LiveKit's enum; a name this protocol version does not
+// know is -1, which matches no case.
+func egressStatus(name string) livekit.EgressStatus {
+	if v, ok := livekit.EgressStatus_value[name]; ok {
+		return livekit.EgressStatus(v)
+	}
+	return -1
 }
 
 func (a *API) egress(w http.ResponseWriter, r *http.Request) {
