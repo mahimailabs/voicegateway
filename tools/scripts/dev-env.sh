@@ -34,7 +34,6 @@ if [ ! -f "$file" ]; then
   mv "$tmp" "$file"
   trap - EXIT
   echo "created $file with random secrets"
-  exit 0
 fi
 
 values | while IFS= read -r line; do
@@ -44,3 +43,14 @@ values | while IFS= read -r line; do
     echo "added $name to $file"
   fi
 done
+
+# A published image named in the environment is kept in the file, so every later make target and
+# a new terminal run that image instead of voicegateway:dev.
+if [ -n "${VOICEGATEWAY_IMAGE:-}" ]; then
+  tmp="$(mktemp "${file}.XXXXXX")"
+  trap 'rm -f "$tmp"' EXIT
+  grep -v '^VOICEGATEWAY_IMAGE=' "$file" >"$tmp" || true
+  printf 'VOICEGATEWAY_IMAGE=%s\n' "$VOICEGATEWAY_IMAGE" >>"$tmp"
+  mv "$tmp" "$file"
+  trap - EXIT
+fi

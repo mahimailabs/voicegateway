@@ -14,12 +14,11 @@ Run VoiceGateway on your own machine or server, connect your LiveKit project and
 ```bash
 git clone https://github.com/mahimailabs/voicegateway.git
 cd voicegateway
-export VOICEGATEWAY_IMAGE=ghcr.io/mahimailabs/voicegateway:1.0.0-preview.1
-make up
+VOICEGATEWAY_IMAGE=ghcr.io/mahimailabs/voicegateway:1.0.0-preview.1 make up
 make preflight
 ```
 
-With `VOICEGATEWAY_IMAGE` set, `make up` pulls that published image (amd64 or arm64); without it, `make up` builds the image from this checkout, which needs about 10 GB free. Either way it starts six services (web, worker, Postgres, ClickHouse, Redis and an S3 bucket). On the first run it writes `deploy/.env` with fresh random secrets; keep that file, and never commit it. `make preflight` should report OK for postgres, clickhouse, redis and s3.
+`make up` pulls the published image (amd64 or arm64) and keeps its name in `deploy/.env`, so later commands and new terminals use it too. Without `VOICEGATEWAY_IMAGE`, `make up` builds the image from this checkout, which needs about 10 GB free. Either way it starts six services (web, worker, Postgres, ClickHouse, Redis and an S3 bucket). On the first run it writes `deploy/.env` with fresh random secrets; keep that file, and never commit it. `make preflight` should report OK for postgres, clickhouse, redis and s3.
 
 The console and the API are both at [localhost:8080](http://localhost:8080). To use another port, set `VOICEGATEWAY_WEB_PORT` before `make up`.
 
@@ -73,7 +72,7 @@ The agent's uploads and LiveKit's webhooks must reach your VoiceGateway host:
 
 ```bash
 make down                 # stop; your data is kept
-git pull && make up       # upgrade; migrations run on start (set VOICEGATEWAY_IMAGE to the new release first)
+VOICEGATEWAY_IMAGE=ghcr.io/mahimailabs/voicegateway:<new version> make up   # upgrade; migrations run on start
 ```
 
 `docker compose -f deploy/compose.yaml --env-file deploy/.env down --volumes` deletes all stored data.
