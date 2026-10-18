@@ -44,8 +44,10 @@ An organisation admin invites someone by email with a role. The invitee gets the
   package invite
 
   // Create makes an invitation for in.Email to join in.OrganisationID as in.Role, replacing any
-  // open invitation for that email there. It emails the link when a Mailer is set and returns the
-  // link either way: the only time the full link exists. in.InvitedBy is nil for the instance API
+  // open invitation for that email there. With a Mailer set, it emails the link and never returns
+  // it, whether the send succeeded or failed: only the address's owner may hold it, or anyone who
+  // can invite could claim an account for an email they do not control. Without a Mailer, it
+  // returns the link, the only time the full link exists. in.InvitedBy is nil for the instance API
   // and the command line.
   //
   // With in.IdempotencyKey set, a repeat call with the same key returns the invitation the first
@@ -68,11 +70,12 @@ An organisation admin invites someone by email with a role. The invitee gets the
 
   type Created struct {
       Invitation store.Invitation
-      Link       string // <BaseURL>/invite#<token>; empty on an idempotent repeat
-      Emailed    bool   // false without SMTP, or when the send failed
+      Link       string // <BaseURL>/invite#<token> only without a Mailer; empty with one, and on an idempotent repeat
+      Emailed    bool   // true when the send succeeded; false without SMTP, or when it failed
   }
 
-  // ResetLink makes a password reset link for userID, replacing any open one for them. It is
+  // ResetLink makes a password reset link for userID, replacing any open one for them. Like Create,
+  // with a Mailer set it emails the link to the member and returns no link. It is
   // refused unless the requester is an admin of every organisation userID belongs to, so an admin
   // of one organisation cannot take over an account that also belongs to another. Errors:
   // store.ErrNotFound when userID is not a member of organisationID, and ErrOtherOrganisations
@@ -102,11 +105,13 @@ An organisation admin invites someone by email with a role. The invitee gets the
 - **API** (`docs/api/openapi.yaml`, then `make api-types`). The operations are in the role table, and every response validates against the contract.
   - `getInvitations` (Admin, organisation): lists invitations newest first, each with `id`, `kind`, `email`, `role`, `state`, `createdAt`, `expiresAt` and `invitedBy` (an email, or null). `invitedBy` is null when unknown, never empty. The 06b schema gains these fields.
   - `createInvitation` `POST /api/v1/org/{orgId}/invitations`, with `{email, role}`:
-    - 201 with `{invitation, link, emailed}`. The link is in this answer only.
+    - 201 with `{invitation, link, emailed}`.
+    - **With SMTP set:** `link` is always null. `emailed` is true when the send succeeded and false when it failed, and the link is never in the answer either way, so nobody who can invite can sign up as an address they do not control. To resend after a failure, call `createInvitation` again: it replaces the link and emails the new one.
+    - **Without SMTP:** `link` is the full link, in this answer only, for the admin to copy.
     - 400 for a bad email or role, and 409 `already_member`.
   - `revokeInvitation` `DELETE /api/v1/org/{orgId}/invitations/{invitationId}`: 204, idempotent. An id from another organisation is 404.
   - `createPasswordReset` `POST /api/v1/org/{orgId}/members/{userId}/password-reset` (Admin):
-    - 201 with `{link, expiresAt, emailed}`.
+    - 201 with `{link, expiresAt, emailed}`. The same rule as invitations: with SMTP set, the reset is emailed to the member and `link` is null; without SMTP, `link` is returned for the admin to pass on.
     - 404 when the user is not a member of the organisation.
     - 409 `member_of_other_organisations` when the user also belongs to an organisation the requester is not an admin of.
   - The four operations' minimum roles go in `internal/api/roles.go`: `getInvitations`, `createInvitation`, `revokeInvitation` and `createPasswordReset` all need Admin.
@@ -114,6 +119,7 @@ An organisation admin invites someone by email with a role. The invitee gets the
   - `GET /auth/invitation` reads the token from an `X-Invitation-Token` header, never the URL. It returns `{kind, organisationName, role, email}`, or 404 `invitation_invalid`, identical for unknown, accepted, revoked and expired. It never says whether an account exists for the email: on Cloud, that would let one workspace learn about another's people.
   - **The accept flow without that answer:** the page always asks for one password, with the line "If you already have an account with this email, use its password." A new email gets an account with that password. An existing account's password must match, and a wrong one is 401, the same answer sign-in gives. Only the link's holder learns anything, and the link went to that email.
   - `POST /auth/invitation/accept`, with `{token, password}`, answers 204 and the session cookie, renewing the session id. Every rule of sign-in applies: `https_required`, cross-origin refusal, and the sign-in limits for an existing account's password.
+  - **Shared limits:** accept counts its password tries in sign-in's own limiter, keyed by the invitation's email and the client address, exactly as `POST /auth/sign-in` keys them, never by token. Tries through sign-in and through accept add up, so neither path gives an attacker extra guesses.
   - **Single use:** argon2id hashing (a new password) or verifying (an existing account) runs before the transaction. Inside it, `UPDATE invitations SET accepted_at = now() WHERE token_sha256 = $1 AND accepted_at IS NULL AND revoked_at IS NULL AND expires_at > now() RETURNING ...` uses the link, and any result but one row is 404. The membership or the new password is written in the same transaction, so a second accept, parallel or not, gets 404.
   - **A reset** writes the password for the link's `user_id`, never for whatever account the email now names, and moves `password_version`. A sign-in's #404 rehash write loses to it, since that write only replaces the hash it verified.
   - Two parallel accepts that would create the same new email: one creates the account, the other answers 404 or signs in, never 500.
@@ -129,9 +135,11 @@ An organisation admin invites someone by email with a role. The invitee gets the
     - The page reads the fragment, then drops it with `history.replaceState`. It is served with `Referrer-Policy: no-referrer` and `Cache-Control: no-store`.
     - It always shows one password field, with the line about existing accounts, never a choice based on whether an account exists.
     - It shows `invitation_invalid`, `https_required`, 401 and 429 as the sign-in screen does.
-  - **Settings, People:** the Invite form calls `createInvitation`. The link shows once in `CopyCommand`, with "Emailed to <email>" when sent.
+  - **Settings, People:** the Invite form calls `createInvitation`.
+    - With SMTP set, it says "Emailed to <email>", or "Could not send the email" with a Resend button that calls `createInvitation` again. It never shows a link.
+    - Without SMTP, the link shows once in `CopyCommand`.
   - **Invitations list:** built with `src/components/data-table.tsx`. A state filter (pending, accepted, revoked, expired) and the sort are kept in the URL with `useUrlState`. Revoke asks first, through the existing Dialog.
-  - **Members row:** a "Password reset link" action for admins shows its link once in the same way.
+  - **Members row:** a "Password reset" action for admins follows the same rule: it says the reset was emailed, offers Resend after a failure, or shows the link once without SMTP.
   - The browser-kept `vg.invites` is removed. The mock serves the new operations in memory.
 
 ## Out of Scope
@@ -161,7 +169,7 @@ An organisation admin invites someone by email with a role. The invitee gets the
 
 ## Acceptance Checks
 
-1. Given an admin of A, when they invite `new@example.com` as Viewer with SMTP unset, then:
+1. Given an admin of A and SMTP unset, when they invite `new@example.com` as Viewer, then:
    - The answer is 201 with a link of the form `<base>/invite#<43 base64url characters>` and `emailed: false`.
    - `getInvitations` lists it as `pending`, expiring 7 days from now (the test reads its own clock).
    - The stored row holds SHA-256 of the token and not the token.
@@ -181,7 +189,8 @@ An organisation admin invites someone by email with a role. The invitee gets the
    (Measured by `TestAcceptInvitationOnce`.)
 5. Given an invite for an email with an account in B, when it is accepted with that account's password, then:
    - The user belongs to A and B with one account.
-   - A wrong password is 401 and adds nothing, and the 11th wrong try in 15 minutes is 429.
+   - A wrong password is 401 and adds nothing.
+   - Wrong tries through accept and through sign-in, mixed, count together for that email: the 11th within 15 minutes is 429 on either path.
    - An invite for someone already in A is used up, keeps their role and signs them in.
    - `GET /auth/invitation` answers the same fields for an email with an account and one without.
    (Measured by `TestAcceptInvitationExistingAccount`.)
@@ -196,7 +205,7 @@ An organisation admin invites someone by email with a role. The invitee gets the
    - an id from another organisation: 404;
    - a Viewer or Member: 403 on all four new operations.
 8. Given two parallel accepts of two invites for the same new email, in two organisations, then exactly one account exists afterwards, and neither answer is 500 (measured by `TestParallelAcceptsOneAccount`).
-9. Given a member signed in on two sessions, when an admin makes a reset link and the member sets a new password through it, then:
+9. Given a member signed in on two sessions and SMTP unset, when an admin makes a reset link and the member sets a new password through it, then:
    - Both old sessions answer 401, and the new password signs in.
    - `password_version` moved by 1.
    - The reset link then answers 404.
@@ -204,23 +213,26 @@ An organisation admin invites someone by email with a role. The invitee gets the
    (Measured by `TestPasswordResetLink`.)
 10. Given a member of A who also belongs to B, when an admin of A (and not of B) asks for a reset link, then the answer is 409 `member_of_other_organisations`, and no link is stored. An admin of both A and B gets the link (measured by `TestResetRefusedAcrossOrganisations`).
 11. Given `VOICEGATEWAY_SMTP_URL` pointing at a mailpit container, when an admin invites someone, then:
-    - The answer says `emailed: true`.
+    - The answer says `emailed: true` with `link: null`.
     - Mailpit holds exactly 1 message to that address, whose body contains the link and the organisation name.
-    - With mailpit stopped, the invitation is still created, `emailed` is false, and the log names the failure class, never the link or the SMTP password.
+    - With mailpit stopped, the invitation is still created, `emailed` is false, `link` is null, and the log names the failure class, never the link or the SMTP password.
+    - A second `createInvitation` (Resend) with mailpit back emails a new link, and the first one answers 404.
+    - A password reset with SMTP set lands in mailpit addressed to the member, and its answer has `link: null`.
     (Measured by `TestInvitationEmail`.)
-12. Given the instance API's call shape, when `invite.Create` runs with `InvitedBy` nil, then the invitation is stored with `invited_by` null, and `getInvitations` shows `invitedBy: null` (measured by `TestCreateWithoutInviter`).
-13. Given the `/invite` page and both `/auth/invitation` endpoints, then each answer carries `Referrer-Policy: no-referrer` and `Cache-Control: no-store` (measured by `TestInvitationHeaders`).
-14. Given the router, then each of the four new `/api/v1` operations has its minimum role (Admin) in `routeAccess`, matching the contract's `x-access` (measured by `TestEveryRouteHasAMinimumRole`).
-15. Given each new operation, then every response in checks 1 to 12 validates against the contract (measured by the response validator in those tests).
-16. Given the console with the mock off, the Vitest suites `invite-page.test.tsx` and `invitations.test.tsx` run 7 cases (measured by those suites):
+12. Given SMTP set, then `createInvitation` and `createPasswordReset` answer `link: null`, and `invite.Create` and `ResetLink` return an empty `Created.Link`, both when the send succeeds and when it fails (measured by `TestNoLinkWithSMTP`).
+13. Given the instance API's call shape, when `invite.Create` runs with `InvitedBy` nil, then the invitation is stored with `invited_by` null, and `getInvitations` shows `invitedBy: null` (measured by `TestCreateWithoutInviter`).
+14. Given the `/invite` page and both `/auth/invitation` endpoints, then each answer carries `Referrer-Policy: no-referrer` and `Cache-Control: no-store` (measured by `TestInvitationHeaders`).
+15. Given the router, then each of the four new `/api/v1` operations has its minimum role (Admin) in `routeAccess`, matching the contract's `x-access` (measured by `TestEveryRouteHasAMinimumRole`).
+16. Given each new operation, then every response in checks 1 to 13 validates against the contract (measured by the response validator in those tests).
+17. Given the console with the mock off, the Vitest suites `invite-page.test.tsx` and `invitations.test.tsx` run 7 cases (measured by those suites):
     - the accept screen shows the organisation and role, and one password field, and opens the console on 204;
     - it drops the fragment from the address bar;
     - it shows "This invitation is no longer valid" for `invitation_invalid`;
-    - an invite with SMTP unset shows the link once;
+    - an invite with SMTP unset shows the link once, and with SMTP set shows no link and, after a failed send, a Resend button;
     - the list filters by state through the URL;
     - Revoke asks first;
     - a Viewer sees no Invite form and no reset action.
-17. Given the log output of checks 1 to 12, then no line contains a token, a link, a password, a session id or the SMTP password (measured by `TestNoSecretInLogs`, extended).
+18. Given the log output of checks 1 to 13, then no line contains a token, a link, a password, a session id or the SMTP password (measured by `TestNoSecretInLogs`, extended).
 
 ## Manual Check
 
@@ -239,4 +251,4 @@ These are my recommendations; change any before building.
 - **The spec's file name** is `phase06d-invitations.md`, matching the other 06 specs, rather than `06d-invitations.md`.
 - **Idempotency:** an optional `IdempotencyKey` on `Invite`, per organisation, so the 06e instance API's retries return the first invitation instead of revoking an emailed link. Without a key, a repeat create replaces the open link.
 - **No account hint on the accept page:** one password field for everyone, and the same answer from `GET /auth/invitation` whether or not an account exists.
-- **Size:** this is one phase's work, in line with 06a. If the build runs long, email (check 11) can move to a follow-up, with links copied by hand meanwhile.
+- **Size:** this is one phase's work, in line with 06a. If the build runs long, email (checks 11 and 12) can move to a follow-up, with links copied by hand meanwhile.
