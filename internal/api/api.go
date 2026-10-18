@@ -57,6 +57,8 @@ func (a *API) Routes() http.Handler {
 	handle(r, http.MethodGet, project+"/calls/{callId}", a.getCall)
 	handle(r, http.MethodGet, project+"/media-server", a.mediaServer)
 	handle(r, http.MethodGet, project+"/sip", a.sip)
+	handle(r, http.MethodGet, project+"/egress", a.egress)
+	handle(r, http.MethodGet, project+"/ingress", a.ingress)
 	handle(r, http.MethodGet, "/api/v1/org/{orgId}/members", a.getMembers)
 	handle(r, http.MethodPatch, "/api/v1/org/{orgId}/members/{userId}", a.updateMember)
 	handle(r, http.MethodDelete, "/api/v1/org/{orgId}/members/{userId}", a.removeMember)
