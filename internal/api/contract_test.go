@@ -35,7 +35,7 @@ func TestReadsMatchContract(t *testing.T) {
 	f.cloudAgentScraper(scrape.DialSDK).Tick(ctx)
 	(&scrape.WorkerScraper{
 		Projects: f.projects, Endpoints: f.endpoints, Samples: f.layers, Lock: scrape.RedisLock{Client: f.rdb},
-		Client: scrape.NewWorkerClient(), Log: quiet(), Now: now, Every: every, Timeout: 5 * time.Second,
+		Client: scrape.NewWorkerClient(false), Log: quiet(), Now: now, Every: every, Timeout: 5 * time.Second,
 	}).Tick(ctx)
 
 	for _, read := range []string{"media-server", "sip", "egress", "ingress", "agents", "workers"} {

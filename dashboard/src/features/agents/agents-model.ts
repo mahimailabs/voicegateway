@@ -93,3 +93,6 @@ export function checks(list: Agent[]): Check[] {
   const rank = { high: 0, medium: 1, low: 2 }
   return out.sort((a, b) => rank[a.severity] - rank[b.severity])
 }
+
+/** A time LiveKit or a worker reported, short; null means it did not report one, never "never". */
+export const reportedTime = (iso: string | null) => (iso ? new Date(iso).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "not reported")

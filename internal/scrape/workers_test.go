@@ -142,7 +142,7 @@ func TestWorkerBodyCap(t *testing.T) {
 				_, _ = fmt.Fprint(w, line)
 			}))
 			defer srv.Close()
-			s := &WorkerScraper{Client: NewWorkerClient(), Timeout: 5 * time.Second}
+			s := &WorkerScraper{Client: NewWorkerClient(false), Timeout: 5 * time.Second}
 			workers, class := s.readEndpoint(t.Context(), srv.URL)
 			if class != tt.want {
 				t.Fatalf("class = %q, want %q", class, tt.want)
@@ -174,7 +174,7 @@ func TestWorkerClientRefusesRedirects(t *testing.T) {
 	}))
 	defer first.Close()
 
-	s := &WorkerScraper{Client: NewWorkerClient(), Timeout: 5 * time.Second}
+	s := &WorkerScraper{Client: NewWorkerClient(false), Timeout: 5 * time.Second}
 	url := strings.Replace(first.URL, "http://", "http://scraper:metrics-pass@", 1) + "/metrics"
 	if _, class := s.readEndpoint(t.Context(), url); class != "error" {
 		t.Errorf("class = %q, want error for a redirect", class)
