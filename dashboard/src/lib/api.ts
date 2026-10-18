@@ -1,6 +1,34 @@
 import { infiniteQueryOptions } from "@tanstack/react-query"
 import { currentScope } from "@/lib/url-state"
-import type { AlertEvents, AlertSetup, CapacityRun, CreatedProjectKey, Invitations, Member, Members, ProjectKeys, IssueDispositions, ProjectSettings, Workspaces, Call as GeneratedCall, CallPage, CallStats, ProviderProbes, Workers, CloudAgents, CallSummary, CallTotals, Egress, EndOfTurnEvent, Ingress, IssueList, MediaServer, ProjectSnapshot, Sip, ItemEvent, OverlapEvent, RecordingSegment, Span, StateEvent, TranscriptEvent, Turn } from "@/lib/api-types"
+import { client } from "@/lib/api-types/client.gen"
+import {
+  createProjectKey as createProjectKeyCall,
+  getAlertSetup,
+  getCall,
+  getCallStats,
+  getCapacity,
+  getCloudAgents,
+  getEgress,
+  getIngress,
+  getInvitations,
+  getIssueDispositions,
+  getMediaServer,
+  getMembers,
+  getProjectSettings,
+  getProjectSnapshot,
+  getProviderProbes,
+  getSip,
+  getWorkers,
+  getWorkspaces,
+  listAlertEvents,
+  listCalls,
+  listIssues,
+  listProjectKeys,
+  removeMember as removeMemberCall,
+  revokeProjectKey as revokeProjectKeyCall,
+  updateMember as updateMemberCall,
+} from "@/lib/api-types"
+import type { Call as GeneratedCall, CallPage, CallSummary, CallTotals, EndOfTurnEvent, ItemEvent, Member, OverlapEvent, RecordingSegment, Span, StateEvent, TranscriptEvent, Turn } from "@/lib/api-types"
 
 export type { CallSummary, CallTotals, RecordingSegment, Span, Turn }
 export type SessionEvent = StateEvent | TranscriptEvent | EndOfTurnEvent | OverlapEvent | ItemEvent
@@ -19,31 +47,38 @@ export class ApiError extends Error {
   }
 }
 
-// The current project's API root. The console reads only through web's API (CLAUDE.md Boundaries).
-export const projectApi = () => `/api/v1/org/${currentScope().org}/project/${currentScope().project}`
+// The console reads only through web's API (CLAUDE.md Boundaries), with the SDK hey-api generates
+// from docs/api/openapi.yaml: paths, parameters and answers are typed by the contract. Every call
+// throws an ApiError on failure, so a query sees one error type.
+client.setConfig({
+  // A Request needs an absolute URL; the browser has the page's origin, Node tests have none.
+  baseUrl: globalThis.location?.origin ?? "http://localhost",
+  throwOnError: true,
+})
 
-async function getJSON<T>(url: string, init?: RequestInit): Promise<T> {
-  let res: Response
-  try {
-    res = await fetch(url, { ...init, headers: { Accept: "application/json", ...(init?.body ? { "Content-Type": "application/json" } : {}) } })
-  } catch (e) {
-    throw new ApiError(0, "network", e instanceof Error ? e.message : "No answer from the API")
-  }
-  if (res.status === 204) return undefined as T
-  // Anything but JSON came from something other than the API, such as the dev server answering
-  // with the app's own page when no API runs.
-  const noApi = () => new ApiError(0, "no_api", `No VoiceGateway API answered at ${url.split("?")[0]}.`)
-  if (!res.headers.get("Content-Type")?.includes("json")) throw noApi()
-  const body: unknown = await res.json().catch(() => {
-    throw noApi()
-  })
-  if (!res.ok) {
-    const err = body as { code?: string; message?: string } | null
-    if (!err?.code) throw noApi()
-    throw new ApiError(res.status, err.code, err.message ?? res.statusText)
-  }
-  return body as T
-}
+// Anything but JSON came from something other than the API, such as the dev server answering with
+// the app's own page when no API runs.
+const noApi = (url: string) => new ApiError(0, "no_api", `No VoiceGateway API answered at ${new URL(url).pathname}.`)
+
+client.interceptors.response.use((response, request) => {
+  if (response.status !== 204 && !response.headers.get("Content-Type")?.includes("json")) throw noApi(request.url)
+  return response
+})
+
+client.interceptors.error.use((error, response, request) => {
+  if (error instanceof ApiError) return error
+  if (!response) return new ApiError(0, "network", error instanceof Error ? error.message : "No answer from the API")
+  const body = error as { code?: unknown; message?: unknown } | null
+  // A 2xx whose body is not JSON, or an error without the contract's code, is not the API.
+  if (response.ok || typeof body?.code !== "string") return noApi(request?.url ?? response.url)
+  return new ApiError(response.status, body.code, typeof body.message === "string" ? body.message : response.statusText)
+})
+
+// The current project and its organisation, as the contract's path parameters.
+const scope = () => ({ orgId: currentScope().org, projectId: currentScope().project })
+// Every SDK call throws on failure (set on the client too), which also types its answer as present.
+const thrown = { throwOnError: true } as const
+const data = async <T>(answer: Promise<{ data: T }>) => (await answer).data
 
 // One page of the calls matching the filters, sorted and paged by the server. Later pages carry the
 // cursor and the snapshot of the first, so they never mix two reads; totals cover every match.
@@ -54,14 +89,18 @@ export function fetchCallPage(filters: URLSearchParams, next?: { cursor: string;
     q.set("cursor", next.cursor)
     q.set("snapshot", next.snapshot)
   }
-  return getJSON<CallPage>(`${projectApi()}/calls?${q}`)
+  return callsWith(q)
 }
+
+// listCalls with the filters as the URL holds them: a filter repeats its key once per value, which
+// the console builds with URLSearchParams (call-filters.ts), so the SDK sends that string as is.
+const callsWith = (q: URLSearchParams) => data(listCalls({ ...thrown, path: scope(), query: {}, querySerializer: () => q.toString() }))
 
 // Only the totals and the first row, for counts beside the list (one page of one call).
 const fetchFirstPage = (filters: URLSearchParams) => {
   const q = new URLSearchParams(filters)
   q.set("limit", "1")
-  return getJSON<CallPage>(`${projectApi()}/calls?${q}`)
+  return callsWith(q)
 }
 export const fetchCallCount = async (filters: URLSearchParams) => (await fetchFirstPage(filters)).totals.callCount
 
@@ -69,9 +108,9 @@ export const fetchCallCount = async (filters: URLSearchParams) => (await fetchFi
 export const recentCallsQuery = () => ({ queryKey: ["calls", currentScope(), "recent"], queryFn: async () => (await fetchCallPage(new URLSearchParams({ sort: "startedAt", order: "desc" }), undefined, 100)).items })
 
 // The project's most recent call, unfiltered: where the time range ends, and whether there are calls at all.
-export const fetchLatestCall = async () => (await getJSON<CallPage>(`${projectApi()}/calls?limit=1&sort=startedAt&order=desc`)).items[0] ?? null
+export const fetchLatestCall = async () => (await data(listCalls({ ...thrown, path: scope(), query: { limit: 1, sort: "startedAt", order: "desc" } }))).items[0] ?? null
 
-export const fetchCall = (id: string) => getJSON<Call>(`${projectApi()}/calls/${encodeURIComponent(id)}`)
+export const fetchCall = (id: string): Promise<Call> => data(getCall({ ...thrown, path: { ...scope(), callId: id } }))
 
 // A 4xx or no API at all will not change by asking again; anything else is retried once.
 export const shouldRetry = (failures: number, error: unknown) => !(error instanceof ApiError && (error.status === 0 || (error.status >= 400 && error.status < 500))) && failures < 1
@@ -121,44 +160,45 @@ export const callInRoomQuery = (name: string, sid: string) => ({
 export const callQuery = (id: string) => ({ queryKey: ["call", currentScope(), id], queryFn: () => fetchCall(id) })
 
 // The LiveKit pages' reads, one document each.
-export const egressQuery = () => ({ queryKey: ["egress", currentScope()], queryFn: () => getJSON<Egress>(`${projectApi()}/egress`) })
-export const ingressQuery = () => ({ queryKey: ["ingress", currentScope()], queryFn: () => getJSON<Ingress>(`${projectApi()}/ingress`) })
-export const sipQuery = () => ({ queryKey: ["sip", currentScope()], queryFn: () => getJSON<Sip>(`${projectApi()}/sip`) })
-export const mediaServerQuery = () => ({ queryKey: ["media-server", currentScope()], queryFn: () => getJSON<MediaServer>(`${projectApi()}/media-server`) })
-export const cloudAgentsQuery = () => ({ queryKey: ["agents", currentScope()], queryFn: () => getJSON<CloudAgents>(`${projectApi()}/agents`) })
-export const capacityQuery = () => ({ queryKey: ["capacity", currentScope()], queryFn: () => getJSON<CapacityRun | null>(`${projectApi()}/capacity`) })
-export const workersQuery = () => ({ queryKey: ["workers", currentScope()], queryFn: () => getJSON<Workers>(`${projectApi()}/workers`) })
-export const providerProbesQuery = () => ({ queryKey: ["provider-probes", currentScope()], queryFn: () => getJSON<ProviderProbes>(`${projectApi()}/provider-probes`) })
-export const snapshotQuery = () => ({ queryKey: ["snapshot", currentScope()], queryFn: () => getJSON<ProjectSnapshot>(`${projectApi()}/snapshot`) })
+export const egressQuery = () => ({ queryKey: ["egress", currentScope()], queryFn: () => data(getEgress({ ...thrown, path: scope() })) })
+export const ingressQuery = () => ({ queryKey: ["ingress", currentScope()], queryFn: () => data(getIngress({ ...thrown, path: scope() })) })
+export const sipQuery = () => ({ queryKey: ["sip", currentScope()], queryFn: () => data(getSip({ ...thrown, path: scope() })) })
+export const mediaServerQuery = () => ({ queryKey: ["media-server", currentScope()], queryFn: () => data(getMediaServer({ ...thrown, path: scope() })) })
+export const cloudAgentsQuery = () => ({ queryKey: ["agents", currentScope()], queryFn: () => data(getCloudAgents({ ...thrown, path: scope() })) })
+// The contract requires the agent whose run to read, and the console does not pass one yet: it
+// shows one run for every agent. The cast keeps that known gap in one visible place.
+export const capacityQuery = () => ({ queryKey: ["capacity", currentScope()], queryFn: () => data(getCapacity({ ...thrown, path: scope() } as Parameters<typeof getCapacity<true>>[0])) })
+export const workersQuery = () => ({ queryKey: ["workers", currentScope()], queryFn: () => data(getWorkers({ ...thrown, path: scope() })) })
+export const providerProbesQuery = () => ({ queryKey: ["provider-probes", currentScope()], queryFn: () => data(getProviderProbes({ ...thrown, path: scope() })) })
+export const snapshotQuery = () => ({ queryKey: ["snapshot", currentScope()], queryFn: () => data(getProjectSnapshot({ ...thrown, path: scope() })) })
 
 // Issues and alert evaluation over all of time up to now: the pages have no range picker yet.
-const allTime = () => new URLSearchParams({ from: new Date(0).toISOString(), to: new Date(Date.now() + 60_000).toISOString() })
-export const issuesQuery = () => ({ queryKey: ["issues", currentScope()], queryFn: () => getJSON<IssueList>(`${projectApi()}/issues?${allTime()}`) })
-export const alertEventsQuery = () => ({ queryKey: ["alert-events", currentScope()], queryFn: () => getJSON<AlertEvents>(`${projectApi()}/alert-events?${allTime()}`) })
+const allTime = () => ({ from: new Date(0).toISOString(), to: new Date(Date.now() + 60_000).toISOString() })
+export const issuesQuery = () => ({ queryKey: ["issues", currentScope()], queryFn: () => data(listIssues({ ...thrown, path: scope(), query: allTime() })) })
+export const alertEventsQuery = () => ({ queryKey: ["alert-events", currentScope()], queryFn: () => data(listAlertEvents({ ...thrown, path: scope(), query: allTime() })) })
 
 // Overview's aggregates over a range, computed by the server over every call in it.
 export const callStatsQuery = (from: Date, to: Date) => ({
   queryKey: ["call-stats", currentScope(), from.toISOString(), to.toISOString()],
-  queryFn: () => getJSON<CallStats>(`${projectApi()}/call-stats?${new URLSearchParams({ from: from.toISOString(), to: to.toISOString() })}`),
+  queryFn: () => data(getCallStats({ ...thrown, path: scope(), query: { from: from.toISOString(), to: to.toISOString() } })),
 })
 
 // Settings. Until web stores them the console saves them in this browser (lib/local-store.ts) and
 // these reads return them; after a save the console invalidates the read it changed.
-export const projectSettingsQuery = () => ({ queryKey: ["settings", currentScope()], queryFn: () => getJSON<ProjectSettings>(`${projectApi()}/settings`) })
-export const issueDispositionsQuery = () => ({ queryKey: ["issue-dispositions", currentScope()], queryFn: () => getJSON<IssueDispositions>(`${projectApi()}/issue-dispositions`) })
-export const alertSetupQuery = () => ({ queryKey: ["alert-setup", currentScope()], queryFn: () => getJSON<AlertSetup>(`${projectApi()}/alert-setup`) })
-export const invitationsQuery = () => ({ queryKey: ["invitations", currentScope().org], queryFn: () => getJSON<Invitations>(`/api/v1/org/${currentScope().org}/invitations`) })
-export const fetchWorkspaces = () => getJSON<Workspaces>("/api/v1/workspaces")
+export const projectSettingsQuery = () => ({ queryKey: ["settings", currentScope()], queryFn: () => data(getProjectSettings({ ...thrown, path: scope() })) })
+export const issueDispositionsQuery = () => ({ queryKey: ["issue-dispositions", currentScope()], queryFn: () => data(getIssueDispositions({ ...thrown, path: scope() })) })
+export const alertSetupQuery = () => ({ queryKey: ["alert-setup", currentScope()], queryFn: () => data(getAlertSetup({ ...thrown, path: scope() })) })
+export const invitationsQuery = () => ({ queryKey: ["invitations", currentScope().org], queryFn: () => data(getInvitations({ ...thrown, path: { orgId: currentScope().org } })) })
+export const fetchWorkspaces = () => data(getWorkspaces(thrown))
 
 // The organisation's members (phase 06b). Any member reads the list; an Admin changes roles and
 // removes people, and the server refuses taking away the last admin with last_admin.
-const membersApi = () => `/api/v1/org/${currentScope().org}/members`
-export const membersQuery = () => ({ queryKey: ["members", currentScope().org], queryFn: () => getJSON<Members>(membersApi()) })
-export const updateMember = (userId: string, role: Member["role"]) => getJSON<Member>(`${membersApi()}/${encodeURIComponent(userId)}`, { method: "PATCH", body: JSON.stringify({ role }) })
+export const membersQuery = () => ({ queryKey: ["members", currentScope().org], queryFn: () => data(getMembers({ ...thrown, path: { orgId: currentScope().org } })) })
+export const updateMember = (userId: string, role: Member["role"]) => data(updateMemberCall({ ...thrown, path: { orgId: currentScope().org, userId }, body: { role } }))
 // A project's API keys (phase 06c), Admin only. The full key is in createProjectKey's answer and
 // nowhere else.
-const keysApi = (projectId: string) => `/api/v1/org/${currentScope().org}/project/${encodeURIComponent(projectId)}/keys`
-export const projectKeysQuery = (projectId: string) => ({ queryKey: ["project-keys", currentScope().org, projectId], queryFn: () => getJSON<ProjectKeys>(keysApi(projectId)) })
-export const createProjectKey = (projectId: string, name: string) => getJSON<CreatedProjectKey>(keysApi(projectId), { method: "POST", body: JSON.stringify({ name }) })
-export const revokeProjectKey = (projectId: string, keyId: string) => getJSON<void>(`${keysApi(projectId)}/${encodeURIComponent(keyId)}`, { method: "DELETE" })
-export const removeMember = (userId: string) => getJSON<void>(`${membersApi()}/${encodeURIComponent(userId)}`, { method: "DELETE" })
+const keysPath = (projectId: string) => ({ orgId: currentScope().org, projectId })
+export const projectKeysQuery = (projectId: string) => ({ queryKey: ["project-keys", currentScope().org, projectId], queryFn: () => data(listProjectKeys({ ...thrown, path: keysPath(projectId) })) })
+export const createProjectKey = (projectId: string, name: string) => data(createProjectKeyCall({ ...thrown, path: keysPath(projectId), body: { name } }))
+export const revokeProjectKey = (projectId: string, keyId: string) => data(revokeProjectKeyCall({ ...thrown, path: { ...keysPath(projectId), keyId } })).then(() => undefined)
+export const removeMember = (userId: string) => data(removeMemberCall({ ...thrown, path: { orgId: currentScope().org, userId } })).then(() => undefined)

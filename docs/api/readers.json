@@ -76,23 +76,35 @@
   {
     "file": "dashboard/src/lib/api.ts",
     "fixtures": [],
-    "assets": [
-      "<dynamic>"
-    ],
+    "assets": [],
     "browserStorage": false,
     "operations": [
       "createProjectKey",
+      "getAlertSetup",
       "getCall",
+      "getCallStats",
+      "getCapacity",
+      "getCloudAgents",
+      "getEgress",
+      "getIngress",
+      "getInvitations",
+      "getIssueDispositions",
+      "getMediaServer",
       "getMembers",
+      "getProjectSettings",
+      "getProjectSnapshot",
+      "getProviderProbes",
+      "getSip",
+      "getWorkers",
+      "getWorkspaces",
+      "listAlertEvents",
       "listCalls",
+      "listIssues",
       "listProjectKeys",
       "removeMember",
       "revokeProjectKey",
       "updateMember"
-    ],
-    "assetNotes": {
-      "<dynamic>": "getJSON: the console's reads, and its member writes, through web's API."
-    }
+    ]
   },
   {
     "file": "dashboard/src/lib/local-store.ts",
