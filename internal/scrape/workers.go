@@ -68,26 +68,29 @@ type WorkerScraper struct {
 //   - Private and loopback addresses are allowed, since a self-hosted install's workers usually sit
 //     on its own network, unless publicOnly is set; then every special-purpose range is refused.
 func NewWorkerClient(publicOnly bool) *http.Client {
-	opts := []ssrf.Option{ssrf.WithAnyPort()}
-	if !publicOnly {
-		opts = append(opts, ssrf.WithAllowedV4Prefixes(privateV4...), ssrf.WithAllowedV6Prefixes(privateV6...))
-	}
-	guard := ssrf.New(opts...)
-	dialer := &net.Dialer{
-		Timeout: 10 * time.Second,
-		Control: func(network, address string, c syscall.RawConn) error {
-			if metadataAddress(address) {
-				return errMetadataAddress
-			}
-			return guard.Safe(network, address, c)
-		},
-	}
+	dialer := &net.Dialer{Timeout: 10 * time.Second, Control: dialGuard(publicOnly)}
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	transport.DialContext = dialer.DialContext
 	transport.Proxy = nil // a proxy would dial on the worker's behalf, past the guard
 	return &http.Client{
 		Transport:     transport,
 		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+	}
+}
+
+// dialGuard is the net.Dialer Control that decides, per resolved address, whether the worker may
+// dial it: metadata addresses first, in both modes, then code.dny.dev/ssrf.
+func dialGuard(publicOnly bool) func(network, address string, c syscall.RawConn) error {
+	opts := []ssrf.Option{ssrf.WithAnyPort()}
+	if !publicOnly {
+		opts = append(opts, ssrf.WithAllowedV4Prefixes(privateV4...), ssrf.WithAllowedV6Prefixes(privateV6...))
+	}
+	guard := ssrf.New(opts...)
+	return func(network, address string, c syscall.RawConn) error {
+		if metadataAddress(address) {
+			return errMetadataAddress
+		}
+		return guard.Safe(network, address, c)
 	}
 }
 
@@ -105,21 +108,28 @@ var (
 		netip.MustParsePrefix("fc00::/7"),
 		netip.MustParsePrefix("::1/128"),
 	}
-	// metadataV6 holds IPv6 metadata addresses inside the private range allowed above: AWS's.
-	metadataV6 = []netip.Prefix{netip.MustParsePrefix("fd00:ec2::254/128")}
+	// metadata holds cloud metadata addresses inside the ranges allowed above, refused in both
+	// modes: Alibaba Cloud's (in 100.64.0.0/10), and AWS's and GCP's IPv6 ones (in fc00::/7). The
+	// link-local ones (169.254.169.254 and the rest) the library refuses already.
+	metadata = []netip.Prefix{
+		netip.MustParsePrefix("100.100.100.200/32"),
+		netip.MustParsePrefix("fd00:ec2::254/128"),
+		netip.MustParsePrefix("fd20:ce::254/128"),
+	}
 )
 
 var errMetadataAddress = errors.New("worker endpoint: a cloud metadata address is never dialled")
 
 // metadataAddress reports whether a dial target is a cloud metadata address the private allow list
-// would otherwise let through.
+// would otherwise let through. A target that is not ip:port is left to the library, which refuses
+// it.
 func metadataAddress(address string) bool {
 	ap, err := netip.ParseAddrPort(address)
 	if err != nil {
 		return false
 	}
 	ip := ap.Addr().Unmap()
-	for _, p := range metadataV6 {
+	for _, p := range metadata {
 		if p.Contains(ip) {
 			return true
 		}
