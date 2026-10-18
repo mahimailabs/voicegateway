@@ -313,7 +313,7 @@ function MemberList({ isAdmin }: { isAdmin: boolean }) {
       )}
       {resetFor && (
         <div className="pt-3">
-          <Delivery outcome={resetFor} what="password reset link" onDone={() => setResetFor(null)} />
+          <Delivery outcome={resetFor} what="password reset link" onDone={() => setResetFor(null)} pending={reset.isPending} />
         </div>
       )}
       <Dialog open={removing !== null} onOpenChange={(o) => !o && setRemoving(null)}>
@@ -346,8 +346,9 @@ function MemberList({ isAdmin }: { isAdmin: boolean }) {
 // email went, and never a link.
 type Outcome = { email: string; link: string | null; emailed: boolean; resend: () => void }
 
-// The answer to one invitation or reset: copy the link once, or the email's fate with Resend.
-function Delivery({ outcome, what, onDone }: { outcome: Outcome; what: string; onDone: () => void }) {
+// The answer to one invitation or reset: copy the link once, or the email's fate with Resend,
+// which is off while its request runs so repeated clicks send one email.
+function Delivery({ outcome, what, onDone, pending }: { outcome: Outcome; what: string; onDone: () => void; pending: boolean }) {
   if (outcome.link)
     return (
       <div className="space-y-3">
@@ -362,7 +363,7 @@ function Delivery({ outcome, what, onDone }: { outcome: Outcome; what: string; o
   return (
     <div className="flex flex-wrap items-center gap-3">
       <p role="alert" className="text-[13px] text-destructive">{`Could not send the email to ${outcome.email}.`}</p>
-      <Button size="sm" variant="outline" onClick={outcome.resend}>
+      <Button size="sm" variant="outline" onClick={outcome.resend} disabled={pending}>
         Resend
       </Button>
     </div>
@@ -428,7 +429,7 @@ function Invites() {
                 {problem}
               </p>
             )}
-            {outcome && <Delivery outcome={outcome} what="invitation link" onDone={() => setOutcome(null)} />}
+            {outcome && <Delivery outcome={outcome} what="invitation link" onDone={() => setOutcome(null)} pending={create.isPending} />}
           </div>
         </form>
       </section>

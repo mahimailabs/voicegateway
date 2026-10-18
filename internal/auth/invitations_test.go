@@ -283,6 +283,31 @@ func TestParallelCreatesOneOpenLink(t *testing.T) {
 	if n := f.count(`SELECT count(*) FROM invitations WHERE kind = 'reset' AND user_id = $1 AND accepted_at IS NULL AND revoked_at IS NULL`, member); n != 1 {
 		t.Errorf("%d open reset links after parallel resets from two organisations, want 1", n)
 	}
+
+	// Accepting an old reset while new resets are made for the same member takes the same lock
+	// order, so no transaction deadlocks: the accept either wins or finds its link replaced.
+	for round := range 5 {
+		old, err := w.links.ResetLink(ctx, "org-a", member, &by, "https://vg.example")
+		if err != nil {
+			t.Fatal(err)
+		}
+		var race sync.WaitGroup
+		race.Go(func() {
+			_, err := w.links.Accept(ctx, tokenOf(old.Link), fmt.Sprintf("reset password round %d", round), nil)
+			if err != nil && !errors.Is(err, invite.ErrInvalidLink) {
+				t.Errorf("accept an old reset during new ones: %v", err)
+			}
+		})
+		for i := range 4 {
+			org := []string{"org-a", "org-b"}[i%2]
+			race.Go(func() {
+				if _, err := w.links.ResetLink(ctx, org, member, &by, "https://vg.example"); err != nil {
+					t.Errorf("ResetLink during an accept: %v", err)
+				}
+			})
+		}
+		race.Wait()
+	}
 }
 
 // Acceptance check 3.

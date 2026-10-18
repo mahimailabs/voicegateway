@@ -236,6 +236,17 @@ func (s *Store) AcceptInvitation(ctx context.Context, tokenSHA256 []byte, passwo
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 	q := s.q.WithTx(tx)
+	// A reset locks its member before it touches the invitation row, the order createInvitation
+	// takes (organisation, member, invitation rows), so accepting an old reset while an admin makes
+	// a new one cannot deadlock. UseInvitation stays conditional: a link revoked or used meanwhile
+	// still reads as not found.
+	if open, err := q.OpenInvitationByToken(ctx, tokenSHA256); err == nil && open.Kind == "reset" && open.UserID.Valid {
+		if _, err := q.LockUser(ctx, open.UserID); err != nil && !errors.Is(err, pgx.ErrNoRows) {
+			return "", fmt.Errorf("accept reset: %w", err)
+		}
+	} else if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return "", fmt.Errorf("accept invitation: %w", err)
+	}
 	link, err := q.UseInvitation(ctx, tokenSHA256)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return "", store.ErrNotFound
