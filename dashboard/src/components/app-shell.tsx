@@ -13,6 +13,7 @@ import {
   UploadSimple as ArrowUpFromLine,
   Robot as Bot,
   BookOpenText as BookOpen,
+  BracketsCurly,
   SquaresFour as LayoutGrid,
   Phone,
   PhoneCall,
@@ -159,6 +160,14 @@ export function AppShell() {
                   <BookOpen />
                   <span>Documentation</span>
                 </a>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+            <SidebarMenuItem>
+              <SidebarMenuButton asChild tooltip="API reference">
+                <Link to="/docs">
+                  <BracketsCurly />
+                  <span>API reference</span>
+                </Link>
               </SidebarMenuButton>
             </SidebarMenuItem>
             <SidebarMenuItem>

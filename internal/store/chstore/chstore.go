@@ -407,16 +407,26 @@ func (s *Store) usageSum(ctx context.Context, organisationID, projectID, callID,
 	return &sum, nil
 }
 
-// CallSpans returns every span that resolves to a call, by its own call id or its trace's link, in
-// start order.
-func (s *Store) CallSpans(ctx context.Context, organisationID, projectID, callID string) ([]store.Span, error) {
-	rows, err := s.conn.Query(ctx, `
+// callSpans selects every span that resolves to a call, by its own call id or its trace's link, in
+// start order. The first trace_id IN names the call's traces through the call_id indexes
+// (ClickHouse 00008), so the read uses the sorting key instead of scanning the project; the
+// condition after it decides which of their spans belong to the call.
+const callSpans = `
 		SELECT toString(trace_id), toString(span_id), parent_span_id, call_id, name, kind, start_time, end_time, status_code, room_id, job_id, scope_name, attributes
 		FROM spans FINAL
 		WHERE organisation_id = @org AND project_id = @project
+		  AND trace_id IN (
+		      SELECT trace_id FROM spans WHERE organisation_id = @org AND project_id = @project AND call_id = @call
+		      UNION ALL
+		      SELECT trace_id FROM trace_calls WHERE organisation_id = @org AND project_id = @project AND call_id = @call)
 		  AND (call_id = @call OR (call_id = '' AND trace_id IN (
 		      SELECT trace_id FROM trace_calls FINAL WHERE organisation_id = @org AND project_id = @project AND call_id = @call)))
-		ORDER BY start_time`,
+		ORDER BY start_time`
+
+// CallSpans returns every span that resolves to a call, by its own call id or its trace's link, in
+// start order.
+func (s *Store) CallSpans(ctx context.Context, organisationID, projectID, callID string) ([]store.Span, error) {
+	rows, err := s.conn.Query(ctx, callSpans,
 		clickhouse.Named("org", organisationID), clickhouse.Named("project", projectID), clickhouse.Named("call", callID))
 	if err != nil {
 		return nil, fmt.Errorf("call spans: %w", err)

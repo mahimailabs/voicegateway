@@ -1,5 +1,5 @@
 import { IssuesPage } from "@/features/issues/issues-page"
-import { Outlet, createRootRoute, createRoute, createRouter, redirect } from "@tanstack/react-router"
+import { Outlet, createRootRoute, createRoute, createRouter, lazyRouteComponent, redirect } from "@tanstack/react-router"
 import { AppShell } from "@/components/app-shell"
 import { CallsPage } from "@/features/calls/calls-page"
 import { OverviewPage } from "@/features/overview/overview"
@@ -18,6 +18,12 @@ import { entryPath, scopeRewrite } from "@/lib/url-state"
 const root = createRootRoute({ component: Outlet })
 const app = createRoute({ getParentRoute: () => root, id: "app", component: AppShell })
 const embed = createRoute({ getParentRoute: () => root, path: "/embed/$widget", component: EmbedPage })
+// The API reference stands alone like a widget, loaded only when opened: Scalar is large.
+const apiDocs = createRoute({
+  getParentRoute: () => root,
+  path: "/docs",
+  component: lazyRouteComponent(() => import("@/features/api-docs/api-docs-page"), "ApiDocsPage"),
+})
 const index = createRoute({
   getParentRoute: () => app,
   path: "/",
@@ -48,7 +54,7 @@ const settings = createRoute({ getParentRoute: () => app, path: "/settings", com
 
 export const router = createRouter({
   rewrite: scopeRewrite,
-  routeTree: root.addChildren([app.addChildren([index, project, overview, calls, callRoute, live, issues, alerts, agents, sfu, sip, egress, ingress, settings]), embed]),
+  routeTree: root.addChildren([app.addChildren([index, project, overview, calls, callRoute, live, issues, alerts, agents, sfu, sip, egress, ingress, settings]), embed, apiDocs]),
 })
 
 declare module "@tanstack/react-router" {

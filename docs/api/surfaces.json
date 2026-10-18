@@ -125,6 +125,31 @@
       "getRecordingMedia",
       "getCallStats",
       "listIssues"
+    ],
+    "/docs": [
+      "getAlertSetup",
+      "getCall",
+      "getCallStats",
+      "getCapacity",
+      "getCloudAgents",
+      "getEgress",
+      "getIngress",
+      "getInvitations",
+      "getIssueDispositions",
+      "getMediaServer",
+      "getMembers",
+      "getProjectSettings",
+      "getProjectSnapshot",
+      "getProviderProbes",
+      "getRecordingMedia",
+      "getSip",
+      "getWorkers",
+      "getWorkspaces",
+      "listAlertEvents",
+      "listCalls",
+      "listIssues",
+      "removeMember",
+      "updateMember"
     ]
   },
   "shell": [
