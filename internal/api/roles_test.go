@@ -77,3 +77,44 @@ func TestEveryRouteHasAMinimumRole(t *testing.T) {
 		}
 	}
 }
+
+// The contract offers projectKey security on exactly the operations the gate lets a project API key
+// call, so a generated client or the /docs runner never sends a key where it gets 403.
+func TestProjectKeySecurityMatchesTheGate(t *testing.T) {
+	spec, err := os.ReadFile("../../docs/api/openapi.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc, err := libopenapi.NewDocument(spec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	model, err := doc.BuildV3Model()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for path, item := range model.Model.Paths.PathItems.FromOldest() {
+		for method, op := range item.GetOperations().FromOldest() {
+			var x struct {
+				MinimumRole string `yaml:"minimumRole"`
+				Scope       string `yaml:"scope"`
+			}
+			node, ok := op.Extensions.Get("x-access")
+			if !ok {
+				t.Fatalf("%s %s has no x-access", method, path)
+			}
+			if err := node.Decode(&x); err != nil {
+				t.Fatalf("%s %s: x-access: %v", method, path, err)
+			}
+			offered := false
+			for _, req := range op.Security {
+				if _, ok := req.Requirements.Get("projectKey"); ok {
+					offered = true
+				}
+			}
+			if want := keyMay(access{min: x.MinimumRole, scope: x.Scope}); offered != want {
+				t.Errorf("%s %s (%s): projectKey offered %v, the gate allows a key %v", strings.ToUpper(method), path, op.OperationId, offered, want)
+			}
+		}
+	}
+}
