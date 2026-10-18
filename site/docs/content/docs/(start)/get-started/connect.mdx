@@ -37,7 +37,7 @@ Start the agent session with `record=True`. No other code change.
 
 ### Send LiveKit's webhooks
 
-In LiveKit, add a webhook to `https://<voicegateway-host>/livekit/webhook`, signed with the same API key. Without it, calls never close.
+In LiveKit, add a webhook to `https://<voicegateway-host>/livekit/webhook`, signed with the same API key. Without it, a call closes only after 2 hours with no activity, and its end time is marked as inferred.
 
 </Step>
 </Steps>

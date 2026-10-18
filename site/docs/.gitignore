@@ -4,6 +4,7 @@
 # generated content
 .source
 /content/docs/api/
+/openapi.served.json
 
 # test & build
 /coverage
@@ -24,4 +25,3 @@ yarn-error.log*
 # others
 .env*.local
 .vercel
-next-env.d.ts
