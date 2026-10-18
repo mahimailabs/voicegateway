@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math/rand/v2"
 	"regexp"
 	"slices"
 	"time"
@@ -316,7 +317,10 @@ func (s *Sink) retry(ctx context.Context, what string, f func(context.Context) e
 	}
 }
 
+// sleep waits a random time between half of d and d (equal jitter), so workers that failed together
+// after an outage do not retry together.
 func (s *Sink) sleep(ctx context.Context, d time.Duration) {
+	d = d/2 + rand.N(d/2+1) //nolint:gosec // retry timing, not a secret
 	t := time.NewTimer(d)
 	defer t.Stop()
 	select {

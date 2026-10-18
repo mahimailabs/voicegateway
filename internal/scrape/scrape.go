@@ -70,6 +70,23 @@ func (s *Scraper) Run(ctx context.Context) error {
 	}
 }
 
+// projectsAtOnce bounds how many projects one tick reads at the same time, so an install with many
+// projects does not open every project's secret and LiveKit connection at once.
+const projectsAtOnce = 16
+
+// eachProject runs read for every project, at most projectsAtOnce at a time, and waits for all.
+func eachProject(projects []store.Project, read func(store.Project)) {
+	var g errgroup.Group
+	g.SetLimit(projectsAtOnce)
+	for _, p := range projects {
+		g.Go(func() error {
+			read(p)
+			return nil
+		})
+	}
+	_ = g.Wait()
+}
+
 // Tick reads every project's media server once.
 func (s *Scraper) Tick(ctx context.Context) {
 	projects, err := s.Projects.Projects(ctx)
@@ -79,15 +96,11 @@ func (s *Scraper) Tick(ctx context.Context) {
 		}
 		return
 	}
-	var wg sync.WaitGroup
-	for _, p := range projects {
-		wg.Go(func() {
-			if err := s.MediaServer(ctx, p); err != nil && ctx.Err() == nil {
-				s.Log.Error("scrape: media server", "organisation", p.OrganisationID, "project", p.ID, "err", err)
-			}
-		})
-	}
-	wg.Wait()
+	eachProject(projects, func(p store.Project) {
+		if err := s.MediaServer(ctx, p); err != nil && ctx.Err() == nil {
+			s.Log.Error("scrape: media server", "organisation", p.OrganisationID, "project", p.ID, "err", err)
+		}
+	})
 }
 
 // MediaServer reads one project's rooms, and the participants and dispatches of rooms that need a

@@ -6,7 +6,6 @@ import (
 	"log/slog"
 	"net/url"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/livekit/protocol/livekit"
@@ -54,15 +53,11 @@ func (s *CloudAgentScraper) Tick(ctx context.Context) {
 		}
 		return
 	}
-	var wg sync.WaitGroup
-	for _, p := range projects {
-		wg.Go(func() {
-			if err := s.CloudAgents(ctx, p); err != nil && ctx.Err() == nil {
-				s.Log.Error("scrape: cloud agents", "organisation", p.OrganisationID, "project", p.ID, "err", err)
-			}
-		})
-	}
-	wg.Wait()
+	eachProject(projects, func(p store.Project) {
+		if err := s.CloudAgents(ctx, p); err != nil && ctx.Err() == nil {
+			s.Log.Error("scrape: cloud agents", "organisation", p.OrganisationID, "project", p.ID, "err", err)
+		}
+	})
 }
 
 // CloudAgents reads one project's Cloud agents and their versions and stores them with the read. It
