@@ -14,8 +14,9 @@ concurrency:
 
 env:
   IMAGE: ghcr.io/mahimailabs/voicegateway
-  # Stable releases (no pre-release suffix) are also copied to Docker Hub.
-  DOCKERHUB_IMAGE: docker.io/mahimairaja/voicegateway
+  # Stable releases (no pre-release suffix) are also copied to Docker Hub. A name of its own, because
+  # mahimairaja/voicegateway is the Python collector that docker-compose.collector.yml pulls as latest.
+  DOCKERHUB_IMAGE: docker.io/mahimairaja/voicegateway-server
 
 permissions:
   contents: read
@@ -175,7 +176,7 @@ jobs:
             `${{ env.IMAGE }}:${{ needs.merge.outputs.version }}`
 
             Digest: `${{ needs.merge.outputs.digest }}`
-            ${{ needs.merge.outputs.stable == 'true' && format('Also on Docker Hub: `mahimairaja/voicegateway:{0}`', needs.merge.outputs.version) || '' }}
+            ${{ needs.merge.outputs.stable == 'true' && format('Also on Docker Hub: `mahimairaja/voicegateway-server:{0}`', needs.merge.outputs.version) || '' }}
 
             Built for `linux/amd64` and `linux/arm64`. One image runs web, worker and migrate.
             To install, follow [docs/self-hosting.md](https://github.com/mahimailabs/voicegateway/blob/main/docs/self-hosting.md).
