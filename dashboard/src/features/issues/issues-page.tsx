@@ -4,7 +4,7 @@ import { ArrowCounterClockwise, ArrowSquareOut, CaretRight, CheckCircle, Clock, 
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { type Store, statusOf, storeFrom, useSaveIssueStates } from "./issue-state"
 import { type Columns, DataTable, type Field } from "@/components/data-table"
@@ -69,7 +69,7 @@ function TitleCell({ i, regressed = false }: { i: Issue; regressed?: boolean }) 
   return (
     <>
       <span className="flex items-center gap-2 text-[14px] font-medium">
-        <span className={cn("size-2 shrink-0 rounded-full", dot[i.severity])} aria-label={i.severity} />
+        <span className={cn("size-2 shrink-0 rounded-full", dot[i.severity])} role="img" aria-label={i.severity} />
         {i.title}
         {regressed && (
           <Tooltip>
@@ -288,36 +288,38 @@ function IssuesView({ all, states }: { all: Issue[]; states: Store }) {
             </TabsTrigger>
           ))}
         </TabsList>
+        <TabsContent key={view} value={view}>
+          <DataTable
+            key={view}
+            data={shown}
+            columns={cols}
+            fields={fields}
+            getRowId={(i) => i.id}
+            canExpand={() => true}
+            phoneColumns={["expand", "title", "actions"]}
+            empty={view === "open" ? "No open issue matches these filters." : `No ${view} issues.`}
+            bulk={(sel, clear) => (
+              <>
+                {view !== "resolved" && (
+                  <Button size="sm" variant="outline" onClick={() => apply(sel, "resolved", clear)}>
+                    <CheckCircle /> Resolve
+                  </Button>
+                )}
+                {view !== "ignored" && (
+                  <Button size="sm" variant="outline" onClick={() => apply(sel, "ignored", clear)}>
+                    <EyeSlash /> Ignore
+                  </Button>
+                )}
+                {view !== "open" && (
+                  <Button size="sm" variant="outline" onClick={() => apply(sel, "open", clear)}>
+                    <ArrowCounterClockwise /> Reopen
+                  </Button>
+                )}
+              </>
+            )}
+          />
+        </TabsContent>
       </Tabs>
-      <DataTable
-        key={view}
-        data={shown}
-        columns={cols}
-        fields={fields}
-        getRowId={(i) => i.id}
-        canExpand={() => true}
-        phoneColumns={["expand", "title", "actions"]}
-        empty={view === "open" ? "No open issue matches these filters." : `No ${view} issues.`}
-        bulk={(sel, clear) => (
-          <>
-            {view !== "resolved" && (
-              <Button size="sm" variant="outline" onClick={() => apply(sel, "resolved", clear)}>
-                <CheckCircle /> Resolve
-              </Button>
-            )}
-            {view !== "ignored" && (
-              <Button size="sm" variant="outline" onClick={() => apply(sel, "ignored", clear)}>
-                <EyeSlash /> Ignore
-              </Button>
-            )}
-            {view !== "open" && (
-              <Button size="sm" variant="outline" onClick={() => apply(sel, "open", clear)}>
-                <ArrowCounterClockwise /> Reopen
-              </Button>
-            )}
-          </>
-        )}
-      />
       <p className="text-[12px] text-muted-foreground">Resolved and ignored are kept in this browser until the server stores them. A resolved issue reopens as regressed when it is seen again. "Current" is a check on the latest read of agents or the phone bridge, not an event with a time.</p>
     </div>
   )

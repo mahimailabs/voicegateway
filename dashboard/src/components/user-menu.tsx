@@ -20,7 +20,8 @@ export function UserMenu() {
   const detail = session ? (session.organisations[0]?.role ?? "No organisation") : "Accounts arrive with sign-in"
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger className="flex w-full items-center gap-2.5 rounded-lg p-1.5 text-left outline-none hover:bg-foreground/[0.04] focus-visible:ring-2 focus-visible:ring-ring data-[state=open]:bg-foreground/[0.04] group-data-[collapsible=icon]:justify-center" aria-label="Account">
+      <DropdownMenuTrigger className="flex w-full items-center gap-2.5 rounded-lg p-1.5 text-left outline-none hover:bg-foreground/[0.04] focus-visible:ring-2 focus-visible:ring-ring data-[state=open]:bg-foreground/[0.04] group-data-[collapsible=icon]:justify-center">
+        <span className="sr-only">Account </span>
         <Avatar className="size-7 shrink-0">
           <AvatarFallback className="bg-background text-muted-foreground ring-1 ring-border">
             <User className="size-3.5" />

@@ -100,7 +100,7 @@ function Group({ label, children, footer }: { label?: string; children: React.Re
 function Row({ title, description, value, mono, icon: I, muted, last }: { title: string; description?: React.ReactNode; value?: React.ReactNode; mono?: boolean; icon?: Icon; muted?: boolean; last?: boolean }) {
   return (
     <>
-      <Item size="sm" className="grid grid-cols-1 items-start gap-3 sm:grid-cols-[minmax(0,220px)_minmax(0,1fr)] sm:gap-8 rounded-none border-0 px-0 py-4">
+      <Item role="listitem" size="sm" className="grid grid-cols-1 items-start gap-3 sm:grid-cols-[minmax(0,220px)_minmax(0,1fr)] sm:gap-8 rounded-none border-0 px-0 py-4">
         <ItemContent className="flex-row items-start gap-3">
           {I && (
             <ItemMedia variant="icon" className={muted ? "mt-0.5 text-muted-foreground" : "mt-0.5"}>
@@ -538,7 +538,7 @@ function IntegrationList({ list }: { list: Integration[] }) {
     <ItemGroup className="gap-0 has-data-[size=sm]:gap-0">
       {list.map((x, k) => (
         <span key={x.name} className="contents">
-          <Item size="sm" className="flex-col items-stretch gap-3 rounded-none border-0 px-0 py-4">
+          <Item role="listitem" size="sm" className="flex-col items-stretch gap-3 rounded-none border-0 px-0 py-4">
             <div className="flex items-center gap-4">
               <span className="flex size-10 shrink-0 items-center justify-center rounded-lg border bg-background">{x.icon ? <x.icon size={20} /> : <ProviderLogo provider={x.logo} size={20} />}</span>
               <ItemContent className="min-w-0 gap-0.5">
