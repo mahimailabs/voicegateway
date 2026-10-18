@@ -20,9 +20,11 @@ type API struct {
 	Calls    Calls
 	Traces   Traces
 	Layers   Layers
-	Accounts Accounts
-	Stats    Stats
-	Log      *slog.Logger
+	// Endpoints lists each project's worker metrics endpoints, from Postgres.
+	Endpoints WorkerEndpoints
+	Accounts  Accounts
+	Stats     Stats
+	Log       *slog.Logger
 	// AnswerBudgetMs is the answer budget listCalls' totals count against; 0 is the console's
 	// default, 1500 ms. Interim, until thresholds are stored per project.
 	AnswerBudgetMs int
@@ -61,6 +63,8 @@ func (a *API) Routes() http.Handler {
 	handle(r, http.MethodGet, project+"/sip", a.sip)
 	handle(r, http.MethodGet, project+"/egress", a.egress)
 	handle(r, http.MethodGet, project+"/ingress", a.ingress)
+	handle(r, http.MethodGet, project+"/agents", a.cloudAgents)
+	handle(r, http.MethodGet, project+"/workers", a.workers)
 	handle(r, http.MethodGet, "/api/v1/org/{orgId}/members", a.getMembers)
 	handle(r, http.MethodPatch, "/api/v1/org/{orgId}/members/{userId}", a.updateMember)
 	handle(r, http.MethodDelete, "/api/v1/org/{orgId}/members/{userId}", a.removeMember)

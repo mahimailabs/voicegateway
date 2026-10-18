@@ -40,6 +40,21 @@ type IngressSamples interface {
 	StoreIngressRead(ctx context.Context, read store.LayerRead, ingress []store.IngressSample) error
 }
 
+// CloudAgentSamples stores a Cloud agents read and, when it succeeded, what it saw.
+type CloudAgentSamples interface {
+	StoreCloudAgentsRead(ctx context.Context, read store.LayerRead, agents *store.CloudAgents) error
+}
+
+// WorkerEndpoints lists a project's self-hosted worker metrics endpoints with their URLs opened.
+type WorkerEndpoints interface {
+	OpenWorkerEndpoints(ctx context.Context, organisationID, projectID string) ([]store.OpenWorkerEndpoint, error)
+}
+
+// WorkerSamples stores a read of a project's worker metrics endpoints and what they reported.
+type WorkerSamples interface {
+	StoreWorkerRead(ctx context.Context, read store.LayerRead, endpoints []store.WorkerEndpointRead, samples []store.WorkerSample) error
+}
+
 // Locker takes a lock for ttl if nobody holds it, so one worker reads a layer per interval, and
 // swaps a value shared by the workers, returning the one before.
 type Locker interface {
@@ -58,6 +73,8 @@ type LiveKit interface {
 	ListPhoneNumbers(ctx context.Context) ([]*livekit.PhoneNumber, error)
 	ListEgress(ctx context.Context) ([]*livekit.EgressInfo, error)
 	ListIngress(ctx context.Context) ([]*livekit.IngressInfo, error)
+	ListAgents(ctx context.Context) ([]*livekit.AgentInfo, error)
+	ListAgentVersions(ctx context.Context, agentID string) ([]*livekit.AgentVersion, error)
 }
 
 // Dial returns a LiveKit client for one project.
@@ -72,6 +89,7 @@ func DialSDK(url, apiKey, apiSecret string) LiveKit {
 		numbers:    lksdk.NewPhoneNumberClient(url, apiKey, apiSecret),
 		egress:     lksdk.NewEgressClient(url, apiKey, apiSecret),
 		ingress:    lksdk.NewIngressClient(url, apiKey, apiSecret),
+		url:        url, apiKey: apiKey, apiSecret: apiSecret,
 	}
 }
 
@@ -82,6 +100,9 @@ type sdkClient struct {
 	numbers    *lksdk.PhoneNumberClient
 	egress     *lksdk.EgressClient
 	ingress    *lksdk.IngressClient
+	// The Cloud agents client is made only when a Cloud agents read runs, so a read of any other
+	// layer never resolves the Cloud agents endpoint.
+	url, apiKey, apiSecret string
 }
 
 func (c sdkClient) ListRooms(ctx context.Context) ([]*livekit.Room, error) {
@@ -175,6 +196,27 @@ func (c sdkClient) ListIngress(ctx context.Context) ([]*livekit.IngressInfo, err
 		req.PageToken = next
 	}
 	return nil, fmt.Errorf("ingress: more than %d pages", maxListPages)
+}
+
+// ListAgents lists the project's LiveKit Cloud agents. NewAgentClient never fails in server-sdk-go
+// v2.19.0; its error is still returned in case a later version does.
+func (c sdkClient) ListAgents(ctx context.Context) ([]*livekit.AgentInfo, error) {
+	agents, err := lksdk.NewAgentClient(c.url, c.apiKey, c.apiSecret)
+	if err != nil {
+		return nil, fmt.Errorf("cloud agents client: %w", err)
+	}
+	res, err := agents.ListAgents(ctx, &livekit.ListAgentsRequest{})
+	return res.GetAgents(), err
+}
+
+// ListAgentVersions lists one Cloud agent's versions.
+func (c sdkClient) ListAgentVersions(ctx context.Context, agentID string) ([]*livekit.AgentVersion, error) {
+	agents, err := lksdk.NewAgentClient(c.url, c.apiKey, c.apiSecret)
+	if err != nil {
+		return nil, fmt.Errorf("cloud agents client: %w", err)
+	}
+	res, err := agents.ListAgentVersions(ctx, &livekit.ListAgentVersionsRequest{AgentId: agentID})
+	return res.GetVersions(), err
 }
 
 // RedisLock is a Locker over Redis SET NX with an expiry.
