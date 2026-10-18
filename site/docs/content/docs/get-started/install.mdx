@@ -5,28 +5,21 @@ description: One command starts the whole platform on your own machine.
 
 <Picture src="/diagrams/architecture" alt="One Go binary runs as web and worker, with Postgres, an S3 bucket, Redis and ClickHouse beside it." />
 
-You need Docker and git.
+You need Docker, git, make and 10 GB of free disk.
 
 <Steps>
-<Step>
-
-### Get the code
-
-```bash
-git clone https://github.com/mahimailabs/voicegateway.git
-cd voicegateway
-```
-
-</Step>
 <Step>
 
 ### Start it
 
 ```bash
+git clone https://github.com/mahimailabs/voicegateway.git
+cd voicegateway
 make up
+make preflight
 ```
 
-The first run writes `deploy/.env` with fresh random passwords. Keep that file safe.
+The first run writes `deploy/.env` with fresh random secrets. Keep that file.
 
 </Step>
 <Step>
@@ -34,12 +27,12 @@ The first run writes `deploy/.env` with fresh random passwords. Keep that file s
 ### Create the first admin
 
 ```bash
-docker compose -f deploy/compose.yaml --env-file deploy/.env exec web voicegateway user add --admin --email you@example.com
+make user-add EMAIL=you@example.com
 ```
 
-It asks for a password.
+Sign in at [localhost:8080](http://localhost:8080).
 
 </Step>
 </Steps>
 
-`make down` stops it. Your data stays.
+`make down` stops it and keeps your data. The [full self-hosting guide](https://github.com/mahimailabs/voicegateway/blob/main/docs/self-hosting.md) covers ports, HTTPS and upgrades.

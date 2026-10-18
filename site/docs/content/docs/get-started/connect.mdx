@@ -14,11 +14,9 @@ One VoiceGateway project is one LiveKit project.
 
 ```bash
 export LIVEKIT_URL=wss://your-project.livekit.cloud
-export LIVEKIT_API_KEY=your-key
-export LIVEKIT_API_SECRET=your-secret
-docker compose -f deploy/compose.yaml --env-file deploy/.env exec \
-  -e LIVEKIT_URL -e LIVEKIT_API_KEY -e LIVEKIT_API_SECRET \
-  web voicegateway project add --name Production
+export LIVEKIT_API_KEY=...
+export LIVEKIT_API_SECRET=...
+make project-add NAME="Production"
 ```
 
 The secret is stored encrypted and never shown again.
@@ -26,22 +24,22 @@ The secret is stored encrypted and never shown again.
 </Step>
 <Step>
 
-### Send LiveKit's webhooks
+### Point your agent at it
 
-In LiveKit, add a webhook to `https://<your-voicegateway>/livekit/webhook`, signed with the same API key.
+```bash
+LIVEKIT_OBSERVABILITY_URL=http://<voicegateway-host>:8080
+```
+
+Start the agent session with `record=True`. No other code change.
 
 </Step>
 <Step>
 
-### Point your agent at it
+### Send LiveKit's webhooks
 
-Start your LiveKit agent with one extra variable:
-
-```bash
-LIVEKIT_OBSERVABILITY_URL=https://<your-voicegateway>
-```
-
-No code change. The agent uploads its turns, timings and recording when the session ends.
+In LiveKit, add a webhook to `https://<voicegateway-host>/livekit/webhook`, signed with the same API key. Without it, calls never close.
 
 </Step>
 </Steps>
+
+LiveKit Cloud needs a public HTTPS address for VoiceGateway. See [reaching VoiceGateway from LiveKit](https://github.com/mahimailabs/voicegateway/blob/main/docs/self-hosting.md#reaching-voicegateway-from-livekit).
