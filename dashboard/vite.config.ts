@@ -11,6 +11,8 @@ export default defineConfig({
   server: {
     port: 5180,
     strictPort: true,
+    // The API reference page imports the contract from docs/api, outside the dashboard.
+    fs: { allow: [".", path.resolve(__dirname, "../docs/api")] },
     // changeOrigin stays false, so web sees the browser's Host (localhost:5180) and treats the
     // dev console as local; xfwd stays off, so no forwarding header marks it as proxied.
     proxy: {

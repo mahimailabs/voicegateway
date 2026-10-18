@@ -17,6 +17,7 @@
     "@phosphor-icons/react": "2.1.10",
     "@radix-ui/react-hover-card": "1.2.0",
     "@radix-ui/react-tooltip": "1.4.0",
+    "@scalar/api-reference-react": "0.9.79",
     "@tailwindcss/vite": "4.3.3",
     "@tanstack/react-query": "5.104.0",
     "@tanstack/react-router": "1.170.42",

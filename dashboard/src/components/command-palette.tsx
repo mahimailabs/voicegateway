@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef } from "react"
 import { useNavigate } from "@tanstack/react-router"
-import { ArrowSquareOut, BookOpenText, GearSix, Keyboard, MoonStars, PhoneCall, Robot, Sun, WarningCircle } from "@phosphor-icons/react"
+import { ArrowSquareOut, BookOpenText, BracketsCurly, GearSix, Keyboard, MoonStars, PhoneCall, Robot, Sun, WarningCircle } from "@phosphor-icons/react"
 import type { Icon } from "@phosphor-icons/react"
 import { Command, CommandDialog, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList, CommandSeparator, CommandShortcut } from "@/components/ui/command"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
@@ -159,6 +159,10 @@ export function CommandPalette({ open, onOpenChange, pages, onSettings, onShortc
               <BookOpenText />
               Documentation
               <ArrowSquareOut className="ml-auto opacity-60" />
+            </CommandItem>
+            <CommandItem value="action api reference openapi swagger endpoints" onSelect={() => run(() => navigate({ to: "/docs" }))}>
+              <BracketsCurly />
+              API reference
             </CommandItem>
           </CommandGroup>
         </CommandList>
