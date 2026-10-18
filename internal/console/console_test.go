@@ -54,3 +54,27 @@ func TestHandler(t *testing.T) {
 		})
 	}
 }
+
+func TestHandlerCompresses(t *testing.T) {
+	big := strings.Repeat("console.log(1);", 2000)
+	h := Handler(fstest.MapFS{
+		"index.html":      {Data: []byte("<!doctype html>")},
+		"assets/index.js": {Data: []byte(big)},
+	})
+
+	for _, accept := range []string{"gzip", ""} {
+		req := httptest.NewRequest(http.MethodGet, "/assets/index.js", nil)
+		if accept != "" {
+			req.Header.Set("Accept-Encoding", accept)
+		}
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		got := rec.Header().Get("Content-Encoding")
+		if accept == "gzip" && (got != "gzip" || rec.Body.Len() >= len(big)) {
+			t.Errorf("with Accept-Encoding gzip: Content-Encoding %q, %d bytes of %d", got, rec.Body.Len(), len(big))
+		}
+		if accept == "" && (got != "" || rec.Body.String() != big) {
+			t.Errorf("without Accept-Encoding: Content-Encoding %q, want the plain file", got)
+		}
+	}
+}

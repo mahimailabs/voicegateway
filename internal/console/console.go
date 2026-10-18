@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"path"
 	"strings"
+
+	"github.com/klauspost/compress/gzhttp"
 )
 
 // immutable is the cache policy for Vite's content-hashed files under assets/: a new build gives
@@ -18,10 +20,11 @@ const immutable = "public, max-age=31536000, immutable"
 // file with an extension (an old asset), a path under /api/ or a method other than GET or HEAD is a
 // 404, never the app.
 // http.FileServerFS does the serving (ranges, conditional requests, content types); this only adds
-// the fallback it lacks, and never lists a directory.
+// the fallback it lacks, and never lists a directory. gzhttp compresses the responses: the largest
+// chunk is about 4 MB as built.
 func Handler(fsys fs.FS) http.Handler {
 	files := http.FileServerFS(fsys)
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	return gzhttp.GzipHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet && r.Method != http.MethodHead {
 			http.NotFound(w, r)
 			return
@@ -41,5 +44,5 @@ func Handler(fsys fs.FS) http.Handler {
 		// index.html names the current hashed files, so it is revalidated on every load.
 		w.Header().Set("Cache-Control", "no-cache")
 		http.ServeFileFS(w, r, fsys, "index.html")
-	})
+	}))
 }

@@ -15,7 +15,6 @@ import (
 
 	"github.com/alexedwards/scs/pgxstore"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/klauspost/compress/gzhttp"
 	"github.com/redis/go-redis/v9"
 	"golang.org/x/sync/errgroup"
 
@@ -85,16 +84,13 @@ func Web(ctx context.Context, c config.Config, log *slog.Logger) error {
 	mux.HandleFunc("GET /healthz", obs.Health)
 	// LiveKit's webhooks and Agents' observability paths (decision 0014), under
 	// LIVEKIT_OBSERVABILITY_URL. They take only POST; any other method is a 405, never the console.
-	for path, h := range map[string]http.Handler{
+	handlePost(mux, map[string]http.Handler{
 		"/livekit/webhook":               &ingest.Webhooks{Projects: projects, Stream: producer, Log: log, Now: time.Now},
 		"/observability/traces/otlp/v0":  uploads.OTLP(event.KindAgentTraces),
 		"/observability/logs/otlp/v0":    uploads.OTLP(event.KindAgentLogs),
 		"/observability/metrics/otlp/v0": uploads.OTLP(event.KindAgentMetrics),
 		"/observability/recordings/v0":   http.HandlerFunc(uploads.SessionReport),
-	} {
-		mux.Handle("POST "+path, h)
-		mux.HandleFunc(path, postOnly)
-	}
+	})
 	mux.Handle("/auth/", accounts.Routes())
 	mux.Handle("/api/v1/", (&api.API{
 		Projects: projects, Calls: projects, Traces: events, Layers: events, Endpoints: projects, Accounts: projects, Stats: projects, Keys: projects, NewKey: auth.NewKey, Log: log, Now: time.Now, Gate: accounts.Gate,
@@ -106,8 +102,7 @@ func Web(ctx context.Context, c config.Config, log *slog.Logger) error {
 			return fmt.Errorf("VOICEGATEWAY_CONSOLE_DIR %q holds no built console: %w", c.ConsoleDir, err)
 		}
 		// The least specific pattern: every route above wins over it.
-		// gzhttp compresses the console's files: the largest chunk is about 4 MB as built.
-		mux.Handle("/", gzhttp.GzipHandler(console.Handler(dist)))
+		mux.Handle("/", console.Handler(dist))
 	}
 
 	srv := &http.Server{
@@ -331,6 +326,14 @@ func containsSecret(text, raw string) bool {
 func warnRetiredToken(getenv func(string) string, log *slog.Logger) {
 	if getenv("VOICEGATEWAY_API_TOKEN") != "" {
 		log.Warn("VOICEGATEWAY_API_TOKEN is no longer used and is ignored; create a project key with voicegateway key create, or in Settings, Access, API keys, then remove the variable")
+	}
+}
+
+// handlePost registers each POST-only route, and a 405 for any other method on its path.
+func handlePost(mux *http.ServeMux, routes map[string]http.Handler) {
+	for path, h := range routes {
+		mux.Handle("POST "+path, h)
+		mux.HandleFunc(path, postOnly)
 	}
 }
 
