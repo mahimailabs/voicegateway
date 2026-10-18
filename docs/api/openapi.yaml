@@ -8,7 +8,9 @@ info:
     workers, SIP, egress and ingress), plus its members and their roles.
 
     Sign in to the console first: requests use its session cookie, and each operation names the
-    lowest organisation role it needs. Project paths take the organisation and project ids shown in
+    lowest organisation role it needs. Scripts and agents send a project API key instead, as
+    `Authorization: Bearer vgk_...`: an Admin creates it in the console, and it reads that one
+    project's data and changes nothing. Project paths take the organisation and project ids shown in
     the console's address bar. Times are RFC 3339; a value no source reported is null, never zero.
   license:
     name: MIT
