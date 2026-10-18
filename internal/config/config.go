@@ -36,6 +36,9 @@ type Config struct {
 	// TrustedProxies are the proxies (addresses and CIDRs, comma-separated) whose X-Forwarded-For
 	// and X-Forwarded-Proto web believes.
 	TrustedProxies string
+	// ConsoleDir is the built dashboard web serves (decision 0011); the image sets it. Empty serves
+	// no console, as in development, where the Vite dev server runs it.
+	ConsoleDir string
 }
 
 // S3 is any S3-compatible bucket.
@@ -69,6 +72,7 @@ func Load(getenv func(string) string) (Config, error) {
 		WebAddr:        optional("VOICEGATEWAY_WEB_ADDR", ":8080"),
 		PublicURL:      optional("VOICEGATEWAY_PUBLIC_URL", ""),
 		TrustedProxies: optional("VOICEGATEWAY_TRUSTED_PROXIES", ""),
+		ConsoleDir:     optional("VOICEGATEWAY_CONSOLE_DIR", ""),
 		PostgresURL:    required("VOICEGATEWAY_POSTGRES_URL"),
 		ClickHouseURL:  required("VOICEGATEWAY_CLICKHOUSE_URL"),
 		RedisURL:       required("VOICEGATEWAY_REDIS_URL"),
