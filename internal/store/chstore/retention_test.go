@@ -24,6 +24,11 @@ func TestRawTelemetryExpiresAfter90Days(t *testing.T) {
 		}
 	}
 
+	// Merges are stopped so the expired part cannot be dropped before the first read.
+	if err := s.conn.Exec(ctx, "SYSTEM STOP MERGES events"); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = s.conn.Exec(context.Background(), "SYSTEM START MERGES events") })
 	old, current := export("old", nil), export("now", nil)
 	old.ReceivedAt = time.Now().Add(-91 * 24 * time.Hour)
 	if err := s.Insert(ctx, []store.Event{old, current}); err != nil {
@@ -31,6 +36,9 @@ func TestRawTelemetryExpiresAfter90Days(t *testing.T) {
 	}
 	if got := storedEvents(ctx, t, s); len(got) != 2 {
 		t.Fatalf("before the merge events holds %v, want both", got)
+	}
+	if err := s.conn.Exec(ctx, "SYSTEM START MERGES events"); err != nil {
+		t.Fatal(err)
 	}
 	if err := s.conn.Exec(ctx, "OPTIMIZE TABLE events FINAL"); err != nil {
 		t.Fatal(err)
