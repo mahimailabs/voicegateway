@@ -169,10 +169,11 @@ export type CloudAgents = {
             draining: boolean | null;
             active: boolean | null;
             status: string;
-            createdAt: string;
-            deployedAt: string;
+            createdAt: string | null;
+            deployedAt: string | null;
         }>;
     }>;
+    sourceStatus?: SourceStatus;
 };
 
 /**
@@ -573,7 +574,21 @@ export type Workers = {
             load: number | null;
             activeJobs: number | null;
         }>;
+        endpointId?: string;
+        /**
+         * Read status of this worker's endpoint. An endpoint that stops answering shows its error class here, such as unreachable, while the worker keeps its earlier samples; it never reads as an idle worker.
+         */
+        sourceStatus?: SourceStatus;
     }>;
+    /**
+     * Every endpoint the project lists, with its own read status, so an endpoint that has never answered is named.
+     */
+    endpoints?: Array<{
+        id: string;
+        host: string;
+        sourceStatus: SourceStatus;
+    }>;
+    sourceStatus?: SourceStatus;
 };
 
 export type CapacityRun = {

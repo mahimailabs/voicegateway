@@ -345,3 +345,18 @@ JOIN organisations o ON o.id = m.organisation_id
 LEFT JOIN projects p ON p.organisation_id = o.id
 WHERE m.user_id = @user_id
 ORDER BY o.id, p.id;
+
+-- name: CreateWorkerEndpoint :one
+INSERT INTO project_worker_endpoints (organisation_id, project_id, id, host, url_sealed)
+VALUES ($1, $2, $3, $4, $5)
+RETURNING organisation_id, project_id, id, host, created_at;
+
+-- name: WorkerEndpoints :many
+SELECT organisation_id, project_id, id, host, url_sealed, created_at
+FROM project_worker_endpoints
+WHERE organisation_id = $1 AND project_id = $2
+ORDER BY created_at, id;
+
+-- name: DeleteWorkerEndpoint :execrows
+DELETE FROM project_worker_endpoints
+WHERE organisation_id = $1 AND project_id = $2 AND id = $3;

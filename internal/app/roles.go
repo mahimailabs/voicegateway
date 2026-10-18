@@ -87,7 +87,7 @@ func Web(ctx context.Context, c config.Config, log *slog.Logger) error {
 	mux.HandleFunc("POST /observability/recordings/v0", uploads.SessionReport)
 	mux.Handle("/auth/", accounts.Routes())
 	mux.Handle("/api/v1/", (&api.API{
-		Projects: projects, Calls: projects, Traces: events, Layers: events, Accounts: projects, Log: log, Now: time.Now, Gate: accounts.Gate,
+		Projects: projects, Calls: projects, Traces: events, Layers: events, Endpoints: projects, Accounts: projects, Log: log, Now: time.Now, Gate: accounts.Gate,
 		AnswerBudgetMs: c.AnswerBudgetMs,
 	}).Routes())
 
@@ -208,6 +208,32 @@ func Worker(ctx context.Context, c config.Config, log *slog.Logger) error {
 			Now:      time.Now,
 			Every:    15 * time.Second,
 			Timeout:  10 * time.Second,
+		}).Run(gctx)
+	})
+	g.Go(func() error {
+		return (&scrape.CloudAgentScraper{
+			Projects: pgstore.NewStore(pool, sealer),
+			Samples:  events,
+			Lock:     &scrape.RedisLock{Client: rdb},
+			Dial:     scrape.DialSDK,
+			Log:      log,
+			Now:      time.Now,
+			Every:    time.Minute,
+			Timeout:  10 * time.Second,
+		}).Run(gctx)
+	})
+	g.Go(func() error {
+		endpoints := pgstore.NewStore(pool, sealer)
+		return (&scrape.WorkerScraper{
+			Projects:  endpoints,
+			Endpoints: endpoints,
+			Samples:   events,
+			Lock:      &scrape.RedisLock{Client: rdb},
+			Client:    scrape.NewWorkerClient(),
+			Log:       log,
+			Now:       time.Now,
+			Every:     15 * time.Second,
+			Timeout:   10 * time.Second,
 		}).Run(gctx)
 	})
 	g.Go(func() error {
