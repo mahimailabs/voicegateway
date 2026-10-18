@@ -7,10 +7,10 @@ import (
 	"log/slog"
 	"regexp"
 	"strings"
-	"unicode/utf8"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/mahimailabs/voicegateway/internal/api"
 	"github.com/mahimailabs/voicegateway/internal/auth"
 	"github.com/mahimailabs/voicegateway/internal/config"
 	"github.com/mahimailabs/voicegateway/internal/seal"
@@ -171,8 +171,9 @@ const minPassword = 12
 // key, the only time it is shown; the store keeps its SHA-256. A drawn key_id that is already taken
 // is drawn again, once. An unknown project is store.ErrNotFound.
 func CreateKey(ctx context.Context, c config.Config, organisationID, projectID, name string) (string, error) {
-	if name == "" || utf8.RuneCountInString(name) > 64 {
-		return "", errors.New("--name must be 1 to 64 characters")
+	name, err := api.KeyName(name)
+	if err != nil {
+		return "", errors.New("--name must be 1 to 64 characters, with no control characters")
 	}
 	pool, err := pgxpool.New(ctx, c.PostgresURL)
 	if err != nil {

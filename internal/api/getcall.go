@@ -121,12 +121,17 @@ func (a *API) getCall(w http.ResponseWriter, r *http.Request) {
 // fail answers a storage error: not_found for a missing record, internal_error otherwise. The
 // storage error's text is logged, never sent.
 func (a *API) fail(w http.ResponseWriter, r *http.Request, err error, notFound string) {
+	a.failWith(w, r, err, notFound, "the call could not be read")
+}
+
+// failWith is fail with the 500's own message, for operations that are not a call read.
+func (a *API) failWith(w http.ResponseWriter, r *http.Request, err error, notFound, internal string) {
 	if errors.Is(err, store.ErrNotFound) && notFound != "" {
 		writeError(w, r, http.StatusNotFound, codeNotFound, notFound)
 		return
 	}
-	a.Log.Error("api: read failed", "path", r.URL.Path, "request_id", middleware.GetReqID(r.Context()), "err", err)
-	writeError(w, r, http.StatusInternalServerError, codeInternal, "the call could not be read")
+	a.Log.Error("api: request failed", "path", r.URL.Path, "request_id", middleware.GetReqID(r.Context()), "err", err)
+	writeError(w, r, http.StatusInternalServerError, codeInternal, internal)
 }
 
 // buildCall maps a stored call to the contract. A call the call_list view marks servable is

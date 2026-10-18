@@ -374,8 +374,8 @@ func TestCreateProjectKeyRetriesATakenKeyID(t *testing.T) {
 	if status != http.StatusCreated || k.KeyID == taken {
 		t.Errorf("one taken key id = %d %s, want 201 with another id", status, body)
 	}
-	if status, _ := f.send(newAPI(keyIDs(taken, taken)), create); status != http.StatusInternalServerError {
-		t.Errorf("two taken key ids in a row = %d, want 500 after the one retry", status)
+	if status, body := f.send(newAPI(keyIDs(taken, taken)), create); status != http.StatusInternalServerError || !strings.Contains(string(body), "the key could not be stored") {
+		t.Errorf("two taken key ids in a row = %d %s, want 500 saying the key could not be stored", status, body)
 	}
 }
 

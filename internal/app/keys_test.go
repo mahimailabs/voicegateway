@@ -66,6 +66,11 @@ func TestKeyCommands(t *testing.T) {
 	if _, err := CreateKey(ctx, cfg, "org-a", "nothing", "ci"); err == nil {
 		t.Error("a key for an unknown project was created")
 	}
+	for _, name := range []string{"   ", "a\x00b", strings.Repeat("x", 65)} {
+		if _, err := CreateKey(ctx, cfg, "org-a", "p", name); err == nil || err.Error() != "--name must be 1 to 64 characters, with no control characters" {
+			t.Errorf("key create --name %q: err %v, want the name rule", name, err)
+		}
+	}
 	full, err := CreateKey(ctx, cfg, "org-a", "p", "ci")
 	if err != nil {
 		t.Fatal(err)
