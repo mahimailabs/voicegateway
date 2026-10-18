@@ -11,7 +11,8 @@ describe('code copy button', () => {
     const html = renderToStaticMarkup(createElement(CodeBlock, null, createElement(Pre, null, 'make up')));
     const figure = html.match(/<figure[\s\S]*<\/figure>/)?.[0] ?? '';
     const button = figure.match(/<button[\s\S]*?<\/button>/)?.[0] ?? '';
-    const text = button.replace(/<[^>]+>/g, '');
+    // The button's only text is its sr-only label (the icon is an svg).
+    const text = button.match(/<span class="sr-only">([^<]*)<\/span>/)?.[1];
     expect(text).toBe('Copy Text');
     expect(buttonEvent(text, true)).toBe('code_copy');
     expect(buttonEvent('Copied Text', true)).toBe('code_copy');
