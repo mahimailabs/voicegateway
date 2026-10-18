@@ -93,6 +93,13 @@ func handle(r chi.Router, method, pattern string, h http.HandlerFunc) {
 	r.Method(method, pattern, allow(acc, h))
 }
 
+// keyMay reports whether a project API key may call a route at all: the signed-in principal's own
+// routes, and a project's reads open to a Viewer. The contract's projectKey security names the same
+// operations (TestProjectKeySecurityMatchesTheGate).
+func keyMay(acc access) bool {
+	return acc.scope == scopePrincipal || acc.scope == scopeProject && roleRank(acc.min) <= roleRank("Viewer")
+}
+
 // allow answers 403 a caller whose organisation role is below a route's minimum. A user outside
 // the organisation in the path is told so. A project API key names no user: it is a read-only
 // Viewer of its one project, and is refused every other project and every organisation operation.
@@ -105,7 +112,7 @@ func allow(acc access, next http.Handler) http.Handler {
 		p, _ := store.PrincipalFrom(r.Context())
 		if k := p.Key; k != nil {
 			own := k.OrganisationID == chi.URLParam(r, "orgId") && k.ProjectID == chi.URLParam(r, "projectId")
-			if acc.scope != scopeProject || !own || roleRank(acc.min) > roleRank("Viewer") {
+			if !keyMay(acc) || !own {
 				writeError(w, r, http.StatusForbidden, codeForbidden, "this API key reads its own project only")
 				return
 			}
