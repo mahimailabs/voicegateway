@@ -21,6 +21,7 @@ type API struct {
 	Traces   Traces
 	Layers   Layers
 	Accounts Accounts
+	Stats    Stats
 	Log      *slog.Logger
 	// AnswerBudgetMs is the answer budget listCalls' totals count against; 0 is the console's
 	// default, 1500 ms. Interim, until thresholds are stored per project.
@@ -55,6 +56,7 @@ func (a *API) Routes() http.Handler {
 	handle(r, http.MethodGet, "/api/v1/workspaces", a.getWorkspaces)
 	handle(r, http.MethodGet, project+"/calls", a.listCalls)
 	handle(r, http.MethodGet, project+"/calls/{callId}", a.getCall)
+	handle(r, http.MethodGet, project+"/call-stats", a.getCallStats)
 	handle(r, http.MethodGet, project+"/media-server", a.mediaServer)
 	handle(r, http.MethodGet, project+"/sip", a.sip)
 	handle(r, http.MethodGet, "/api/v1/org/{orgId}/members", a.getMembers)

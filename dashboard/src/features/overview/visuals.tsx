@@ -221,14 +221,33 @@ export function TurnAnatomy({ lanes, e2e, turns, budget }: { lanes: Lane[]; e2e:
 }
 
 // Each call as a block, coloured by its median answer against the budget.
-export function CallTracker({ calls, budget }: { calls: { id?: string; room: string; p50: number | null }[]; budget: number }) {
+// One block per call, coloured by its median answer. With onOpen, a block opens its call; it sits in
+// an agent card that is itself a button, so it is a link-role span that keeps the click to itself.
+export function CallTracker({ calls, budget, onOpen }: { calls: { id?: string; room: string; p50: number | null }[]; budget: number; onOpen?: (id: string) => void }) {
   return (
     <div className="flex h-7 gap-[3px]">
       {calls.map((c) => (
         <Tooltip key={c.id ?? c.room}>
           <TooltipTrigger asChild>
             <span
-              className={cn("h-full min-w-1.5 flex-1 rounded-[3px] transition-opacity hover:opacity-70", c.p50 === null ? "bg-muted-foreground/20" : c.p50 > budget ? "bg-destructive" : c.p50 > budget * 0.67 ? "bg-amber-500" : "bg-good")}
+              {...(onOpen && c.id
+                ? {
+                    role: "link",
+                    tabIndex: 0,
+                    "aria-label": `Open the call in ${c.room}`,
+                    onClick: (e: React.MouseEvent) => {
+                      e.stopPropagation()
+                      onOpen(c.id!)
+                    },
+                    onKeyDown: (e: React.KeyboardEvent) => {
+                      if (e.key !== "Enter") return
+                      e.stopPropagation()
+                      e.preventDefault()
+                      onOpen(c.id!)
+                    },
+                  }
+                : {})}
+              className={cn("h-full min-w-1.5 flex-1 rounded-[3px] transition-opacity hover:opacity-70", onOpen && c.id && "cursor-pointer", c.p50 === null ? "bg-muted-foreground/20" : c.p50 > budget ? "bg-destructive" : c.p50 > budget * 0.67 ? "bg-amber-500" : "bg-good")}
             />
           </TooltipTrigger>
           <TooltipContent className="text-xs">{`${c.room} · ${c.p50 === null ? "answer not measured" : fmtMs(c.p50)}`}</TooltipContent>

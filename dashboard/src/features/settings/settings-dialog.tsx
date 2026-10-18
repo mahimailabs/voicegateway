@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { ProviderLogo } from "@/components/provider-logo"
 import { Button } from "@/components/ui/button"
-import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog"
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui/field"
 import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/input-group"
 import { Item, ItemActions, ItemContent, ItemDescription, ItemGroup, ItemMedia, ItemSeparator, ItemTitle } from "@/components/ui/item"
@@ -62,7 +62,6 @@ const groups: { label: string; scope: Page["scope"]; pages: Page[] }[] = [
   },
   { label: "You", scope: "you", pages: [{ key: "account", label: "Your account", icon: User, scope: "you" }] },
 ]
-const pages = groups.flatMap((g) => g.pages)
 
 // --- Building blocks: a page header, grouped rows (shadcn Item), and a copyable field. ---
 
@@ -241,6 +240,9 @@ function MemberList({ isAdmin }: { isAdmin: boolean }) {
   }
   const change = useMutation({ mutationFn: (v: { userId: string; role: Member["role"] }) => updateMember(v.userId, v.role), ...done })
   const remove = useMutation({ mutationFn: (userId: string) => removeMember(userId), ...done })
+  // Removing someone is not undone from here (there is no way to add them back until invitations
+  // land), so it asks first.
+  const [removing, setRemoving] = useState<Member | null>(null)
   return (
     <Group label="Members">
       {!read.isSuccess && <Row title="Members" description={read.isError ? errorText(read.error) : undefined} value={read.isError ? "Could not be read" : "Loading"} last />}
@@ -266,7 +268,7 @@ function MemberList({ isAdmin }: { isAdmin: boolean }) {
                     </SelectContent>
                   </Select>
                   {!self && (
-                    <Button variant="ghost" size="sm" onClick={() => remove.mutate(m.userId)} aria-label={`Remove ${m.email}`}>
+                    <Button variant="ghost" size="sm" onClick={() => setRemoving(m)} aria-label={`Remove ${m.email}`}>
                       Remove
                     </Button>
                   )}
@@ -284,6 +286,28 @@ function MemberList({ isAdmin }: { isAdmin: boolean }) {
           {problem}
         </p>
       )}
+      <Dialog open={removing !== null} onOpenChange={(o) => !o && setRemoving(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>{`Remove ${removing?.email ?? ""}?`}</DialogTitle>
+            <DialogDescription>{`They lose access to ${org().name} on their next request. Their account stays, and adding them back needs the server's user add command until invitations arrive.`}</DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRemoving(null)}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => {
+                if (removing) remove.mutate(removing.userId)
+                setRemoving(null)
+              }}
+            >
+              Remove
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Group>
   )
 }
@@ -731,11 +755,15 @@ function Embeds() {
 const body: Record<Key, () => React.ReactNode> = { account: Account, organisation: Organisation, access: Access, integrations: Integrations, embeds: Embeds, data: Data, thresholds: Thresholds }
 
 export type SettingsPage = Key
-export function SettingsDialog({ open, onOpenChange, page, onPageChange }: { open: boolean; onOpenChange: (o: boolean) => void; page: string | null; onPageChange: (p: Key) => void }) {
+export function SettingsDialog({ open, onOpenChange, page, onPageChange, orgOnly = false }: { open: boolean; onOpenChange: (o: boolean) => void; page: string | null; onPageChange: (p: Key) => void; orgOnly?: boolean }) {
+  // With no project to show, only the organisation's pages and yours: People among them, so an admin
+  // can manage members before the first project is added.
+  const shown = orgOnly ? groups.filter((g) => g.scope !== "project") : groups
+  const shownPages = shown.flatMap((g) => g.pages)
   // The page lives in the URL (?settings=thresholds); an unknown value shows the first page.
-  const active: Key = pages.some((p) => p.key === page) ? (page as Key) : "integrations"
+  const active: Key = shownPages.some((p) => p.key === page) ? (page as Key) : shownPages[0].key
   const setActive = onPageChange
-  const current = pages.find((p) => p.key === active)!
+  const current = shownPages.find((p) => p.key === active)!
   // The picked project follows the URL: after a project switch the picker starts on the new one.
   const scope = currentScope()
   const at = `${scope.org}/${scope.project}`
@@ -790,7 +818,7 @@ export function SettingsDialog({ open, onOpenChange, page, onPageChange }: { ope
         <SidebarProvider className="min-h-0 items-start">
           <Sidebar collapsible="none" className="hidden h-[580px] w-56 border-r bg-background md:flex">
             <SidebarContent className="gap-0 px-2 py-4">
-              {groups.map((g, k) => (
+              {shown.map((g, k) => (
                 <SidebarGroup key={g.label} className={k ? "pt-5 pb-0" : "py-0"}>
                   <SidebarGroupLabel className="px-2 text-[12px] font-semibold text-muted-foreground">{g.label}</SidebarGroupLabel>
                   {g.scope === "project" && (
@@ -822,7 +850,7 @@ export function SettingsDialog({ open, onOpenChange, page, onPageChange }: { ope
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {groups.map((g) => (
+                  {shown.map((g) => (
                     <SelectGroup key={g.label}>
                       <SelectLabel>{g.label}</SelectLabel>
                       {g.pages.map((p) => (

@@ -42,7 +42,7 @@ import { DEFAULTS, applyThresholds } from "@/lib/thresholds"
 import { PageState, errorText } from "@/components/page-state"
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty"
 import { SettingsDialog, type SettingsPage } from "@/features/settings/settings-dialog"
-import { currentOrg, firstProjectPath, scopeUnknown, useUrlState } from "@/lib/url-state"
+import { currentOrg, firstProjectPath, orgOnly, scopeUnknown, useUrlState } from "@/lib/url-state"
 import { OrgSwitcher, ProjectSwitcher } from "@/components/org-switcher"
 import { BrandWordmark } from "@/components/brand-wordmark"
 import { motion } from "motion/react"
@@ -85,8 +85,10 @@ export function AppShell() {
   // A link to an organisation or project this person cannot read asks nothing of the API, and Settings
   // stays closed: there is no project to show settings for.
   const unknown = scopeUnknown()
-  const openSettings = (page?: SettingsPage) => !unknown && setSettingsParam(page ?? "integrations")
-  const settingsOpen = !unknown && (settingsParam !== null || path === "/settings")
+  // An organisation with no project yet still opens its organisation pages.
+  const orgSettings = orgOnly()
+  const openSettings = (page?: SettingsPage) => (!unknown || orgSettings) && setSettingsParam(page ?? (unknown ? "access" : "integrations"))
+  const settingsOpen = (!unknown || orgSettings) && (settingsParam !== null || path === "/settings")
   const closeSettings = (o: boolean) => {
     if (o) return
     if (path === "/settings") navigate({ to: "/overview" })
@@ -160,7 +162,7 @@ export function AppShell() {
               </SidebarMenuButton>
             </SidebarMenuItem>
             <SidebarMenuItem>
-              <SidebarMenuButton isActive={settingsOpen} disabled={unknown} tooltip={`Settings (${mod} ,)`} onClick={() => openSettings()}>
+              <SidebarMenuButton isActive={settingsOpen} disabled={unknown && !orgSettings} tooltip={`Settings (${mod} ,)`} onClick={() => openSettings()}>
                 <Settings />
                 <span>Settings</span>
               </SidebarMenuButton>
@@ -203,7 +205,7 @@ export function AppShell() {
           )}
         </main>
       </SidebarInset>
-      <SettingsDialog open={settingsOpen} onOpenChange={closeSettings} page={settingsParam} onPageChange={openSettings} />
+      <SettingsDialog open={settingsOpen} onOpenChange={closeSettings} page={settingsParam} onPageChange={openSettings} orgOnly={unknown} />
       <CommandPalette open={palette} onOpenChange={setPalette} pages={pages} onSettings={() => openSettings()} onShortcuts={() => setShortcuts(true)} />
       <ShortcutsDialog open={shortcuts} onOpenChange={setShortcuts} pages={pages} />
       <Toaster position="bottom-right" duration={8000} />

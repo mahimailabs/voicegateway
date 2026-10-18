@@ -114,9 +114,9 @@ export function wireData(rows: Row[], { stats, ms: rooms, sip, probes: probe }: 
     )
 
     // Providers this agent used, from the model named on each stage's span (getCallStats).
-    const provs = st.providers.map((p) => p.provider)
+    const provs = (st.providers ?? []).map((p) => p.provider)
     const roleKey = { stt: "stt", llm: "llm", tts: "tts", realtime: "rt" } as const
-    for (const pu of st.providers) {
+    for (const pu of st.providers ?? []) {
       const prov = pu.provider
       const pid = `${id}:${prov}`
       const roles = pu.roles

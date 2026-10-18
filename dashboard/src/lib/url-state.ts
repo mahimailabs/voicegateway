@@ -8,18 +8,22 @@ import { workspaces, workspacesRead } from "@/lib/workspaces"
 
 const scoped = /^\/org\/([^/]+)\/project\/([^/]+)(\/.*)?$/
 type Scope = { org: string; project: string }
-// The first project this person may read. With none (the read failed or found nothing) the ids the
-// open-source install starts with, only so each page still asks the API and says what it answered.
+// The first project this person may read. With none, their first organisation and the project id
+// the open-source install starts with; with no organisation either (the read failed or found
+// nothing), the install's own ids, only so each page still asks the API and says what it answered.
 function fallback(): Scope {
   const org = workspaces()[0]
   const project = org?.projects[0]
-  return org && project ? { org: org.id, project: project.id } : { org: "default", project: "default-project" }
+  return { org: org?.id ?? "default", project: project?.id ?? "default-project" }
 }
 let scope: Scope | null = null
 // True when the URL names an organisation or project the workspaces read does not list. The console
 // then says so instead of opening another project (the Workspaces contract forbids that fallback).
 let unknown = false
 export const scopeUnknown = () => unknown
+// True when the URL's project is unknown but its organisation is one this person belongs to, as in an
+// organisation with no project yet: its organisation settings, People among them, still open.
+export const orgOnly = () => unknown && workspaces().some((o) => o.id === currentScope().org)
 // Where the "No such project" state links: the first project this person may read, or null if none.
 export const firstProjectPath = () => {
   const org = workspaces()[0]

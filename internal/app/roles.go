@@ -87,7 +87,7 @@ func Web(ctx context.Context, c config.Config, log *slog.Logger) error {
 	mux.HandleFunc("POST /observability/recordings/v0", uploads.SessionReport)
 	mux.Handle("/auth/", accounts.Routes())
 	mux.Handle("/api/v1/", (&api.API{
-		Projects: projects, Calls: projects, Traces: events, Layers: events, Accounts: projects, Log: log, Now: time.Now, Gate: accounts.Gate,
+		Projects: projects, Calls: projects, Traces: events, Layers: events, Accounts: projects, Stats: projects, Log: log, Now: time.Now, Gate: accounts.Gate,
 		AnswerBudgetMs: c.AnswerBudgetMs,
 	}).Routes())
 

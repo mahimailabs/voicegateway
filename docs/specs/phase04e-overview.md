@@ -15,7 +15,7 @@ With the mock off, the Overview opens on real stored calls: call counts, channel
 
 ## In Scope
 
-- **`getCallStats`** in `internal/api`, behind the role gate as a Viewer project read, computed in Postgres over every servable call of the project that started in `[from, to)`. `from` and `to` are required RFC 3339 times with `from` before `to` and at most 400 days apart; anything else is 400. Every count is over calls the `call_list` view marks servable, the same rule listCalls uses, so the Overview and the Calls list count the same calls.
+- **`getCallStats`** in `internal/api`, behind the role gate as a Viewer project read, over every servable call of the project that started in `[from, to)`: read from Postgres in one transaction and totalled in Go with the console's own rules. `from` and `to` are required RFC 3339 times with `from` before `to` and at most 400 days apart; anything else is 400. Every count is over calls the `call_list` view marks servable, the same rule listCalls uses, so the Overview and the Calls list count the same calls.
   - `callCount`, and `byChannel` by listCalls' channel rule: `phone`, `web` and `unknown` are counted. `console` and `local` are null, because no stored source tells those channels apart yet.
   - `byDay`: one entry per UTC day of the range, oldest first. A day with no stored call is 0 only when it falls wholly after the project was connected (`projects.created_at`) and before now. A day before the project was connected, or one still to come, has `callCount` null: nothing could have been stored then, so 0 would be a claim.
   - `byHour`: one entry per UTC hour over the last 168 hours of the range, oldest first, each with its call count and the median answer over its calls' measured turns (null when none). The call count follows the `byDay` rule: null for an hour before the project was connected or after now.
@@ -41,7 +41,7 @@ With the mock off, the Overview opens on real stored calls: call counts, channel
 ## Constraints
 
 - Postgres only, from `call_summaries` and `call_list`. No ClickHouse read and no new worker write.
-- One query per figure group, in one `REPEATABLE READ READ ONLY` transaction, so the figures agree.
+- The reads run in one `REPEATABLE READ READ ONLY` transaction, so the figures agree.
 - The response validates against `docs/api/openapi.yaml` in the tests.
 - The console uses its existing components and `QueryState`. No hand-written markup where a component exists.
 
@@ -50,11 +50,11 @@ With the mock off, the Overview opens on real stored calls: call counts, channel
 1. Given 6 servable calls in a range (3 phone, 2 web, 1 unknown, over 2 UTC days and 2 agents plus 1 with no agent) and 1 unservable call, then `getCallStats` returns `callCount` 6, `byChannel` 3/2/1 with `console` and `local` null, `byDay` with one entry per day, including a day with 0, and an agent row per agent plus the null-key row, whose call counts sum to 6 (measured by `TestCallStatsCounts`).
 2. Given those calls' answer times, then `answers.turns` and `overBudget` equal the counts in the test, and `p50Ms` and `p90Ms` equal the console's rule applied to the same values: with turns of 100, 200, 300 and 400 ms, `p50Ms` is 300 and `p90Ms` is 400. Each agent's `answerP50Ms` equals its own by the same rule. With 5,001 measured turns, `values` holds 5,000 and `valuesTruncated` is true (measured by `TestCallStatsAnswers`).
 3. Given a 3-hour range with calls in hours 1 and 3, then `byHour` has 3 entries, hour 2 with `callCount` 0 and `answerP50Ms` null. A 10-day range gives exactly 168 entries ending at its last hour. A range ending 2 hours after now gives those 2 hours `callCount` null (measured by `TestCallStatsByHour`).
-3a. Given a project connected 2 days into a 4-day range with no calls, then `byDay` has 4 entries: the 2 days before the project was connected have `callCount` null, and the 2 after have 0 (measured by `TestCallStatsBeforeTheProject`).
+3a. Given a project connected 2 days into a 4-day range with no calls, then `byDay` has 4 entries: the 2 days before the project was connected have `callCount` null, and the 2 after have 0. A partial bucket (the day or hour the project was connected, today, this hour) shows the count so far, 0 included: connected 6 hours into day 3, that day is still 0 (measured by `TestCallStatsBeforeTheProject`).
 4. Given any range, then `stages`, `chain`, `anatomyTurns`, every `issueCounts` field and each agent's `stages`, `chain`, `providers` and `issues` are null, never empty or 0 (measured by `TestCallStatsUnknownsStayUnknown`).
 5. Given a missing `from`, a `to` before `from`, or a span over 400 days, then 400 `invalid_request`. A call in another project never counts. A Viewer gets 200, a non-member 403 (measured by `TestCallStatsRange`).
 6. Given each response in checks 1 to 5, then it validates against the contract (measured by the response validator in those tests).
-7. Given the Overview with stats served and the cloud agents, egress, ingress, workers and provider probes reads answering 404, then the stats sections and the agent cards render with their figures, each of the 5 sections says "Not served by this server yet", and turn anatomy and the chain say "Not computed yet". With the egress read answering 500 instead, the egress section shows the error and the others still render. Clicking a block in an agent's per-call strip navigates to `/calls/<id>` (measured by the Vitest suite `overview.test.tsx`, 5 cases).
+7. Given the Overview with stats served and the cloud agents, egress, ingress, workers and provider probes reads answering 404, then the stats sections and the agent cards render with their figures, each of the 5 sections says "Not served by this server yet", as does the Live wire, which draws the provider probes too, and turn anatomy and the chain say "Not computed yet". With the egress read answering 500 instead, the egress section shows the error and the others still render. Clicking a block in an agent's per-call strip navigates to `/calls/<id>` (measured by the Vitest suite `overview.test.tsx`, 4 cases).
 8. Given the mock on, then the Overview renders as before, with every section filled (measured by the same suite, 1 case).
 
 ## Manual Check

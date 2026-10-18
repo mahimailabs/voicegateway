@@ -1,14 +1,14 @@
 import { useMemo, useState } from "react"
 import { Link, useNavigate } from "@tanstack/react-router"
-import { useQuery } from "@tanstack/react-query"
+import { type UseQueryResult, useQuery } from "@tanstack/react-query"
 import { Brain, CaretRight, Cloud, DownloadSimple, Gauge, HardDrives, Microphone, Phone, PhoneCall, Robot, SpeakerHigh, UploadSimple, Users, WarningCircle } from "@phosphor-icons/react"
 import type { Icon } from "@phosphor-icons/react"
 import { ProviderLogo, providerOfModel } from "@/components/provider-logo"
-import { QueryState } from "@/components/page-state"
+import { QueryState, errorText } from "@/components/page-state"
 import { presetRange } from "@/components/time-range-picker"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
-import { callStatsQuery, cloudAgentsQuery, egressQuery, ingressQuery, latestCallQuery, mediaServerQuery, providerProbesQuery, sipQuery, workersQuery } from "@/lib/api"
-import type { CallStats, CloudAgents, Egress, Ingress, ProviderProbes, Sip, Workers } from "@/lib/api-types"
+import { ApiError, callStatsQuery, cloudAgentsQuery, egressQuery, ingressQuery, latestCallQuery, mediaServerQuery, providerProbesQuery, sipQuery, workersQuery } from "@/lib/api"
+import type { CallStats, CloudAgents, Egress, Ingress, MediaServer, ProviderProbes, Sip, Workers } from "@/lib/api-types"
 import { BUDGET_MS } from "@/lib/thresholds"
 import { cn } from "@/lib/utils"
 import { fmtMs } from "@/features/call/call-model"
@@ -107,6 +107,25 @@ function Stat({ icon: I, label, value, alert, to }: { icon: Icon; label: string;
   )
 }
 
+export const NOT_SERVED = "Not served by this server yet"
+export const NOT_COMPUTED = "Not computed yet"
+
+// What a section says when the read it needs did not arrive: still loading, a read this server does
+// not serve yet (404), or the error. Each section shows its own, so one missing read never blanks
+// the page.
+function readState(q: { isPending: boolean; isError: boolean; error: unknown }): string {
+  if (q.isError) return q.error instanceof ApiError && q.error.status === 404 ? NOT_SERVED : errorText(q.error)
+  return "Loading"
+}
+
+function Unavailable({ query, what }: { query: { isPending: boolean; isError: boolean; error: unknown }; what?: string }) {
+  return (
+    <p role="status" className="text-[13px] text-muted-foreground">
+      {what ? `${what}: ${readState(query)}` : readState(query)}
+    </p>
+  )
+}
+
 export function OverviewPage() {
   const stats = useCallStats()
   const cloud = useQuery(cloudAgentsQuery())
@@ -116,21 +135,30 @@ export function OverviewPage() {
   const ingress = useQuery(ingressQuery())
   const workers = useQuery(workersQuery())
   const probes = useQuery(providerProbesQuery())
-  const reads = [stats, cloud, media, sip, egress, ingress, workers, probes]
-  const ms = useMemo(() => (media.data ? fromContract(media.data) : null), [media.data])
-  const waiting = reads.find((q) => q.isError) ?? reads.find((q) => !q.data)
-  if (waiting || !ms) return <QueryState icon={Gauge} what="the overview" query={waiting ?? media} />
-  return <OverviewView stats={stats.data as CallStats} cloud={cloud.data!} ms={ms} sip={sip.data!} egress={egress.data!} ingress={ingress.data!} workers={workers.data!} probes={probes.data!} />
+  // The call figures carry the page; without them the page says why, as before.
+  if (!stats.data) return <QueryState icon={Gauge} what="the overview" query={stats} />
+  return <OverviewView stats={stats.data as CallStats} cloud={cloud} media={media} sip={sip} egress={egress} ingress={ingress} workers={workers} probes={probes} />
 }
 
-function OverviewView({ stats, cloud, ms: rooms, sip: sipRead, egress, ingress, workers, probes: probe }: { stats: CallStats; cloud: CloudAgents; ms: MediaServerData; sip: Sip; egress: Egress; ingress: Ingress; workers: Workers; probes: ProviderProbes }) {
+type Reads = { cloud: UseQueryResult<CloudAgents>; media: UseQueryResult<MediaServer>; sip: UseQueryResult<Sip>; egress: UseQueryResult<Egress>; ingress: UseQueryResult<Ingress>; workers: UseQueryResult<Workers>; probes: UseQueryResult<ProviderProbes> }
+
+function OverviewView({ stats, cloud: cloudRead, media, sip: sipQ, egress: egressQ, ingress: ingressQ, workers: workersQ, probes: probesQ }: { stats: CallStats } & Reads) {
   const navigate = useNavigate()
   const [pick, setPick] = useUrlState("agent", "all")
   const [open, setOpen] = useState(false)
-  const fleet = useMemo(() => agentsFrom(cloud, rooms), [cloud, rooms])
+  const rooms = useMemo<MediaServerData | null>(() => (media.data ? fromContract(media.data) : null), [media.data])
+  const cloud = cloudRead.data
+  // The fleet needs the agent workers and the media server; without them, the agent rows come from
+  // the call figures alone.
+  const fleet = useMemo(() => (cloud && rooms ? agentsFrom(cloud, rooms) : []), [cloud, rooms])
   const rows = useMemo(() => fleetRows(fleet, stats), [fleet, stats])
   const roleIcon: Record<string, Icon> = { stt: Microphone, llm: Brain, tts: SpeakerHigh }
-  const lkHop = probe.endpoints.find((e) => e.role === "sfu")
+  const probe = probesQ.data
+  const lkHop = probe?.endpoints.find((e) => e.role === "sfu")
+  const sipRead = sipQ.data
+  const workers = workersQ.data
+  const egress = egressQ.data
+  const ingress = ingressQ.data
   const { answers, issueCounts } = stats
   const p50 = answers.p50Ms
   const highs = issueCounts.high
@@ -139,33 +167,38 @@ function OverviewView({ stats, cloud, ms: rooms, sip: sipRead, egress, ingress, 
   const active = rows.filter((r) => r.stats && r.stats.callCount !== 0)
   const idle = rows.filter((r) => r.agent && (!r.stats || r.stats.callCount === 0))
   const chosen = pick === "all" ? null : (active.find((r) => r.key === pick) ?? null)
-  const realtimeIn = (list: FleetRow[]) => list.filter((r) => r.stats?.stages.some((s) => s.stage === "Realtime")).map((r) => r.name)
+  const realtimeIn = (list: FleetRow[]) => list.filter((r) => r.stats?.stages?.some((s) => s.stage === "Realtime")).map((r) => r.name)
+  // Stages null means this server does not compute turn anatomy yet, not that no stage was reported.
+  const stages = chosen?.stats ? chosen.stats.stages : stats.stages
   const shape = chosen?.stats
-    ? { lanes: lanesFrom(chosen.stats.stages, [chosen.name]), e2e: chosen.stats.answerP50Ms, turns: chosen.stats.anatomyTurns }
-    : { lanes: lanesFrom(stats.stages, realtimeIn(active)), e2e: p50, turns: stats.anatomyTurns }
+    ? { lanes: chosen.stats.stages && lanesFrom(chosen.stats.stages, [chosen.name]), e2e: chosen.stats.answerP50Ms, turns: chosen.stats.anatomyTurns }
+    : { lanes: stats.stages && lanesFrom(stats.stages, realtimeIn(active)), e2e: p50, turns: stats.anatomyTurns }
   const nameOf = (key: string | null) => rows.find((r) => r.key === (key ?? "other"))?.name ?? key ?? "Agent not identified"
   const dots = answers.values.flatMap((v) => (v.ms === null ? [] : [{ ms: v.ms, room: v.room, turn: v.turn, agent: nameOf(v.agentKey) }]))
 
-  const sip = sipRead as unknown as SipData
-  const wire = useMemo(() => wireData(rows, { stats, ms: rooms, sip, probes: probe }, BUDGET_MS), [rows, stats, rooms, sip, probe])
-  const chainAll: ChainScope = { key: "all", name: "All agents", chain: stats.chain, turns: stats.anatomyTurns, calls: stats.callCount, e2e: p50, joins: [] }
-  const chainGroups: ChainScope[] = active.filter((r) => pick === "all" || r.key === pick).map((r) => ({ key: r.key, name: r.name, chain: r.stats!.chain, turns: r.stats!.anatomyTurns, calls: r.stats!.callCount, e2e: r.stats!.answerP50Ms, joins: r.agent ? joinDelays(r.agent.jobs) : [] }))
+  const sip = sipRead as unknown as SipData | undefined
+  const wire = useMemo(() => (rooms && sip && probe ? wireData(rows, { stats, ms: rooms, sip, probes: probe }, BUDGET_MS) : null), [rows, stats, rooms, sip, probe])
+  const wireMissing = [media, sipQ, probesQ].find((q) => !q.data)
+  const chainAll: ChainScope | null = stats.chain && { key: "all", name: "All agents", chain: stats.chain, turns: stats.anatomyTurns, calls: stats.callCount, e2e: p50, joins: [] }
+  const chainGroups: ChainScope[] = active
+    .filter((r) => (pick === "all" || r.key === pick) && r.stats!.chain)
+    .map((r) => ({ key: r.key, name: r.name, chain: r.stats!.chain!, turns: r.stats!.anatomyTurns, calls: r.stats!.callCount, e2e: r.stats!.answerP50Ms, joins: r.agent ? joinDelays(r.agent.jobs) : [] }))
 
   // Calls at once across the workers: only instants every worker reported count.
-  const n = Math.min(...workers.workers.map((w) => w.samples.length))
-  const load = Array.from({ length: Number.isFinite(n) ? n : 0 }, (_, i) => sumOrNull(workers.workers.map((w) => w.samples[i].activeJobs)))
+  const n = workers ? Math.min(...workers.workers.map((w) => w.samples.length)) : 0
+  const load = Array.from({ length: Number.isFinite(n) ? n : 0 }, (_, i) => sumOrNull(workers!.workers.map((w) => w.samples[i].activeJobs)))
   const known = load.filter((x): x is number => x !== null)
   const peak = known.length ? Math.max(...known) : null
 
-  const hints = rooms.rooms.flatMap((r) => r.participants.filter((p) => p.sip).map((p) => ({ trunkId: p.sip!.trunkId, twilio: Boolean(p.sip!.twilio) })))
-  const routeRows = routes(sip, hints)
-  const legs = [...sip.inbound.map((t) => enc(t.media.encryption)), ...sip.outbound.map((t) => enc(t.media.encryption))]
+  const hints = rooms ? rooms.rooms.flatMap((r) => r.participants.filter((p) => p.sip).map((p) => ({ trunkId: p.sip!.trunkId, twilio: Boolean(p.sip!.twilio) }))) : []
+  const routeRows = sip ? routes(sip, hints) : []
+  const legs = sip ? [...sip.inbound.map((t) => enc(t.media.encryption)), ...sip.outbound.map((t) => enc(t.media.encryption))] : []
   const plainLegs = legs.filter((l) => l === "RTP").length
-  const sipFound = sipChecks(sip, routeRows)
+  const sipFound = sip ? sipChecks(sip, routeRows) : []
   const numbers = new Set(routeRows.filter((r) => !r.wildcard).map((r) => r.number)).size
-  const lost = egress.egress.filter((e) => e.status === "EGRESS_FAILED").length
-  const ingErr = ingress.ingress.filter((i) => i.status === "ENDPOINT_ERROR").length
-  const regions = [...new Set(rooms.rooms.flatMap((r) => r.participants.map((p) => p.region)).filter((r): r is string => Boolean(r)))]
+  const lost = egress ? egress.egress.filter((e) => e.status === "EGRESS_FAILED").length : 0
+  const ingErr = ingress ? ingress.ingress.filter((i) => i.status === "ENDPOINT_ERROR").length : 0
+  const regions = rooms ? [...new Set(rooms.rooms.flatMap((r) => r.participants.map((p) => p.region)).filter((r): r is string => Boolean(r)))] : []
   const count = (v: number | null) => (v === null ? "Unknown" : v)
 
   return (
@@ -176,7 +209,7 @@ function OverviewView({ stats, cloud, ms: rooms, sip: sipRead, egress, ingress, 
           <span className={cn("size-2 rounded-full", highs === null ? "bg-muted-foreground/40" : highs ? "bg-destructive" : "bg-good")} />
           {highs === null ? "High issues unknown" : highs ? `${highs} high issues` : "No high issues"}
           <span className="text-border">|</span>
-          {`${rooms.rooms.length} rooms watched · ${stats.callCount === null ? "calls unknown" : `${stats.callCount} calls captured`} in the last 7 days`}
+          {`${rooms ? `${rooms.rooms.length} rooms watched · ` : ""}${stats.callCount === null ? "calls unknown" : `${stats.callCount} calls captured`} in the last 7 days`}
         </span>
       </header>
 
@@ -188,9 +221,10 @@ function OverviewView({ stats, cloud, ms: rooms, sip: sipRead, egress, ingress, 
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             <Stat icon={PhoneCall} label={`calls · ${count(stats.byChannel.phone)} by phone`} value={count(stats.callCount)} to="/calls" />
             <Stat icon={WarningCircle} label={`issues · ${count(highs)} high`} value={count(issueTotal)} alert={(highs ?? 0) > 0} to="/issues" />
-            <Stat icon={Robot} label={`agents · ${active.filter((r) => r.agent).length} with calls`} value={fleet.length} to="/agents" />
+            <Stat icon={Robot} label={`agents · ${active.filter((r) => r.agent).length} with calls`} value={cloud && rooms ? fleet.length : "Unknown"} to="/agents" />
             <Stat icon={Gauge} label="peak calls at once" value={count(peak)} to="/agents" />
           </div>
+          {!workers && <Unavailable query={workersQ} what="Peak calls at once" />}
           <div>
             <p className="pb-2 text-[13px] font-medium">Every turn</p>
             <TurnStrip dots={dots} budget={BUDGET_MS} />
@@ -200,7 +234,7 @@ function OverviewView({ stats, cloud, ms: rooms, sip: sipRead, egress, ingress, 
       </div>
 
       <Section title="Live wire">
-        <LiveWire nodes={wire.nodes} links={wire.links} live={wire.live} trackers={wire.trackers} />
+        {wire ? <LiveWire nodes={wire.nodes} links={wire.links} live={wire.live} trackers={wire.trackers} /> : <Unavailable query={wireMissing ?? media} />}
       </Section>
 
       <Section title="Turn anatomy">
@@ -217,22 +251,27 @@ function OverviewView({ stats, cloud, ms: rooms, sip: sipRead, egress, ingress, 
           </ToggleGroup>
           <span className="text-[12px] text-muted-foreground tnum">{`${count(shape.turns)} turns`}</span>
         </div>
-        <TurnAnatomy lanes={shape.lanes} e2e={shape.e2e} turns={shape.turns} budget={BUDGET_MS} />
+        {shape.lanes && stages ? (
+          <TurnAnatomy lanes={shape.lanes} e2e={shape.e2e} turns={shape.turns} budget={BUDGET_MS} />
+        ) : (
+          <p role="status" className="text-[13px] text-muted-foreground">{`Turn anatomy: ${NOT_COMPUTED}`}</p>
+        )}
         <Collapsible open={open} onOpenChange={setOpen}>
           <CollapsibleTrigger className="flex items-center gap-1.5 text-[13px] text-muted-foreground hover:text-foreground">
             <CaretRight size={12} className={cn("transition-transform", open && "rotate-90")} />
             Every stage, with where it comes from
           </CollapsibleTrigger>
           <CollapsibleContent className="pt-4">
-            <LatencyChain all={chainAll} groups={chainGroups} backMs={lkHop?.tcpMs ?? null} />
+            {chainAll ? <LatencyChain all={chainAll} groups={chainGroups} backMs={lkHop?.tcpMs ?? null} /> : <p role="status" className="text-[13px] text-muted-foreground">{`Every stage: ${NOT_COMPUTED}`}</p>}
           </CollapsibleContent>
         </Collapsible>
       </Section>
 
       <Section title="Agents" to="/agents" link="Agent workers">
+        {!cloud && <Unavailable query={cloudRead} what="Agent workers" />}
         <div className="grid gap-4 md:grid-cols-2">
           {active.map((r) => {
-            const peak = r.agent ? peakAtOnce(r.agent, rooms) : null
+            const peak = r.agent && rooms ? peakAtOnce(r.agent, rooms) : null
             const join = r.agent ? median(joinDelays(r.agent.jobs)) : null
             const failed = r.agent ? r.agent.jobs.filter((j) => j.failed).length : 0
             const st = r.stats!
@@ -251,7 +290,7 @@ function OverviewView({ stats, cloud, ms: rooms, sip: sipRead, egress, ingress, 
                     <span>
                       <span className="block text-[14px] font-semibold">{r.name}</span>
                       <span className="block text-[11px] text-muted-foreground">
-                        {r.agent ? (r.agent.cloud ? "LiveKit Cloud" : "self-hosted") : "console, local tests, untagged calls"}
+                        {r.agent ? (r.agent.cloud ? "LiveKit Cloud" : "self-hosted") : r.key === "other" ? "console, local tests, untagged calls" : "worker details unknown"}
                         {r.agent && TEST_AGENTS.has(r.name) ? " · our test agent" : ""}
                       </span>
                     </span>
@@ -281,7 +320,7 @@ function OverviewView({ stats, cloud, ms: rooms, sip: sipRead, egress, ingress, 
                   </span>
                 </span>
                 <span className="block space-y-1.5">
-                  <CallTracker calls={perCall} budget={BUDGET_MS} />
+                  <CallTracker calls={perCall} budget={BUDGET_MS} onOpen={(id) => navigate({ to: "/calls/$callId", params: { callId: id } })} />
                   <span className="flex justify-between text-[11px] text-muted-foreground">
                     <span>{st.callsTruncated ? `the most recent ${st.calls.length} calls, by their median answer` : "one block per call, by its median answer"}</span>
                     {join !== null && <span className="tnum">{`joins in ${join.toFixed(1)} s`}</span>}
@@ -309,37 +348,48 @@ function OverviewView({ stats, cloud, ms: rooms, sip: sipRead, egress, ingress, 
         <Section title="LiveKit project" to="/project" link="Project">
           <div className="grid grid-cols-2 gap-3">
             {[
-              { to: "/sfu", icon: HardDrives, label: "Media server", value: rooms.rooms.length, unit: "rooms", note: `${regions.map((r) => regionCity[r] ?? r).join(", ")}${lkHop?.tcpMs != null ? ` · ${Math.round(lkHop.tcpMs)} ms` : ""}`, tone: "good" },
-              {
-                to: "/sip",
-                icon: Phone,
-                label: "Phone bridge",
-                value: numbers,
-                unit: "numbers",
-                note: `${legs.length - plainLegs} of ${legs.length} legs encrypted`,
-                tone: sipFound.some((c) => c.severity === "high") ? "bad" : plainLegs ? "warn" : "good",
-              },
-              { to: "/egress", icon: UploadSimple, label: "Egress", value: egress.egress.length, unit: "jobs", note: lost ? `${lost} recordings lost` : "none lost", tone: lost ? "warn" : "good" },
-              { to: "/ingress", icon: DownloadSimple, label: "Ingress", value: ingress.ingress.length, unit: "endpoints", note: ingErr ? `${ingErr} in error` : "no errors", tone: ingErr ? "warn" : "good" },
+              rooms
+                ? { to: "/sfu", icon: HardDrives, label: "Media server", value: rooms.rooms.length, unit: "rooms", note: `${regions.map((r) => regionCity[r] ?? r).join(", ")}${lkHop?.tcpMs != null ? ` · ${Math.round(lkHop.tcpMs)} ms` : ""}`, tone: "good" }
+                : { to: "/sfu", icon: HardDrives, label: "Media server", value: null, unit: "", note: readState(media), tone: "none" },
+              sip
+                ? {
+                    to: "/sip",
+                    icon: Phone,
+                    label: "Phone bridge",
+                    value: numbers,
+                    unit: "numbers",
+                    note: `${legs.length - plainLegs} of ${legs.length} legs encrypted`,
+                    tone: sipFound.some((c) => c.severity === "high") ? "bad" : plainLegs ? "warn" : "good",
+                  }
+                : { to: "/sip", icon: Phone, label: "Phone bridge", value: null, unit: "", note: readState(sipQ), tone: "none" },
+              egress
+                ? { to: "/egress", icon: UploadSimple, label: "Egress", value: egress.egress.length, unit: "jobs", note: lost ? `${lost} recordings lost` : "none lost", tone: lost ? "warn" : "good" }
+                : { to: "/egress", icon: UploadSimple, label: "Egress", value: null, unit: "", note: readState(egressQ), tone: "none" },
+              ingress
+                ? { to: "/ingress", icon: DownloadSimple, label: "Ingress", value: ingress.ingress.length, unit: "endpoints", note: ingErr ? `${ingErr} in error` : "no errors", tone: ingErr ? "warn" : "good" }
+                : { to: "/ingress", icon: DownloadSimple, label: "Ingress", value: null, unit: "", note: readState(ingressQ), tone: "none" },
             ].map((x) => (
               <Link key={x.to} to={x.to} className="rounded-xl border p-3 transition-colors hover:bg-muted/40">
                 <span className="flex items-center justify-between text-[12px] text-muted-foreground">
                   <span className="flex items-center gap-1.5">
                     <x.icon size={14} /> {x.label}
                   </span>
-                  <span className={cn("size-2 rounded-full", x.tone === "bad" ? "bg-destructive" : x.tone === "warn" ? "bg-amber-500" : "bg-good")} />
+                  <span className={cn("size-2 rounded-full", x.tone === "bad" ? "bg-destructive" : x.tone === "warn" ? "bg-amber-500" : x.tone === "none" ? "bg-muted-foreground/40" : "bg-good")} />
                 </span>
                 <span className="mt-1.5 flex items-baseline gap-1.5">
-                  <span className="text-[22px] leading-none font-semibold tracking-[-0.02em] tnum">{x.value}</span>
+                  <span className="text-[22px] leading-none font-semibold tracking-[-0.02em] tnum">{x.value ?? "Unknown"}</span>
                   <span className="text-[12px] text-muted-foreground">{x.unit}</span>
                 </span>
-                <span className={cn("mt-1.5 block truncate text-[11px]", x.tone === "good" ? "text-muted-foreground" : "text-amber-700 dark:text-amber-400")}>{x.note}</span>
+                <span className={cn("mt-1.5 block truncate text-[11px]", x.tone === "good" || x.tone === "none" ? "text-muted-foreground" : "text-amber-700 dark:text-amber-400")}>{x.note}</span>
               </Link>
             ))}
           </div>
         </Section>
 
         <Section title="Model providers" to="/project" link="Project">
+          {!probe ? (
+            <Unavailable query={probesQ} />
+          ) : (
           <div className="flex items-center gap-4">
             <div className="hidden shrink-0 overflow-hidden rounded-xl bg-muted/40 sm:block">
               <ProviderGlobe probes={probe} size={210} />
@@ -374,6 +424,7 @@ function OverviewView({ stats, cloud, ms: rooms, sip: sipRead, egress, ingress, 
               <li className="text-[11px] text-muted-foreground">Round trip from the Ontario host that ran vg-capture. Hover a row for when and how it was measured.</li>
             </ul>
           </div>
+          )}
         </Section>
       </div>
     </div>

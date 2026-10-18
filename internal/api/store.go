@@ -44,3 +44,8 @@ type Accounts interface {
 	UpdateMember(ctx context.Context, organisationID, userID, role string) (store.Member, error)
 	RemoveMember(ctx context.Context, organisationID, userID string) error
 }
+
+// Stats reads what getCallStats totals from the call summaries.
+type Stats interface {
+	StatsCalls(ctx context.Context, organisationID, projectID string, from, to time.Time) (store.StatsRead, error)
+}

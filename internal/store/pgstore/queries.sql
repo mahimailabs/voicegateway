@@ -345,3 +345,16 @@ JOIN organisations o ON o.id = m.organisation_id
 LEFT JOIN projects p ON p.organisation_id = o.id
 WHERE m.user_id = @user_id
 ORDER BY o.id, p.id;
+
+-- name: StatsCalls :many
+-- getCallStats' calls: every servable call of a project that started in [from_at, to_at).
+SELECT id, room_name, start_at, channel, answer_ms, agent_key, models
+FROM call_list
+WHERE organisation_id = @organisation_id AND project_id = @project_id AND servable
+  AND start_at >= @from_at AND start_at < @to_at
+ORDER BY start_at, id;
+
+-- name: ProjectConnected :one
+-- When a project was connected, and the Postgres clock: buckets before the first, or after the
+-- second, could hold no stored call.
+SELECT created_at, now()::timestamptz AS now FROM projects WHERE organisation_id = @organisation_id AND id = @project_id;
