@@ -162,12 +162,13 @@ func egressEnded(s livekit.EgressStatus) bool {
 	return false
 }
 
-// projectFile reads a file result. Its size is known only once the egress has ended; while it runs
-// LiveKit reports 0, which is not a size. The duration is nanoseconds; 0 is unreported.
+// projectFile reads a file result. Its size is known only once the egress has ended; while it runs,
+// and after a failure that wrote nothing, LiveKit reports 0, which is not a size. The duration is
+// nanoseconds; 0 is unreported.
 func projectFile(f *livekit.FileInfo, ended bool, secrets []string) *store.EgressFile {
 	out := &store.EgressFile{Name: maskPhoneNumbers(scrub(f.GetFilename(), secrets))}
 	if ended {
-		out.SizeBytes = ptr(f.GetSize())
+		out.SizeBytes = positive(f.GetSize())
 	}
 	if d := f.GetDuration(); d > 0 {
 		out.DurationS = ptr(float64(d) / 1e9)
