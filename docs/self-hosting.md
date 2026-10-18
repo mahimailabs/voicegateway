@@ -59,7 +59,7 @@ This setting sends the uploads to VoiceGateway instead of LiveKit Cloud's own ob
 
 In your LiveKit project's webhook settings, add `https://<voicegateway-host>/livekit/webhook`, signed with the API key from step 3.
 
-Without the webhook, calls still appear, but they stay **open**, with no start or end time, duration or participants, because those come from LiveKit's room events.
+Without the webhook, calls still appear, but they have no start or observed end time, duration or participants, because those come from LiveKit's room events. They stay **open** until two hours pass with no activity. VoiceGateway then closes them as inferred, with the last reported activity as the end time when there is one.
 
 ## Reaching VoiceGateway from LiveKit
 

@@ -1,4 +1,7 @@
-name: Publish Docker Images
+name: Publish Docker image
+
+# Publishes the voicegateway image (web, worker and migrate in one binary, with the console) from
+# deploy/Dockerfile when a v*.*.* tag is pushed. CI already gates main, so this job only builds.
 
 on:
   push:
@@ -10,165 +13,127 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  REGISTRY: docker.io
-  CORE_IMAGE: mahimairaja/voicegateway
+  IMAGE: ghcr.io/mahimailabs/voicegateway
+  # Stable releases (no pre-release suffix) are also copied to Docker Hub. A name of its own, because
+  # mahimairaja/voicegateway is the Python collector that docker-compose.collector.yml pulls as latest.
+  DOCKERHUB_IMAGE: docker.io/mahimairaja/voicegateway-server
+
+permissions:
+  contents: read
 
 jobs:
-  test:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: astral-sh/setup-uv@v5
-
-      - name: Setup Python
-        run: uv python install 3.12
-
-      - name: Install dependencies
-        run: |
-          uv venv --clear --seed
-          uv pip install -e ".[dev,dashboard]"
-
-      - name: Run tests
-        # Deselect integration tests (testcontainers ClickHouse, real Postgres):
-        # they run in their dedicated jobs, and running them here both emits
-        # "Event loop is closed" teardown noise and leaks VOICEGW_DB_PATH into
-        # later unit tests. Matches ci.yml and test-coverage.yml.
-        run: uv run pytest --tb=short -m "not integration"
-
-  # Build each architecture on its NATIVE runner (no QEMU emulation) and push
-  # by digest. arm64 builds on a GitHub-hosted arm runner instead of emulated
-  # on x86, which is the slow part of the old single-job build. The per-arch
-  # digests are stitched into a multi-arch manifest in the `merge` job below.
+  # Each architecture builds on its own runner, without QEMU, and pushes by digest. The merge job
+  # joins the digests into one multi-arch manifest.
   build:
-    needs: test
     runs-on: ${{ matrix.runner }}
     permissions:
       contents: read
+      packages: write
     strategy:
       fail-fast: false
       matrix:
         include:
-          - image: core
-            slug: mahimairaja/voicegateway
-            dockerfile: ./src/voicegateway/Dockerfile
-            title: VoiceGateway
-            description: Cost tracking and reconciliation for LiveKit voice agents, with MCP server for coding agents
-            platform: linux/amd64
+          - platform: linux/amd64
             arch: amd64
             runner: ubuntu-24.04
-          - image: core
-            slug: mahimairaja/voicegateway
-            dockerfile: ./src/voicegateway/Dockerfile
-            title: VoiceGateway
-            description: Cost tracking and reconciliation for LiveKit voice agents, with MCP server for coding agents
-            platform: linux/arm64
+          - platform: linux/arm64
             arch: arm64
             runner: ubuntu-24.04-arm
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
-          fetch-depth: 0
+          persist-credentials: false
 
-      - name: Extract version from tag
-        id: version
-        run: |
-          VERSION=${GITHUB_REF#refs/tags/v}
-          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Log in to Docker Hub
-        uses: docker/login-action@v3
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
         with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Image labels
         id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5.10.0
         with:
-          images: ${{ matrix.slug }}
+          images: ${{ env.IMAGE }}
           labels: |
-            org.opencontainers.image.title=${{ matrix.title }}
-            org.opencontainers.image.description=${{ matrix.description }}
+            org.opencontainers.image.title=VoiceGateway
+            org.opencontainers.image.description=Profiles LiveKit voice agents end to end, one view per call
             org.opencontainers.image.url=https://voicegateway.dev
             org.opencontainers.image.documentation=https://docs.voicegateway.dev
-            org.opencontainers.image.source=https://github.com/mahimailabs/voicegateway
-            org.opencontainers.image.authors=Mahimai Raja J
             org.opencontainers.image.licenses=MIT
 
       - name: Build and push by digest
         id: build
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
         with:
           context: .
-          file: ${{ matrix.dockerfile }}
+          file: deploy/Dockerfile
           platforms: ${{ matrix.platform }}
           labels: ${{ steps.meta.outputs.labels }}
-          # Only the core image consumes a VERSION build arg.
-          build-args: ${{ matrix.image == 'core' && format('VERSION={0}', steps.version.outputs.version) || '' }}
-          cache-from: type=gha,scope=${{ matrix.image }}-${{ matrix.arch }}
-          cache-to: type=gha,mode=max,scope=${{ matrix.image }}-${{ matrix.arch }}
-          outputs: type=image,name=${{ matrix.slug }},push-by-digest=true,name-canonical=true,push=true
+          provenance: mode=max
+          sbom: true
+          cache-from: type=gha,scope=voicegateway-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=voicegateway-${{ matrix.arch }}
+          outputs: type=image,name=${{ env.IMAGE }},push-by-digest=true,name-canonical=true,push=true
 
       - name: Export digest
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
         run: |
           mkdir -p /tmp/digests
-          digest="${{ steps.build.outputs.digest }}"
-          touch "/tmp/digests/${digest#sha256:}"
+          touch "/tmp/digests/${DIGEST#sha256:}"
 
-      - name: Upload digest
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: digests-${{ matrix.image }}-${{ matrix.arch }}
+          name: digests-${{ matrix.arch }}
           path: /tmp/digests/*
           if-no-files-found: error
           retention-days: 1
 
-  # Stitch the per-arch digests into one multi-arch manifest per image and tag
-  # it (version, major.minor, latest), then refresh the Docker Hub README.
+  # Tags the multi-arch manifest with the version, major.minor and latest (latest only for a
+  # release without a pre-release suffix). A stable release also goes to Docker Hub.
   merge:
     needs: build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - image: core
-            slug: mahimairaja/voicegateway
-            readme: ./src/voicegateway/README.dockerhub.md
-            short: "Cost tracking and reconciliation for LiveKit voice agents, with MCP"
+      packages: write
+    env:
+      STABLE: ${{ !contains(github.ref_name, '-') }}
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+      digest: ${{ steps.digest.outputs.digest }}
+      stable: ${{ env.STABLE }}
     steps:
-      # Checkout so the Docker Hub README files are on disk for the
-      # dockerhub-description step below (the manifest is built from the
-      # downloaded digests, not the source tree).
-      - uses: actions/checkout@v4
-
-      - name: Download digests
-        uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           path: /tmp/digests
-          pattern: digests-${{ matrix.image }}-*
+          pattern: digests-*
           merge-multiple: true
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
 
-      - name: Log in to Docker Hub
-        uses: docker/login-action@v3
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - if: env.STABLE == 'true'
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Image tags
         id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5.10.0
         with:
-          images: ${{ matrix.slug }}
+          images: |
+            ${{ env.IMAGE }}
+            name=${{ env.DOCKERHUB_IMAGE }},enable=${{ env.STABLE }}
           flavor: |
             latest=auto
           tags: |
@@ -178,58 +143,40 @@ jobs:
       - name: Create manifest list and push
         working-directory: /tmp/digests
         run: |
+          # shellcheck disable=SC2046
           docker buildx imagetools create \
             $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
-            $(printf '${{ matrix.slug }}@sha256:%s ' *)
+            $(printf "${IMAGE}@sha256:%s " *)
 
-      - name: Inspect
-        run: docker buildx imagetools inspect ${{ matrix.slug }}:${{ steps.meta.outputs.version }}
+      - name: Record digest
+        id: digest
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+        run: |
+          digest=$(docker buildx imagetools inspect "${IMAGE}:${VERSION}" --format '{{json .Manifest}}' | jq -r .digest)
+          echo "digest=${digest}" >> "$GITHUB_OUTPUT"
+          {
+            echo "### ${IMAGE}:${VERSION}"
+            echo
+            echo "Digest: \`${digest}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Update Docker Hub README
-        uses: peter-evans/dockerhub-description@v4
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-          repository: ${{ matrix.slug }}
-          readme-filepath: ${{ matrix.readme }}
-          short-description: ${{ matrix.short }}
-
-  create-release:
+  release:
     needs: merge
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Extract version
-        id: version
-        run: |
-          VERSION=${GITHUB_REF#refs/tags/v}
-          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
-
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
         with:
           generate_release_notes: true
           body: |
-            ## Docker Images
+            ## Docker image
 
-            Published to Docker Hub:
+            `${{ env.IMAGE }}:${{ needs.merge.outputs.version }}`
 
-            - `mahimairaja/voicegateway:${{ steps.version.outputs.version }}`
-            - `mahimairaja/voicegateway:latest`
+            Digest: `${{ needs.merge.outputs.digest }}`
+            ${{ needs.merge.outputs.stable == 'true' && format('Also on Docker Hub: `mahimairaja/voicegateway-server:{0}`', needs.merge.outputs.version) || '' }}
 
-            Built for `linux/amd64` and `linux/arm64`.
-
-            ## Quick Start
-
-            ```bash
-            docker run -p 8080:8080 \
-              -v $(pwd)/voicegw-data:/data \
-              mahimairaja/voicegateway:${{ steps.version.outputs.version }}
-            ```
-
-            See [docs.voicegateway.dev](https://docs.voicegateway.dev) for full documentation.
+            Built for `linux/amd64` and `linux/arm64`. One image runs web, worker and migrate.
+            To install, follow [docs/self-hosting.md](https://github.com/mahimailabs/voicegateway/blob/main/docs/self-hosting.md).
