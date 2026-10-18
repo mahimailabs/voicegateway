@@ -8,7 +8,7 @@ const mono = JetBrains_Mono({ subsets: ['latin'], variable: '--font-jetbrains-mo
 
 export const metadata: Metadata = {
   title: { template: '%s | VoiceGateway', default: 'VoiceGateway docs' },
-  description: 'Cost, latency and control for voice agents on LiveKit and Pipecat.',
+  description: 'See one LiveKit voice call from the phone line to the model.',
   icons: { icon: '/assets/favicon.svg' },
 };
 

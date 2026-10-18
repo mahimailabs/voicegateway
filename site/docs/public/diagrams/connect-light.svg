@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="533" height="322" viewBox="0 0 533 322" font-family="'DejaVu Sans Mono', 'Menlo', 'Consolas', 'Liberation Mono', 'Courier New', monospace" font-size="14px">
+  <defs>
+    <marker id="r9b403c8b-arrow-7c83a0" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#7c83a0"/>
+    </marker>
+  </defs>
+  <rect x="0" y="0" width="533" height="322" fill="#ffffff"/>
+  <path d="M48 40 H178 a8 8 0 0 1 8 8 V98 a8 8 0 0 1 -8 8 H48 a8 8 0 0 1 -8 -8 V48 a8 8 0 0 1 8 -8 Z" fill="#ffffff" stroke="#8a90a8"/>
+  <text x="113" y="68.4" fill="#1f2328" text-anchor="middle">LiveKit server</text>
+  <text x="113" y="87.4" fill="#1f2328" text-anchor="middle">your project</text>
+  <path d="M304 40 H482 a8 8 0 0 1 8 8 V98 a8 8 0 0 1 -8 8 H304 a8 8 0 0 1 -8 -8 V48 a8 8 0 0 1 8 -8 Z" fill="#ffffff" stroke="#8a90a8"/>
+  <text x="369" y="68.4" fill="#1f2328" text-anchor="middle">Voice agent</text>
+  <text x="369" y="87.4" fill="#1f2328" text-anchor="middle">LiveKit Agents</text>
+  <g transform="translate(438 54) scale(1.58333)">
+    <path d="M6.6 2.6 L11 4.800000000000001 L6.6 7 L2.1999999999999993 4.800000000000001 Z" fill="#d6d9e6" stroke="#57606a" stroke-width="1.1" stroke-linejoin="round"/>
+    <path d="M2.1999999999999993 4.800000000000001 L6.6 7 L6.6 11.4 L2.1999999999999993 9.200000000000001 Z" fill="#d6d9e6" stroke="#57606a" stroke-width="1.1" stroke-linejoin="round"/>
+    <path d="M11 4.800000000000001 L6.6 7 L6.6 11.4 L11 9.200000000000001 Z" fill="#d6d9e6" stroke="#57606a" stroke-width="1.1" stroke-linejoin="round"/>
+    <path d="M17.4 2.6 L21.799999999999997 4.800000000000001 L17.4 7 L12.999999999999998 4.800000000000001 Z" fill="#d6d9e6" stroke="#57606a" stroke-width="1.1" stroke-linejoin="round"/>
+    <path d="M12.999999999999998 4.800000000000001 L17.4 7 L17.4 11.4 L12.999999999999998 9.200000000000001 Z" fill="#d6d9e6" stroke="#57606a" stroke-width="1.1" stroke-linejoin="round"/>
+    <path d="M21.799999999999997 4.800000000000001 L17.4 7 L17.4 11.4 L21.799999999999997 9.200000000000001 Z" fill="#d6d9e6" stroke="#57606a" stroke-width="1.1" stroke-linejoin="round"/>
+    <path d="M12 11.6 L16.4 13.8 L12 16 L7.6 13.8 Z" fill="#d6d9e6" stroke="#57606a" stroke-width="1.1" stroke-linejoin="round"/>
+    <path d="M7.6 13.8 L12 16 L12 20.4 L7.6 18.2 Z" fill="#d6d9e6" stroke="#57606a" stroke-width="1.1" stroke-linejoin="round"/>
+    <path d="M16.4 13.8 L12 16 L12 20.4 L16.4 18.2 Z" fill="#d6d9e6" stroke="#57606a" stroke-width="1.1" stroke-linejoin="round"/>
+  </g>
+  <path d="M191.5 216 H338.5 a8 8 0 0 1 8 8 V274 a8 8 0 0 1 -8 8 H191.5 a8 8 0 0 1 -8 -8 V224 a8 8 0 0 1 8 -8 Z" fill="#ffffff" stroke="#0071e3"/>
+  <text x="265" y="244.4" fill="#1f2328" text-anchor="middle">VoiceGateway web</text>
+  <text x="265" y="263.4" fill="#1f2328" text-anchor="middle">port 8080</text>
+  <path d="M 113 106 C 113 178.48, 257 143.52, 257 204.8 L 257 216" fill="none" stroke="#7c83a0" stroke-width="1.6" marker-end="url(#r9b403c8b-arrow-7c83a0)"/>
+  <rect x="62" y="150.1" width="246" height="19" fill="#ffffff"/>
+  <text x="185" y="164.5" fill="#1f2328" text-anchor="middle">webhooks to /livekit/webhook</text>
+  <path d="M 393 106 C 393 171.12, 273 150.88, 273 204.8 L 273 216" fill="none" stroke="#7c83a0" stroke-width="1.6" marker-end="url(#r9b403c8b-arrow-7c83a0)"/>
+  <rect x="271.97" y="124.67" width="220" height="19" fill="#ffffff"/>
+  <text x="381.97" y="139.07" fill="#1f2328" text-anchor="middle">LIVEKIT_OBSERVABILITY_URL</text>
+</svg>

@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="722" height="378" viewBox="0 0 722 378" font-family="'DejaVu Sans Mono', 'Menlo', 'Consolas', 'Liberation Mono', 'Courier New', monospace" font-size="14px">
+  <defs>
+    <marker id="r0ed3318b-arrow-5c5c7c" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#5c5c7c"/>
+    </marker>
+  </defs>
+  <rect x="0" y="0" width="722" height="378" fill="#111111"/>
+  <path d="M48 40 H102 a8 8 0 0 1 8 8 V98 a8 8 0 0 1 -8 8 H48 a8 8 0 0 1 -8 -8 V48 a8 8 0 0 1 8 -8 Z" fill="#111111" stroke="#4f5367"/>
+  <text x="75" y="68.4" fill="#d9d9d9" text-anchor="middle">Phone</text>
+  <text x="75" y="87.4" fill="#d9d9d9" text-anchor="middle">SIP</text>
+  <path d="M174 40 H287 a8 8 0 0 1 8 8 V98 a8 8 0 0 1 -8 8 H174 a8 8 0 0 1 -8 -8 V48 a8 8 0 0 1 8 -8 Z" fill="#111111" stroke="#4f5367"/>
+  <text x="230.5" y="68.4" fill="#d9d9d9" text-anchor="middle">LiveKit</text>
+  <text x="230.5" y="87.4" fill="#d9d9d9" text-anchor="middle">media server</text>
+  <path d="M359 40 H464 a8 8 0 0 1 8 8 V98 a8 8 0 0 1 -8 8 H359 a8 8 0 0 1 -8 -8 V48 a8 8 0 0 1 8 -8 Z" fill="#111111" stroke="#4f5367"/>
+  <text x="411.5" y="68.4" fill="#d9d9d9" text-anchor="middle">LiveKit</text>
+  <text x="411.5" y="87.4" fill="#d9d9d9" text-anchor="middle">voice agent</text>
+  <path d="M536 40 H674 a8 8 0 0 1 8 8 V98 a8 8 0 0 1 -8 8 H536 a8 8 0 0 1 -8 -8 V48 a8 8 0 0 1 8 -8 Z" fill="#111111" stroke="#4f5367"/>
+  <text x="605" y="68.4" fill="#d9d9d9" text-anchor="middle">Models</text>
+  <text x="605" y="87.4" fill="#d9d9d9" text-anchor="middle">STT · LLM · TTS</text>
+  <path d="M334 216 H489 a8 8 0 0 1 8 8 V274 a8 8 0 0 1 -8 8 H334 a8 8 0 0 1 -8 -8 V224 a8 8 0 0 1 8 -8 Z" fill="#111111" stroke="#0071e3"/>
+  <text x="411.5" y="244.4" fill="#d9d9d9" text-anchor="middle">VoiceGateway</text>
+  <text x="411.5" y="263.4" fill="#d9d9d9" text-anchor="middle">One call timeline</text>
+  <g font-size="12px">
+  <text x="325" y="318.2" fill="#8b8b8b" text-anchor="start">Observes the call.</text>
+  <text x="325" y="334.2" fill="#8b8b8b" text-anchor="start">Never in the audio path.</text>
+  </g>
+  <path d="M 110 73 C 134 73, 142 73, 154.8 73 L 166 73" fill="none" stroke="#5c5c7c" stroke-width="1.6" marker-end="url(#r0ed3318b-arrow-5c5c7c)"/>
+  <path d="M 295 73 C 319 73, 327 73, 339.8 73 L 351 73" fill="none" stroke="#5c5c7c" stroke-width="1.6" marker-end="url(#r0ed3318b-arrow-5c5c7c)"/>
+  <path d="M 472 73 C 496 73, 504 73, 516.8 73 L 528 73" fill="none" stroke="#5c5c7c" stroke-width="1.6" marker-end="url(#r0ed3318b-arrow-5c5c7c)"/>
+  <path d="M 230.5 106 C 230.5 174.78, 257.22 249, 314.8 249 L 326 249" fill="none" stroke="#5c5c7c" stroke-width="1.6" stroke-dasharray="6.4 4.8" marker-end="url(#r0ed3318b-arrow-5c5c7c)"/>
+  <rect x="170.06" y="193.79" width="162" height="19" fill="#111111"/>
+  <text x="251.06" y="208.19" fill="#d9d9d9" text-anchor="middle">Webhooks · metrics</text>
+  <path d="M 411.5 106 C 411.5 150, 411.5 172, 411.5 204.8 L 411.5 216" fill="none" stroke="#5c5c7c" stroke-width="1.6" stroke-dasharray="6.4 4.8" marker-end="url(#r0ed3318b-arrow-5c5c7c)"/>
+  <rect x="309.5" y="150.1" width="204" height="19" fill="#111111"/>
+  <text x="411.5" y="164.5" fill="#d9d9d9" text-anchor="middle">Spans · session uploads</text>
+</svg>

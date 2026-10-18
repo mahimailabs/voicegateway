@@ -1,0 +1,47 @@
+---
+title: Connect your LiveKit project
+description: Point LiveKit and your agent at VoiceGateway.
+---
+
+<Picture src="/diagrams/connect" alt="LiveKit sends webhooks to VoiceGateway. The voice agent uploads its own data to VoiceGateway through LIVEKIT_OBSERVABILITY_URL." />
+
+One VoiceGateway project is one LiveKit project.
+
+<Steps>
+<Step>
+
+### Add the project
+
+```bash
+export LIVEKIT_URL=wss://your-project.livekit.cloud
+export LIVEKIT_API_KEY=your-key
+export LIVEKIT_API_SECRET=your-secret
+docker compose -f deploy/compose.yaml --env-file deploy/.env exec \
+  -e LIVEKIT_URL -e LIVEKIT_API_KEY -e LIVEKIT_API_SECRET \
+  web voicegateway project add --name Production
+```
+
+The secret is stored encrypted and never shown again.
+
+</Step>
+<Step>
+
+### Send LiveKit's webhooks
+
+In LiveKit, add a webhook to `https://<your-voicegateway>/livekit/webhook`, signed with the same API key.
+
+</Step>
+<Step>
+
+### Point your agent at it
+
+Start your LiveKit agent with one extra variable:
+
+```bash
+LIVEKIT_OBSERVABILITY_URL=https://<your-voicegateway>
+```
+
+No code change. The agent uploads its turns, timings and recording when the session ends.
+
+</Step>
+</Steps>

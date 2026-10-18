@@ -1,49 +1,17 @@
 ---
-title: Introduction
-description: What VoiceGateway measures, the two calls it adds to your agent, and when something else is the better fit.
+title: What is VoiceGateway
+description: See one LiveKit voice call from the phone line to the model.
 ---
 
-A voice agent runs three meters at once. STT bills by audio seconds, the LLM by tokens, TTS by characters. No provider dashboard shows what one conversation cost across all three.
+<Picture src="/diagrams/call-path" alt="A call goes from the phone through the LiveKit media server to the voice agent and its models. VoiceGateway sits to the side and receives webhooks, metrics, spans and session uploads." />
 
-VoiceGateway does. Add one line to a LiveKit or Pipecat agent and every STT, LLM and TTS call is priced, timed and stored, per call and per project. It runs on your machine, with your keys. Nothing leaves your infrastructure.
+A voice call passes through many parts. VoiceGateway shows all of them on one timeline, so you can see where a call got slow or went wrong.
 
-```python
-from livekit.agents import AgentSession
-from livekit.plugins import cartesia, deepgram, openai
-import voicegateway
-
-session = AgentSession(
-    stt=deepgram.STT(model="nova-3"),
-    llm=openai.LLM(model="gpt-4o-mini"),
-    tts=cartesia.TTS(model="sonic-3"),
-)
-voicegateway.attach(session)
-```
-
-## Two calls, two jobs
-
-| Call | Job | What it does |
-|---|---|---|
-| [`attach(session)`](/docs/attach) | observe | Meters every provider call on the session: cost, latency, units. Never touches a request. |
-| [`guard(provider)`](/docs/guard) | control | Wraps one provider with fallback, a rate limit and a spend cap. Writes no metrics. |
-
-`attach()` is the only meter, so using both never double-counts. Most agents start with `attach()` alone.
-
-## Where the numbers come from
-
-Prices come from [voice-prices](https://prices.mahimai.ca), an open catalog of STT, LLM and TTS rates. Every recorded row names the catalog entry that priced it. When a number has to be exact, [`voicegw reconcile`](/docs/costs#check-against-the-invoice) checks it against the provider's own usage export.
-
-## When something else fits better
-
-Building a text-only LLM app with no voice? [LiteLLM](https://docs.litellm.ai/) is the better fit. VoiceGateway is for agents that listen and speak.
-
-<Callout type="warn">
-VoiceGateway is alpha software. Public APIs can change between minor releases, and the [changelog](https://github.com/mahimailabs/voicegateway/blob/main/CHANGELOG.md) says when they do.
-</Callout>
-
-## Next
+It watches from the side. If VoiceGateway stops, your calls keep going.
 
 <Cards>
-  <Card title="Quickstart" href="/docs/quickstart" description="Install, add attach(), see your first call's cost." />
-  <Card title="Self-hosting" href="/docs/self-hosting" description="The dashboard, a shared collector, and MCP for coding agents." />
+  <Card title="Get started" href="/docs/get-started/install" description="Install it and trace your first call." />
+  <Card title="Your calls" href="/docs/console/overview" description="What each page of the console shows." />
+  <Card title="The layers" href="/docs/layers" description="Phone, media server, agent workers and models." />
+  <Card title="API reference" href="/docs/api" description="Every call the console makes, for your own scripts." />
 </Cards>

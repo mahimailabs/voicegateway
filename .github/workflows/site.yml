@@ -11,6 +11,7 @@ on:
       - 'site/**'
       - 'collector.sh'
       - 'install.sh'
+      - 'docs/api/openapi.yaml'
       - '.github/workflows/site.yml'
       - 'Makefile'
 
