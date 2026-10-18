@@ -49,23 +49,27 @@ func (s *Store) createInvitation(ctx context.Context, in store.NewInvitation) (s
 	} else if err != nil {
 		return store.Invitation{}, err
 	}
-	email := foldEmail(in.Email)
-	if err := q.RevokeOpenInvitation(ctx, RevokeOpenInvitationParams{OrganisationID: in.OrganisationID, Email: email, Kind: in.Kind}); err != nil {
-		return store.Invitation{}, err
-	}
+	// Locks come before any invitation UPDATE, always in this order: the organisation, then for a
+	// reset the member's row. A reset replaces the member's open links in every organisation, which
+	// the organisation lock alone does not cover; locking the member after touching invitation rows
+	// would let two resets each hold what the other waits for.
+	var resetUser pgtype.UUID
 	if in.Kind == "reset" && in.UserID != nil {
-		u, err := uuid(*in.UserID)
-		if err != nil {
+		if resetUser, err = uuid(*in.UserID); err != nil {
 			return store.Invitation{}, err
 		}
-		// The organisation lock covers one organisation; a reset replaces the member's open links in
-		// every one, so the member's row is locked too, and parallel resets leave one open link.
-		if _, err := q.LockUser(ctx, u); errors.Is(err, pgx.ErrNoRows) {
+		if _, err := q.LockUser(ctx, resetUser); errors.Is(err, pgx.ErrNoRows) {
 			return store.Invitation{}, store.ErrNotFound
 		} else if err != nil {
 			return store.Invitation{}, err
 		}
-		if err := q.RevokeOpenResets(ctx, u); err != nil {
+	}
+	email := foldEmail(in.Email)
+	if err := q.RevokeOpenInvitation(ctx, RevokeOpenInvitationParams{OrganisationID: in.OrganisationID, Email: email, Kind: in.Kind}); err != nil {
+		return store.Invitation{}, err
+	}
+	if resetUser.Valid {
+		if err := q.RevokeOpenResets(ctx, resetUser); err != nil {
 			return store.Invitation{}, err
 		}
 	}

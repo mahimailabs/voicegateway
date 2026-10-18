@@ -103,7 +103,7 @@ test("an invite without SMTP shows the link once; with SMTP it shows no link, an
   await again.click(screen.getByRole("button", { name: "Resend" }))
   await vi.waitFor(() => expect(calls.filter((c) => c.method === "POST").length).toBe(2))
   expect(JSON.parse(calls.filter((c) => c.method === "POST")[1].body!)).toEqual({ email: "new@example.com", role: "Member" })
-})
+}, 20_000) // three renders and three typed invites; near 5 s under a loaded machine
 
 test("the invitations list filters by state through the URL", async () => {
   serve()

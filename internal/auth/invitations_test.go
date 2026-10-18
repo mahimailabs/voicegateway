@@ -260,6 +260,7 @@ func TestParallelCreatesOneOpenLink(t *testing.T) {
 	// Resets for one member from admins of two organisations at once leave one open link: the
 	// member's row lock serialises them across organisations.
 	f.addUser("both@example.com", "org-a", "member")
+	f.addUser("admin-b@example.com", "org-b", "admin") // creates org-b, which AddMembership needs
 	ctx := context.Background()
 	if _, err := f.pg.AddMembership(ctx, "both@example.com", "org-b", "member"); err != nil {
 		t.Fatal(err)
