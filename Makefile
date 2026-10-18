@@ -3,7 +3,7 @@ DASHBOARD := dashboard
 COMPOSE := docker compose -f deploy/compose.yaml
 
 .DEFAULT_GOAL := help
-.PHONY: help dev test lint dashboard-test dashboard-lint typecheck up down preflight user-add project-add go-test go-lint sqlc api-lint api-sources api-types api-types-check api-check landing-dev landing-check landing-deploy
+.PHONY: help dev test lint dashboard-test dashboard-e2e dashboard-lint typecheck up down preflight user-add project-add go-test go-lint sqlc api-lint api-sources api-types api-types-check api-check landing-dev landing-check landing-deploy
 
 help: ## List the targets
 	@grep -E '^[a-z][a-z0-9_-]*:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  make %-15s %s\n", $$1, $$2}'
@@ -17,6 +17,11 @@ lint: go-lint dashboard-lint ## Run Go lint and the dashboard lint and TypeScrip
 
 dashboard-test: ## Run the dashboard tests
 	npm --prefix $(DASHBOARD) test
+
+dashboard-e2e: ## Build the preview and run shell and accessibility browser tests
+	cd $(DASHBOARD) && npx --no-install tsc -p e2e/tsconfig.json --noEmit
+	VITE_MOCK_API=on npm --prefix $(DASHBOARD) run build
+	cd $(DASHBOARD) && npx --no-install playwright test
 
 dashboard-lint: ## Run the dashboard lint and TypeScript checks
 	npm --prefix $(DASHBOARD) run lint

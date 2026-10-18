@@ -130,7 +130,7 @@ export function TurnAnatomy({ lanes, e2e, turns, budget }: { lanes: Lane[]; e2e:
   const H = 26
   return (
     // Phones scroll the chart sideways inside its card rather than squeeze the lanes.
-    <div className="-mx-1 overflow-x-auto px-1">
+    <div role="region" aria-label="Turn anatomy" tabIndex={0} className="-mx-1 overflow-x-auto px-1 focus-visible:outline-2 focus-visible:outline-ring">
       <div className="flex min-w-[600px] gap-4">
         <div className="w-44 shrink-0 pt-6 sm:w-56">
           {rows.map((l) => (
