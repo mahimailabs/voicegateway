@@ -81,10 +81,13 @@
     ],
     "browserStorage": false,
     "operations": [
+      "createProjectKey",
       "getCall",
       "getMembers",
       "listCalls",
+      "listProjectKeys",
       "removeMember",
+      "revokeProjectKey",
       "updateMember"
     ],
     "assetNotes": {
@@ -194,6 +197,7 @@
     "assets": [],
     "browserStorage": false,
     "operations": [
+      "createProjectKey",
       "getAlertSetup",
       "getCall",
       "getCallStats",
@@ -215,7 +219,9 @@
       "listAlertEvents",
       "listCalls",
       "listIssues",
+      "listProjectKeys",
       "removeMember",
+      "revokeProjectKey",
       "updateMember"
     ],
     "assetNotes": {},

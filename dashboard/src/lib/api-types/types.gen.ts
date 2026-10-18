@@ -1346,6 +1346,83 @@ export type Invitation = {
     role: 'Admin' | 'Member' | 'Viewer';
 };
 
+export type ProjectKey = {
+    /**
+     * The key's id, the 12 characters after vgk_; shown in lists and used to revoke it.
+     */
+    keyId: string;
+    /**
+     * The name the admin gave the key.
+     */
+    name: string;
+    /**
+     * vgk_ and the key id: the visible start of the key, never the secret.
+     */
+    prefix: string;
+    /**
+     * When the key was created.
+     */
+    createdAt: string;
+    /**
+     * The email of the admin who created the key.
+     */
+    createdBy: string | null;
+    /**
+     * When the key last read, to the minute.
+     */
+    lastUsedAt: string | null;
+    /**
+     * When the key was revoked.
+     */
+    revokedAt: string | null;
+};
+
+export type ProjectKeys = {
+    items: Array<ProjectKey>;
+};
+
+export type ProjectKeyCreate = {
+    /**
+     * A name for the new key, such as ci.
+     */
+    name: string;
+};
+
+export type CreatedProjectKey = {
+    /**
+     * The key's id, the 12 characters after vgk_; shown in lists and used to revoke it.
+     */
+    keyId: string;
+    /**
+     * The name the admin gave the key.
+     */
+    name: string;
+    /**
+     * vgk_ and the key id: the visible start of the key, never the secret.
+     */
+    prefix: string;
+    /**
+     * When the key was created.
+     */
+    createdAt: string;
+    /**
+     * The email of the admin who created the key.
+     */
+    createdBy: string | null;
+    /**
+     * When the key last read, to the minute.
+     */
+    lastUsedAt: string | null;
+    /**
+     * When the key was revoked.
+     */
+    revokedAt: string | null;
+    /**
+     * The full key, vgk_ plus the key id plus the secret. Shown only in this answer; the server keeps its SHA-256.
+     */
+    secret: string;
+};
+
 export type Member = {
     /**
      * The member's user id.
@@ -1537,6 +1614,11 @@ export type Clock = unknown & {
      */
     alignment: 'observed' | 'inferred' | 'unknown';
 };
+
+/**
+ * A project key's id, the 12 characters after vgk_; one from another project is not_found.
+ */
+export type KeyId = string;
 
 /**
  * A member's user id; one outside the named organisation is not_found.
@@ -2803,6 +2885,172 @@ export type UpdateMemberResponses = {
 };
 
 export type UpdateMemberResponse = UpdateMemberResponses[keyof UpdateMemberResponses];
+
+export type ListProjectKeysData = {
+    body?: never;
+    path: {
+        /**
+         * Authorised orgId; the server must verify organisation/project ownership before any read.
+         */
+        orgId: string;
+        /**
+         * Authorised projectId; the server must verify organisation/project ownership before any read.
+         */
+        projectId: string;
+    };
+    query?: never;
+    url: '/api/v1/org/{orgId}/project/{projectId}/keys';
+};
+
+export type ListProjectKeysErrors = {
+    /**
+     * invalid_request; never return an empty success result for this failure.
+     */
+    400: Error;
+    /**
+     * unauthenticated; never return an empty success result for this failure.
+     */
+    401: Error;
+    /**
+     * forbidden; never return an empty success result for this failure.
+     */
+    403: Error;
+    /**
+     * not_found; never return an empty success result for this failure.
+     */
+    404: Error;
+    /**
+     * internal_error; never return an empty success result for this failure.
+     */
+    500: Error;
+    /**
+     * source_unavailable; never return an empty success result for this failure.
+     */
+    503: Error;
+};
+
+export type ListProjectKeysError = ListProjectKeysErrors[keyof ListProjectKeysErrors];
+
+export type ListProjectKeysResponses = {
+    /**
+     * The project's keys.
+     */
+    200: ProjectKeys;
+};
+
+export type ListProjectKeysResponse = ListProjectKeysResponses[keyof ListProjectKeysResponses];
+
+export type CreateProjectKeyData = {
+    body: ProjectKeyCreate;
+    path: {
+        /**
+         * Authorised orgId; the server must verify organisation/project ownership before any read.
+         */
+        orgId: string;
+        /**
+         * Authorised projectId; the server must verify organisation/project ownership before any read.
+         */
+        projectId: string;
+    };
+    query?: never;
+    url: '/api/v1/org/{orgId}/project/{projectId}/keys';
+};
+
+export type CreateProjectKeyErrors = {
+    /**
+     * invalid_request; never return an empty success result for this failure.
+     */
+    400: Error;
+    /**
+     * unauthenticated; never return an empty success result for this failure.
+     */
+    401: Error;
+    /**
+     * forbidden; never return an empty success result for this failure.
+     */
+    403: Error;
+    /**
+     * not_found; never return an empty success result for this failure.
+     */
+    404: Error;
+    /**
+     * internal_error; never return an empty success result for this failure.
+     */
+    500: Error;
+    /**
+     * source_unavailable; never return an empty success result for this failure.
+     */
+    503: Error;
+};
+
+export type CreateProjectKeyError = CreateProjectKeyErrors[keyof CreateProjectKeyErrors];
+
+export type CreateProjectKeyResponses = {
+    /**
+     * The new key, with its full secret.
+     */
+    201: CreatedProjectKey;
+};
+
+export type CreateProjectKeyResponse = CreateProjectKeyResponses[keyof CreateProjectKeyResponses];
+
+export type RevokeProjectKeyData = {
+    body?: never;
+    path: {
+        /**
+         * Authorised orgId; the server must verify organisation/project ownership before any read.
+         */
+        orgId: string;
+        /**
+         * Authorised projectId; the server must verify organisation/project ownership before any read.
+         */
+        projectId: string;
+        /**
+         * A project key's id, the 12 characters after vgk_; one from another project is not_found.
+         */
+        keyId: string;
+    };
+    query?: never;
+    url: '/api/v1/org/{orgId}/project/{projectId}/keys/{keyId}';
+};
+
+export type RevokeProjectKeyErrors = {
+    /**
+     * invalid_request; never return an empty success result for this failure.
+     */
+    400: Error;
+    /**
+     * unauthenticated; never return an empty success result for this failure.
+     */
+    401: Error;
+    /**
+     * forbidden; never return an empty success result for this failure.
+     */
+    403: Error;
+    /**
+     * not_found; never return an empty success result for this failure.
+     */
+    404: Error;
+    /**
+     * internal_error; never return an empty success result for this failure.
+     */
+    500: Error;
+    /**
+     * source_unavailable; never return an empty success result for this failure.
+     */
+    503: Error;
+};
+
+export type RevokeProjectKeyError = RevokeProjectKeyErrors[keyof RevokeProjectKeyErrors];
+
+export type RevokeProjectKeyResponses = {
+    /**
+     * Revoked.
+     */
+    204: void;
+};
+
+export type RevokeProjectKeyResponse = RevokeProjectKeyResponses[keyof RevokeProjectKeyResponses];
 
 export type GetWorkspacesData = {
     body?: never;

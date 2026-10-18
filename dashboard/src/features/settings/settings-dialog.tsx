@@ -21,8 +21,9 @@ import { NewProjectDialog } from "@/components/new-project-dialog"
 import { currentOrg, currentScope, scopePrefix, useUrlState } from "@/lib/url-state"
 import { type WidgetId, widgets } from "@/features/embed/widgets"
 import { DEFAULTS, type Thresholds as T } from "@/lib/thresholds"
-import { ApiError, callTotalsQuery, invitationsQuery, latestMatchingCallQuery, mediaServerQuery, membersQuery, projectSettingsQuery, removeMember, updateMember } from "@/lib/api"
-import type { Invitation, Invitations, Member, ProjectSettings } from "@/lib/api-types"
+import { ApiError, callTotalsQuery, createProjectKey, projectKeysQuery, revokeProjectKey, invitationsQuery, latestMatchingCallQuery, mediaServerQuery, membersQuery, projectSettingsQuery, removeMember, updateMember } from "@/lib/api"
+import type { Invitation, Invitations, Member, ProjectKey, ProjectSettings } from "@/lib/api-types"
+import { CopyCommand } from "@/components/copy-command"
 import { refreshSession, roleIn, useSession } from "@/lib/session"
 import { useLocalSave } from "@/lib/local-store"
 import { errorText } from "@/components/page-state"
@@ -485,30 +486,154 @@ const mcpClients = [
   { key: "cursor", name: "Cursor", logo: "cursor", command: '{ "mcpServers": { "voicegateway": {\n  "url": "${env:VOICEGATEWAY_MCP_URL}",\n  "headers": { "Authorization": "Bearer ${env:VOICEGATEWAY_API_KEY}" } } } }' },
 ]
 
-function ApiKeys() {
+export function ApiKeys() {
+  const isAdmin = roleIn(org().id, useSession()) === "Admin"
   return (
     <>
-      <Header title="API keys" description="For agents on other frameworks, for the SDK and for MCP. Each key belongs to one project." />
-      <Group footer="The server creates a key, shows it once and stores it hashed. Keys arrive with the Phase 2 server.">
-        {org().projects.map(({ name: p }, k) => (
-          <Row
-            key={p}
-            icon={KeyIcon}
-            title={p}
-            description="No keys yet"
-            value={
-              <Button variant="outline" size="sm" disabled>
-                <Plus /> Create key
-              </Button>
-            }
-            last={k === org().projects.length - 1}
-          />
-        ))}
-      </Group>
+      <Header title="API keys" description="For scripts and MCP. Each key reads one project, and changes nothing." />
+      {!isAdmin ? (
+        <Group>
+          <Row icon={KeyIcon} title="Managed by admins" description="An admin of this organisation creates and revokes API keys." last />
+        </Group>
+      ) : (
+        org().projects.map((p) => <ProjectKeyList key={p.id} projectId={p.id} name={p.name} />)
+      )}
       <Group label="Enterprise">
         <Row icon={Lock} muted title="Ingestion limits per key" description="Cap what one key or one project can send." value={<span className="text-[12px] text-muted-foreground">Open source: no limits.</span>} last />
       </Group>
     </>
+  )
+}
+
+// One project's keys (listProjectKeys), with Create, which shows the new key once, and Revoke,
+// which asks first.
+function ProjectKeyList({ projectId, name }: { projectId: string; name: string }) {
+  const read = useQuery(projectKeysQuery(projectId))
+  const qc = useQueryClient()
+  const [naming, setNaming] = useState(false)
+  const [keyName, setKeyName] = useState("")
+  const [shown, setShown] = useState<string | null>(null)
+  const [revoking, setRevoking] = useState<ProjectKey | null>(null)
+  const [problem, setProblem] = useState<string | null>(null)
+  const refresh = () => qc.invalidateQueries({ queryKey: projectKeysQuery(projectId).queryKey })
+  const create = useMutation({
+    mutationFn: () => createProjectKey(projectId, keyName.trim()),
+    onSuccess: (k) => {
+      setShown(k.secret)
+      setKeyName("")
+      setProblem(null)
+      return refresh()
+    },
+    onError: (e: Error) => setProblem(errorText(e)),
+  })
+  const revoke = useMutation({ mutationFn: (keyId: string) => revokeProjectKey(projectId, keyId), onSuccess: () => refresh(), onError: (e: Error) => setProblem(errorText(e)) })
+  const list = read.data?.items ?? []
+  const state = read.isError ? (read.error instanceof ApiError && read.error.status === 404 ? "Not served by this server yet" : errorText(read.error)) : "Loading"
+  return (
+    <Group
+      label={name}
+      footer={
+        <Button variant="outline" size="sm" onClick={() => setNaming(true)} disabled={!read.isSuccess}>
+          <Plus /> Create key
+        </Button>
+      }
+    >
+      {!read.isSuccess && <Row icon={KeyIcon} title="Keys" value={<Muted>{state}</Muted>} last />}
+      {read.isSuccess && list.length === 0 && <Row icon={KeyIcon} title="No keys yet" last />}
+      {list.map((k, n) => (
+        <Row
+          key={k.keyId}
+          icon={KeyIcon}
+          muted={k.revokedAt !== null}
+          title={k.name}
+          description={`${k.prefix} · ${k.revokedAt ? "revoked" : k.lastUsedAt ? `last used ${new Date(k.lastUsedAt).toLocaleString()}` : "never used"}${k.createdBy ? ` · by ${k.createdBy}` : ""}`}
+          value={
+            k.revokedAt === null && (
+              <Button variant="ghost" size="sm" onClick={() => setRevoking(k)} aria-label={`Revoke ${k.name}`}>
+                Revoke
+              </Button>
+            )
+          }
+          last={n === list.length - 1}
+        />
+      ))}
+      {problem && (
+        <p role="alert" className="pt-3 text-[13px] text-destructive">
+          {problem}
+        </p>
+      )}
+      <Dialog
+        open={naming || shown !== null}
+        onOpenChange={(o) => {
+          if (o) return
+          setNaming(false)
+          setShown(null)
+        }}
+      >
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>{shown ? "Your new API key" : `New API key for ${name}`}</DialogTitle>
+            <DialogDescription>{shown ? "Copy it now. It is not shown again; the server keeps only its hash." : "It reads this project only and changes nothing."}</DialogDescription>
+          </DialogHeader>
+          {shown ? (
+            <CopyCommand text={shown} label="New API key" />
+          ) : (
+            <form
+              onSubmit={(e) => {
+                e.preventDefault()
+                if (keyName.trim()) create.mutate()
+              }}
+            >
+              <InputGroup>
+                <InputGroupAddon>
+                  <KeyIcon />
+                </InputGroupAddon>
+                <InputGroupInput placeholder="ci" maxLength={64} value={keyName} onChange={(e) => setKeyName(e.target.value)} aria-label="Key name" />
+              </InputGroup>
+              <DialogFooter className="pt-4">
+                <Button type="submit" disabled={!keyName.trim() || create.isPending}>
+                  Create key
+                </Button>
+              </DialogFooter>
+            </form>
+          )}
+          {shown && (
+            <DialogFooter>
+              <Button
+                onClick={() => {
+                  setShown(null)
+                  setNaming(false)
+                }}
+              >
+                Done
+              </Button>
+            </DialogFooter>
+          )}
+        </DialogContent>
+      </Dialog>
+      <Dialog open={revoking !== null} onOpenChange={(o) => !o && setRevoking(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>{`Revoke ${revoking?.name ?? ""}?`}</DialogTitle>
+            <DialogDescription>{`Anything using ${revoking?.prefix ?? "it"} gets 401 from its next request. This cannot be undone.`}</DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRevoking(null)}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => {
+                if (revoking) revoke.mutate(revoking.keyId)
+                setRevoking(null)
+              }}
+            >
+              Revoke
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </Group>
   )
 }
 

@@ -185,9 +185,6 @@ func (f *fixture) sample(t *testing.T, s *scrape.Scraper, n int) {
 	}
 }
 
-// testToken is the API token the layer tests send, so they read through the real gate.
-const testToken = "0123456789abcdef0123456789abcdef"
-
 func (f *fixture) get(t *testing.T, project string) (int, []byte) {
 	t.Helper()
 	return f.getRead(t, project, "media-server")
@@ -196,15 +193,16 @@ func (f *fixture) get(t *testing.T, project string) (int, []byte) {
 // getRead answers one of a project's reads, such as "sip", through the real gate.
 func (f *fixture) getRead(t *testing.T, project, read string) (int, []byte) {
 	t.Helper()
+	gate, key := api.KeyFor(org, project)
 	srv := httptest.NewServer((&api.API{
-		Projects: f.projects, Layers: f.layers, Log: quiet(), Now: time.Now, Gate: api.TokenGate(testToken),
+		Projects: f.projects, Layers: f.layers, Log: quiet(), Now: time.Now, Gate: gate,
 	}).Routes())
 	defer srv.Close()
 	req, err := http.NewRequest(http.MethodGet, srv.URL+"/api/v1/org/"+org+"/project/"+project+"/"+read, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	req.Header.Set("Authorization", "Bearer "+testToken)
+	req.Header.Set("Authorization", "Bearer "+key)
 	res, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatal(err)

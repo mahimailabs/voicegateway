@@ -419,9 +419,10 @@ func (f *fixture) getValid(t *testing.T, project, read string) (int, []byte) {
 		t.Fatal(contractErr)
 	}
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/org/"+org+"/project/"+project+"/"+read, nil)
-	req.Header.Set("Authorization", "Bearer "+testToken)
+	gate, key := api.KeyFor(org, project)
+	req.Header.Set("Authorization", "Bearer "+key)
 	rec := httptest.NewRecorder()
-	(&api.API{Projects: f.projects, Layers: f.layers, Log: quiet(), Now: time.Now, Gate: api.TokenGate(testToken)}).Routes().ServeHTTP(rec, req)
+	(&api.API{Projects: f.projects, Layers: f.layers, Log: quiet(), Now: time.Now, Gate: gate}).Routes().ServeHTTP(rec, req)
 	body := rec.Body.Bytes()
 	res := rec.Result()
 	res.Body = io.NopCloser(bytes.NewReader(body))

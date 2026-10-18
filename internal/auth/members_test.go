@@ -81,7 +81,7 @@ func (quietLayers) IngressWebhooks(context.Context, string, string, []string, ti
 // membersAPI is the API behind the sign-in gate, with every read it serves wired.
 func (f *fixture) membersAPI(s *auth.Service) http.Handler {
 	return (&api.API{
-		Projects: f.pg, Calls: f.pg, Traces: emptyTraces{}, Layers: quietLayers{}, Accounts: f.pg,
+		Projects: f.pg, Calls: f.pg, Traces: emptyTraces{}, Layers: quietLayers{}, Accounts: f.pg, Keys: f.pg, NewKey: auth.NewKey,
 		Log: slog.New(slog.NewJSONHandler(f.logs, nil)), Now: time.Now, Gate: s.Gate,
 	}).Routes()
 }
@@ -123,12 +123,13 @@ func (f *fixture) addProjectCall(org string) string {
 	return id
 }
 
-// call sends one API request as a session or the token, checks the response against the
-// contract when the operation is one 06b added, and returns the status and body.
+// call sends one API request as a session or a project key, checks the response against the
+// contract when the operation is one 06b or 06c added, and returns the status and body.
 type call struct {
 	method, path, body string
 	cookie             *http.Cookie
 	token              string
+	headers            map[string]string
 }
 
 func (f *fixture) send(h http.Handler, c call) (int, []byte) {
@@ -144,11 +145,15 @@ func (f *fixture) send(h http.Handler, c call) (int, []byte) {
 	if c.token != "" {
 		req.Header.Set("Authorization", "Bearer "+c.token)
 	}
+	for k, v := range c.headers {
+		req.Header.Set(k, v)
+	}
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 	res := rec.Result()
 	body := rec.Body.Bytes()
-	if strings.Contains(c.path, "/members") {
+	// A cross-site request is refused by CrossOriginProtection before the API, in plain text.
+	if (strings.Contains(c.path, "/members") || strings.Contains(c.path, "/keys")) && c.headers["Origin"] == "" {
 		res.Body = io.NopCloser(bytes.NewReader(body))
 		vreq := httptest.NewRequest(c.method, "http://voicegateway.example"+c.path, strings.NewReader(c.body))
 		if c.body != "" {
@@ -226,10 +231,11 @@ func TestRolesGateEveryRoute(t *testing.T) {
 		}
 	}
 
-	token := s.Token
+	// A project key (phase 06c, which retired the interim token) reads its project, nothing else.
+	token := f.projectKey("org-a", "p")
 	for _, path := range reads[1:7] {
 		if status, _ := f.send(web, call{method: http.MethodGet, path: path, token: token}); status != http.StatusOK {
-			t.Errorf("token GET %s = %d, want 200", path, status)
+			t.Errorf("key GET %s = %d, want 200", path, status)
 		}
 	}
 	for _, c := range []call{
@@ -239,11 +245,11 @@ func TestRolesGateEveryRoute(t *testing.T) {
 	} {
 		c.token = token
 		if status, _ := f.send(web, c); status != http.StatusForbidden {
-			t.Errorf("token %s %s = %d, want 403", c.method, c.path, status)
+			t.Errorf("key %s %s = %d, want 403", c.method, c.path, status)
 		}
 	}
-	if status, _ := f.send(web, call{method: http.MethodGet, path: "/api/v1/workspaces", token: token}); status != http.StatusUnauthorized {
-		t.Errorf("token GET /api/v1/workspaces = %d, want 401", status)
+	if status, body := f.send(web, call{method: http.MethodGet, path: "/api/v1/workspaces", token: token}); status != http.StatusOK || !strings.Contains(string(body), `"id":"p"`) {
+		t.Errorf("key GET /api/v1/workspaces = %d %s, want 200 with its one project", status, body)
 	}
 }
 

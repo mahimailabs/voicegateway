@@ -876,7 +876,7 @@ paths:
         minimumRole: Viewer
         browserSessionTransport: session_cookie
         scope: organisation
-      description: Requires membership in the named organisation; every role reads the member list, as a team list. A browser signs in with the session cookie (decision 0027). The interim API token names no user and is 403. Missing authentication is 401 and denied membership is 403. Members of other organisations are never returned.
+      description: Requires membership in the named organisation; every role reads the member list, as a team list. A browser signs in with the session cookie (decision 0027). A project API key names no user and is 403. Missing authentication is 401 and denied membership is 403. Members of other organisations are never returned.
       parameters:
         - $ref: "#/components/parameters/OrganisationId"
       responses:
@@ -959,6 +959,113 @@ paths:
           description: Removed.
         "409":
           $ref: "#/components/responses/Conflict"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/SourceUnavailable"
+  /api/v1/org/{orgId}/project/{projectId}/keys:
+    get:
+      operationId: listProjectKeys
+      summary: Read a project's API keys
+      tags:
+        - Console reads
+      x-access:
+        principal: organisation_member
+        minimumRole: Admin
+        projectIsolation: required
+        browserSessionTransport: session_cookie
+        scope: project
+      description: Requires Admin membership in the named organisation. Lists the project's API keys, newest first, revoked ones included, never a secret. A project API key itself is 403 here (decision 0027, phase 06c).
+      parameters:
+        - $ref: "#/components/parameters/OrganisationId"
+        - $ref: "#/components/parameters/ProjectId"
+      responses:
+        "200":
+          description: The project's keys.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectKeys"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/SourceUnavailable"
+    post:
+      operationId: createProjectKey
+      summary: Create an API key for the project
+      tags:
+        - Console writes
+      x-access:
+        principal: organisation_member
+        minimumRole: Admin
+        projectIsolation: required
+        browserSessionTransport: session_cookie
+        scope: project
+      description: Requires Admin membership in the named organisation. The answer holds the full key, the only time it is shown; the server stores the SHA-256 of its secret. A key reads this project only, as a read-only Viewer.
+      parameters:
+        - $ref: "#/components/parameters/OrganisationId"
+        - $ref: "#/components/parameters/ProjectId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProjectKeyCreate"
+      responses:
+        "201":
+          description: The new key, with its full secret.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreatedProjectKey"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/SourceUnavailable"
+  /api/v1/org/{orgId}/project/{projectId}/keys/{keyId}:
+    delete:
+      operationId: revokeProjectKey
+      summary: Revoke one of the project's API keys
+      tags:
+        - Console writes
+      x-access:
+        principal: organisation_member
+        minimumRole: Admin
+        projectIsolation: required
+        browserSessionTransport: session_cookie
+        scope: project
+      description: Requires Admin membership in the named organisation. Revoking twice is 204 both times; a key id from another project is not_found. A revoked key answers 401 on its next request.
+      parameters:
+        - $ref: "#/components/parameters/OrganisationId"
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/KeyId"
+      responses:
+        "204":
+          description: Revoked.
         "400":
           $ref: "#/components/responses/BadRequest"
         "401":
@@ -4197,6 +4304,112 @@ components:
           description: Requested organisation role, per decision 0019.
           x-source: { kind: configuration, file: dashboard/src/features/settings/settings-dialog.tsx, pointer: null, detail: "Requested organisation role, per decision 0019." }
           enum: [ Admin, Member, Viewer ]
+    ProjectKey:
+      type: object
+      additionalProperties: false
+      required: [ keyId, name, prefix, createdAt, createdBy, lastUsedAt, revokedAt ]
+      properties:
+        keyId:
+          type: string
+          description: The key's id, the 12 characters after vgk_; shown in lists and used to revoke it.
+          x-source: { kind: configuration, file: migrations/postgres/00006_project_keys.sql, pointer: null, detail: project_keys.key_id. }
+          pattern: "^[a-z2-7]{12}$"
+        name:
+          type: string
+          description: The name the admin gave the key.
+          x-source: { kind: configuration, file: migrations/postgres/00006_project_keys.sql, pointer: null, detail: project_keys.name. }
+        prefix:
+          type: string
+          description: "vgk_ and the key id: the visible start of the key, never the secret."
+          x-source: { kind: configuration, file: migrations/postgres/00006_project_keys.sql, pointer: null, detail: vgk_ followed by project_keys.key_id. }
+        createdAt:
+          type: string
+          format: date-time
+          description: When the key was created.
+          x-source: { kind: configuration, file: migrations/postgres/00006_project_keys.sql, pointer: null, detail: project_keys.created_at. }
+        createdBy:
+          type: [ string, "null" ]
+          description: The email of the admin who created the key.
+          x-null-reason: Made from the command line, or by an account since deleted.
+          x-source: { kind: configuration, file: migrations/postgres/00006_project_keys.sql, pointer: null, detail: users.email of project_keys.created_by. }
+        lastUsedAt:
+          type: [ string, "null" ]
+          format: date-time
+          description: When the key last read, to the minute.
+          x-null-reason: Never used.
+          x-source: { kind: configuration, file: migrations/postgres/00006_project_keys.sql, pointer: null, detail: project_keys.last_used_at, updated at most once a minute. }
+        revokedAt:
+          type: [ string, "null" ]
+          format: date-time
+          description: When the key was revoked.
+          x-null-reason: Not revoked.
+          x-source: { kind: configuration, file: migrations/postgres/00006_project_keys.sql, pointer: null, detail: project_keys.revoked_at. }
+    ProjectKeys:
+      type: object
+      additionalProperties: false
+      required: [ items ]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProjectKey"
+          x-source: { kind: configuration, file: migrations/postgres/00006_project_keys.sql, pointer: null, detail: The project's keys, newest first. }
+    ProjectKeyCreate:
+      type: object
+      additionalProperties: false
+      required: [ name ]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 64
+          description: A name for the new key, such as ci.
+          x-source: { kind: configuration, file: dashboard/src/features/settings/settings-dialog.tsx, pointer: null, detail: The name an admin types. }
+    CreatedProjectKey:
+      type: object
+      additionalProperties: false
+      required: [ keyId, name, prefix, createdAt, createdBy, lastUsedAt, revokedAt, secret ]
+      properties:
+        keyId:
+          type: string
+          description: The key's id, the 12 characters after vgk_; shown in lists and used to revoke it.
+          x-source: { kind: configuration, file: migrations/postgres/00006_project_keys.sql, pointer: null, detail: project_keys.key_id. }
+          pattern: "^[a-z2-7]{12}$"
+        name:
+          type: string
+          description: The name the admin gave the key.
+          x-source: { kind: configuration, file: migrations/postgres/00006_project_keys.sql, pointer: null, detail: project_keys.name. }
+        prefix:
+          type: string
+          description: "vgk_ and the key id: the visible start of the key, never the secret."
+          x-source: { kind: configuration, file: migrations/postgres/00006_project_keys.sql, pointer: null, detail: vgk_ followed by project_keys.key_id. }
+        createdAt:
+          type: string
+          format: date-time
+          description: When the key was created.
+          x-source: { kind: configuration, file: migrations/postgres/00006_project_keys.sql, pointer: null, detail: project_keys.created_at. }
+        createdBy:
+          type: [ string, "null" ]
+          description: The email of the admin who created the key.
+          x-null-reason: Made from the command line, or by an account since deleted.
+          x-source: { kind: configuration, file: migrations/postgres/00006_project_keys.sql, pointer: null, detail: users.email of project_keys.created_by. }
+        lastUsedAt:
+          type: [ string, "null" ]
+          format: date-time
+          description: When the key last read, to the minute.
+          x-null-reason: Never used.
+          x-source: { kind: configuration, file: migrations/postgres/00006_project_keys.sql, pointer: null, detail: project_keys.last_used_at, updated at most once a minute. }
+        revokedAt:
+          type: [ string, "null" ]
+          format: date-time
+          description: When the key was revoked.
+          x-null-reason: Not revoked.
+          x-source: { kind: configuration, file: migrations/postgres/00006_project_keys.sql, pointer: null, detail: project_keys.revoked_at. }
+        secret:
+          type: string
+          description: The full key, vgk_ plus the key id plus the secret. Shown only in this answer; the server keeps its SHA-256.
+          x-source: { kind: configuration, file: migrations/postgres/00006_project_keys.sql, pointer: null, detail: "Drawn by web for this answer; never stored." }
+          pattern: "^vgk_[a-z2-7]{12}_[A-Za-z0-9_-]{43}$"
     Member:
       type: object
       additionalProperties: false
@@ -4607,6 +4820,14 @@ components:
           schema:
             $ref: "#/components/schemas/Error"
   parameters:
+    KeyId:
+      name: keyId
+      in: path
+      required: true
+      description: A project key's id, the 12 characters after vgk_; one from another project is not_found.
+      schema:
+        type: string
+        minLength: 1
     UserId:
       name: userId
       in: path

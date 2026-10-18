@@ -358,3 +358,33 @@ ORDER BY start_at, id;
 -- When a project was connected, and the Postgres clock: buckets before the first, or after the
 -- second, could hold no stored call.
 SELECT created_at, now()::timestamptz AS now FROM projects WHERE organisation_id = @organisation_id AND id = @project_id;
+
+-- name: CreateProjectKey :exec
+INSERT INTO project_keys (key_id, organisation_id, project_id, name, secret_sha256, created_by)
+VALUES (@key_id, @organisation_id, @project_id, @name, @secret_sha256, sqlc.narg(created_by));
+
+-- name: ProjectKey :one
+-- The key the gate checks: its project, its hash, and whether it is revoked.
+SELECT key_id, organisation_id, project_id, secret_sha256, revoked_at FROM project_keys WHERE key_id = @key_id;
+
+-- name: ListProjectKeys :many
+SELECT k.key_id, k.name, k.created_at, u.email AS created_by, k.last_used_at, k.revoked_at
+FROM project_keys k LEFT JOIN users u ON u.id = k.created_by
+WHERE k.organisation_id = @organisation_id AND k.project_id = @project_id
+ORDER BY k.created_at DESC, k.key_id;
+
+-- name: RevokeProjectKey :execrows
+-- Revoking twice keeps the first time.
+UPDATE project_keys SET revoked_at = COALESCE(revoked_at, now())
+WHERE organisation_id = @organisation_id AND project_id = @project_id AND key_id = @key_id;
+
+-- name: TouchProjectKey :exec
+-- At most one write a minute per key, however busy, with no lock.
+UPDATE project_keys SET last_used_at = now()
+WHERE key_id = @key_id AND (last_used_at IS NULL OR last_used_at < now() - interval '1 minute');
+
+-- name: KeyWorkspace :one
+-- What getWorkspaces shows a project key: its organisation and its one project.
+SELECT o.id AS organisation_id, o.name AS organisation_name, p.id AS project_id, p.name AS project_name
+FROM projects p JOIN organisations o ON o.id = p.organisation_id
+WHERE p.organisation_id = @organisation_id AND p.id = @project_id;

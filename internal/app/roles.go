@@ -66,6 +66,7 @@ func Web(ctx context.Context, c config.Config, log *slog.Logger) error {
 	producer := stream.NewProducer(rdb, stream.Ingest)
 	uploads := &ingest.Uploads{Projects: projects, Stream: producer, Log: log, Now: time.Now}
 
+	warnRetiredToken(os.Getenv, log)
 	trusted, err := auth.ParseTrusted(c.TrustedProxies)
 	if err != nil {
 		return fmt.Errorf("VOICEGATEWAY_TRUSTED_PROXIES: %w", err)
@@ -74,7 +75,7 @@ func Web(ctx context.Context, c config.Config, log *slog.Logger) error {
 	accounts := &auth.Service{
 		Users: projects, Secure: secure, Plain: plain, Trusted: trusted,
 		PublicHTTPS: strings.HasPrefix(strings.ToLower(c.PublicURL), "https://"),
-		Token:       c.APIToken, Log: log, Now: time.Now,
+		Log:         log, Now: time.Now,
 	}
 
 	mux := http.NewServeMux()
@@ -87,7 +88,7 @@ func Web(ctx context.Context, c config.Config, log *slog.Logger) error {
 	mux.HandleFunc("POST /observability/recordings/v0", uploads.SessionReport)
 	mux.Handle("/auth/", accounts.Routes())
 	mux.Handle("/api/v1/", (&api.API{
-		Projects: projects, Calls: projects, Traces: events, Layers: events, Accounts: projects, Stats: projects, Log: log, Now: time.Now, Gate: accounts.Gate,
+		Projects: projects, Calls: projects, Traces: events, Layers: events, Accounts: projects, Stats: projects, Keys: projects, NewKey: auth.NewKey, Log: log, Now: time.Now, Gate: accounts.Gate,
 		AnswerBudgetMs: c.AnswerBudgetMs,
 	}).Routes())
 
@@ -278,4 +279,13 @@ func containsSecret(text, raw string) bool {
 		return true
 	}
 	return false
+}
+
+// warnRetiredToken logs once when VOICEGATEWAY_API_TOKEN is still set. Phase 06c retired it for
+// project API keys: it is no longer read or accepted, and web starts anyway, so an upgrade with an
+// old .env keeps running.
+func warnRetiredToken(getenv func(string) string, log *slog.Logger) {
+	if getenv("VOICEGATEWAY_API_TOKEN") != "" {
+		log.Warn("VOICEGATEWAY_API_TOKEN is no longer used and is ignored; create a project key with voicegateway key create, or in Settings, Access, API keys, then remove the variable")
+	}
 }

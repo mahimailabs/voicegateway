@@ -1,6 +1,6 @@
 import { infiniteQueryOptions } from "@tanstack/react-query"
 import { currentScope } from "@/lib/url-state"
-import type { AlertEvents, AlertSetup, CapacityRun, Invitations, Member, Members, IssueDispositions, ProjectSettings, Workspaces, Call as GeneratedCall, CallPage, CallStats, ProviderProbes, Workers, CloudAgents, CallSummary, CallTotals, Egress, EndOfTurnEvent, Ingress, IssueList, MediaServer, ProjectSnapshot, Sip, ItemEvent, OverlapEvent, RecordingSegment, Span, StateEvent, TranscriptEvent, Turn } from "@/lib/api-types"
+import type { AlertEvents, AlertSetup, CapacityRun, CreatedProjectKey, Invitations, Member, Members, ProjectKeys, IssueDispositions, ProjectSettings, Workspaces, Call as GeneratedCall, CallPage, CallStats, ProviderProbes, Workers, CloudAgents, CallSummary, CallTotals, Egress, EndOfTurnEvent, Ingress, IssueList, MediaServer, ProjectSnapshot, Sip, ItemEvent, OverlapEvent, RecordingSegment, Span, StateEvent, TranscriptEvent, Turn } from "@/lib/api-types"
 
 export type { CallSummary, CallTotals, RecordingSegment, Span, Turn }
 export type SessionEvent = StateEvent | TranscriptEvent | EndOfTurnEvent | OverlapEvent | ItemEvent
@@ -155,4 +155,10 @@ export const fetchWorkspaces = () => getJSON<Workspaces>("/api/v1/workspaces")
 const membersApi = () => `/api/v1/org/${currentScope().org}/members`
 export const membersQuery = () => ({ queryKey: ["members", currentScope().org], queryFn: () => getJSON<Members>(membersApi()) })
 export const updateMember = (userId: string, role: Member["role"]) => getJSON<Member>(`${membersApi()}/${encodeURIComponent(userId)}`, { method: "PATCH", body: JSON.stringify({ role }) })
+// A project's API keys (phase 06c), Admin only. The full key is in createProjectKey's answer and
+// nowhere else.
+const keysApi = (projectId: string) => `/api/v1/org/${currentScope().org}/project/${encodeURIComponent(projectId)}/keys`
+export const projectKeysQuery = (projectId: string) => ({ queryKey: ["project-keys", currentScope().org, projectId], queryFn: () => getJSON<ProjectKeys>(keysApi(projectId)) })
+export const createProjectKey = (projectId: string, name: string) => getJSON<CreatedProjectKey>(keysApi(projectId), { method: "POST", body: JSON.stringify({ name }) })
+export const revokeProjectKey = (projectId: string, keyId: string) => getJSON<void>(`${keysApi(projectId)}/${encodeURIComponent(keyId)}`, { method: "DELETE" })
 export const removeMember = (userId: string) => getJSON<void>(`${membersApi()}/${encodeURIComponent(userId)}`, { method: "DELETE" })

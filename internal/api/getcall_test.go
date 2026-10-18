@@ -167,8 +167,12 @@ func TestGetCallNotFound(t *testing.T) {
 	mine := f.callID("RM_MINE")
 	other := f.addProject(t.Name() + "-other")
 
+	// An organisation the caller is not in, existing or not, is a denied membership: 403.
+	var denied apiError
+	if code := f.get(f.api(nil), "/api/v1/org/nobody/project/"+f.project+"/calls/"+mine, &denied); code != http.StatusForbidden || denied.Code != codeForbidden {
+		t.Errorf("unknown organisation: status %d, body %+v; want 403 forbidden", code, denied)
+	}
 	for name, p := range map[string]string{
-		"unknown organisation":   "/api/v1/org/nobody/project/" + f.project + "/calls/" + mine,
 		"unknown project":        "/api/v1/org/default/project/nothing/calls/" + mine,
 		"unknown call":           path(f.project, "00000000-0000-0000-0000-000000000000"),
 		"not a UUID":             path(f.project, "vg-full-134152"),

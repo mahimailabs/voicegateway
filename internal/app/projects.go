@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"regexp"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -165,3 +166,43 @@ func newPasswordHash(ctx context.Context, password func() (string, error)) (stri
 
 // minPassword is the shortest password accepted.
 const minPassword = 12
+
+// CreateKey creates an API key for a project from the command line (phase 06c) and returns the full
+// key, the only time it is shown; the store keeps its SHA-256. A drawn key_id that is already taken
+// is drawn again, once. An unknown project is store.ErrNotFound.
+func CreateKey(ctx context.Context, c config.Config, organisationID, projectID, name string) (string, error) {
+	if name == "" || utf8.RuneCountInString(name) > 64 {
+		return "", errors.New("--name must be 1 to 64 characters")
+	}
+	pool, err := pgxpool.New(ctx, c.PostgresURL)
+	if err != nil {
+		return "", fmt.Errorf("postgres: %w", redactErr(err, c.PostgresURL))
+	}
+	defer pool.Close()
+	pg := pgstore.NewStore(pool, nil)
+	for attempt := 0; ; attempt++ {
+		keyID, sum, full, err := auth.NewKey()
+		if err != nil {
+			return "", err
+		}
+		err = pg.CreateProjectKey(ctx, organisationID, projectID, keyID, name, sum, "")
+		if errors.Is(err, store.ErrKeyExists) && attempt == 0 {
+			continue
+		}
+		if err != nil {
+			return "", err
+		}
+		return full, nil
+	}
+}
+
+// RevokeKey revokes a project's key by its key_id. A key_id that is not this project's is
+// store.ErrNotFound.
+func RevokeKey(ctx context.Context, c config.Config, organisationID, projectID, keyID string) error {
+	pool, err := pgxpool.New(ctx, c.PostgresURL)
+	if err != nil {
+		return fmt.Errorf("postgres: %w", redactErr(err, c.PostgresURL))
+	}
+	defer pool.Close()
+	return pgstore.NewStore(pool, nil).RevokeProjectKey(ctx, organisationID, projectID, keyID)
+}

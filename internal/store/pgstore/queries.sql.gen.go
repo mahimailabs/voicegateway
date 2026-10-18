@@ -328,6 +328,32 @@ func (q *Queries) CreateProject(ctx context.Context, arg CreateProjectParams) (C
 	return i, err
 }
 
+const createProjectKey = `-- name: CreateProjectKey :exec
+INSERT INTO project_keys (key_id, organisation_id, project_id, name, secret_sha256, created_by)
+VALUES ($1, $2, $3, $4, $5, $6)
+`
+
+type CreateProjectKeyParams struct {
+	KeyID          string
+	OrganisationID string
+	ProjectID      string
+	Name           string
+	SecretSha256   []byte
+	CreatedBy      pgtype.UUID
+}
+
+func (q *Queries) CreateProjectKey(ctx context.Context, arg CreateProjectKeyParams) error {
+	_, err := q.db.Exec(ctx, createProjectKey,
+		arg.KeyID,
+		arg.OrganisationID,
+		arg.ProjectID,
+		arg.Name,
+		arg.SecretSha256,
+		arg.CreatedBy,
+	)
+	return err
+}
+
 const createUser = `-- name: CreateUser :one
 INSERT INTO users (email, password_hash) VALUES ($1, $2) RETURNING id
 `
@@ -450,6 +476,37 @@ type HealCallParams struct {
 func (q *Queries) HealCall(ctx context.Context, arg HealCallParams) error {
 	_, err := q.db.Exec(ctx, healCall, arg.RoomName, arg.FirstSeenAt, arg.ID)
 	return err
+}
+
+const keyWorkspace = `-- name: KeyWorkspace :one
+SELECT o.id AS organisation_id, o.name AS organisation_name, p.id AS project_id, p.name AS project_name
+FROM projects p JOIN organisations o ON o.id = p.organisation_id
+WHERE p.organisation_id = $1 AND p.id = $2
+`
+
+type KeyWorkspaceParams struct {
+	OrganisationID string
+	ProjectID      string
+}
+
+type KeyWorkspaceRow struct {
+	OrganisationID   string
+	OrganisationName string
+	ProjectID        string
+	ProjectName      string
+}
+
+// What getWorkspaces shows a project key: its organisation and its one project.
+func (q *Queries) KeyWorkspace(ctx context.Context, arg KeyWorkspaceParams) (KeyWorkspaceRow, error) {
+	row := q.db.QueryRow(ctx, keyWorkspace, arg.OrganisationID, arg.ProjectID)
+	var i KeyWorkspaceRow
+	err := row.Scan(
+		&i.OrganisationID,
+		&i.OrganisationName,
+		&i.ProjectID,
+		&i.ProjectName,
+	)
+	return i, err
 }
 
 const limitingSignInAttempt = `-- name: LimitingSignInAttempt :one
@@ -615,6 +672,54 @@ func (q *Queries) ListCalls(ctx context.Context, arg ListCallsParams) ([]ListCal
 			&i.AgentKey,
 			&i.KeyUnknown,
 			&i.SortValue,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listProjectKeys = `-- name: ListProjectKeys :many
+SELECT k.key_id, k.name, k.created_at, u.email AS created_by, k.last_used_at, k.revoked_at
+FROM project_keys k LEFT JOIN users u ON u.id = k.created_by
+WHERE k.organisation_id = $1 AND k.project_id = $2
+ORDER BY k.created_at DESC, k.key_id
+`
+
+type ListProjectKeysParams struct {
+	OrganisationID string
+	ProjectID      string
+}
+
+type ListProjectKeysRow struct {
+	KeyID      string
+	Name       string
+	CreatedAt  pgtype.Timestamptz
+	CreatedBy  pgtype.Text
+	LastUsedAt pgtype.Timestamptz
+	RevokedAt  pgtype.Timestamptz
+}
+
+func (q *Queries) ListProjectKeys(ctx context.Context, arg ListProjectKeysParams) ([]ListProjectKeysRow, error) {
+	rows, err := q.db.Query(ctx, listProjectKeys, arg.OrganisationID, arg.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListProjectKeysRow
+	for rows.Next() {
+		var i ListProjectKeysRow
+		if err := rows.Scan(
+			&i.KeyID,
+			&i.Name,
+			&i.CreatedAt,
+			&i.CreatedBy,
+			&i.LastUsedAt,
+			&i.RevokedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -964,6 +1069,32 @@ func (q *Queries) ProjectConnected(ctx context.Context, arg ProjectConnectedPara
 	return i, err
 }
 
+const projectKey = `-- name: ProjectKey :one
+SELECT key_id, organisation_id, project_id, secret_sha256, revoked_at FROM project_keys WHERE key_id = $1
+`
+
+type ProjectKeyRow struct {
+	KeyID          string
+	OrganisationID string
+	ProjectID      string
+	SecretSha256   []byte
+	RevokedAt      pgtype.Timestamptz
+}
+
+// The key the gate checks: its project, its hash, and whether it is revoked.
+func (q *Queries) ProjectKey(ctx context.Context, keyID string) (ProjectKeyRow, error) {
+	row := q.db.QueryRow(ctx, projectKey, keyID)
+	var i ProjectKeyRow
+	err := row.Scan(
+		&i.KeyID,
+		&i.OrganisationID,
+		&i.ProjectID,
+		&i.SecretSha256,
+		&i.RevokedAt,
+	)
+	return i, err
+}
+
 const putListSnapshot = `-- name: PutListSnapshot :exec
 INSERT INTO list_snapshots (id, organisation_id, project_id, filters, at, totals)
 VALUES ($1, $2, $3, $4, $5, $6)
@@ -1056,6 +1187,26 @@ type RemoveMembershipParams struct {
 
 func (q *Queries) RemoveMembership(ctx context.Context, arg RemoveMembershipParams) (int64, error) {
 	result, err := q.db.Exec(ctx, removeMembership, arg.OrganisationID, arg.UserID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const revokeProjectKey = `-- name: RevokeProjectKey :execrows
+UPDATE project_keys SET revoked_at = COALESCE(revoked_at, now())
+WHERE organisation_id = $1 AND project_id = $2 AND key_id = $3
+`
+
+type RevokeProjectKeyParams struct {
+	OrganisationID string
+	ProjectID      string
+	KeyID          string
+}
+
+// Revoking twice keeps the first time.
+func (q *Queries) RevokeProjectKey(ctx context.Context, arg RevokeProjectKeyParams) (int64, error) {
+	result, err := q.db.Exec(ctx, revokeProjectKey, arg.OrganisationID, arg.ProjectID, arg.KeyID)
 	if err != nil {
 		return 0, err
 	}
@@ -1261,6 +1412,17 @@ func (q *Queries) TouchCall(ctx context.Context, arg TouchCallParams) error {
 		arg.FirstSeenAt,
 		arg.ID,
 	)
+	return err
+}
+
+const touchProjectKey = `-- name: TouchProjectKey :exec
+UPDATE project_keys SET last_used_at = now()
+WHERE key_id = $1 AND (last_used_at IS NULL OR last_used_at < now() - interval '1 minute')
+`
+
+// At most one write a minute per key, however busy, with no lock.
+func (q *Queries) TouchProjectKey(ctx context.Context, keyID string) error {
+	_, err := q.db.Exec(ctx, touchProjectKey, keyID)
 	return err
 }
 

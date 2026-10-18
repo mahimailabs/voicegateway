@@ -366,11 +366,12 @@ func (f *fixture) api(traces Traces) *API {
 	return &API{Projects: f.pg, Calls: f.pg, Traces: traces, Log: f.log, Now: time.Now, Gate: passThrough}
 }
 
-// passThrough is a gate that lets every request in as the interim token, for tests of what lies
-// behind the gate.
+// passThrough is a gate that lets every request in as an admin of the default organisation, for
+// tests of what lies behind the gate.
 func passThrough(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		next.ServeHTTP(w, r.WithContext(store.WithPrincipal(r.Context(), store.Principal{Token: true})))
+		p := store.Principal{UserID: "00000000-0000-4000-8000-000000000001", Email: "admin@example.com", Roles: map[string]string{"default": "admin"}}
+		next.ServeHTTP(w, r.WithContext(store.WithPrincipal(r.Context(), p)))
 	})
 }
 
