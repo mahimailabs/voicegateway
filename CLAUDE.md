@@ -17,7 +17,7 @@ Read these before any feature work. Do not restate their contents here.
 
 ## Stack
 
-Go 1.26 (one binary, `voicegateway`), Postgres 16, ClickHouse 26.1, Redis 8, an S3 bucket (SeaweedFS in Compose, decision 0026). Dashboard: React 19, TypeScript 5, Vite, Tailwind v4, shadcn/ui. SDK: Python 3.11 to 3.13. Exact versions live in go.mod, package.json, uv.lock and deploy/compose.yaml.
+Go 1.26 (one binary, `voicegateway`), Postgres 16, ClickHouse 26.1, Redis 8, an S3 bucket (SeaweedFS in Compose, decision 0026). Dashboard: React 19, TypeScript 6, Vite, Tailwind v4, shadcn/ui. SDK: Python 3.11 to 3.13. Exact versions live in go.mod, package.json, uv.lock and deploy/compose.yaml.
 
 ## Commands
 
@@ -49,7 +49,7 @@ Every task goes through the root Makefile.
 - UI: compose screens from pre-built components (shadcn/ui, Magic UI and other shadcn registries, via the shadcn and magicui MCPs). No hand-written component markup, CSS or SVG when a library component exists.
 - Lists and their filters use `src/components/data-table.tsx` (TanStack Table through ReUI's data grid, ReUI filter chips). A filter field's `get` returns null for unknown, which matches only "is empty". Files under `src/components/reui/` are vendored; keep local edits minimal.
 - Page state someone would want to share (tabs, ranges, filters, the open drawer, the selected item) goes in the URL with `useUrlState` or `useUrlPick` from `src/lib/url-state.ts`, never in `useState`. Links stay scope-free (`/calls`); the router adds `/org/<id>/project/<id>`.
-- Build from scratch only when no library method exists, and say so in the PR.
+- Libraries first, always: before writing anything by hand, search for a maintained library, a stdlib or framework built-in, or a LiveKit helper that does it. Hand-written code is glue, or fills a gap no library covers; its PR names the libraries considered and why each did not fit.
 - When we adopt a framework with an official skill or docs MCP, install it at project scope. If it cannot be installed, ask me.
 
 ## Git identity
