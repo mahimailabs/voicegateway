@@ -19,7 +19,7 @@ func TestComposeImagesPinned(t *testing.T) {
 	for line := range strings.SplitSeq(string(raw), "\n") {
 		line = strings.TrimSpace(line)
 		image, ok := strings.CutPrefix(line, "image: ")
-		if !ok || strings.HasPrefix(image, "voicegateway:") { // built from deploy/Dockerfile, not pulled
+		if !ok || strings.HasPrefix(image, "${VOICEGATEWAY_IMAGE:-voicegateway:") { // built from deploy/Dockerfile unless set
 			continue
 		}
 		images = append(images, image)
