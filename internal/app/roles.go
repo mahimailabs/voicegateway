@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"log/slog"
 	"net"
 	"net/http"
@@ -20,6 +21,7 @@ import (
 	"github.com/mahimailabs/voicegateway/internal/api"
 	"github.com/mahimailabs/voicegateway/internal/auth"
 	"github.com/mahimailabs/voicegateway/internal/config"
+	"github.com/mahimailabs/voicegateway/internal/console"
 	"github.com/mahimailabs/voicegateway/internal/event"
 	"github.com/mahimailabs/voicegateway/internal/ingest"
 	"github.com/mahimailabs/voicegateway/internal/join"
@@ -91,6 +93,14 @@ func Web(ctx context.Context, c config.Config, log *slog.Logger) error {
 		Projects: projects, Calls: projects, Traces: events, Layers: events, Endpoints: projects, Accounts: projects, Stats: projects, Keys: projects, NewKey: auth.NewKey, Log: log, Now: time.Now, Gate: accounts.Gate,
 		AnswerBudgetMs: c.AnswerBudgetMs,
 	}).Routes())
+	if c.ConsoleDir != "" {
+		dist := os.DirFS(c.ConsoleDir)
+		if _, err := fs.Stat(dist, "index.html"); err != nil {
+			return fmt.Errorf("VOICEGATEWAY_CONSOLE_DIR %q holds no built console: %w", c.ConsoleDir, err)
+		}
+		// The least specific pattern: every route above wins over it.
+		mux.Handle("/", console.Handler(dist))
+	}
 
 	srv := &http.Server{
 		Addr: c.WebAddr,

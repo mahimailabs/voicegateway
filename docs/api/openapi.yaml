@@ -8,11 +8,15 @@ info:
     workers, SIP, egress and ingress), plus its members and their roles.
 
     Sign in to the console first: requests use its session cookie, and each operation names the
-    lowest organisation role it needs. Project paths take the organisation and project ids shown in
+    lowest organisation role it needs. Scripts and agents send a project API key instead, as
+    `Authorization: Bearer vgk_...`: an Admin creates it in the console, and it reads that one
+    project's data and changes nothing. Project paths take the organisation and project ids shown in
     the console's address bar. Times are RFC 3339; a value no source reported is null, never zero.
   license:
     name: MIT
     identifier: MIT
+security:
+  - consoleSession: []
 servers:
   - url: /
     description: Same-origin VoiceGateway web role
@@ -25,6 +29,9 @@ paths:
   /api/v1/org/{orgId}/project/{projectId}/calls:
     get:
       operationId: listCalls
+      security:
+        - consoleSession: []
+        - projectKey: []
       summary: List call summaries in a project, filtered and sorted on the server
       tags:
         - Console reads
@@ -202,6 +209,9 @@ paths:
   /api/v1/org/{orgId}/project/{projectId}/calls/{callId}:
     get:
       operationId: getCall
+      security:
+        - consoleSession: []
+        - projectKey: []
       summary: Read one conversation and its reported turns, events, spans and recording
       tags:
         - Console reads
@@ -251,6 +261,9 @@ paths:
   /api/v1/org/{orgId}/project/{projectId}/call-stats:
     get:
       operationId: getCallStats
+      security:
+        - consoleSession: []
+        - projectKey: []
       summary: Totals, answer times and stage timings over calls in a range
       tags:
         - Console reads
@@ -308,6 +321,9 @@ paths:
   /api/v1/org/{orgId}/project/{projectId}/issues:
     get:
       operationId: listIssues
+      security:
+        - consoleSession: []
+        - projectKey: []
       summary: Issues grouped across calls, agents and the phone bridge in a range
       tags:
         - Console reads
@@ -364,6 +380,9 @@ paths:
   /api/v1/org/{orgId}/project/{projectId}/alert-events:
     get:
       operationId: listAlertEvents
+      security:
+        - consoleSession: []
+        - projectKey: []
       summary: What each alert rule would have fired on in a range
       tags:
         - Console reads
@@ -413,6 +432,9 @@ paths:
   /api/v1/org/{orgId}/project/{projectId}/media-server:
     get:
       operationId: getMediaServer
+      security:
+        - consoleSession: []
+        - projectKey: []
       summary: Read sampled rooms, participants, tracks, dispatches and watch coverage
       tags:
         - Console reads
@@ -448,6 +470,9 @@ paths:
   /api/v1/org/{orgId}/project/{projectId}/agents:
     get:
       operationId: getCloudAgents
+      security:
+        - consoleSession: []
+        - projectKey: []
       summary: Read known Cloud deployments and versions
       tags:
         - Console reads
@@ -483,6 +508,9 @@ paths:
   /api/v1/org/{orgId}/project/{projectId}/workers:
     get:
       operationId: getWorkers
+      security:
+        - consoleSession: []
+        - projectKey: []
       summary: Read reported worker metric samples
       tags:
         - Console reads
@@ -518,6 +546,9 @@ paths:
   /api/v1/org/{orgId}/project/{projectId}/sip:
     get:
       operationId: getSip
+      security:
+        - consoleSession: []
+        - projectKey: []
       summary: Read redacted SIP configuration and phone-number projections
       tags:
         - Console reads
@@ -553,6 +584,9 @@ paths:
   /api/v1/org/{orgId}/project/{projectId}/egress:
     get:
       operationId: getEgress
+      security:
+        - consoleSession: []
+        - projectKey: []
       summary: Read observed egress state and rejections
       tags:
         - Console reads
@@ -588,6 +622,9 @@ paths:
   /api/v1/org/{orgId}/project/{projectId}/ingress:
     get:
       operationId: getIngress
+      security:
+        - consoleSession: []
+        - projectKey: []
       summary: Read observed ingress state and published media
       tags:
         - Console reads
@@ -623,6 +660,9 @@ paths:
   /api/v1/org/{orgId}/project/{projectId}/snapshot:
     get:
       operationId: getProjectSnapshot
+      security:
+        - consoleSession: []
+        - projectKey: []
       summary: Read a project connection snapshot and opt-in observation
       tags:
         - Console reads
@@ -658,6 +698,9 @@ paths:
   /api/v1/org/{orgId}/project/{projectId}/capacity:
     get:
       operationId: getCapacity
+      security:
+        - consoleSession: []
+        - projectKey: []
       summary: Read the captured capacity run and its limitations
       tags:
         - Console reads
@@ -702,6 +745,9 @@ paths:
   /api/v1/org/{orgId}/project/{projectId}/provider-probes:
     get:
       operationId: getProviderProbes
+      security:
+        - consoleSession: []
+        - projectKey: []
       summary: Read recorded host-to-provider probe observations
       tags:
         - Console reads
@@ -737,6 +783,9 @@ paths:
   /api/v1/org/{orgId}/project/{projectId}/settings:
     get:
       operationId: getProjectSettings
+      security:
+        - consoleSession: []
+        - projectKey: []
       summary: Read configured budgets, retention and embed origins
       tags:
         - Console reads
@@ -772,6 +821,9 @@ paths:
   /api/v1/org/{orgId}/project/{projectId}/issue-dispositions:
     get:
       operationId: getIssueDispositions
+      security:
+        - consoleSession: []
+        - projectKey: []
       summary: Read saved issue decisions
       tags:
         - Console reads
@@ -807,6 +859,9 @@ paths:
   /api/v1/org/{orgId}/project/{projectId}/alert-setup:
     get:
       operationId: getAlertSetup
+      security:
+        - consoleSession: []
+        - projectKey: []
       summary: Read saved alert rule configuration
       tags:
         - Console reads
@@ -1088,6 +1143,9 @@ paths:
   /api/v1/workspaces:
     get:
       operationId: getWorkspaces
+      security:
+        - consoleSession: []
+        - projectKey: []
       summary: Read authorised organisation and project choices
       tags:
         - Console reads
@@ -1120,6 +1178,9 @@ paths:
   /api/v1/org/{orgId}/project/{projectId}/recordings/{recordingId}:
     get:
       operationId: getRecordingMedia
+      security:
+        - consoleSession: []
+        - projectKey: []
       summary: Read retained opt-in recording audio
       tags:
         - Console reads
@@ -1202,6 +1263,17 @@ paths:
         "503":
           $ref: "#/components/responses/SourceUnavailable"
 components:
+  securitySchemes:
+    consoleSession:
+      type: apiKey
+      in: cookie
+      name: vg_session
+      description: The console's session cookie, set when you sign in. Every operation accepts it, at the role the operation names.
+    projectKey:
+      type: http
+      scheme: bearer
+      bearerFormat: vgk_<keyId>_<secret>
+      description: A project API key, which an Admin creates in the console. It reads its own project as a Viewer and is refused writes, other projects and organisation operations.
   schemas:
     Call:
       type: object

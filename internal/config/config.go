@@ -41,6 +41,9 @@ type Config struct {
 	// install whose endpoints are entered by people it should not trust with its network, such as
 	// Cloud; a self-hosted install's workers usually sit on its own private network.
 	WorkerEndpointsPublicOnly bool
+	// ConsoleDir is the built dashboard web serves (decision 0011); the image sets it. Empty serves
+	// no console, as in development, where the Vite dev server runs it.
+	ConsoleDir string
 }
 
 // S3 is any S3-compatible bucket.
@@ -74,6 +77,7 @@ func Load(getenv func(string) string) (Config, error) {
 		WebAddr:        optional("VOICEGATEWAY_WEB_ADDR", ":8080"),
 		PublicURL:      optional("VOICEGATEWAY_PUBLIC_URL", ""),
 		TrustedProxies: optional("VOICEGATEWAY_TRUSTED_PROXIES", ""),
+		ConsoleDir:     optional("VOICEGATEWAY_CONSOLE_DIR", ""),
 		PostgresURL:    required("VOICEGATEWAY_POSTGRES_URL"),
 		ClickHouseURL:  required("VOICEGATEWAY_CLICKHOUSE_URL"),
 		RedisURL:       required("VOICEGATEWAY_REDIS_URL"),

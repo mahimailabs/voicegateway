@@ -127,6 +127,7 @@
       "listIssues"
     ],
     "/docs": [
+      "createProjectKey",
       "getAlertSetup",
       "getCall",
       "getCallStats",
@@ -148,7 +149,9 @@
       "listAlertEvents",
       "listCalls",
       "listIssues",
+      "listProjectKeys",
       "removeMember",
+      "revokeProjectKey",
       "updateMember"
     ]
   },

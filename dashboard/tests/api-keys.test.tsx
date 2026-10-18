@@ -2,6 +2,7 @@
 import { cleanup, render, screen, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
+import { seen } from "./fetch-call.ts"
 import { afterEach, beforeAll, expect, test, vi } from "vitest"
 import type { Workspace } from "../src/lib/api-types"
 import { setCurrentSession } from "../src/lib/session.ts"
@@ -35,8 +36,8 @@ function serve(list: () => Response = () => json(200, { items: [key] }), created
   const calls: { method: string; url: string }[] = []
   vi.stubGlobal(
     "fetch",
-    vi.fn(async (url: string, init?: RequestInit) => {
-      const method = init?.method ?? "GET"
+    vi.fn(async (input: Request | string | URL, init?: RequestInit) => {
+      const { method, url } = await seen(input, init)
       calls.push({ method, url })
       if (method === "POST") return created()
       if (method === "DELETE") return json(204, null)
