@@ -145,7 +145,8 @@ export function checkCoverage(spec: Doc, repo = root, inventory?: Declared[], su
   surfaces ??= JSON.parse(fs.readFileSync(path.join(repo, "docs/api/surfaces.json"), "utf8")) as Surfaces
   const paths = Object.values((spec.paths ?? {}) as Record<string, Doc>)
   const operationIds = new Set(paths.flatMap((p) => ["get", "post", "put", "patch", "delete"].flatMap((m) => (p[m] ? [p[m].operationId as string] : []))))
-  const actual: Reader[] = []
+  // sdk: the generated SDK functions a file calls (value imports from @/lib/api-types), each one an operation.
+  const actual: (Reader & { sdk: string[] })[] = []
   function visit(directory: string) {
     for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
       const full = path.join(directory, entry.name)
@@ -158,9 +159,14 @@ export function checkCoverage(spec: Doc, repo = root, inventory?: Declared[], su
       const ast = ts.createSourceFile(full, text, ts.ScriptTarget.Latest, true)
       const fixtures: string[] = []
       const assets: string[] = []
+      const sdk: string[] = []
       function inspect(node: ts.Node) {
         // Static imports and import() both count: a lazy fixture is still a fixture this file reads.
         const specifier = ts.isImportDeclaration(node) ? node.moduleSpecifier : ts.isCallExpression(node) && node.expression.kind === ts.SyntaxKind.ImportKeyword ? node.arguments[0] : undefined
+        if (ts.isImportDeclaration(node) && ts.isStringLiteralLike(node.moduleSpecifier) && node.moduleSpecifier.text === "@/lib/api-types" && !node.importClause?.isTypeOnly) {
+          const bindings = node.importClause?.namedBindings
+          if (bindings && ts.isNamedImports(bindings)) for (const el of bindings.elements) if (!el.isTypeOnly) sdk.push((el.propertyName ?? el.name).text)
+        }
         if (specifier && ts.isStringLiteralLike(specifier)) {
           const name = specifier.text
           const target = name.startsWith("@/") ? path.join(repo, "dashboard/src", name.slice(2)) : name.startsWith(".") ? path.resolve(path.dirname(full), name) : null
@@ -173,7 +179,7 @@ export function checkCoverage(spec: Doc, repo = root, inventory?: Declared[], su
       }
       inspect(ast)
       const browserStorage = /\blocalStorage\s*[.[]/.test(text)
-      if (fixtures.length || assets.length || browserStorage) actual.push({ file: path.relative(repo, full), fixtures, assets, browserStorage })
+      if (fixtures.length || assets.length || browserStorage || sdk.length) actual.push({ file: path.relative(repo, full), fixtures, assets, browserStorage, sdk })
     }
   }
   visit(path.join(repo, "dashboard/src"))
@@ -191,6 +197,7 @@ export function checkCoverage(spec: Doc, repo = root, inventory?: Declared[], su
     if (!declared.operations?.length && !declared.exclusion && !reader.assets.length) errors.push(`${reader.file}: data reader has no endpoint or exclusion`)
     for (const asset of reader.assets) if (!declared.assetNotes?.[asset]?.trim()) errors.push(`${reader.file}: unexplained fetch ${asset}`)
     for (const id of declared.operations ?? []) if (!operationIds.has(id)) errors.push(`${reader.file}: unknown operation ${id}`)
+    if (reader.sdk.length && JSON.stringify([...reader.sdk].sort()) !== JSON.stringify([...(declared.operations ?? [])].sort())) errors.push(`${reader.file}: SDK calls and declared operations differ`)
   }
   for (const declared of inventory) if (!actual.some((reader) => reader.file === declared.file)) errors.push(`${declared.file}: stale reader inventory`)
   const router = ts.createSourceFile("router.tsx", fs.readFileSync(path.join(repo, "dashboard/src/router.tsx"), "utf8"), ts.ScriptTarget.Latest, true)

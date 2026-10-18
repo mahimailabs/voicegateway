@@ -2,6 +2,7 @@
 import { cleanup, render, screen, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
+import { seen } from "./fetch-call.ts"
 import { afterEach, beforeAll, expect, test, vi } from "vitest"
 
 // jsdom has no matchMedia, which the settings module's layout hooks read when it loads.
@@ -42,9 +43,10 @@ function serve(write: () => Response = () => json(200, members.items[1])) {
   const calls: { method: string; url: string; body: string | null }[] = []
   vi.stubGlobal(
     "fetch",
-    vi.fn(async (url: string, init?: RequestInit) => {
-      const method = init?.method ?? "GET"
-      calls.push({ method, url, body: (init?.body as string) ?? null })
+    vi.fn(async (input: Request | string | URL, init?: RequestInit) => {
+      const call = await seen(input, init)
+      const { method, url } = call
+      calls.push(call)
       if (method !== "GET") return write()
       if (url === "/auth/session") return json(200, session)
       if (url.endsWith("/members")) return json(200, members)

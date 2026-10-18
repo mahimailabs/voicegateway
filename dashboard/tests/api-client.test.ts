@@ -42,8 +42,8 @@ test("a room opens the call with its own SID, never another call in a reused roo
   const row = (id: string, roomSid: string | null) => ({ id, room: "support", roomSid })
   const page = { items: [row("newer", "RM_other"), row("unknown-sid", null), row("mine", "RM_mine")], page: { nextCursor: null, snapshot: "s" }, totals: {} }
   const asked: string[] = []
-  vi.stubGlobal("fetch", async (url: string) => {
-    asked.push(url)
+  vi.stubGlobal("fetch", async (input: Request) => {
+    asked.push(input.url)
     return new Response(JSON.stringify(page), { status: 200, headers: { "Content-Type": "application/json" } })
   })
   expect(await callInRoomQuery("support", "RM_mine").queryFn()).toBe("mine")
@@ -57,8 +57,8 @@ test("a room's call on a later page is found, and a search cut short is an error
     first: { items: [row("a", "RM_a")], page: { nextCursor: "2", snapshot: "s" }, totals: {} },
     second: { items: [row("b", "RM_b")], page: { nextCursor: null, snapshot: "s" }, totals: {} },
   }
-  vi.stubGlobal("fetch", async (url: string) => {
-    const body = new URL(url, "http://x").searchParams.get("cursor") === "2" ? pages.second : pages.first
+  vi.stubGlobal("fetch", async (input: Request) => {
+    const body = new URL(input.url).searchParams.get("cursor") === "2" ? pages.second : pages.first
     return new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json" } })
   })
   expect(await callInRoomQuery("support", "RM_b").queryFn()).toBe("b")
