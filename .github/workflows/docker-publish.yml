@@ -14,6 +14,8 @@ concurrency:
 
 env:
   IMAGE: ghcr.io/mahimailabs/voicegateway
+  # Stable releases (no pre-release suffix) are also copied to Docker Hub.
+  DOCKERHUB_IMAGE: docker.io/mahimairaja/voicegateway
 
 permissions:
   contents: read
@@ -90,16 +92,19 @@ jobs:
           retention-days: 1
 
   # Tags the multi-arch manifest with the version, major.minor and latest (latest only for a
-  # release without a pre-release suffix).
+  # release without a pre-release suffix). A stable release also goes to Docker Hub.
   merge:
     needs: build
     runs-on: ubuntu-24.04
     permissions:
       contents: read
       packages: write
+    env:
+      STABLE: ${{ !contains(github.ref_name, '-') }}
     outputs:
       version: ${{ steps.meta.outputs.version }}
       digest: ${{ steps.digest.outputs.digest }}
+      stable: ${{ env.STABLE }}
     steps:
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
@@ -115,11 +120,19 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - if: env.STABLE == 'true'
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
       - name: Image tags
         id: meta
         uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5.10.0
         with:
-          images: ${{ env.IMAGE }}
+          images: |
+            ${{ env.IMAGE }}
+            name=${{ env.DOCKERHUB_IMAGE }},enable=${{ env.STABLE }}
           flavor: |
             latest=auto
           tags: |
@@ -162,6 +175,7 @@ jobs:
             `${{ env.IMAGE }}:${{ needs.merge.outputs.version }}`
 
             Digest: `${{ needs.merge.outputs.digest }}`
+            ${{ needs.merge.outputs.stable == 'true' && format('Also on Docker Hub: `mahimairaja/voicegateway:{0}`', needs.merge.outputs.version) || '' }}
 
             Built for `linux/amd64` and `linux/arm64`. One image runs web, worker and migrate.
             To install, follow [docs/self-hosting.md](https://github.com/mahimailabs/voicegateway/blob/main/docs/self-hosting.md).
