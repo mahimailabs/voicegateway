@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -298,19 +299,35 @@ func TestLastAdminIsKept(t *testing.T) {
 		t.Errorf("the only admin is now %q", role)
 	}
 
-	// Two admins demote each other at once, 20 times over: at least one admin always remains.
+	// Two admins take the admin role from each other at once, 20 times over: by demotion, by
+	// removal, or one of each. Exactly one change wins. The other is refused: 409 when both ran under
+	// the lock, or 403 when the winner landed before the loser's request was gated, since the loser
+	// is then no longer an admin. Either way one admin remains.
 	f.addUser("bob@example.com", "org-a", "admin")
 	bob := f.userID("bob@example.com")
 	bobCookie := f.signedIn(s, "bob@example.com")
 	for i := range 20 {
+		adaChange := call{method: http.MethodPatch, path: "/api/v1/org/org-a/members/" + bob, body: `{"role":"Viewer"}`, cookie: cookie}
+		bobChange := call{method: http.MethodPatch, path: "/api/v1/org/org-a/members/" + ada, body: `{"role":"Viewer"}`, cookie: bobCookie}
+		switch i % 3 {
+		case 1:
+			adaChange = call{method: http.MethodDelete, path: adaChange.path, cookie: cookie}
+		case 2:
+			adaChange = call{method: http.MethodDelete, path: adaChange.path, cookie: cookie}
+			bobChange = call{method: http.MethodDelete, path: bobChange.path, cookie: bobCookie}
+		}
 		var wg sync.WaitGroup
-		for _, c := range []call{
-			{method: http.MethodPatch, path: "/api/v1/org/org-a/members/" + bob, body: `{"role":"Viewer"}`, cookie: cookie},
-			{method: http.MethodPatch, path: "/api/v1/org/org-a/members/" + ada, body: `{"role":"Viewer"}`, cookie: bobCookie},
-		} {
-			wg.Go(func() { f.send(web, c) })
+		statuses := make([]int, 2)
+		for k, c := range []call{adaChange, bobChange} {
+			wg.Go(func() { statuses[k], _ = f.send(web, c) })
 		}
 		wg.Wait()
+		slices.Sort(statuses)
+		won := statuses[0] == http.StatusOK || statuses[0] == http.StatusNoContent
+		refused := statuses[1] == http.StatusConflict || statuses[1] == http.StatusForbidden
+		if !won || !refused {
+			t.Fatalf("round %d: statuses %v, want one success and one 409 or 403", i, statuses)
+		}
 		var admins int
 		if err := f.pool.QueryRow(context.Background(), `SELECT count(*) FROM memberships WHERE organisation_id = 'org-a' AND role = 'admin'`).Scan(&admins); err != nil {
 			t.Fatal(err)
@@ -318,8 +335,11 @@ func TestLastAdminIsKept(t *testing.T) {
 		if admins != 1 {
 			t.Fatalf("round %d: %d admins after two demotions at once, want 1", i, admins)
 		}
-		if _, err := f.pool.Exec(context.Background(), `UPDATE memberships SET role = 'admin' WHERE organisation_id = 'org-a'`); err != nil {
-			t.Fatal(err)
+		// Put both back as admins for the next round.
+		for _, id := range []string{ada, bob} {
+			if _, err := f.pool.Exec(context.Background(), `INSERT INTO memberships (user_id, organisation_id, role) VALUES ($1, 'org-a', 'admin') ON CONFLICT (user_id, organisation_id) DO UPDATE SET role = 'admin'`, id); err != nil {
+				t.Fatal(err)
+			}
 		}
 	}
 }

@@ -76,12 +76,13 @@ Invitations moved out of this phase to keep it buildable in one session.
 7. Given `voicegateway user add --role viewer` for a new email, then 1 user and 1 Viewer membership exist. For an email with an account in B, it adds a membership in A without a second user. A repeat for the same organisation fails and changes nothing (measured by `TestUserAddWithRole`).
 7a. Given a user signed in on two sessions, when `voicegateway user reset-password` sets a new password, then both sessions answer 401 on their next request, the old password gets 401 at sign-in, and the new one gets 204. A password under 12 characters is refused and changes nothing. A 06a session, with no password version stored, reads while the version is 0 and answers 401 after a reset (measured by `TestResetPasswordSignsOutEverywhere`).
 8. Given each new operation, then every response in checks 1 to 6 validates against `docs/api/openapi.yaml` (measured by the shared response validator, called in each of those tests).
-9. Given the console with the mock off, the Vitest suite `members.test.tsx` runs 5 cases (measured by that suite):
+9. Given the console with the mock off, the Vitest suite `members.test.tsx` runs 6 cases (measured by that suite):
    - An Admin sees the 3 members, with a role picker and Remove on every row but their own.
    - Changing a role calls `updateMember`.
    - A `last_admin` answer shows "An organisation needs at least one admin".
    - A Viewer sees the list with no role picker, no Remove and no Invite form.
    - The Role row shows the signed-in user's role.
+   - An Admin who demotes themselves sees the session read again, and the admin controls go.
 10. Given the log output of checks 1 to 7a, then no line contains a password or a session id (measured by `TestNoSecretInLogs`, extended).
 
 ## Manual Check

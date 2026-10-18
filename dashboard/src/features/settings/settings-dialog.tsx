@@ -23,7 +23,7 @@ import { type WidgetId, widgets } from "@/features/embed/widgets"
 import { DEFAULTS, type Thresholds as T } from "@/lib/thresholds"
 import { ApiError, callTotalsQuery, invitationsQuery, latestMatchingCallQuery, mediaServerQuery, membersQuery, projectSettingsQuery, removeMember, updateMember } from "@/lib/api"
 import type { Invitation, Invitations, Member, ProjectSettings } from "@/lib/api-types"
-import { currentSession, roleIn } from "@/lib/session"
+import { refreshSession, roleIn, useSession } from "@/lib/session"
 import { useLocalSave } from "@/lib/local-store"
 import { errorText } from "@/components/page-state"
 
@@ -130,8 +130,9 @@ function ServerUrl() {
 
 export function Account() {
   const { theme, set } = useTheme()
-  const email = currentSession()?.email
-  const role = roleIn(org().id)
+  const session = useSession()
+  const email = session?.email
+  const role = roleIn(org().id, session)
   return (
     <>
       <Header title="Account" description="You, and how the console looks for you." />
@@ -203,7 +204,7 @@ const roles: { role: Role; description: string }[] = [
 ]
 
 export function People() {
-  const isAdmin = roleIn(org().id) === "Admin"
+  const isAdmin = roleIn(org().id, useSession()) === "Admin"
   return (
     <>
       <Header title="People" description="Who can sign in, and what each person can do across the organisation." />
@@ -226,18 +227,20 @@ export const LAST_ADMIN = "An organisation needs at least one admin."
 function MemberList({ isAdmin }: { isAdmin: boolean }) {
   const read = useQuery(membersQuery())
   const qc = useQueryClient()
-  const me = currentSession()?.email
+  const me = useSession()?.email
   const [problem, setProblem] = useState<string | null>(null)
+  const list = read.data?.items ?? []
   const done = {
-    onSuccess: () => {
+    onSuccess: (_: unknown, v: string | { userId: string }) => {
       setProblem(null)
-      return qc.invalidateQueries({ queryKey: membersQuery().queryKey })
+      // A change to your own role changes what this console may show you.
+      const self = list.find((m) => m.userId === (typeof v === "string" ? v : v.userId))?.email === me
+      return Promise.all([qc.invalidateQueries({ queryKey: membersQuery().queryKey }), self ? refreshSession().catch(() => undefined) : undefined])
     },
     onError: (e: Error) => setProblem(e instanceof ApiError && e.code === "last_admin" ? LAST_ADMIN : errorText(e)),
   }
   const change = useMutation({ mutationFn: (v: { userId: string; role: Member["role"] }) => updateMember(v.userId, v.role), ...done })
   const remove = useMutation({ mutationFn: (userId: string) => removeMember(userId), ...done })
-  const list = read.data?.items ?? []
   return (
     <Group label="Members">
       {!read.isSuccess && <Row title="Members" description={read.isError ? errorText(read.error) : undefined} value={read.isError ? "Could not be read" : "Loading"} last />}

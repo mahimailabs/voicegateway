@@ -12,6 +12,7 @@ import { Account, LAST_ADMIN, People } from "../src/features/settings/settings-d
 import { setCurrentSession } from "../src/lib/session.ts"
 
 // Acceptance check 9 of phase 06b: the Members list in Settings, by the signed-in user's role.
+// The sixth case comes from the 06b review: your own role change re-reads the session.
 
 beforeAll(() => {
   // Radix Select measures and captures the pointer, which jsdom does not implement.
@@ -45,6 +46,7 @@ function serve(write: () => Response = () => json(200, members.items[1])) {
       const method = init?.method ?? "GET"
       calls.push({ method, url, body: (init?.body as string) ?? null })
       if (method !== "GET") return write()
+      if (url === "/auth/session") return json(200, session)
       if (url.endsWith("/members")) return json(200, members)
       if (url.endsWith("/invitations")) return json(200, { items: [] })
       return json(404, { code: "not_found", message: "no such API path", requestId: "r" })
@@ -52,6 +54,9 @@ function serve(write: () => Response = () => json(200, members.items[1])) {
   )
   return calls
 }
+
+// What /auth/session answers when the console reads it again.
+let session = { email: "ada@example.com", organisations: [{ id: "default", role: "admin" }] }
 
 function signedInAs(role: string) {
   setCurrentSession({ email: "ada@example.com", organisations: [{ id: "default", role }] })
@@ -108,4 +113,17 @@ test("the Role row shows the signed-in user's role", () => {
   signedInAs("member")
   show(<Account />)
   expect(screen.getByText("Role").closest("[data-slot=item]")?.textContent).toContain("Member")
+})
+
+test("demoting yourself reads the session again and hides the admin controls", async () => {
+  session = { email: "ada@example.com", organisations: [{ id: "default", role: "member" }] }
+  const calls = serve(() => json(200, { userId: "u-ada", email: "ada@example.com", role: "Member" }))
+  signedInAs("admin")
+  show(<People />)
+  const user = userEvent.setup()
+  await user.click(await screen.findByLabelText("Role of ada@example.com"))
+  await user.click(within(await screen.findByRole("listbox")).getByRole("option", { name: "Member" }))
+  await vi.waitFor(() => expect(screen.queryByLabelText(/^Role of /)).toBeNull())
+  expect(calls.some((c) => c.url === "/auth/session")).toBe(true)
+  expect(screen.queryByRole("form", { name: "Invite people" })).toBeNull()
 })
