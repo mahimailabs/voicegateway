@@ -30,6 +30,8 @@ make user-add EMAIL=you@example.com
 
 It asks for a password, or reads it from `VOICEGATEWAY_USER_PASSWORD`. Sign in at localhost:8080 with that email and password.
 
+Sign-in over plain HTTP works only from the machine VoiceGateway runs on. On a server, either forward the port with `ssh -L 8080:localhost:8080 <server>` and open localhost:8080 on your own machine, or serve VoiceGateway over HTTPS as described in [Reaching VoiceGateway from LiveKit](#reaching-voicegateway-from-livekit).
+
 ## 3. Add your LiveKit project
 
 ```bash
@@ -51,11 +53,13 @@ LIVEKIT_OBSERVABILITY_URL=http://<voicegateway-host>:8080
 
 and start the agent session with `record=True`. LiveKit Agents then uploads its traces, logs, metrics and session report to VoiceGateway, signed with the same LiveKit API key and secret. The agent's audio path is untouched: if VoiceGateway is down, calls carry on.
 
+This setting sends the uploads to VoiceGateway instead of LiveKit Cloud's own observability, so those sessions no longer appear in LiveKit Cloud's dashboard.
+
 ## 5. Send LiveKit's webhooks to VoiceGateway
 
 In your LiveKit project's webhook settings, add `https://<voicegateway-host>/livekit/webhook`, signed with the API key from step 3.
 
-Without the webhook, calls still appear, but they stay **open**, with no end time, duration or participants, because a call ends when LiveKit reports the room finished.
+Without the webhook, calls still appear, but they stay **open**, with no start or end time, duration or participants, because those come from LiveKit's room events.
 
 ## Reaching VoiceGateway from LiveKit
 

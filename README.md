@@ -16,7 +16,7 @@
 VoiceGateway profiles **LiveKit voice calls from the phone line to the model**. Inspect the transcript, turn timings, agent activity and infrastructure around a call to understand where it slowed down or went wrong.
 
 > [!NOTE]
-> **V1 console preview.** The console uses captured LiveKit sessions; Live replays recorded observations. The Go backend and hosted Cloud service are in development. The published Python release is the earlier product.
+> **V1 preview.** You can [self-host](docs/self-hosting.md) the Go backend and console against your own LiveKit project today; some panels and notifications are still being built, and the hosted Cloud service is not available yet. The Quickstart below runs the console on captured LiveKit sessions. The published Python release is the earlier product.
 
 ## Features
 
