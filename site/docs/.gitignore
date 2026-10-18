@@ -3,6 +3,8 @@
 
 # generated content
 .source
+/content/docs/api/
+/openapi.served.json
 
 # test & build
 /coverage

@@ -1,0 +1,13 @@
+---
+title: Phone (SIP)
+description: Phone calls coming in and going out.
+---
+
+<Picture src="/diagrams/layers-sip" alt="The layers of a call with the phone bridge highlighted." />
+
+| You see | It comes from |
+| --- | --- |
+| Trunks and dispatch rules | The LiveKit SIP API |
+| Phone calls and why they ended | LiveKit webhooks |
+
+Phone numbers are masked when stored, like `sip_•••• 4567`. Reading SIP needs a LiveKit key with admin rights.

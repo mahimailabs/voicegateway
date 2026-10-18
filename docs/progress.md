@@ -353,6 +353,14 @@ Manual check: the pair reviewer reports it passed on Compose behind HTTPS ([#387
 
 Next: 06d, invitation links.
 
+### 2026-10-18: worker endpoint dial guard
+
+The worker checks every address it dials for a worker metrics endpoint, after DNS, with `code.dny.dev/ssrf` v0.3.0 (the 05d follow-up: an SSRF guard before any API or console form can add endpoints).
+- Link-local addresses (169.254.169.254, fe80::/10) and the cloud metadata services that sit inside private ranges (Alibaba Cloud's 100.100.100.200, AWS's fd00:ec2::254, GCP's fd20:ce::254) are always refused.
+- Private and loopback addresses are allowed by default, since a self-hosted install's workers usually share its network. `VOICEGATEWAY_WORKER_ENDPOINTS_PUBLIC_ONLY=true` refuses them too, for Cloud.
+- The client ignores proxy settings from the environment, which would dial past the guard, and still follows no redirect.
+- The console shows a time LiveKit did not report (a Cloud agent version's deployedAt, a worker's last scrape) as "not reported", not "never".
+
 ### 2026-10-18: sign-in audit fixes (#388)
 
 The pair's audit of 06a, 06b and the gate, items 1 to 4; items 5 and 6 had already landed (`crypto/rand.Text` endpoint ids in #389, `memberships_organisation` in 00008).

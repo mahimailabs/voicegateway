@@ -1,0 +1,16 @@
+---
+title: People and roles
+description: Who can see and change what.
+---
+
+| Role | Can |
+| --- | --- |
+| Viewer | See every page, change nothing |
+| Member | See every page. Changing project settings comes next |
+| Admin | Everything, plus people, projects and API keys |
+
+Add someone from the command line:
+
+```bash
+make user-add EMAIL=sam@example.com ROLE=member
+```

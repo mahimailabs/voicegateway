@@ -3,6 +3,7 @@ module github.com/mahimailabs/voicegateway
 go 1.26.8
 
 require (
+	code.dny.dev/ssrf v0.3.0
 	github.com/ClickHouse/clickhouse-go/v2 v2.49.0
 	github.com/alexedwards/scs/pgxstore v0.0.0-20251002162104-209de6e426de
 	github.com/alexedwards/scs/v2 v2.9.0

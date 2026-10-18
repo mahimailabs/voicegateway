@@ -7,7 +7,7 @@ description: A self-hosted profiler for LiveKit voice agents. One call, one quie
 # Design System: VoiceGateway
 
 <!--
-Scope: the console in dashboard/. The docs and landing page (site/) still use the older purple system in site/theme.css until they are moved onto this one.
+Scope: the console in dashboard/ and the docs in site/docs. The landing page (site/) still uses the older purple system in site/theme.css until it is moved onto this one.
 Contrast ratios below were measured, not estimated.
 -->
 

@@ -1,0 +1,17 @@
+---
+title: Architecture
+description: The parts of VoiceGateway and how data moves.
+---
+
+<Picture src="/diagrams/architecture" alt="LiveKit and the voice agent send data to web. web appends to a Redis stream; worker reads it and writes to ClickHouse. Postgres holds projects and keys, S3 holds recordings." />
+
+| Part | Job |
+| --- | --- |
+| web | Checks keys, takes data in, serves the API and console |
+| worker | Joins events into calls, writes them to ClickHouse |
+| Redis | The stream between web and worker |
+| Postgres | Projects, people and keys |
+| ClickHouse | Everything measured |
+| S3 bucket | Recordings, if you turn them on |
+
+Nothing leaves your servers.

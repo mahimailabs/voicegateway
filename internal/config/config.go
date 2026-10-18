@@ -36,6 +36,11 @@ type Config struct {
 	// TrustedProxies are the proxies (addresses and CIDRs, comma-separated) whose X-Forwarded-For
 	// and X-Forwarded-Proto web believes.
 	TrustedProxies string
+	// WorkerEndpointsPublicOnly makes the worker refuse private and loopback addresses for worker
+	// metrics endpoints, as well as the link-local and metadata addresses it always refuses. For an
+	// install whose endpoints are entered by people it should not trust with its network, such as
+	// Cloud; a self-hosted install's workers usually sit on its own private network.
+	WorkerEndpointsPublicOnly bool
 	// ConsoleDir is the built dashboard web serves (decision 0011); the image sets it. Empty serves
 	// no console, as in development, where the Vite dev server runs it.
 	ConsoleDir string
@@ -104,6 +109,11 @@ func Load(getenv func(string) string) (Config, error) {
 		errs = append(errs, errors.New("VOICEGATEWAY_S3_USE_SSL must be true or false"))
 	}
 	c.S3.UseSSL = ssl
+	publicOnly, err := strconv.ParseBool(optional("VOICEGATEWAY_WORKER_ENDPOINTS_PUBLIC_ONLY", "false"))
+	if err != nil {
+		errs = append(errs, errors.New("VOICEGATEWAY_WORKER_ENDPOINTS_PUBLIC_ONLY must be true or false"))
+	}
+	c.WorkerEndpointsPublicOnly = publicOnly
 
 	if err := c.LogLevel.UnmarshalText([]byte(optional("VOICEGATEWAY_LOG_LEVEL", "info"))); err != nil {
 		errs = append(errs, errors.New("VOICEGATEWAY_LOG_LEVEL must be debug, info, warn or error"))

@@ -8,7 +8,7 @@ import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import type { CapacityRun } from "@/lib/api-types"
 import { type MediaServerData, type Room, RoomBody, openAtWatchEnd, regionCity } from "../media-server/room-drawer"
-import { type Agent, cores, gib, joinDelays, median } from "./agents-model"
+import { type Agent, cores, gib, joinDelays, median, reportedTime } from "./agents-model"
 import { CapacityButton, CapacityResult, capacityRun } from "./capacity"
 
 // One agent, everything the three keys and the watched rooms say about it. Calls at once is counted
@@ -17,7 +17,7 @@ import { CapacityButton, CapacityResult, capacityRun } from "./capacity"
 
 const at = (s: number) => new Date(s * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })
 const day = (s: number) => new Date(s * 1000).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })
-const when = (iso: string | null) => (iso ? new Date(iso).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "never")
+const when = reportedTime
 const config = { calls: { label: "Calls at once", color: "var(--chart-1)" } } satisfies ChartConfig
 
 type Span = { from: number; to: number; open: boolean; room: Room }

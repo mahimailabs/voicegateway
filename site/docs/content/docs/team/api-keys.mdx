@@ -1,0 +1,33 @@
+---
+title: Project API keys
+description: Read your project's data from your own scripts.
+---
+
+<Picture src="/diagrams/keys" alt="Your script sends a project key as a bearer token to the VoiceGateway API, which reads that project's calls." />
+
+<Steps>
+<Step>
+
+### Create a key
+
+In the console open **Settings**, **Access**, **API keys**, or run:
+
+```bash
+voicegateway key create --project production --name ci
+```
+
+The key is shown once.
+
+</Step>
+<Step>
+
+### Use it
+
+```bash
+curl -H "Authorization: Bearer vgk_..." https://<your-voicegateway>/api/v1/...
+```
+
+</Step>
+</Steps>
+
+A key reads one project only. Revoke it with `voicegateway key revoke --project production --key-id <id>`.

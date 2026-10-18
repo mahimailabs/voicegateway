@@ -1,6 +1,6 @@
 // docs.voicegateway.dev: a static export (`npm run build` writes ./out) served
 // from Workers static assets, the same setup as prices.mahimai.ca. Nothing runs
-// server-side; public/_redirects sends "/" to "/docs".
+// server-side; public/_redirects sends old /docs links to the root.
 {
   "name": "voicegateway-docs",
   "compatibility_date": "2026-09-27",

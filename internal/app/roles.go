@@ -245,7 +245,7 @@ func Worker(ctx context.Context, c config.Config, log *slog.Logger) error {
 			Endpoints: endpoints,
 			Samples:   events,
 			Lock:      &scrape.RedisLock{Client: rdb},
-			Client:    scrape.NewWorkerClient(),
+			Client:    scrape.NewWorkerClient(c.WorkerEndpointsPublicOnly),
 			Log:       log,
 			Now:       time.Now,
 			Every:     15 * time.Second,
