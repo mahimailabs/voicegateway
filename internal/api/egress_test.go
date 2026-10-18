@@ -421,7 +421,7 @@ func (f *fixture) getValid(t *testing.T, project, read string) (int, []byte) {
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/org/"+org+"/project/"+project+"/"+read, nil)
 	req.Header.Set("Authorization", "Bearer "+testToken)
 	rec := httptest.NewRecorder()
-	(&api.API{Projects: f.projects, Layers: f.layers, Log: quiet(), Now: time.Now, Gate: api.TokenGate(testToken)}).Routes().ServeHTTP(rec, req)
+	(&api.API{Projects: f.projects, Layers: f.layers, Endpoints: f.endpoints, Log: quiet(), Now: time.Now, Gate: api.TokenGate(testToken)}).Routes().ServeHTTP(rec, req)
 	body := rec.Body.Bytes()
 	res := rec.Result()
 	res.Body = io.NopCloser(bytes.NewReader(body))

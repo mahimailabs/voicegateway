@@ -1417,7 +1417,7 @@ components:
         readAt:
           type: string
           format: date-time
-          x-source: { kind: computed, file: dashboard/src/mocks/agents.json, pointer: /readAt, detail: UTC timestamp when the collector read the snapshot; not the event transition time. }
+          x-source: { kind: computed, file: dashboard/src/mocks/agents.json, pointer: /readAt, detail: "Time of the latest good read by the worker (layer_reads); not the event transition time. Captures used the collector read time." }
         source:
           type: string
           x-source: { kind: computed, file: dashboard/src/mocks/agents.json, pointer: /source, detail: Capture annotation describing the recorded source and its limits; not a LiveKit API response field. }
@@ -1429,19 +1429,19 @@ components:
             properties:
               id:
                 type: string
-                x-source: { kind: livekit_api, file: dashboard/src/mocks/agents.json, pointer: /agents/0/id, detail: LiveKit CloudAgent ListAgents/ListAgentVersions; normalised captured response }
+                x-source: { kind: livekit_api, file: dashboard/src/mocks/agents.json, pointer: /agents/0/id, detail: "AgentInfo.agent_id (protocol v1.52.1 livekit_cloud_agent.proto field 1), from server-sdk-go v2.19.0 AgentClient.ListAgents and ListAgentVersions (protocol v1.52.1)." }
               name:
                 type: [ string, "null" ]
                 x-null-reason: The capture or source did not report this value. Preserve null rather than a protobuf default or guessed zero.
-                x-source: { kind: livekit_api, file: dashboard/src/mocks/agents.json, pointer: /agents/0/name, detail: LiveKit CloudAgent ListAgents/ListAgentVersions; normalised captured response }
+                x-source: { kind: livekit_api, file: dashboard/src/mocks/agents.json, pointer: /agents/0/name, detail: "AgentInfo.agent_name (field 2); empty is null, from server-sdk-go v2.19.0 AgentClient.ListAgents and ListAgentVersions (protocol v1.52.1)." }
               version:
                 type: [ string, "null" ]
-                x-source: { kind: livekit_api, file: dashboard/src/mocks/agents.json, pointer: /agents/0/version, detail: LiveKit CloudAgent ListAgents/ListAgentVersions; normalised captured response }
+                x-source: { kind: livekit_api, file: dashboard/src/mocks/agents.json, pointer: /agents/0/version, detail: "AgentInfo.version (field 3); empty and the --- placeholder are null, from server-sdk-go v2.19.0 AgentClient.ListAgents and ListAgentVersions (protocol v1.52.1)." }
                 x-null-reason: CloudAgent did not report version. An API placeholder such as --- must normalise to null.
               deployedAt:
                 type: [ string, "null" ]
                 format: date-time
-                x-source: { kind: livekit_api, file: dashboard/src/mocks/agents.json, pointer: /agents/0/deployedAt, detail: LiveKit CloudAgent ListAgents/ListAgentVersions; normalised captured response }
+                x-source: { kind: livekit_api, file: dashboard/src/mocks/agents.json, pointer: /agents/0/deployedAt, detail: "AgentInfo.deployed_at (field 6, google.protobuf.Timestamp); absent, epoch or earlier is null, from server-sdk-go v2.19.0 AgentClient.ListAgents and ListAgentVersions (protocol v1.52.1)." }
                 x-null-reason: CloudAgent did not report deployedAt. An API placeholder such as --- must normalise to null.
               deployments:
                 type: array
@@ -1452,72 +1452,72 @@ components:
                     deployment:
                       type: [ string, "null" ]
                       x-null-reason: The capture or source did not report this value. Preserve null rather than a protobuf default or guessed zero.
-                      x-source: { kind: livekit_api, file: dashboard/src/mocks/agents.json, pointer: /agents/0/deployments/0/deployment, detail: LiveKit CloudAgent ListAgents/ListAgentVersions; normalised captured response }
+                      x-source: { kind: livekit_api, file: dashboard/src/mocks/agents.json, pointer: /agents/0/deployments/0/deployment, detail: "AgentDeployment.deployment (field 15); empty is null, from server-sdk-go v2.19.0 AgentClient.ListAgents and ListAgentVersions (protocol v1.52.1)." }
                     region:
                       type: string
-                      x-source: { kind: livekit_api, file: dashboard/src/mocks/agents.json, pointer: /agents/0/deployments/0/region, detail: LiveKit CloudAgent ListAgents/ListAgentVersions; normalised captured response }
+                      x-source: { kind: livekit_api, file: dashboard/src/mocks/agents.json, pointer: /agents/0/deployments/0/region, detail: "AgentDeployment.region (field 1), from server-sdk-go v2.19.0 AgentClient.ListAgents and ListAgentVersions (protocol v1.52.1)." }
                     serverRegion:
                       type: string
-                      x-source: { kind: livekit_api, file: dashboard/src/mocks/agents.json, pointer: /agents/0/deployments/0/serverRegion, detail: LiveKit CloudAgent ListAgents/ListAgentVersions; normalised captured response }
+                      x-source: { kind: livekit_api, file: dashboard/src/mocks/agents.json, pointer: /agents/0/deployments/0/serverRegion, detail: "AgentDeployment.server_region (field 13), from server-sdk-go v2.19.0 AgentClient.ListAgents and ListAgentVersions (protocol v1.52.1)." }
                     status:
                       type: string
-                      x-source: { kind: livekit_api, file: dashboard/src/mocks/agents.json, pointer: /agents/0/deployments/0/status, detail: LiveKit CloudAgent ListAgents/ListAgentVersions; normalised captured response }
+                      x-source: { kind: livekit_api, file: dashboard/src/mocks/agents.json, pointer: /agents/0/deployments/0/status, detail: "AgentDeployment.status (field 3), from server-sdk-go v2.19.0 AgentClient.ListAgents and ListAgentVersions (protocol v1.52.1)." }
                     replicas:
                       type: [ integer, "null" ]
                       x-unit: count
                       x-null-reason: The capture or source did not report this value. Preserve null rather than a protobuf default or guessed zero.
-                      x-source: { kind: livekit_api, file: dashboard/src/mocks/agents.json, pointer: /agents/0/deployments/0/replicas, detail: LiveKit CloudAgent ListAgents/ListAgentVersions; normalised captured response }
+                      x-source: { kind: livekit_api, file: dashboard/src/mocks/agents.json, pointer: /agents/0/deployments/0/replicas, detail: "AgentDeployment.replicas (field 4, int32); proto3 0 cannot be told from unset, so it is null, from server-sdk-go v2.19.0 AgentClient.ListAgents and ListAgentVersions (protocol v1.52.1)." }
                     minReplicas:
                       type: [ integer, "null" ]
                       x-unit: count
                       x-null-reason: The capture or source did not report this value. Preserve null rather than a protobuf default or guessed zero.
-                      x-source: { kind: livekit_api, file: dashboard/src/mocks/agents.json, pointer: /agents/0/deployments/0/minReplicas, detail: LiveKit CloudAgent ListAgents/ListAgentVersions; normalised captured response }
+                      x-source: { kind: livekit_api, file: dashboard/src/mocks/agents.json, pointer: /agents/0/deployments/0/minReplicas, detail: "AgentDeployment.min_replicas (field 5, int32); 0 is null, from server-sdk-go v2.19.0 AgentClient.ListAgents and ListAgentVersions (protocol v1.52.1)." }
                     maxReplicas:
                       type: [ integer, "null" ]
                       x-unit: count
                       x-null-reason: The capture or source did not report this value. Preserve null rather than a protobuf default or guessed zero.
-                      x-source: { kind: livekit_api, file: dashboard/src/mocks/agents.json, pointer: /agents/0/deployments/0/maxReplicas, detail: LiveKit CloudAgent ListAgents/ListAgentVersions; normalised captured response }
+                      x-source: { kind: livekit_api, file: dashboard/src/mocks/agents.json, pointer: /agents/0/deployments/0/maxReplicas, detail: "AgentDeployment.max_replicas (field 6, int32); 0 is null, from server-sdk-go v2.19.0 AgentClient.ListAgents and ListAgentVersions (protocol v1.52.1)." }
                     curCpu:
                       type: [ string, "null" ]
-                      x-source: { kind: livekit_api, file: dashboard/src/mocks/agents.json, pointer: /agents/0/deployments/0/curCpu, detail: LiveKit CloudAgent ListAgents/ListAgentVersions; normalised captured response }
+                      x-source: { kind: livekit_api, file: dashboard/src/mocks/agents.json, pointer: /agents/0/deployments/0/curCpu, detail: "AgentDeployment.cur_cpu (field 8); empty is null, from server-sdk-go v2.19.0 AgentClient.ListAgents and ListAgentVersions (protocol v1.52.1)." }
                       x-unit: kubernetes_cpu_quantity
                       x-null-reason: Resource quantity not reported by the deployment API.
                     cpuReq:
                       type: [ string, "null" ]
-                      x-source: { kind: livekit_api, file: dashboard/src/mocks/agents.json, pointer: /agents/0/deployments/0/cpuReq, detail: LiveKit CloudAgent ListAgents/ListAgentVersions; normalised captured response }
+                      x-source: { kind: livekit_api, file: dashboard/src/mocks/agents.json, pointer: /agents/0/deployments/0/cpuReq, detail: "AgentDeployment.cpu_req (field 7); empty is null, from server-sdk-go v2.19.0 AgentClient.ListAgents and ListAgentVersions (protocol v1.52.1)." }
                       x-unit: kubernetes_cpu_quantity
                       x-null-reason: Resource quantity not reported by the deployment API.
                     cpuLimit:
                       type: [ string, "null" ]
-                      x-source: { kind: livekit_api, file: dashboard/src/mocks/agents.json, pointer: /agents/0/deployments/0/cpuLimit, detail: LiveKit CloudAgent ListAgents/ListAgentVersions; normalised captured response }
+                      x-source: { kind: livekit_api, file: dashboard/src/mocks/agents.json, pointer: /agents/0/deployments/0/cpuLimit, detail: "AgentDeployment.cpu_limit (field 12); empty is null, from server-sdk-go v2.19.0 AgentClient.ListAgents and ListAgentVersions (protocol v1.52.1)." }
                       x-unit: kubernetes_cpu_quantity
                       x-null-reason: Resource quantity not reported by the deployment API.
                     curMem:
                       type: [ string, "null" ]
-                      x-source: { kind: livekit_api, file: dashboard/src/mocks/agents.json, pointer: /agents/0/deployments/0/curMem, detail: LiveKit CloudAgent ListAgents/ListAgentVersions; normalised captured response }
+                      x-source: { kind: livekit_api, file: dashboard/src/mocks/agents.json, pointer: /agents/0/deployments/0/curMem, detail: "AgentDeployment.cur_mem (field 9); empty is null, from server-sdk-go v2.19.0 AgentClient.ListAgents and ListAgentVersions (protocol v1.52.1)." }
                       x-unit: kubernetes_memory_quantity
                       x-null-reason: Resource quantity not reported by the deployment API.
                     memReq:
                       type: [ string, "null" ]
-                      x-source: { kind: livekit_api, file: dashboard/src/mocks/agents.json, pointer: /agents/0/deployments/0/memReq, detail: LiveKit CloudAgent ListAgents/ListAgentVersions; normalised captured response }
+                      x-source: { kind: livekit_api, file: dashboard/src/mocks/agents.json, pointer: /agents/0/deployments/0/memReq, detail: "AgentDeployment.mem_req (field 10); empty is null, from server-sdk-go v2.19.0 AgentClient.ListAgents and ListAgentVersions (protocol v1.52.1)." }
                       x-unit: kubernetes_memory_quantity
                       x-null-reason: Resource quantity not reported by the deployment API.
                     memLimit:
                       type: [ string, "null" ]
-                      x-source: { kind: livekit_api, file: dashboard/src/mocks/agents.json, pointer: /agents/0/deployments/0/memLimit, detail: LiveKit CloudAgent ListAgents/ListAgentVersions; normalised captured response }
+                      x-source: { kind: livekit_api, file: dashboard/src/mocks/agents.json, pointer: /agents/0/deployments/0/memLimit, detail: "AgentDeployment.mem_limit (field 11); empty is null, from server-sdk-go v2.19.0 AgentClient.ListAgents and ListAgentVersions (protocol v1.52.1)." }
                       x-unit: kubernetes_memory_quantity
                       x-null-reason: Resource quantity not reported by the deployment API.
                     lastScrapedAt:
                       type: [ string, "null" ]
                       format: date-time
                       x-null-reason: The capture or source did not report this value. Preserve null rather than a protobuf default or guessed zero.
-                      x-source: { kind: livekit_api, file: dashboard/src/mocks/agents.json, pointer: /agents/0/deployments/0/lastScrapedAt, detail: LiveKit CloudAgent ListAgents/ListAgentVersions; normalised captured response }
+                      x-source: { kind: livekit_api, file: dashboard/src/mocks/agents.json, pointer: /agents/0/deployments/0/lastScrapedAt, detail: "AgentDeployment.last_scraped_at (field 19, Timestamp); absent or epoch is null, from server-sdk-go v2.19.0 AgentClient.ListAgents and ListAgentVersions (protocol v1.52.1)." }
                     version:
                       type: string
-                      x-source: { kind: livekit_api, file: dashboard/src/mocks/agents.json, pointer: /agents/0/deployments/0/version, detail: LiveKit CloudAgent ListAgents/ListAgentVersions; normalised captured response }
+                      x-source: { kind: livekit_api, file: dashboard/src/mocks/agents.json, pointer: /agents/0/deployments/0/version, detail: "AgentDeployment.version (field 16), from server-sdk-go v2.19.0 AgentClient.ListAgents and ListAgentVersions (protocol v1.52.1)." }
                   required: [ deployment, region, serverRegion, status, replicas, minReplicas, maxReplicas, curCpu, cpuReq, cpuLimit, curMem, memReq, memLimit, lastScrapedAt, version ]
-                  x-source: { kind: livekit_api, file: dashboard/src/mocks/agents.json, pointer: /agents/0/deployments/0, detail: LiveKit CloudAgent ListAgents/ListAgentVersions; normalised captured response }
-                x-source: { kind: livekit_api, file: dashboard/src/mocks/agents.json, pointer: /agents/0/deployments, detail: LiveKit CloudAgent ListAgents/ListAgentVersions; normalised captured response }
+                  x-source: { kind: livekit_api, file: dashboard/src/mocks/agents.json, pointer: /agents/0/deployments/0, detail: "One AgentDeployment of AgentInfo.agent_deployments (field 4); events are not kept, from server-sdk-go v2.19.0 AgentClient.ListAgents and ListAgentVersions (protocol v1.52.1)." }
+                x-source: { kind: livekit_api, file: dashboard/src/mocks/agents.json, pointer: /agents/0/deployments, detail: "AgentInfo.agent_deployments (field 4), from server-sdk-go v2.19.0 AgentClient.ListAgents and ListAgentVersions (protocol v1.52.1)." }
               versions:
                 type: array
                 items:
@@ -1526,38 +1526,43 @@ components:
                   properties:
                     version:
                       type: string
-                      x-source: { kind: livekit_api, file: dashboard/src/mocks/agents.json, pointer: /agents/0/versions/0/version, detail: LiveKit CloudAgent ListAgents/ListAgentVersions; normalised captured response }
+                      x-source: { kind: livekit_api, file: dashboard/src/mocks/agents.json, pointer: /agents/0/versions/0/version, detail: "AgentVersion.version (field 1), from server-sdk-go v2.19.0 AgentClient.ListAgents and ListAgentVersions (protocol v1.52.1)." }
                     current:
                       type: [ boolean, "null" ]
                       x-null-reason: The capture or source did not report this value. Preserve null rather than a protobuf default or guessed zero.
-                      x-source: { kind: livekit_api, file: dashboard/src/mocks/agents.json, pointer: /agents/0/versions/0/current, detail: LiveKit CloudAgent ListAgents/ListAgentVersions; normalised captured response }
+                      x-source: { kind: livekit_api, file: dashboard/src/mocks/agents.json, pointer: /agents/0/versions/0/current, detail: "AgentVersion.current (field 2), kept as reported, from server-sdk-go v2.19.0 AgentClient.ListAgents and ListAgentVersions (protocol v1.52.1)." }
                     draining:
                       type: [ boolean, "null" ]
                       x-null-reason: The capture or source did not report this value. Preserve null rather than a protobuf default or guessed zero.
-                      x-source: { kind: livekit_api, file: dashboard/src/mocks/agents.json, pointer: /agents/0/versions/0/draining, detail: LiveKit CloudAgent ListAgents/ListAgentVersions; normalised captured response }
+                      x-source: { kind: livekit_api, file: dashboard/src/mocks/agents.json, pointer: /agents/0/versions/0/draining, detail: "AgentVersion.draining (field 8), kept as reported, from server-sdk-go v2.19.0 AgentClient.ListAgents and ListAgentVersions (protocol v1.52.1)." }
                     active:
                       type: [ boolean, "null" ]
                       x-null-reason: The capture or source did not report this value. Preserve null rather than a protobuf default or guessed zero.
-                      x-source: { kind: livekit_api, file: dashboard/src/mocks/agents.json, pointer: /agents/0/versions/0/active, detail: LiveKit CloudAgent ListAgents/ListAgentVersions; normalised captured response }
+                      x-source: { kind: livekit_api, file: dashboard/src/mocks/agents.json, pointer: /agents/0/versions/0/active, detail: "AgentVersion.active (field 9), kept as reported, from server-sdk-go v2.19.0 AgentClient.ListAgents and ListAgentVersions (protocol v1.52.1)." }
                     status:
                       type: string
-                      x-source: { kind: livekit_api, file: dashboard/src/mocks/agents.json, pointer: /agents/0/versions/0/status, detail: LiveKit CloudAgent ListAgents/ListAgentVersions; normalised captured response }
+                      x-source: { kind: livekit_api, file: dashboard/src/mocks/agents.json, pointer: /agents/0/versions/0/status, detail: "AgentVersion.status (field 6), from server-sdk-go v2.19.0 AgentClient.ListAgents and ListAgentVersions (protocol v1.52.1)." }
                     createdAt:
-                      type: string
+                      type: [ string, "null" ]
                       format: date-time
-                      x-source: { kind: livekit_api, file: dashboard/src/mocks/agents.json, pointer: /agents/0/versions/0/createdAt, detail: LiveKit CloudAgent ListAgents/ListAgentVersions; normalised captured response }
+                      x-null-reason: LiveKit did not report this time (absent, or the epoch or earlier).
+                      x-source: { kind: livekit_api, file: dashboard/src/mocks/agents.json, pointer: /agents/0/versions/0/createdAt, detail: "AgentVersion.created_at (field 3, Timestamp); absent or epoch is null, from server-sdk-go v2.19.0 AgentClient.ListAgents and ListAgentVersions (protocol v1.52.1)." }
                     deployedAt:
-                      type: string
+                      type: [ string, "null" ]
                       format: date-time
-                      x-source: { kind: livekit_api, file: dashboard/src/mocks/agents.json, pointer: /agents/0/versions/0/deployedAt, detail: LiveKit CloudAgent ListAgents/ListAgentVersions; normalised captured response }
+                      x-null-reason: LiveKit did not report this time (absent, or the epoch or earlier).
+                      x-source: { kind: livekit_api, file: dashboard/src/mocks/agents.json, pointer: /agents/0/versions/0/deployedAt, detail: "AgentVersion.deployed_at (field 4, Timestamp); absent or epoch is null, from server-sdk-go v2.19.0 AgentClient.ListAgents and ListAgentVersions (protocol v1.52.1)." }
                   required: [ version, current, draining, active, status, createdAt, deployedAt ]
-                  x-source: { kind: livekit_api, file: dashboard/src/mocks/agents.json, pointer: /agents/0/versions/0, detail: LiveKit CloudAgent ListAgents/ListAgentVersions; normalised captured response }
-                x-source: { kind: livekit_api, file: dashboard/src/mocks/agents.json, pointer: /agents/0/versions, detail: LiveKit CloudAgent ListAgents/ListAgentVersions; normalised captured response }
+                  x-source: { kind: livekit_api, file: dashboard/src/mocks/agents.json, pointer: /agents/0/versions/0, detail: "One AgentVersion from ListAgentVersions; attributes and owner are not kept, from server-sdk-go v2.19.0 AgentClient.ListAgents and ListAgentVersions (protocol v1.52.1)." }
+                x-source: { kind: livekit_api, file: dashboard/src/mocks/agents.json, pointer: /agents/0/versions, detail: "ListAgentVersionsResponse.versions for the agent_id, from server-sdk-go v2.19.0 AgentClient.ListAgents and ListAgentVersions (protocol v1.52.1)." }
             required: [ id, name, version, deployedAt, deployments, versions ]
-            x-source: { kind: livekit_api, file: dashboard/src/mocks/agents.json, pointer: /agents/0, detail: LiveKit CloudAgent ListAgents/ListAgentVersions; normalised captured response }
-          x-source: { kind: livekit_api, file: dashboard/src/mocks/agents.json, pointer: /agents, detail: LiveKit CloudAgent ListAgents/ListAgentVersions; normalised captured response }
+            x-source: { kind: livekit_api, file: dashboard/src/mocks/agents.json, pointer: /agents/0, detail: "One AgentInfo from ListAgents; its secrets are not kept, from server-sdk-go v2.19.0 AgentClient.ListAgents and ListAgentVersions (protocol v1.52.1)." }
+          x-source: { kind: livekit_api, file: dashboard/src/mocks/agents.json, pointer: /agents, detail: "ListAgentsResponse.agents; empty when LiveKit Cloud agents do not apply, from server-sdk-go v2.19.0 AgentClient.ListAgents and ListAgentVersions (protocol v1.52.1)." }
+        sourceStatus:
+          $ref: "#/components/schemas/SourceStatus"
+          x-source: { kind: computed, file: internal/api/cloudagents.go, pointer: null, detail: "Freshness of the Cloud agents reads, from ClickHouse layer_reads." }
       required: [ readAt, source, agents ]
-      x-source: { kind: livekit_api, file: dashboard/src/mocks/agents.json, pointer: "", detail: LiveKit CloudAgent ListAgents/ListAgentVersions; normalised captured response }
+      x-source: { kind: livekit_api, file: dashboard/src/mocks/agents.json, pointer: "", detail: "Redacted projection stored by the worker in ClickHouse cloud_agent_reads, from server-sdk-go v2.19.0 AgentClient.ListAgents and ListAgentVersions (protocol v1.52.1)." }
     SourceStatus:
       type: object
       additionalProperties: false
@@ -2891,18 +2896,18 @@ components:
             properties:
               id:
                 type: string
-                x-source: { kind: agent_metrics, file: dashboard/src/mocks/workers.json, pointer: /workers/0/id, detail: Prometheus scrape of LiveKit Agents worker metrics and captured worker configuration }
+                x-source: { kind: agent_metrics, file: dashboard/src/mocks/workers.json, pointer: /workers/0/id, detail: "VoiceGateway id of the worker: the listed endpoint id and the nodename label. Captures used the LiveKit worker id; metric names from livekit-agents telemetry/metrics.py (CPU_LOAD_GAUGE, RUNNING_JOB_GAUGE)." }
               nodename:
                 type: string
-                x-source: { kind: agent_metrics, file: dashboard/src/mocks/workers.json, pointer: /workers/0/nodename, detail: Prometheus scrape of LiveKit Agents worker metrics and captured worker configuration }
+                x-source: { kind: agent_metrics, file: dashboard/src/mocks/workers.json, pointer: /workers/0/nodename, detail: "nodename label of lk_agents_worker_load and lk_agents_active_job_count; metric names from livekit-agents telemetry/metrics.py (CPU_LOAD_GAUGE, RUNNING_JOB_GAUGE)." }
               loadThreshold:
                 type: [ number, "null" ]
                 x-unit: ratio
                 x-null-reason: The capture or source did not report this value. Preserve null rather than a protobuf default or guessed zero.
-                x-source: { kind: agent_metrics, file: dashboard/src/mocks/workers.json, pointer: /workers/0/loadThreshold, detail: Prometheus scrape of LiveKit Agents worker metrics and captured worker configuration }
+                x-source: { kind: agent_metrics, file: dashboard/src/mocks/workers.json, pointer: /workers/0/loadThreshold, detail: "Not exported: load_threshold is a WorkerOptions value, not a metric, so the worker read always serves null; metric names from livekit-agents telemetry/metrics.py (CPU_LOAD_GAUGE, RUNNING_JOB_GAUGE)." }
               host:
                 type: string
-                x-source: { kind: agent_metrics, file: dashboard/src/mocks/workers.json, pointer: /workers/0/host, detail: Prometheus scrape of LiveKit Agents worker metrics and captured worker configuration }
+                x-source: { kind: agent_metrics, file: dashboard/src/mocks/workers.json, pointer: /workers/0/host, detail: "Scheme and host of the listed metrics endpoint; the URL itself is sealed at rest; metric names from livekit-agents telemetry/metrics.py (CPU_LOAD_GAUGE, RUNNING_JOB_GAUGE)." }
               samples:
                 type: array
                 items:
@@ -2912,25 +2917,54 @@ components:
                     t:
                       type: string
                       format: date-time
-                      x-source: { kind: agent_metrics, file: dashboard/src/mocks/workers.json, pointer: /workers/0/samples/0/t, detail: Prometheus scrape of LiveKit Agents worker metrics and captured worker configuration }
+                      x-source: { kind: agent_metrics, file: dashboard/src/mocks/workers.json, pointer: /workers/0/samples/0/t, detail: "Read time of the worker scrape (worker_samples.read_at); metric names from livekit-agents telemetry/metrics.py (CPU_LOAD_GAUGE, RUNNING_JOB_GAUGE)." }
                     load:
                       type: [ number, "null" ]
                       x-unit: ratio
                       x-null-reason: The capture or source did not report this value. Preserve null rather than a protobuf default or guessed zero.
-                      x-source: { kind: agent_metrics, file: dashboard/src/mocks/workers.json, pointer: /workers/0/samples/0/load, detail: Prometheus scrape of LiveKit Agents worker metrics and captured worker configuration }
+                      x-source: { kind: agent_metrics, file: dashboard/src/mocks/workers.json, pointer: /workers/0/samples/0/load, detail: "lk_agents_worker_load gauge (ratio 0 to 1); absent, NaN or infinite is null; metric names from livekit-agents telemetry/metrics.py (CPU_LOAD_GAUGE, RUNNING_JOB_GAUGE)." }
                     activeJobs:
                       type: [ integer, "null" ]
                       x-unit: count
                       x-null-reason: The capture or source did not report this value. Preserve null rather than a protobuf default or guessed zero.
-                      x-source: { kind: agent_metrics, file: dashboard/src/mocks/workers.json, pointer: /workers/0/samples/0/activeJobs, detail: Prometheus scrape of LiveKit Agents worker metrics and captured worker configuration }
+                      x-source: { kind: agent_metrics, file: dashboard/src/mocks/workers.json, pointer: /workers/0/samples/0/activeJobs, detail: "lk_agents_active_job_count gauge (livesum across job processes); absent or non-integer is null; metric names from livekit-agents telemetry/metrics.py (CPU_LOAD_GAUGE, RUNNING_JOB_GAUGE)." }
                   required: [ t, load, activeJobs ]
-                  x-source: { kind: agent_metrics, file: dashboard/src/mocks/workers.json, pointer: /workers/0/samples/0, detail: Prometheus scrape of LiveKit Agents worker metrics and captured worker configuration }
-                x-source: { kind: agent_metrics, file: dashboard/src/mocks/workers.json, pointer: /workers/0/samples, detail: Prometheus scrape of LiveKit Agents worker metrics and captured worker configuration }
+                  x-source: { kind: agent_metrics, file: dashboard/src/mocks/workers.json, pointer: /workers/0/samples/0, detail: "One read of the endpoint for this nodename; metric names from livekit-agents telemetry/metrics.py (CPU_LOAD_GAUGE, RUNNING_JOB_GAUGE)." }
+                x-source: { kind: agent_metrics, file: dashboard/src/mocks/workers.json, pointer: /workers/0/samples, detail: "Samples of the last hour, oldest first; metric names from livekit-agents telemetry/metrics.py (CPU_LOAD_GAUGE, RUNNING_JOB_GAUGE)." }
+              endpointId:
+                type: string
+                x-source: { kind: computed, file: internal/api/workers.go, pointer: null, detail: "Id of the listed endpoint (project_worker_endpoints.id) that reported this worker." }
+              sourceStatus:
+                $ref: "#/components/schemas/SourceStatus"
+                description: "Read status of this worker's endpoint. An endpoint that stops answering shows its error class here, such as unreachable, while the worker keeps its earlier samples; it never reads as an idle worker."
+                x-source: { kind: computed, file: internal/api/workers.go, pointer: null, detail: "Summed from ClickHouse worker_endpoint_reads for the worker's endpoint." }
             required: [ id, nodename, loadThreshold, host, samples ]
-            x-source: { kind: agent_metrics, file: dashboard/src/mocks/workers.json, pointer: /workers/0, detail: Prometheus scrape of LiveKit Agents worker metrics and captured worker configuration }
-          x-source: { kind: agent_metrics, file: dashboard/src/mocks/workers.json, pointer: /workers, detail: Prometheus scrape of LiveKit Agents worker metrics and captured worker configuration }
+            x-source: { kind: agent_metrics, file: dashboard/src/mocks/workers.json, pointer: /workers/0, detail: "One worker by endpoint and nodename; metric names from livekit-agents telemetry/metrics.py (CPU_LOAD_GAUGE, RUNNING_JOB_GAUGE)." }
+          x-source: { kind: agent_metrics, file: dashboard/src/mocks/workers.json, pointer: /workers, detail: "Workers seen on the listed endpoints in the last hour; metric names from livekit-agents telemetry/metrics.py (CPU_LOAD_GAUGE, RUNNING_JOB_GAUGE)." }
+        endpoints:
+          type: array
+          description: "Every endpoint the project lists, with its own read status, so an endpoint that has never answered is named."
+          items:
+            type: object
+            additionalProperties: false
+            properties:
+              id:
+                type: string
+                x-source: { kind: computed, file: internal/store/pgstore/workers.go, pointer: null, detail: "project_worker_endpoints.id, set by voicegateway project workers add." }
+              host:
+                type: string
+                x-source: { kind: computed, file: internal/store/pgstore/workers.go, pointer: null, detail: "Scheme and host of the listed URL; its user part, path and query are sealed with the URL, never served." }
+              sourceStatus:
+                $ref: "#/components/schemas/SourceStatus"
+                x-source: { kind: computed, file: internal/api/workers.go, pointer: null, detail: "Summed from ClickHouse worker_endpoint_reads for this endpoint." }
+            required: [ id, host, sourceStatus ]
+            x-source: { kind: computed, file: internal/api/workers.go, pointer: null, detail: "One listed worker metrics endpoint from Postgres project_worker_endpoints." }
+          x-source: { kind: computed, file: internal/api/workers.go, pointer: null, detail: "Listed worker metrics endpoints, oldest first." }
+        sourceStatus:
+          $ref: "#/components/schemas/SourceStatus"
+          x-source: { kind: computed, file: internal/api/workers.go, pointer: null, detail: "Freshness of the worker reads, from ClickHouse layer_reads: a read is good when at least one listed endpoint answered." }
       required: [ source, workers ]
-      x-source: { kind: agent_metrics, file: dashboard/src/mocks/workers.json, pointer: "", detail: Prometheus scrape of LiveKit Agents worker metrics and captured worker configuration }
+      x-source: { kind: agent_metrics, file: dashboard/src/mocks/workers.json, pointer: "", detail: "Prometheus text exposition of each listed endpoint, parsed with prometheus/common v0.70.1 expfmt; metric names from livekit-agents telemetry/metrics.py (CPU_LOAD_GAUGE, RUNNING_JOB_GAUGE)." }
     CapacityRun:
       type: object
       additionalProperties: false
