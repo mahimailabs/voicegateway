@@ -332,6 +332,14 @@ func (s *Service) Gate(next http.Handler) http.Handler {
 	return s.Sessions(inner)
 }
 
+// now is the service's clock, time.Now when none is set.
+func (s *Service) now() time.Time {
+	if s.Now != nil {
+		return s.Now()
+	}
+	return time.Now()
+}
+
 // dummyKeyHash stands in for the stored hash when a presented key is malformed, unknown or revoked,
 // so every refusal runs the same comparison as an accepted key.
 var dummyKeyHash = sha256.Sum256([]byte("voicegateway: no such project key"))
@@ -358,9 +366,13 @@ func (s *Service) keyPrincipal(ctx context.Context, v string) (store.Principal, 
 	if compare(presented[:], stored) != 1 || found == nil {
 		return store.Principal{}, false, nil
 	}
-	if err := s.Users.TouchProjectKey(ctx, keyID); err != nil {
-		// Last used is a convenience; a failed write does not refuse the key.
-		s.Log.Warn("auth: could not record a project key's use", "key_id", keyID, "err", err)
+	// Last used is updated at most once a minute. Skipping the write when the stored time is recent
+	// keeps a busy key at one round trip; the conditional update still guards against a race.
+	if found.LastUsedAt == nil || s.now().Sub(*found.LastUsedAt) >= time.Minute {
+		if err := s.Users.TouchProjectKey(ctx, keyID); err != nil {
+			// Last used is a convenience; a failed write does not refuse the key.
+			s.Log.Warn("auth: could not record a project key's use", "key_id", keyID, "err", err)
+		}
 	}
 	return store.Principal{Key: &store.KeyScope{KeyID: found.KeyID, OrganisationID: found.OrganisationID, ProjectID: found.ProjectID}}, true, nil
 }

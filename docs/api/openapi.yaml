@@ -4824,10 +4824,10 @@ components:
       name: keyId
       in: path
       required: true
-      description: A project key's id, the 12 characters after vgk_; one from another project is not_found.
+      description: A project key's id, the 12 characters after vgk_; one from another project is not_found, and any other value is invalid_request.
       schema:
         type: string
-        minLength: 1
+        pattern: "^[a-z2-7]{12}$"
     UserId:
       name: userId
       in: path

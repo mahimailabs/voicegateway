@@ -103,6 +103,17 @@ func TestProjectKeyReadsOnlyItsProject(t *testing.T) {
 			t.Errorf("key GET %s = %d %s, want %d", tt.path, status, body, tt.want)
 		}
 	}
+	// A key never reaches a write: it cannot create or revoke keys, its own project's included.
+	keyID := key[4:16]
+	for _, c := range []call{
+		{method: http.MethodPost, path: "/api/v1/org/org-a/project/p/keys", body: `{"name":"x"}`},
+		{method: http.MethodDelete, path: "/api/v1/org/org-a/project/p/keys/" + keyID},
+	} {
+		c.token = key
+		if status, _ := f.send(web, c); status != http.StatusForbidden {
+			t.Errorf("key %s %s = %d, want 403", c.method, c.path, status)
+		}
+	}
 	status, body := f.send(web, call{method: http.MethodGet, path: "/api/v1/workspaces", token: key})
 	var ws struct {
 		Items []struct {
@@ -283,6 +294,17 @@ func TestProjectKeyRoles(t *testing.T) {
 			if status != want {
 				t.Errorf("%s %s = %d, want %d", role, c.method, status, want)
 			}
+		}
+	}
+	// A blank name, or one with a control character, is 400; a malformed keyId is 400.
+	for _, c := range []call{
+		{method: http.MethodPost, path: keys, body: `{"name":"   "}`},
+		{method: http.MethodPost, path: keys, body: `{"name":"a\u0000b"}`},
+		{method: http.MethodDelete, path: keys + "/NOT-A-KEY-ID"},
+	} {
+		c.cookie = admin
+		if status, _ := f.send(web, c); status != http.StatusBadRequest {
+			t.Errorf("%s %s %s = %d, want 400", c.method, c.path, c.body, status)
 		}
 	}
 	// Revoking twice is 204 both times; a key of another project is 404 through this one's path.

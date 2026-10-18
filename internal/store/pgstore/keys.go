@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -12,31 +13,31 @@ import (
 	"github.com/mahimailabs/voicegateway/internal/store"
 )
 
-// CreateProjectKey stores a key's key_id and the SHA-256 of its secret, never the secret. createdBy
-// is the creating user's id, empty for the command line. A taken key_id is store.ErrKeyExists; an
-// unknown project is store.ErrNotFound.
-func (s *Store) CreateProjectKey(ctx context.Context, organisationID, projectID, keyID, name string, secretSHA256 []byte, createdBy string) error {
+// CreateProjectKey stores a key's key_id and the SHA-256 of its secret, never the secret, and
+// returns when it was created, by the Postgres clock. createdBy is the creating user's id, empty for
+// the command line. A taken key_id is store.ErrKeyExists; an unknown project is store.ErrNotFound.
+func (s *Store) CreateProjectKey(ctx context.Context, organisationID, projectID, keyID, name string, secretSHA256 []byte, createdBy string) (time.Time, error) {
 	var by pgtype.UUID
 	if createdBy != "" {
 		id, err := uuid(createdBy)
 		if err != nil {
-			return fmt.Errorf("create project key: %w", err)
+			return time.Time{}, fmt.Errorf("create project key: %w", err)
 		}
 		by = id
 	}
-	err := s.q.CreateProjectKey(ctx, CreateProjectKeyParams{
+	at, err := s.q.CreateProjectKey(ctx, CreateProjectKeyParams{
 		KeyID: keyID, OrganisationID: organisationID, ProjectID: projectID, Name: name, SecretSha256: secretSHA256, CreatedBy: by,
 	})
 	var pgErr *pgconn.PgError
 	switch {
 	case errors.As(err, &pgErr) && pgErr.Code == uniqueViolation:
-		return store.ErrKeyExists
+		return time.Time{}, store.ErrKeyExists
 	case errors.As(err, &pgErr) && pgErr.Code == foreignKeyViolation:
-		return store.ErrNotFound
+		return time.Time{}, store.ErrNotFound
 	case err != nil:
-		return fmt.Errorf("create project key: %w", err)
+		return time.Time{}, fmt.Errorf("create project key: %w", err)
 	}
-	return nil
+	return at.Time.UTC(), nil
 }
 
 // ProjectKey returns the stored key for a key_id, or store.ErrNotFound.
@@ -48,7 +49,7 @@ func (s *Store) ProjectKey(ctx context.Context, keyID string) (store.StoredKey, 
 	if err != nil {
 		return store.StoredKey{}, fmt.Errorf("project key: %w", err)
 	}
-	return store.StoredKey{KeyID: r.KeyID, OrganisationID: r.OrganisationID, ProjectID: r.ProjectID, SecretSHA256: r.SecretSha256, Revoked: r.RevokedAt.Valid}, nil
+	return store.StoredKey{KeyID: r.KeyID, OrganisationID: r.OrganisationID, ProjectID: r.ProjectID, SecretSHA256: r.SecretSha256, Revoked: r.RevokedAt.Valid, LastUsedAt: timeOf(r.LastUsedAt)}, nil
 }
 
 // ProjectKeys lists a project's keys, newest first, revoked ones included.

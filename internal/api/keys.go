@@ -5,7 +5,10 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"regexp"
+	"strings"
 	"time"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/go-chi/chi/v5"
@@ -70,8 +73,10 @@ func (a *API) createProjectKey(w http.ResponseWriter, r *http.Request) {
 	}
 	dec := json.NewDecoder(io.LimitReader(r.Body, maxKeyBody))
 	dec.DisallowUnknownFields()
-	if err := dec.Decode(&body); err != nil || body.Name == "" || utf8.RuneCountInString(body.Name) > 64 {
-		writeError(w, r, http.StatusBadRequest, codeInvalidRequest, "name must be 1 to 64 characters")
+	err := dec.Decode(&body)
+	body.Name = strings.TrimSpace(body.Name)
+	if err != nil || body.Name == "" || utf8.RuneCountInString(body.Name) > 64 || strings.ContainsFunc(body.Name, unicode.IsControl) {
+		writeError(w, r, http.StatusBadRequest, codeInvalidRequest, "name must be 1 to 64 characters, with no control characters")
 		return
 	}
 	org, proj := chi.URLParam(r, "orgId"), chi.URLParam(r, "projectId")
@@ -86,7 +91,7 @@ func (a *API) createProjectKey(w http.ResponseWriter, r *http.Request) {
 			a.fail(w, r, err, "")
 			return
 		}
-		err = a.Keys.CreateProjectKey(r.Context(), org, proj, keyID, body.Name, sum, p.UserID)
+		createdAt, err := a.Keys.CreateProjectKey(r.Context(), org, proj, keyID, body.Name, sum, p.UserID)
 		if errors.Is(err, store.ErrKeyExists) && attempt == 0 {
 			continue
 		}
@@ -100,16 +105,24 @@ func (a *API) createProjectKey(w http.ResponseWriter, r *http.Request) {
 			by = &e
 		}
 		writeJSON(w, http.StatusCreated, createdProjectKey{
-			projectKey: projectKey{KeyID: keyID, Name: body.Name, Prefix: "vgk_" + keyID, CreatedAt: a.Now().UTC(), CreatedBy: by},
+			projectKey: projectKey{KeyID: keyID, Name: body.Name, Prefix: "vgk_" + keyID, CreatedAt: createdAt, CreatedBy: by},
 			Secret:     full,
 		})
 		return
 	}
 }
 
+// keyIDPattern is a key_id: 12 characters of lowercase base32.
+var keyIDPattern = regexp.MustCompile(`^[a-z2-7]{12}$`)
+
 // revokeProjectKey serves operationId revokeProjectKey; revoking twice is 204 both times.
 func (a *API) revokeProjectKey(w http.ResponseWriter, r *http.Request) {
-	err := a.Keys.RevokeProjectKey(r.Context(), chi.URLParam(r, "orgId"), chi.URLParam(r, "projectId"), chi.URLParam(r, "keyId"))
+	keyID := chi.URLParam(r, "keyId")
+	if !keyIDPattern.MatchString(keyID) {
+		writeError(w, r, http.StatusBadRequest, codeInvalidRequest, "keyId must be 12 characters of a to z and 2 to 7")
+		return
+	}
+	err := a.Keys.RevokeProjectKey(r.Context(), chi.URLParam(r, "orgId"), chi.URLParam(r, "projectId"), keyID)
 	if err != nil {
 		a.fail(w, r, err, "no such key in this project")
 		return

@@ -533,7 +533,15 @@ function ProjectKeyList({ projectId, name }: { projectId: string; name: string }
     <Group
       label={name}
       footer={
-        <Button variant="outline" size="sm" onClick={() => setNaming(true)} disabled={!read.isSuccess}>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => {
+            setProblem(null)
+            setNaming(true)
+          }}
+          disabled={!read.isSuccess}
+        >
           <Plus /> Create key
         </Button>
       }
@@ -590,6 +598,11 @@ function ProjectKeyList({ projectId, name }: { projectId: string; name: string }
                 </InputGroupAddon>
                 <InputGroupInput placeholder="ci" maxLength={64} value={keyName} onChange={(e) => setKeyName(e.target.value)} aria-label="Key name" />
               </InputGroup>
+              {problem && (
+                <p role="alert" className="pt-3 text-[13px] text-destructive">
+                  {problem}
+                </p>
+              )}
               <DialogFooter className="pt-4">
                 <Button type="submit" disabled={!keyName.trim() || create.isPending}>
                   Create key

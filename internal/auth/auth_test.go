@@ -98,7 +98,7 @@ func (f *fixture) projectKey(org, project string) string {
 	if err != nil {
 		f.t.Fatal(err)
 	}
-	if err := f.pg.CreateProjectKey(context.Background(), org, project, keyID, "test", sum, ""); err != nil {
+	if _, err := f.pg.CreateProjectKey(context.Background(), org, project, keyID, "test", sum, ""); err != nil {
 		f.t.Fatal(err)
 	}
 	return full

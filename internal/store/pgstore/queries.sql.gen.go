@@ -328,9 +328,10 @@ func (q *Queries) CreateProject(ctx context.Context, arg CreateProjectParams) (C
 	return i, err
 }
 
-const createProjectKey = `-- name: CreateProjectKey :exec
+const createProjectKey = `-- name: CreateProjectKey :one
 INSERT INTO project_keys (key_id, organisation_id, project_id, name, secret_sha256, created_by)
 VALUES ($1, $2, $3, $4, $5, $6)
+RETURNING created_at
 `
 
 type CreateProjectKeyParams struct {
@@ -342,8 +343,8 @@ type CreateProjectKeyParams struct {
 	CreatedBy      pgtype.UUID
 }
 
-func (q *Queries) CreateProjectKey(ctx context.Context, arg CreateProjectKeyParams) error {
-	_, err := q.db.Exec(ctx, createProjectKey,
+func (q *Queries) CreateProjectKey(ctx context.Context, arg CreateProjectKeyParams) (pgtype.Timestamptz, error) {
+	row := q.db.QueryRow(ctx, createProjectKey,
 		arg.KeyID,
 		arg.OrganisationID,
 		arg.ProjectID,
@@ -351,7 +352,9 @@ func (q *Queries) CreateProjectKey(ctx context.Context, arg CreateProjectKeyPara
 		arg.SecretSha256,
 		arg.CreatedBy,
 	)
-	return err
+	var created_at pgtype.Timestamptz
+	err := row.Scan(&created_at)
+	return created_at, err
 }
 
 const createUser = `-- name: CreateUser :one
@@ -1070,7 +1073,7 @@ func (q *Queries) ProjectConnected(ctx context.Context, arg ProjectConnectedPara
 }
 
 const projectKey = `-- name: ProjectKey :one
-SELECT key_id, organisation_id, project_id, secret_sha256, revoked_at FROM project_keys WHERE key_id = $1
+SELECT key_id, organisation_id, project_id, secret_sha256, revoked_at, last_used_at FROM project_keys WHERE key_id = $1
 `
 
 type ProjectKeyRow struct {
@@ -1079,6 +1082,7 @@ type ProjectKeyRow struct {
 	ProjectID      string
 	SecretSha256   []byte
 	RevokedAt      pgtype.Timestamptz
+	LastUsedAt     pgtype.Timestamptz
 }
 
 // The key the gate checks: its project, its hash, and whether it is revoked.
@@ -1091,6 +1095,7 @@ func (q *Queries) ProjectKey(ctx context.Context, keyID string) (ProjectKeyRow, 
 		&i.ProjectID,
 		&i.SecretSha256,
 		&i.RevokedAt,
+		&i.LastUsedAt,
 	)
 	return i, err
 }

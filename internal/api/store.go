@@ -55,7 +55,7 @@ type Accounts interface {
 // Keys lists, creates and revokes a project's API keys.
 type Keys interface {
 	ProjectKeys(ctx context.Context, organisationID, projectID string) ([]store.ProjectKey, error)
-	CreateProjectKey(ctx context.Context, organisationID, projectID, keyID, name string, secretSHA256 []byte, createdBy string) error
+	CreateProjectKey(ctx context.Context, organisationID, projectID, keyID, name string, secretSHA256 []byte, createdBy string) (time.Time, error)
 	RevokeProjectKey(ctx context.Context, organisationID, projectID, keyID string) error
 }
 

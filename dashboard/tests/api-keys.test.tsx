@@ -7,7 +7,8 @@ import type { Workspace } from "../src/lib/api-types"
 import { setCurrentSession } from "../src/lib/session.ts"
 import { setWorkspaces } from "../src/lib/workspaces.ts"
 
-// Acceptance check 9 of phase 06c: the API keys tab in Settings, Access.
+// Acceptance check 9 of phase 06c: the API keys tab in Settings, Access. The sixth case comes from
+// the 06c review: a failed create says so where the admin is looking.
 
 vi.hoisted(() => {
   window.matchMedia ??= (query: string) => ({ matches: false, media: query, onchange: null, addEventListener: () => {}, removeEventListener: () => {}, addListener: () => {}, removeListener: () => {}, dispatchEvent: () => false }) as MediaQueryList
@@ -30,14 +31,14 @@ const json = (status: number, body: unknown) => new Response(status === 204 ? nu
 const key = { keyId: "abcdefghijkl", name: "ci", prefix: "vgk_abcdefghijkl", createdAt: "2026-10-18T00:00:00Z", createdBy: "ada@example.com", lastUsedAt: null, revokedAt: null }
 
 // web as the console sees it, with the keys list answered by list.
-function serve(list: () => Response = () => json(200, { items: [key] })) {
+function serve(list: () => Response = () => json(200, { items: [key] }), created: () => Response = () => json(201, { ...key, keyId: "mnopqrstuvwx", prefix: "vgk_mnopqrstuvwx", name: "new", secret: SECRET })) {
   const calls: { method: string; url: string }[] = []
   vi.stubGlobal(
     "fetch",
     vi.fn(async (url: string, init?: RequestInit) => {
       const method = init?.method ?? "GET"
       calls.push({ method, url })
-      if (method === "POST") return json(201, { ...key, keyId: "mnopqrstuvwx", prefix: "vgk_mnopqrstuvwx", name: "new", secret: SECRET })
+      if (method === "POST") return created()
       if (method === "DELETE") return json(204, null)
       return list()
     }),
@@ -99,4 +100,16 @@ test("a 404 says the keys are not served by this server yet", async () => {
   signedInAs("admin")
   show()
   expect(await screen.findByText("Not served by this server yet")).toBeTruthy()
+})
+
+test("a failed create shows its error inside the dialog", async () => {
+  serve(undefined, () => json(500, { code: "internal_error", message: "the key could not be stored", requestId: "r" }))
+  signedInAs("admin")
+  show()
+  const user = userEvent.setup()
+  await user.click(await screen.findByRole("button", { name: /Create key/ }))
+  await user.type(screen.getByLabelText("Key name"), "new")
+  const dialog = screen.getByRole("dialog")
+  await user.click(within(dialog).getByRole("button", { name: "Create key" }))
+  expect((await within(dialog).findByRole("alert")).textContent).toBe("the key could not be stored")
 })

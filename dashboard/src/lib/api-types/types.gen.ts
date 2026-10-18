@@ -1616,7 +1616,7 @@ export type Clock = unknown & {
 };
 
 /**
- * A project key's id, the 12 characters after vgk_; one from another project is not_found.
+ * A project key's id, the 12 characters after vgk_; one from another project is not_found, and any other value is invalid_request.
  */
 export type KeyId = string;
 
@@ -3006,7 +3006,7 @@ export type RevokeProjectKeyData = {
          */
         projectId: string;
         /**
-         * A project key's id, the 12 characters after vgk_; one from another project is not_found.
+         * A project key's id, the 12 characters after vgk_; one from another project is not_found, and any other value is invalid_request.
          */
         keyId: string;
     };

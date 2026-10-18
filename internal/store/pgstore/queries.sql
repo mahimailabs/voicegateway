@@ -359,13 +359,14 @@ ORDER BY start_at, id;
 -- second, could hold no stored call.
 SELECT created_at, now()::timestamptz AS now FROM projects WHERE organisation_id = @organisation_id AND id = @project_id;
 
--- name: CreateProjectKey :exec
+-- name: CreateProjectKey :one
 INSERT INTO project_keys (key_id, organisation_id, project_id, name, secret_sha256, created_by)
-VALUES (@key_id, @organisation_id, @project_id, @name, @secret_sha256, sqlc.narg(created_by));
+VALUES (@key_id, @organisation_id, @project_id, @name, @secret_sha256, sqlc.narg(created_by))
+RETURNING created_at;
 
 -- name: ProjectKey :one
 -- The key the gate checks: its project, its hash, and whether it is revoked.
-SELECT key_id, organisation_id, project_id, secret_sha256, revoked_at FROM project_keys WHERE key_id = @key_id;
+SELECT key_id, organisation_id, project_id, secret_sha256, revoked_at, last_used_at FROM project_keys WHERE key_id = @key_id;
 
 -- name: ListProjectKeys :many
 SELECT k.key_id, k.name, k.created_at, u.email AS created_by, k.last_used_at, k.revoked_at

@@ -335,11 +335,12 @@ type ProjectKey struct {
 	LastUsedAt, RevokedAt *time.Time
 }
 
-// StoredKey is what the gate checks a presented key against.
+// StoredKey is what the gate checks a presented key against. LastUsedAt is nil until first use.
 type StoredKey struct {
 	KeyID, OrganisationID, ProjectID string
 	SecretSHA256                     []byte
 	Revoked                          bool
+	LastUsedAt                       *time.Time
 }
 
 // KeyScope is the project a request's API key reads.

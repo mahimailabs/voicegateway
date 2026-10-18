@@ -185,7 +185,7 @@ func CreateKey(ctx context.Context, c config.Config, organisationID, projectID, 
 		if err != nil {
 			return "", err
 		}
-		err = pg.CreateProjectKey(ctx, organisationID, projectID, keyID, name, sum, "")
+		_, err = pg.CreateProjectKey(ctx, organisationID, projectID, keyID, name, sum, "")
 		if errors.Is(err, store.ErrKeyExists) && attempt == 0 {
 			continue
 		}
