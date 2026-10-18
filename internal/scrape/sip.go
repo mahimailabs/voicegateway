@@ -7,7 +7,6 @@ import (
 	"slices"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/livekit/protocol/livekit"
@@ -54,15 +53,11 @@ func (s *SIPScraper) Tick(ctx context.Context) {
 		}
 		return
 	}
-	var wg sync.WaitGroup
-	for _, p := range projects {
-		wg.Go(func() {
-			if err := s.SIP(ctx, p); err != nil && ctx.Err() == nil {
-				s.Log.Error("scrape: sip", "organisation", p.OrganisationID, "project", p.ID, "err", err)
-			}
-		})
-	}
-	wg.Wait()
+	eachProject(projects, func(p store.Project) {
+		if err := s.SIP(ctx, p); err != nil && ctx.Err() == nil {
+			s.Log.Error("scrape: sip", "organisation", p.OrganisationID, "project", p.ID, "err", err)
+		}
+	})
 }
 
 // SIP reads one project's SIP configuration and stores it with the read. It skips the project when

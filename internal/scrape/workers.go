@@ -10,7 +10,6 @@ import (
 	"math"
 	"net/http"
 	"slices"
-	"sync"
 	"time"
 
 	dto "github.com/prometheus/client_model/go"
@@ -89,15 +88,11 @@ func (s *WorkerScraper) Tick(ctx context.Context) {
 		}
 		return
 	}
-	var wg sync.WaitGroup
-	for _, p := range projects {
-		wg.Go(func() {
-			if err := s.Workers(ctx, p); err != nil && ctx.Err() == nil {
-				s.Log.Error("scrape: workers", "organisation", p.OrganisationID, "project", p.ID, "err", err)
-			}
-		})
-	}
-	wg.Wait()
+	eachProject(projects, func(p store.Project) {
+		if err := s.Workers(ctx, p); err != nil && ctx.Err() == nil {
+			s.Log.Error("scrape: workers", "organisation", p.OrganisationID, "project", p.ID, "err", err)
+		}
+	})
 }
 
 // Workers reads one project's listed endpoints and stores what they reported with the read. A
