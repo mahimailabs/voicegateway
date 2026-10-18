@@ -68,6 +68,16 @@ make dev
 
 Open **[localhost:5180](http://localhost:5180)**, choose **Calls**, then open a captured session and select a caller turn.
 
+### Self-host with your LiveKit project
+
+```bash
+make up
+make user-add EMAIL=you@example.com
+make project-add NAME="Production"   # with LIVEKIT_URL, LIVEKIT_API_KEY and LIVEKIT_API_SECRET set
+```
+
+Then point your agent's `LIVEKIT_OBSERVABILITY_URL` and your LiveKit webhook at VoiceGateway. [Read the self-hosting guide](docs/self-hosting.md)
+
 ### Inspect a real turn
 
 <picture>
@@ -87,7 +97,7 @@ In this captured session, the caller asks about Toronto. The inspector shows the
 
 The preview establishes the console and its captured evidence. The next work connects it to authenticated ingest, durable storage and project-scoped APIs, then adds live updates and server-backed actions.
 
-- **Self-hosted:** the planned V1 platform runs on your infrastructure. Its install and first-call journey are still being built.
+- **Self-hosted:** the V1 platform runs on your infrastructure today as a preview. Follow [Self-hosting](docs/self-hosting.md) to connect your LiveKit project and see your calls.
 - **VoiceGateway Cloud:** the same product hosted, with self-serve signup, checkout and workspace provisioning. It is not available yet; follow [voicegateway.dev](https://voicegateway.dev) for updates.
 - **Next capabilities:** notifications, opt-in recording retention, MCP access, capacity testing and authorised embeds. Existing previews do not imply an operational backend.
 
