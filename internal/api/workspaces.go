@@ -23,16 +23,27 @@ type workspaceProject struct {
 }
 
 // getWorkspaces serves operationId getWorkspaces: the signed-in user's organisations and their
-// projects. The interim token names no user, so it is 401 here.
+// projects; for a project key, its organisation with that one project.
 func (a *API) getWorkspaces(w http.ResponseWriter, r *http.Request) {
 	p, _ := store.PrincipalFrom(r.Context())
-	if p.UserID == "" {
-		unauthenticated(w, r, "workspaces need a signed-in user")
-		return
-	}
-	ws, err := a.Accounts.Workspaces(r.Context(), p.UserID)
-	if err != nil {
-		a.fail(w, r, err, "")
+	var ws []store.Workspace
+	switch {
+	case p.Key != nil:
+		// A project key sees its organisation with its one project, so a client finds its scope.
+		w1, err := a.Accounts.KeyWorkspace(r.Context(), p.Key.OrganisationID, p.Key.ProjectID)
+		if err != nil {
+			a.fail(w, r, err, "")
+			return
+		}
+		ws = []store.Workspace{w1}
+	case p.UserID != "":
+		var err error
+		if ws, err = a.Accounts.Workspaces(r.Context(), p.UserID); err != nil {
+			a.fail(w, r, err, "")
+			return
+		}
+	default:
+		unauthenticated(w, r, "workspaces need a signed-in user or a project key")
 		return
 	}
 	out := workspaces{Items: make([]workspace, 0, len(ws))}

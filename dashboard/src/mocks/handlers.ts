@@ -1,5 +1,5 @@
 import { http, HttpResponse, type PathParams } from "msw"
-import type { AlertEvents, AlertSetup, Call, CallPage, CallStats, Invitations, IssueDispositions, Member, Members, IssueList, ProjectSettings, ProviderProbes, Workers, CapacityRun, CloudAgents, Egress, Error as ApiErrorBody, Ingress, MediaServer, ProjectSnapshot, Sip, Workspaces } from "@/lib/api-types"
+import type { AlertEvents, AlertSetup, Call, CallPage, CallStats, CreatedProjectKey, Invitations, IssueDispositions, Member, Members, ProjectKeys, IssueList, ProjectSettings, ProviderProbes, Workers, CapacityRun, CloudAgents, Egress, Error as ApiErrorBody, Ingress, MediaServer, ProjectSnapshot, Sip, Workspaces } from "@/lib/api-types"
 import { callStats } from "./call-stats"
 import { capturedCalls } from "./fixtures"
 import { alertEvents, issueList } from "./insights"
@@ -7,7 +7,7 @@ import { capacity, cloudAgents, egress, ingress, mediaServer, projectSnapshot, p
 import { summarize } from "./summaries"
 import { matchesFilters, parseFilters, sortCalls, totals } from "./calls-query"
 import { playbackUrl, recordingMedia } from "./recordings"
-import { alertSetup, changeMember, invitations, issueDispositions, members, projectSettings } from "./settings"
+import { alertSetup, changeMember, createKey, invitations, issueDispositions, members, projectKeys, projectSettings, revokeKey } from "./settings"
 import { knownOrg, knownProject, workspaces } from "./workspaces"
 
 // Everything but the paging parameters, in a stable order, so a cursor can name what it was issued for.
@@ -117,6 +117,19 @@ export const handlers = [
   http.get<PathParams, never, AlertSetup | ApiErrorBody>(`${project}/alert-setup`, ({ params }) => (known(params) ? HttpResponse.json(alertSetup()) : fail(404, "not_found", "No such project."))),
   http.get<PathParams, never, Invitations | ApiErrorBody>("*/api/v1/org/:orgId/invitations", ({ params }) => (knownOrg(params.orgId) ? HttpResponse.json(invitations()) : fail(404, "not_found", "No such organisation."))),
   http.get<PathParams, never, Workspaces>("*/api/v1/workspaces", () => HttpResponse.json(workspaces())),
+
+  // Project API keys, in memory (settings.ts).
+  http.get<PathParams, never, ProjectKeys | ApiErrorBody>(`${project}/keys`, ({ params }) => (known(params) ? HttpResponse.json(projectKeys(String(params.projectId))) : fail(404, "not_found", "No such project."))),
+  http.post<PathParams, { name?: string }, CreatedProjectKey | ApiErrorBody>(`${project}/keys`, async ({ params, request }) => {
+    if (!known(params)) return fail(404, "not_found", "No such project.")
+    const { name } = await request.json()
+    if (typeof name !== "string" || name.length < 1 || name.length > 64) return fail(400, "invalid_request", "name must be 1 to 64 characters")
+    return HttpResponse.json(createKey(String(params.projectId), name), { status: 201 })
+  }),
+  http.delete<PathParams, never, ApiErrorBody>(`${project}/keys/:keyId`, ({ params }) => {
+    if (!known(params)) return fail(404, "not_found", "No such project.")
+    return revokeKey(String(params.projectId), String(params.keyId)) ? new HttpResponse(null, { status: 204 }) : fail(404, "not_found", "No such key in this project.")
+  }),
 
   // Members, in memory (settings.ts), with web's refusals.
   http.get<PathParams, never, Members | ApiErrorBody>("*/api/v1/org/:orgId/members", ({ params }) => (knownOrg(params.orgId) ? HttpResponse.json(members()) : fail(404, "not_found", "No such organisation."))),

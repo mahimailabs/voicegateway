@@ -251,18 +251,18 @@ type CallTotals struct {
 	ValuesTruncated bool
 }
 
-// Principal is who a request is from: a signed-in user with their organisation roles, or, until
-// phase 06c, the interim API token, which names no user.
+// Principal is who a request is from: a signed-in user with their organisation roles, or a project
+// API key, which names no user.
 type Principal struct {
 	UserID string
 	Email  string
 	// Roles maps each organisation the user belongs to to their role there.
 	Roles map[string]string
-	// Token is true for the interim bearer token.
-	Token bool
 	// PasswordVersion is the user's current password_version; a session holding another is signed
 	// out.
 	PasswordVersion int
+	// Key is set for a project API key, which names no user: it reads its one project.
+	Key *KeyScope
 }
 
 type principalKey struct{}
@@ -321,4 +321,29 @@ type StatsCall struct {
 	AnswerMs          []float64
 	AgentKey          *string
 	Models            []string
+}
+
+// ErrKeyExists means a new project key's key_id is already taken; the caller draws another.
+var ErrKeyExists = errors.New("a project key with this key id exists")
+
+// ProjectKey is a project API key as the console lists it. CreatedBy is the creator's email, nil
+// when the key was made from the command line; LastUsedAt and RevokedAt are nil until they happen.
+type ProjectKey struct {
+	KeyID, Name           string
+	CreatedAt             time.Time
+	CreatedBy             *string
+	LastUsedAt, RevokedAt *time.Time
+}
+
+// StoredKey is what the gate checks a presented key against. LastUsedAt is nil until first use.
+type StoredKey struct {
+	KeyID, OrganisationID, ProjectID string
+	SecretSHA256                     []byte
+	Revoked                          bool
+	LastUsedAt                       *time.Time
+}
+
+// KeyScope is the project a request's API key reads.
+type KeyScope struct {
+	KeyID, OrganisationID, ProjectID string
 }

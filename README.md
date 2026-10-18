@@ -79,6 +79,10 @@ In this captured session, the caller asks about Toronto. The inspector shows the
 
 [Read the console guide](dashboard/README.md)
 
+### Upgrading from the API token
+
+`VOICEGATEWAY_API_TOKEN` is gone. Create a key per project with `voicegateway key create --org <org> --project <project> --name <name>` (or in Settings, Access, API keys), send it as `Authorization: Bearer <key>`, then delete the variable.
+
 ## The road to V1
 
 The preview establishes the console and its captured evidence. The next work connects it to authenticated ingest, durable storage and project-scoped APIs, then adds live updates and server-backed actions.

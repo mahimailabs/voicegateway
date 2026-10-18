@@ -24,7 +24,11 @@ type API struct {
 	Endpoints WorkerEndpoints
 	Accounts  Accounts
 	Stats     Stats
-	Log       *slog.Logger
+	Keys      Keys
+	// NewKey draws a project key: its key_id, the SHA-256 of its secret, and the full key
+	// (auth.NewKey).
+	NewKey func() (keyID string, secretSHA256 []byte, full string, err error)
+	Log    *slog.Logger
 	// AnswerBudgetMs is the answer budget listCalls' totals count against; 0 is the console's
 	// default, 1500 ms. Interim, until thresholds are stored per project.
 	AnswerBudgetMs int
@@ -65,6 +69,9 @@ func (a *API) Routes() http.Handler {
 	handle(r, http.MethodGet, project+"/ingress", a.ingress)
 	handle(r, http.MethodGet, project+"/agents", a.cloudAgents)
 	handle(r, http.MethodGet, project+"/workers", a.workers)
+	handle(r, http.MethodGet, project+"/keys", a.listProjectKeys)
+	handle(r, http.MethodPost, project+"/keys", a.createProjectKey)
+	handle(r, http.MethodDelete, project+"/keys/{keyId}", a.revokeProjectKey)
 	handle(r, http.MethodGet, "/api/v1/org/{orgId}/members", a.getMembers)
 	handle(r, http.MethodPatch, "/api/v1/org/{orgId}/members/{userId}", a.updateMember)
 	handle(r, http.MethodDelete, "/api/v1/org/{orgId}/members/{userId}", a.removeMember)
@@ -75,7 +82,7 @@ func (a *API) Routes() http.Handler {
 func requirePrincipal(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if _, ok := store.PrincipalFrom(r.Context()); !ok {
-			unauthenticated(w, r, "sign in, or send a valid API token")
+			unauthenticated(w, r, "sign in, or send a valid API key")
 			return
 		}
 		next.ServeHTTP(w, r)

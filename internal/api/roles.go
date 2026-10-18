@@ -26,19 +26,22 @@ const (
 // only through this table, and TestEveryRouteHasAMinimumRole compares it with the contract's
 // x-access.minimumRole.
 var routeAccess = map[string]access{
-	"GET /api/v1/workspaces":                                     {"Viewer", scopePrincipal},
-	"GET /api/v1/org/{orgId}/project/{projectId}/calls":          {"Viewer", scopeProject},
-	"GET /api/v1/org/{orgId}/project/{projectId}/calls/{callId}": {"Viewer", scopeProject},
-	"GET /api/v1/org/{orgId}/project/{projectId}/call-stats":     {"Viewer", scopeProject},
-	"GET /api/v1/org/{orgId}/project/{projectId}/media-server":   {"Viewer", scopeProject},
-	"GET /api/v1/org/{orgId}/project/{projectId}/sip":            {"Viewer", scopeProject},
-	"GET /api/v1/org/{orgId}/project/{projectId}/egress":         {"Viewer", scopeProject},
-	"GET /api/v1/org/{orgId}/project/{projectId}/ingress":        {"Viewer", scopeProject},
-	"GET /api/v1/org/{orgId}/project/{projectId}/agents":         {"Viewer", scopeProject},
-	"GET /api/v1/org/{orgId}/project/{projectId}/workers":        {"Viewer", scopeProject},
-	"GET /api/v1/org/{orgId}/members":                            {"Viewer", scopeOrganisation},
-	"PATCH /api/v1/org/{orgId}/members/{userId}":                 {"Admin", scopeOrganisation},
-	"DELETE /api/v1/org/{orgId}/members/{userId}":                {"Admin", scopeOrganisation},
+	"GET /api/v1/workspaces":                                      {"Viewer", scopePrincipal},
+	"GET /api/v1/org/{orgId}/project/{projectId}/calls":           {"Viewer", scopeProject},
+	"GET /api/v1/org/{orgId}/project/{projectId}/calls/{callId}":  {"Viewer", scopeProject},
+	"GET /api/v1/org/{orgId}/project/{projectId}/call-stats":      {"Viewer", scopeProject},
+	"GET /api/v1/org/{orgId}/project/{projectId}/media-server":    {"Viewer", scopeProject},
+	"GET /api/v1/org/{orgId}/project/{projectId}/sip":             {"Viewer", scopeProject},
+	"GET /api/v1/org/{orgId}/project/{projectId}/egress":          {"Viewer", scopeProject},
+	"GET /api/v1/org/{orgId}/project/{projectId}/ingress":         {"Viewer", scopeProject},
+	"GET /api/v1/org/{orgId}/project/{projectId}/agents":          {"Viewer", scopeProject},
+	"GET /api/v1/org/{orgId}/project/{projectId}/workers":         {"Viewer", scopeProject},
+	"GET /api/v1/org/{orgId}/project/{projectId}/keys":            {"Admin", scopeProject},
+	"POST /api/v1/org/{orgId}/project/{projectId}/keys":           {"Admin", scopeProject},
+	"DELETE /api/v1/org/{orgId}/project/{projectId}/keys/{keyId}": {"Admin", scopeProject},
+	"GET /api/v1/org/{orgId}/members":                             {"Viewer", scopeOrganisation},
+	"PATCH /api/v1/org/{orgId}/members/{userId}":                  {"Admin", scopeOrganisation},
+	"DELETE /api/v1/org/{orgId}/members/{userId}":                 {"Admin", scopeOrganisation},
 }
 
 // roleRank orders the contract's role names, and the stored ones, Viewer < Member < Admin; an
@@ -91,8 +94,8 @@ func handle(r chi.Router, method, pattern string, h http.HandlerFunc) {
 }
 
 // allow answers 403 a caller whose organisation role is below a route's minimum. A user outside
-// the organisation in the path is told so. The interim token names no user and has no role: it
-// keeps the project reads it had, and is refused organisation operations.
+// the organisation in the path is told so. A project API key names no user: it is a read-only
+// Viewer of its one project, and is refused every other project and every organisation operation.
 func allow(acc access, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if acc.scope == scopePrincipal {
@@ -100,9 +103,10 @@ func allow(acc access, next http.Handler) http.Handler {
 			return
 		}
 		p, _ := store.PrincipalFrom(r.Context())
-		if p.Token {
-			if acc.scope != scopeProject {
-				writeError(w, r, http.StatusForbidden, codeForbidden, "sign in to manage an organisation; the API token reads projects only")
+		if k := p.Key; k != nil {
+			own := k.OrganisationID == chi.URLParam(r, "orgId") && k.ProjectID == chi.URLParam(r, "projectId")
+			if acc.scope != scopeProject || !own || roleRank(acc.min) > roleRank("Viewer") {
+				writeError(w, r, http.StatusForbidden, codeForbidden, "this API key reads its own project only")
 				return
 			}
 			next.ServeHTTP(w, r)

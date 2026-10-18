@@ -120,12 +120,13 @@ An admin creates an API key for one project in the console or from the command l
    (Measured by `TestInterimTokenRetired`.)
 7. Given `voicegateway key create` for an existing project, then it prints one key that reads that project (200), and `key revoke --key-id` makes the key 401 (measured by `TestKeyCommands`).
 8. Given each new operation, then every response in checks 1 to 5 validates against the contract (measured by the response validator in those tests).
-9. Given the console with the mock off, the Vitest suite `api-keys.test.tsx` runs 5 cases (measured by that suite):
+9. Given the console with the mock off, the Vitest suite `api-keys.test.tsx` runs 6 cases (measured by that suite):
    - An Admin sees the keys of each project.
    - Creating a key shows its secret once, and closing the dialog removes it from the page.
    - Revoke asks first, and only the confirmation calls `revokeProjectKey`.
    - A Viewer sees that admins manage keys, with no list.
    - A 404 shows "Not served by this server yet".
+   - A failed create shows its error inside the dialog.
 10. Given the log output of checks 1 to 7, then no line contains a key secret, a full key, a password or a session id. A refused key's `key_id` may appear (measured by `TestNoSecretInLogs`, extended).
 
 ## Manual Check

@@ -65,6 +65,7 @@ func root() *cobra.Command {
 		role("migrate", "Apply pending database migrations", app.Migrate),
 		projectCommand(),
 		userCommand(),
+		keyCommand(),
 		&cobra.Command{
 			Use:   "preflight",
 			Short: "Check that every dependency answers",
@@ -270,6 +271,54 @@ func userCommand() *cobra.Command {
 
 	cmd := &cobra.Command{Use: "user", Short: "Manage users"}
 	cmd.AddCommand(add, reset)
+	return cmd
+}
+
+// keyCommand creates and revokes project API keys (phase 06c), for installs without a console
+// session such as CI. The full key is printed once; only its SHA-256 is stored.
+func keyCommand() *cobra.Command {
+	var org, project, name, keyID string
+	create := &cobra.Command{
+		Use:   "create",
+		Short: "Create an API key for a project and print it once",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			c, err := config.Load(os.Getenv)
+			if err != nil {
+				return fmt.Errorf("configuration:\n%w", err)
+			}
+			full, err := app.CreateKey(cmd.Context(), c, org, project, name)
+			if err != nil {
+				return fmt.Errorf("create key: %w", err)
+			}
+			_, err = fmt.Fprintf(cmd.OutOrStdout(), "%s\nKeep this key now: it is not shown again.\n", full)
+			return err
+		},
+	}
+	create.Flags().StringVar(&org, "org", "default", "organisation id")
+	create.Flags().StringVar(&project, "project", "", "project id")
+	create.Flags().StringVar(&name, "name", "", "a name for the key, such as ci")
+	revoke := &cobra.Command{
+		Use:   "revoke",
+		Short: "Revoke a project's API key by its key id",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			c, err := config.Load(os.Getenv)
+			if err != nil {
+				return fmt.Errorf("configuration:\n%w", err)
+			}
+			if err := app.RevokeKey(cmd.Context(), c, org, project, keyID); err != nil {
+				return fmt.Errorf("revoke key: %w", err)
+			}
+			_, err = fmt.Fprintf(cmd.OutOrStdout(), "revoked key %s\n", keyID)
+			return err
+		},
+	}
+	revoke.Flags().StringVar(&org, "org", "default", "organisation id")
+	revoke.Flags().StringVar(&project, "project", "", "project id")
+	revoke.Flags().StringVar(&keyID, "key-id", "", "the key's key id, the 12 characters after vgk_")
+	cmd := &cobra.Command{Use: "key", Short: "Manage project API keys"}
+	cmd.AddCommand(create, revoke)
 	return cmd
 }
 

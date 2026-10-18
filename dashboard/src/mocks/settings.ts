@@ -1,4 +1,4 @@
-import type { AlertRuleSetup, AlertSetup, Invitation, Invitations, Member, Members, IssueDisposition, IssueDispositions, ProjectSettings, Thresholds } from "@/lib/api-types"
+import type { AlertRuleSetup, AlertSetup, CreatedProjectKey, Invitation, Invitations, Member, Members, ProjectKey, ProjectKeys, IssueDisposition, IssueDispositions, ProjectSettings, Thresholds } from "@/lib/api-types"
 import { readLocal } from "@/lib/local-store"
 
 // The settings reads, served from what the console saved in this browser (lib/local-store.ts) until
@@ -75,6 +75,26 @@ export function changeMember(userId: string, role: Member["role"] | null): Membe
   }
   memberList = memberList.map((x) => (x.userId === userId ? { ...x, role } : x))
   return { ...m, role }
+}
+
+// Project API keys, held in memory for the mock: the full key is made here and shown once, as web
+// does, and only its list fields are kept.
+const keyStore = new Map<string, ProjectKey[]>()
+const b32 = "abcdefghijklmnopqrstuvwxyz234567"
+const draw = (n: number, alphabet: string) => Array.from(crypto.getRandomValues(new Uint8Array(n)), (b) => alphabet[b % alphabet.length]).join("")
+export const projectKeys = (project: string): ProjectKeys => ({ items: [...(keyStore.get(project) ?? [])].reverse() })
+export function createKey(project: string, name: string): CreatedProjectKey {
+  const keyId = draw(12, b32)
+  const key: ProjectKey = { keyId, name, prefix: `vgk_${keyId}`, createdAt: new Date().toISOString(), createdBy: null, lastUsedAt: null, revokedAt: null }
+  keyStore.set(project, [...(keyStore.get(project) ?? []), key])
+  return { ...key, secret: `vgk_${keyId}_${draw(43, "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_")}` }
+}
+/** Revokes a key, keeping the first revocation; false when the key is not this project's. */
+export function revokeKey(project: string, keyId: string): boolean {
+  const list = keyStore.get(project) ?? []
+  if (!list.some((k) => k.keyId === keyId)) return false
+  keyStore.set(project, list.map((k) => (k.keyId === keyId && k.revokedAt === null ? { ...k, revokedAt: new Date().toISOString() } : k)))
+  return true
 }
 
 const ROLES = new Set<string>(["Admin", "Member", "Viewer"])

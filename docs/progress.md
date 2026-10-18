@@ -327,6 +327,26 @@ What changed:
 - **Overview:** every section renders from its own read. A read web does not serve yet shows "Not served by this server yet", and any other failure its error. An agent's per-call strip opens the call.
 - **From the 06b review:** removing a member asks first. An organisation with no project still opens its organisation settings, People among them.
 
-Checks 1 to 8 and 3a pass: Go on real Postgres against the contract, and the console with Vitest. The manual check (one real call on Compose with the mock off) is not run yet.
+Checks 1 to 8 and 3a pass: Go on real Postgres against the contract, and the console with Vitest. Merged as #383 (971a2d6d), and the plan task "Connect the console" is ticked.
 
-Next: 06c, project API keys.
+Manual check: the pair reviewer reports a real call on a fresh live stack (`livekit-server --dev` and a LiveKit Agents worker) with the mock off. The call opened from the agent strip and from the Calls list at 7 sizes, and every unserved section said so ([#383 comment](https://github.com/mahimailabs/voicegateway/pull/383#issuecomment-6244255916)). On #387 the pair reviewer then ran it on Compose too, with a real call (`compose-call-387c`): the call opened from the Overview's strip and from the Calls list at 7 sizes, and unserved sections said so ([#387 comment](https://github.com/mahimailabs/voicegateway/pull/387#issuecomment-6245244091)). Their stack was `deploy/compose.yaml` with the head's binary built on the host, since their container cannot fetch Go modules; every other service was the pinned image.
+
+### 2026-10-18: phase 06c, project API keys
+
+Scripts and coding agents read one project with an API key (spec `docs/specs/phase06c-project-keys.md`, decision 0027).
+
+What changed:
+- **Keys:** `vgk_<key_id>_<secret>`, read by fixed lengths. `key_id` is lowercase base32 and the table's primary key; only the SHA-256 of the secret is stored. A drawn `key_id` that is taken is drawn again, once.
+- **The gate:** a Bearer key is checked in constant time. A malformed, unknown or revoked key, and any Bearer that is not a key, all answer the same 401 after the same comparison, against a dummy hash when there is no stored one. `last_used_at` is one conditional update, at most once a minute.
+- **What a key reads:** its own project, as a read-only Viewer. Other projects and organisation operations answer 403, and `getWorkspaces` shows its one project.
+- **Admin only:** `listProjectKeys`, `createProjectKey` and `revokeProjectKey`, in Settings, Access, API keys, or with `voicegateway key create` and `key revoke --key-id`. The secret shows once. Revoke asks first, and revoking twice is 204. A project's keys are deleted with it.
+- **The interim token is retired:** `VOICEGATEWAY_API_TOKEN` is no longer read or accepted, and the dev env no longer generates it. If it is still set, web logs one warning and starts. `deploy/compose.yaml` still passes it to web until after V1, only so that warning reaches Compose upgrades.
+- **Later:** ingest from the SDK and OTLP with project keys, and the MCP server that reads with them.
+
+Upgrading: create a key per project (`voicegateway key create --org <o> --project <p> --name <n>`, or in Settings), use it in place of the token in scripts, then delete `VOICEGATEWAY_API_TOKEN`.
+
+Checks 1 to 10 and 3a pass: Go on real Postgres against the contract, the CLI, and the console with Vitest.
+
+Manual check: the pair reviewer reports it passed on Compose behind HTTPS ([#387 comment](https://github.com/mahimailabs/voicegateway/pull/387#issuecomment-6245244091)). A key from `voicegateway key create` read its project, got 403 elsewhere, and was refused like every other bad credential. The console created, showed once and revoked keys at 7 sizes, and no secret appeared in the logs.
+
+Next: 06d, invitation links.

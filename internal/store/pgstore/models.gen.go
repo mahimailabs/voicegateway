@@ -104,6 +104,18 @@ type Project struct {
 	CreatedAt              pgtype.Timestamptz
 }
 
+type ProjectKey struct {
+	KeyID          string
+	OrganisationID string
+	ProjectID      string
+	Name           string
+	SecretSha256   []byte
+	CreatedBy      pgtype.UUID
+	CreatedAt      pgtype.Timestamptz
+	LastUsedAt     pgtype.Timestamptz
+	RevokedAt      pgtype.Timestamptz
+}
+
 type ProjectWorkerEndpoint struct {
 	OrganisationID string
 	ProjectID      string

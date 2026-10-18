@@ -86,9 +86,22 @@ func (f *fixture) service(trusted ...string) *auth.Service {
 	}
 	secure, plain := auth.NewSessions(pgxstore.New(f.pool))
 	return &auth.Service{
-		Users: f.pg, Secure: secure, Plain: plain, Trusted: prefixes, Token: "0123456789abcdef0123456789abcdef",
+		Users: f.pg, Secure: secure, Plain: plain, Trusted: prefixes,
 		Log: slog.New(slog.NewJSONHandler(f.logs, nil)), Now: time.Now,
 	}
+}
+
+// projectKey creates an API key for a project, as createProjectKey does, and returns the full key.
+func (f *fixture) projectKey(org, project string) string {
+	f.t.Helper()
+	keyID, sum, full, err := auth.NewKey()
+	if err != nil {
+		f.t.Fatal(err)
+	}
+	if _, err := f.pg.CreateProjectKey(context.Background(), org, project, keyID, "test", sum, ""); err != nil {
+		f.t.Fatal(err)
+	}
+	return full
 }
 
 // addUser creates an account with a role in an organisation, creating the organisation if needed.
@@ -392,7 +405,7 @@ func TestGateAcceptsSessionScopedToMembership(t *testing.T) {
 		{"member", path("org-a"), request{tls: true, cookies: []*http.Cookie{cookie}}, http.StatusOK},
 		{"not a member", path("org-b"), request{tls: true, cookies: []*http.Cookie{cookie}}, http.StatusForbidden},
 		{"no credential", path("org-a"), request{tls: true}, http.StatusUnauthorized},
-		{"interim token", path("org-b"), request{tls: true, headers: map[string]string{"Authorization": "Bearer 0123456789abcdef0123456789abcdef"}}, http.StatusOK},
+		{"retired interim token", path("org-a"), request{tls: true, headers: map[string]string{"Authorization": "Bearer 0123456789abcdef0123456789abcdef"}}, http.StatusUnauthorized},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			res := f.do(web, http.MethodGet, tt.path, "", tt.rq)
@@ -507,9 +520,13 @@ func TestNoSecretInLogs(t *testing.T) {
 	res := f.do(routes, http.MethodPost, "/auth/sign-in", signIn("ada@example.com", password), request{tls: true})
 	c := sessionCookie(res)
 	f.do(routes, http.MethodPost, "/auth/sign-in", signIn("ada@example.com", "a wrong one"), request{tls: true})
-	f.do(f.apiWith(s), http.MethodGet, "/api/v1/workspaces", "", request{tls: true, headers: map[string]string{"Authorization": "Bearer " + s.Token}})
+	if _, err := f.pool.Exec(context.Background(), `INSERT INTO projects (organisation_id, id, name, livekit_url, livekit_api_key, livekit_api_secret_sealed) VALUES ('default', 'logs', 'Logs', 'wss://x', 'APIlogs', '\x00') ON CONFLICT DO NOTHING`); err != nil {
+		t.Fatal(err)
+	}
+	key := f.projectKey("default", "logs")
+	f.do(f.apiWith(s), http.MethodGet, "/api/v1/workspaces", "", request{tls: true, headers: map[string]string{"Authorization": "Bearer " + key}})
 	// An error path, which logs: the account store fails during a sign-in.
-	broken := &auth.Service{Users: failingUsers{Users: f.pg}, Secure: s.Secure, Plain: s.Plain, Token: s.Token, Log: s.Log, Now: time.Now}
+	broken := &auth.Service{Users: failingUsers{Users: f.pg}, Secure: s.Secure, Plain: s.Plain, Log: s.Log, Now: time.Now}
 	f.do(broken.Routes(), http.MethodPost, "/auth/sign-in", signIn("ada@example.com", password), request{tls: true})
 	// Phase 06b's flows: members read and changed, a password reset, and a failing member store.
 	f.addUser("bob@example.com", "default", "viewer")
@@ -522,6 +539,10 @@ func TestNoSecretInLogs(t *testing.T) {
 		t.Fatal(err)
 	}
 	bob := sessionCookie(f.do(routes, http.MethodPost, "/auth/sign-in", signIn("bob@example.com", reset), request{tls: true}))
+	// Phase 06c: a key created through the API, used, and refused with a wrong secret.
+	created := f.createKey(web, c, "default", "logs").Secret
+	f.send(web, call{method: http.MethodGet, path: "/api/v1/org/default/project/logs/calls", token: created})
+	f.send(web, call{method: http.MethodGet, path: "/api/v1/org/default/project/logs/calls", token: created[:len(created)-2] + "xx"})
 	failing := (&api.API{Projects: f.pg, Calls: f.pg, Traces: emptyTraces{}, Accounts: failingAccounts{Accounts: f.pg}, Log: s.Log, Now: time.Now, Gate: s.Gate}).Routes()
 	f.send(failing, call{method: http.MethodGet, path: members, cookie: c})
 	logs := f.logs.String()
@@ -531,7 +552,7 @@ func TestNoSecretInLogs(t *testing.T) {
 	if !strings.Contains(logs, "members") {
 		t.Error("the failing member store did not log")
 	}
-	for _, secret := range []string{password, "a wrong one", c.Value, s.Token, reset, bob.Value} {
+	for _, secret := range []string{password, "a wrong one", c.Value, key, key[len(key)-43:], created, created[len(created)-43:], reset, bob.Value} {
 		if strings.Contains(logs, secret) {
 			t.Errorf("a log line holds a secret %q", secret)
 		}

@@ -352,7 +352,7 @@ function OverviewView({ stats, cloud: cloudRead, media, sip: sipQ, egress: egres
           <div className="grid grid-cols-2 gap-3">
             {[
               rooms
-                ? { to: "/sfu", icon: HardDrives, label: "Media server", value: rooms.rooms.length, unit: "rooms", note: `${regions.map((r) => regionCity[r] ?? r).join(", ")}${lkHop?.tcpMs != null ? ` · ${Math.round(lkHop.tcpMs)} ms` : ""}`, tone: "good" }
+                ? { to: "/sfu", icon: HardDrives, label: "Media server", value: rooms.rooms.length, unit: rooms.rooms.length === 1 ? "room" : "rooms", note: `${regions.map((r) => regionCity[r] ?? r).join(", ")}${lkHop?.tcpMs != null ? ` · ${Math.round(lkHop.tcpMs)} ms` : ""}`, tone: "good" }
                 : { to: "/sfu", icon: HardDrives, label: "Media server", value: null, unit: "", note: readState(media), tone: "none" },
               sip
                 ? {

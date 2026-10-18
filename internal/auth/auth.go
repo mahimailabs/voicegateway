@@ -29,6 +29,8 @@ type Users interface {
 	ReserveSignIn(ctx context.Context, keys []store.SignInKey) (ids []int64, wait time.Duration, err error)
 	ForgetSignInAttempts(ctx context.Context, ids []int64) error
 	ForgetSignIns(ctx context.Context) error
+	ProjectKey(ctx context.Context, keyID string) (store.StoredKey, error)
+	TouchProjectKey(ctx context.Context, keyID string) error
 }
 
 // Sign-in limits (spec 06a): attempts counted per email and per client address over a 15-minute
@@ -58,10 +60,11 @@ type Service struct {
 	// PublicHTTPS is true when VOICEGATEWAY_PUBLIC_URL is https: every session cookie is then
 	// Secure. It says nothing of how a request arrived, so it never lifts https_required.
 	PublicHTTPS bool
-	// Token is the interim API token, empty when unset.
-	Token string
-	Log   *slog.Logger
-	Now   func() time.Time
+	// Compare compares two SHA-256 hashes in constant time and reports 1 when they are equal; nil
+	// is subtle.ConstantTimeCompare. Tests count the comparisons through it.
+	Compare func(x, y []byte) int
+	Log     *slog.Logger
+	Now     func() time.Time
 
 	proxyWarning sync.Once
 }
@@ -303,22 +306,20 @@ func (s *Service) userPrincipal(r *http.Request) (store.Principal, bool, error) 
 	return p, true, nil
 }
 
-// Gate identifies a /api/v1 request's caller, with its session loaded: a signed-in user, or, until
-// 06c, the interim bearer token. It puts the principal on the context and refuses nothing itself:
-// the API router answers any request without a principal 401, and checks membership per route.
+// Gate identifies a /api/v1 request's caller, with its session loaded: a signed-in user, or a
+// project API key sent as a Bearer token. It puts the principal on the context and refuses nothing
+// itself: the API router answers any request without a principal 401, and checks access per route.
 func (s *Service) Gate(next http.Handler) http.Handler {
-	want := sha256.Sum256([]byte(s.Token))
 	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		p, ok, err := s.userPrincipal(r)
 		if err != nil {
 			s.fail(w, err)
 			return
 		}
-		if !ok && s.Token != "" {
-			got, isBearer := bearer(r.Header.Get("Authorization"))
-			sum := sha256.Sum256([]byte(got))
-			if isBearer && subtle.ConstantTimeCompare(sum[:], want[:]) == 1 {
-				p, ok = store.Principal{Token: true}, true
+		if v, isBearer := bearer(r.Header.Get("Authorization")); !ok && isBearer {
+			if p, ok, err = s.keyPrincipal(r.Context(), v); err != nil {
+				s.fail(w, err)
+				return
 			}
 		}
 		if !ok {
@@ -329,6 +330,52 @@ func (s *Service) Gate(next http.Handler) http.Handler {
 		next.ServeHTTP(w, r.WithContext(store.WithPrincipal(r.Context(), p)))
 	})
 	return s.Sessions(inner)
+}
+
+// now is the service's clock, time.Now when none is set.
+func (s *Service) now() time.Time {
+	if s.Now != nil {
+		return s.Now()
+	}
+	return time.Now()
+}
+
+// dummyKeyHash stands in for the stored hash when a presented key is malformed, unknown or revoked,
+// so every refusal runs the same comparison as an accepted key.
+var dummyKeyHash = sha256.Sum256([]byte("voicegateway: no such project key"))
+
+// keyPrincipal checks a Bearer value as a project API key. Any value that is not a valid, unrevoked
+// key reads as no credential, the same 401 for each, and runs the one comparison either way.
+func (s *Service) keyPrincipal(ctx context.Context, v string) (store.Principal, bool, error) {
+	keyID, presented, parsed := parseKey(v)
+	stored := dummyKeyHash[:]
+	var found *store.StoredKey
+	if parsed {
+		k, err := s.Users.ProjectKey(ctx, keyID)
+		switch {
+		case err == nil && !k.Revoked:
+			stored, found = k.SecretSHA256, &k
+		case err != nil && !errors.Is(err, store.ErrNotFound):
+			return store.Principal{}, false, err
+		}
+	}
+	compare := s.Compare
+	if compare == nil {
+		compare = subtle.ConstantTimeCompare
+	}
+	if compare(presented[:], stored) != 1 || found == nil {
+		return store.Principal{}, false, nil
+	}
+	// Last used is updated at most once a minute. Skipping the write when the stored time is recent
+	// keeps a busy key at one round trip; the conditional update still guards against a race.
+	if found.LastUsedAt == nil || s.now().Sub(*found.LastUsedAt) >= time.Minute {
+		if err := s.Users.TouchProjectKey(ctx, found.KeyID); err != nil {
+			// Last used is a convenience; a failed write does not refuse the key. The key id logged
+			// is the stored one, never text from the request's Authorization header.
+			s.Log.Warn("auth: could not record a project key's use", "key_id", found.KeyID, "err", err)
+		}
+	}
+	return store.Principal{Key: &store.KeyScope{KeyID: found.KeyID, OrganisationID: found.OrganisationID, ProjectID: found.ProjectID}}, true, nil
 }
 
 // bearer returns the credentials of a Bearer Authorization header; the scheme is case-insensitive.

@@ -6,6 +6,15 @@ follows [Semantic Versioning](https://semver.org/) and
 
 ## Unreleased
 
+### Access
+
+- Add project API keys: an admin creates, lists and revokes them per project in
+  Settings or with `voicegateway key create` and `key revoke`. A key reads one
+  project and changes nothing; only the SHA-256 of its secret is stored.
+- Remove `VOICEGATEWAY_API_TOKEN`. It is no longer read or accepted; if it is
+  still set, web logs a warning and starts. To upgrade, create a key per
+  project, use it in place of the token, then delete the variable.
+
 ### Licensing
 
 - Move to an open-core license. Everything outside `ee/` directories stays MIT.
