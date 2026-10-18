@@ -369,9 +369,10 @@ func (s *Service) keyPrincipal(ctx context.Context, v string) (store.Principal, 
 	// Last used is updated at most once a minute. Skipping the write when the stored time is recent
 	// keeps a busy key at one round trip; the conditional update still guards against a race.
 	if found.LastUsedAt == nil || s.now().Sub(*found.LastUsedAt) >= time.Minute {
-		if err := s.Users.TouchProjectKey(ctx, keyID); err != nil {
-			// Last used is a convenience; a failed write does not refuse the key.
-			s.Log.Warn("auth: could not record a project key's use", "key_id", keyID, "err", err)
+		if err := s.Users.TouchProjectKey(ctx, found.KeyID); err != nil {
+			// Last used is a convenience; a failed write does not refuse the key. The key id logged
+			// is the stored one, never text from the request's Authorization header.
+			s.Log.Warn("auth: could not record a project key's use", "key_id", found.KeyID, "err", err)
 		}
 	}
 	return store.Principal{Key: &store.KeyScope{KeyID: found.KeyID, OrganisationID: found.OrganisationID, ProjectID: found.ProjectID}}, true, nil

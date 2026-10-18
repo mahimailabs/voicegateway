@@ -389,6 +389,7 @@ WHERE key_id = @key_id AND (last_used_at IS NULL OR last_used_at < now() - inter
 SELECT o.id AS organisation_id, o.name AS organisation_name, p.id AS project_id, p.name AS project_name
 FROM projects p JOIN organisations o ON o.id = p.organisation_id
 WHERE p.organisation_id = @organisation_id AND p.id = @project_id;
+
 -- name: CreateWorkerEndpoint :one
 INSERT INTO project_worker_endpoints (organisation_id, project_id, id, host, url_sealed)
 VALUES ($1, $2, $3, $4, $5)
