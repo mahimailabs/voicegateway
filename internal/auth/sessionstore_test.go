@@ -1,11 +1,14 @@
 package auth
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"fmt"
 	"testing"
 	"time"
+
+	"github.com/alexedwards/scs/v2"
 )
 
 // memSessions is an in-memory scs.CtxStore that counts its commits.
@@ -132,5 +135,40 @@ func TestQuietStoreRemembersOnlyFoundSessions(t *testing.T) {
 	_, _, _ = q.FindCtx(ctx, "real-token")
 	if _, ok := q.seen[sha256.Sum256([]byte("real-token"))]; !ok || len(q.seen) != 1 {
 		t.Errorf("a found session is not kept under its token's hash (entries %d)", len(q.seen))
+	}
+}
+
+// One session can encode to different bytes, since gob writes a map in random order; the store
+// compares what the session holds, so a reordered encoding is still skipped.
+func TestQuietStoreIgnoresEncodingOrder(t *testing.T) {
+	ctx := context.Background()
+	deadline := time.Date(2026, 10, 25, 12, 0, 0, 0, time.UTC)
+	values := map[string]any{"user": "u-1", "password_version": 0, "a": 1, "b": 2, "c": 3}
+	first, err := (scs.GobCodec{}).Encode(deadline, values)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var other []byte
+	for range 200 { // find an encoding whose bytes differ, from map order alone
+		b, err := (scs.GobCodec{}).Encode(deadline, values)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !bytes.Equal(b, first) {
+			other = b
+			break
+		}
+	}
+	if other == nil {
+		t.Skip("gob wrote one order 200 times; nothing to compare")
+	}
+	inner := newMemSessions()
+	q := NewQuietStore(inner, 5*time.Minute)
+	t0 := time.Date(2026, 10, 18, 12, 0, 0, 0, time.UTC)
+	_ = q.CommitCtx(ctx, "tok", first, t0)
+	_, _, _ = q.FindCtx(ctx, "tok")
+	_ = q.CommitCtx(ctx, "tok", other, t0.Add(time.Minute))
+	if inner.commits != 1 {
+		t.Errorf("writes = %d, want 1: the same session in another encoding order is unchanged", inner.commits)
 	}
 }

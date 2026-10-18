@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"crypto/sha256"
+	"fmt"
 	"sync"
 	"time"
 
@@ -32,7 +33,7 @@ type QuietStore struct {
 
 // seenSession is what this process last knew of one session's row.
 type seenSession struct {
-	read      [sha256.Size]byte // the bytes the last Find returned
+	read      [sha256.Size]byte // the fingerprint of what the last Find returned
 	readOK    bool
 	committed time.Time // the expiry this process last wrote, zero if none
 	touched   time.Time
@@ -58,10 +59,23 @@ func (q *QuietStore) FindCtx(ctx context.Context, token string) ([]byte, bool, e
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	e := q.seen[key]
-	e.read, e.readOK, e.touched = sha256.Sum256(b), true, q.now()
+	e.read, e.readOK, e.touched = fingerprint(b), true, q.now()
 	q.seen[key] = e
 	q.sweep()
 	return b, true, nil
+}
+
+// fingerprint identifies what a session holds, not how it was encoded: scs's gob codec writes a
+// map's keys in random order, so one session can encode to different bytes, and comparing bytes
+// would miss a match and write. It decodes with scs's default codec, the one NewSessions uses, and
+// hashes the deadline and the values, which fmt prints in sorted key order. Bytes it cannot decode
+// are hashed as they are.
+func fingerprint(b []byte) [sha256.Size]byte {
+	deadline, values, err := (scs.GobCodec{}).Decode(b)
+	if err != nil {
+		return sha256.Sum256(b)
+	}
+	return sha256.Sum256(fmt.Appendf(nil, "%d|%v", deadline.UnixNano(), values))
 }
 
 // forget drops what is known of a token, if anything.
@@ -75,7 +89,7 @@ func (q *QuietStore) forget(token string) {
 // CommitCtx writes a session unless the row already holds these bytes and the expiry moved less
 // than the slack past the last one written here.
 func (q *QuietStore) CommitCtx(ctx context.Context, token string, b []byte, expiry time.Time) error {
-	h, key := sha256.Sum256(b), sha256.Sum256([]byte(token))
+	h, key := fingerprint(b), sha256.Sum256([]byte(token))
 	q.mu.Lock()
 	e, ok := q.seen[key]
 	skip := ok && e.readOK && e.read == h && !e.committed.IsZero() && expiry.Sub(e.committed) < q.slack
