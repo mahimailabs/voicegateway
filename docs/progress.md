@@ -352,3 +352,12 @@ Checks 1 to 10 and 3a pass: Go on real Postgres against the contract, the CLI, a
 Manual check: the pair reviewer reports it passed on Compose behind HTTPS ([#387 comment](https://github.com/mahimailabs/voicegateway/pull/387#issuecomment-6245244091)). A key from `voicegateway key create` read its project, got 403 elsewhere, and was refused like every other bad credential. The console created, showed once and revoked keys at 7 sizes, and no secret appeared in the logs.
 
 Next: 06d, invitation links.
+
+### 2026-10-18: sign-in audit fixes (#388)
+
+The pair's audit of 06a, 06b and the gate, items 1 to 4; items 5 and 6 had already landed (`crypto/rand.Text` endpoint ids in #389, `memberships_organisation` in 00008).
+- **One principal query:** the gate loads the user, password version and every organisation role in one LEFT JOIN. Not cached, so a role change or removal still applies on the next request on every replica.
+- **No session write per request:** `auth.QuietStore` wraps `scs/pgxstore` and skips the commit scs makes on every request (its idle timeout marks each session modified) while the bytes are unchanged and the expiry has moved less than 5 minutes. An authenticated request now costs 2 round trips before its handler, down from 4. scs still sends `Set-Cookie`, which also renews the cookie's own idle expiry.
+- **Hash concurrency:** capped at max(1, GOMAXPROCS/4), since each argon2id hash runs 4 threads, and GOMAXPROCS follows a container's CPU limit where NumCPU does not.
+- **Stored hash parameters:** bounded when read (passes 1 to 10, memory up to 1 GiB, threads 1 to 16, salt and key lengths), and a sign-in re-hashes a password stored with other parameters, keeping `password_version`. Measured: one hash at t=3, m=64 MiB, p=4 takes 30 to 43 ms on an Apple M4 (3 runs of 20).
+- **Kept hand-rolled, as the audit recommends:** the Postgres sign-in limiter (counts shared across replicas, failures only, refunded on success: no library does that), the client address parsing (about 100 tested lines; the one library is quiet and the /64 bucketing is ours), and the role table (three roles, enforced by a test; casbin adds a policy language for no gain). The sign-in CTE waits until after V1.

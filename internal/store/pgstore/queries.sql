@@ -267,9 +267,6 @@ INSERT INTO memberships (user_id, organisation_id, role) VALUES (@user_id, @orga
 -- name: UserByEmail :one
 SELECT id, email, password_hash, password_version FROM users WHERE email = @email;
 
--- name: UserByID :one
-SELECT id, email, password_version FROM users WHERE id = @id;
-
 -- name: SetPassword :execrows
 -- A new password, and a new password_version, so every session from before is signed out.
 UPDATE users SET password_hash = @password_hash, password_version = password_version + 1 WHERE email = @email;
@@ -293,9 +290,6 @@ UPDATE memberships SET role = @role WHERE organisation_id = @organisation_id AND
 
 -- name: RemoveMembership :execrows
 DELETE FROM memberships WHERE organisation_id = @organisation_id AND user_id = @user_id;
-
--- name: Memberships :many
-SELECT organisation_id, role FROM memberships WHERE user_id = @user_id ORDER BY organisation_id;
 
 -- name: Membership :one
 SELECT role FROM memberships WHERE user_id = @user_id AND organisation_id = @organisation_id;
@@ -404,3 +398,16 @@ ORDER BY created_at, id;
 -- name: DeleteWorkerEndpoint :execrows
 DELETE FROM project_worker_endpoints
 WHERE organisation_id = $1 AND project_id = $2 AND id = $3;
+
+-- name: PrincipalRows :many
+-- A signed-in user with every organisation role, in one round trip: one row per membership, or
+-- one row with a null organisation when there is none; no row when the user does not exist.
+SELECT u.id, u.email, u.password_version, m.organisation_id, m.role
+FROM users u LEFT JOIN memberships m ON m.user_id = u.id
+WHERE u.id = @id
+ORDER BY m.organisation_id;
+
+-- name: UpdatePasswordHash :exec
+-- The same password hashed again with current parameters: not a new password, so password_version
+-- stays and no session is signed out.
+UPDATE users SET password_hash = @password_hash WHERE id = @id;

@@ -942,35 +942,6 @@ func (q *Queries) Membership(ctx context.Context, arg MembershipParams) (string,
 	return role, err
 }
 
-const memberships = `-- name: Memberships :many
-SELECT organisation_id, role FROM memberships WHERE user_id = $1 ORDER BY organisation_id
-`
-
-type MembershipsRow struct {
-	OrganisationID string
-	Role           string
-}
-
-func (q *Queries) Memberships(ctx context.Context, userID pgtype.UUID) ([]MembershipsRow, error) {
-	rows, err := q.db.Query(ctx, memberships, userID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []MembershipsRow
-	for rows.Next() {
-		var i MembershipsRow
-		if err := rows.Scan(&i.OrganisationID, &i.Role); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const openCallInRoom = `-- name: OpenCallInRoom :one
 SELECT id FROM calls
 WHERE organisation_id = $1 AND project_id = $2 AND room_name = $3
@@ -1036,6 +1007,49 @@ func (q *Queries) OrganisationMembers(ctx context.Context, organisationID string
 	for rows.Next() {
 		var i OrganisationMembersRow
 		if err := rows.Scan(&i.UserID, &i.Email, &i.Role); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const principalRows = `-- name: PrincipalRows :many
+SELECT u.id, u.email, u.password_version, m.organisation_id, m.role
+FROM users u LEFT JOIN memberships m ON m.user_id = u.id
+WHERE u.id = $1
+ORDER BY m.organisation_id
+`
+
+type PrincipalRowsRow struct {
+	ID              pgtype.UUID
+	Email           string
+	PasswordVersion int32
+	OrganisationID  pgtype.Text
+	Role            pgtype.Text
+}
+
+// A signed-in user with every organisation role, in one round trip: one row per membership, or
+// one row with a null organisation when there is none; no row when the user does not exist.
+func (q *Queries) PrincipalRows(ctx context.Context, id pgtype.UUID) ([]PrincipalRowsRow, error) {
+	rows, err := q.db.Query(ctx, principalRows, id)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []PrincipalRowsRow
+	for rows.Next() {
+		var i PrincipalRowsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Email,
+			&i.PasswordVersion,
+			&i.OrganisationID,
+			&i.Role,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -1503,6 +1517,22 @@ func (q *Queries) TransactionTime(ctx context.Context) (pgtype.Timestamptz, erro
 	return at, err
 }
 
+const updatePasswordHash = `-- name: UpdatePasswordHash :exec
+UPDATE users SET password_hash = $1 WHERE id = $2
+`
+
+type UpdatePasswordHashParams struct {
+	PasswordHash string
+	ID           pgtype.UUID
+}
+
+// The same password hashed again with current parameters: not a new password, so password_version
+// stays and no session is signed out.
+func (q *Queries) UpdatePasswordHash(ctx context.Context, arg UpdatePasswordHashParams) error {
+	_, err := q.db.Exec(ctx, updatePasswordHash, arg.PasswordHash, arg.ID)
+	return err
+}
+
 const upsertCallByJobID = `-- name: UpsertCallByJobID :one
 INSERT INTO calls (organisation_id, project_id, job_id, last_activity_at, first_seen_at)
 VALUES ($1, $2, $3, $4, $5)
@@ -1628,23 +1658,6 @@ func (q *Queries) UserByEmail(ctx context.Context, email string) (UserByEmailRow
 		&i.PasswordHash,
 		&i.PasswordVersion,
 	)
-	return i, err
-}
-
-const userByID = `-- name: UserByID :one
-SELECT id, email, password_version FROM users WHERE id = $1
-`
-
-type UserByIDRow struct {
-	ID              pgtype.UUID
-	Email           string
-	PasswordVersion int32
-}
-
-func (q *Queries) UserByID(ctx context.Context, id pgtype.UUID) (UserByIDRow, error) {
-	row := q.db.QueryRow(ctx, userByID, id)
-	var i UserByIDRow
-	err := row.Scan(&i.ID, &i.Email, &i.PasswordVersion)
 	return i, err
 }
 
