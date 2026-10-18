@@ -68,7 +68,7 @@ export default function PrivacyPage() {
             <strong style={{ color: 'var(--color-ink)', fontWeight: 600 }}>
               Website analytics.
             </strong>{' '}
-            PostHog measures visits, documentation and source links, and successful waitlist confirmations. On docs.voicegateway.dev it also counts searches, code copies, outbound links and the answers to “Was this page helpful?”. Analytics runs only on the production sites, uses in-memory identifiers, and does not record sessions or send your email address. No account is required to browse this site.
+            PostHog measures visits, documentation and source links, and successful waitlist confirmations. On docs.voicegateway.dev it also records the text of searches and the top result, code copies, outbound links, and answers to “Was this page helpful?”, including any optional message you write. Analytics runs only on the production sites, uses in-memory identifiers, and does not record sessions or send your email address. No account is required to browse this site.
           </li>
         </ul>
       </PrivSection>
