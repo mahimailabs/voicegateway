@@ -8,10 +8,14 @@ import (
 	"io"
 	"log/slog"
 	"math"
+	"net"
 	"net/http"
+	"net/netip"
 	"slices"
+	"syscall"
 	"time"
 
+	"code.dny.dev/ssrf"
 	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/expfmt"
 	"golang.org/x/sync/errgroup"
@@ -57,12 +61,70 @@ type WorkerScraper struct {
 	Timeout time.Duration
 }
 
-// NewWorkerClient returns an HTTP client for worker metrics endpoints that does not follow
-// redirects: a redirect answers as an error read.
-func NewWorkerClient() *http.Client {
+// NewWorkerClient returns an HTTP client for worker metrics endpoints. It does not follow
+// redirects, so a redirect answers as an error read, and it checks every address it dials, after
+// DNS, so a name that resolves somewhere it must not go is refused (code.dny.dev/ssrf):
+//   - Link-local addresses, cloud metadata services among them, are always refused.
+//   - Private and loopback addresses are allowed, since a self-hosted install's workers usually sit
+//     on its own network, unless publicOnly is set; then every special-purpose range is refused.
+func NewWorkerClient(publicOnly bool) *http.Client {
+	opts := []ssrf.Option{ssrf.WithAnyPort()}
+	if !publicOnly {
+		opts = append(opts, ssrf.WithAllowedV4Prefixes(privateV4...), ssrf.WithAllowedV6Prefixes(privateV6...))
+	}
+	guard := ssrf.New(opts...)
+	dialer := &net.Dialer{
+		Timeout: 10 * time.Second,
+		Control: func(network, address string, c syscall.RawConn) error {
+			if metadataAddress(address) {
+				return errMetadataAddress
+			}
+			return guard.Safe(network, address, c)
+		},
+	}
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.DialContext = dialer.DialContext
+	transport.Proxy = nil // a proxy would dial on the worker's behalf, past the guard
 	return &http.Client{
+		Transport:     transport,
 		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 	}
+}
+
+// The private and loopback ranges a self-hosted install's workers may sit on. Link-local
+// (169.254.0.0/16, fe80::/10) is deliberately absent.
+var (
+	privateV4 = []netip.Prefix{
+		netip.MustParsePrefix("10.0.0.0/8"),
+		netip.MustParsePrefix("172.16.0.0/12"),
+		netip.MustParsePrefix("192.168.0.0/16"),
+		netip.MustParsePrefix("100.64.0.0/10"),
+		netip.MustParsePrefix("127.0.0.0/8"),
+	}
+	privateV6 = []netip.Prefix{
+		netip.MustParsePrefix("fc00::/7"),
+		netip.MustParsePrefix("::1/128"),
+	}
+	// metadataV6 holds IPv6 metadata addresses inside the private range allowed above: AWS's.
+	metadataV6 = []netip.Prefix{netip.MustParsePrefix("fd00:ec2::254/128")}
+)
+
+var errMetadataAddress = errors.New("worker endpoint: a cloud metadata address is never dialled")
+
+// metadataAddress reports whether a dial target is a cloud metadata address the private allow list
+// would otherwise let through.
+func metadataAddress(address string) bool {
+	ap, err := netip.ParseAddrPort(address)
+	if err != nil {
+		return false
+	}
+	ip := ap.Addr().Unmap()
+	for _, p := range metadataV6 {
+		if p.Contains(ip) {
+			return true
+		}
+	}
+	return false
 }
 
 // Run reads every project once per Every until ctx is cancelled. It returns nil on cancellation.
