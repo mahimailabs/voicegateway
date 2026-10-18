@@ -11,6 +11,7 @@ import { HardDrives } from "@phosphor-icons/react"
 import { QueryState } from "@/components/page-state"
 import { mediaServerQuery } from "@/lib/api"
 import { type MediaServerData, type Participant, type Room, RoomDrawer, fromContract, kindIcon, kindName, openAtWatchEnd, roomOrigin } from "./room-drawer"
+import { fmtHourMinute } from "@/lib/format"
 
 // The media server as the project's three keys see it (decision 0016): a few numbers, where people
 // came in on a globe, and every room on one clock. Explanations live in tooltips, not on the page.
@@ -23,7 +24,7 @@ const regions: Record<string, { city: string; lat: number; lng: number }> = {
   otoronto1a: { city: "Toronto", lat: 43.6532, lng: -79.3832 },
 }
 
-const hhmm = (t: number) => new Date(t * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+const hhmm = (t: number) => fmtHourMinute(t * 1000)
 const dur = (sec: number) => {
   const s = Math.round(sec)
   if (s >= 3600) return `${Math.floor(s / 3600)}h ${String(Math.floor((s % 3600) / 60)).padStart(2, "0")}m`

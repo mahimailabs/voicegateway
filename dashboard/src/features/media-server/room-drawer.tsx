@@ -11,6 +11,7 @@ import type { MediaServer } from "@/lib/api-types"
 import { useEmbedded } from "@/lib/url-state"
 import { useQuery } from "@tanstack/react-query"
 import { callInRoomQuery } from "@/lib/api"
+import { fmtClock as clock, fmtSeconds as secs } from "@/lib/format"
 
 // One room, opened from the Media server timeline: how it came together, what the agent was doing,
 // who was in it with which tracks, and the room's own settings. Everything comes from RoomService and
@@ -110,9 +111,7 @@ export const openAtWatchEnd = (r: { lastSeen: number | null }, m: MediaServerDat
 // The watch a time falls in, if the time and the watch's bounds are known.
 export const windowOf = (t: number | null, m: MediaServerData) => (t === null ? undefined : m.windows.find((w) => w.start !== null && w.end !== null && t >= w.start - 1 && t <= w.end + 1))
 
-const clock = (ms: number) => new Date(ms).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })
 const plus = (ms: number) => `${ms < 0 ? "-" : "+"}${(Math.abs(ms) / 1000).toFixed(2)} s`
-const secs = (s: number) => (s >= 60 ? `${Math.floor(s / 60)}m ${String(Math.round(s % 60)).padStart(2, "0")}s` : `${s.toFixed(1)} s`)
 const codecName: Record<string, string> = { "audio/red": "Opus with RED", "audio/opus": "Opus", "audio/PCMU": "G.711 μ-law", "audio/PCMA": "G.711 A-law" }
 const who = (p: Participant) => `${kindName[p.kind] ?? p.kind}${p.agentName ? ` ${p.agentName}` : ""}`
 const stateTone: Record<string, string> = { speaking: "bg-primary", thinking: "bg-primary/40", listening: "bg-muted-foreground/25" }

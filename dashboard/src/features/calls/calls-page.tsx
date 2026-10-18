@@ -27,6 +27,7 @@ import { CallView } from "@/features/call/call-view"
 import { fmtMs, pipelineLabel } from "@/features/call/call-model"
 import { BUDGET_MS } from "@/features/call/call-steps"
 import { useUrlState } from "@/lib/url-state"
+import { fmtDateTime } from "@/lib/format"
 
 // Archive and row key: the room SID as before; the contract id when the room reported none.
 const keyOf = (c: { roomSid: string | null; id: string }) => c.roomSid ?? c.id
@@ -104,7 +105,7 @@ const length = (s: number) => (s >= 60 ? `${Math.floor(s / 60)}m ${String(s % 60
 const right = { headerClassName: "[&>div]:w-full [&>div]:justify-end", cellClassName: "text-right" }
 
 // The columns the server can sort, by their listCalls sort key. The others do not sort.
-const startedText = (r: Row) => new Date(r.summary.startedAt).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })
+const startedText = (r: Row) => fmtDateTime(r.summary.startedAt)
 
 export const serverSort: Record<string, string> = { started: "startedAt", length: "durationSeconds", turns: "turnCount", answer: "answerMs", issues: "issues" }
 

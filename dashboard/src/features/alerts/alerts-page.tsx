@@ -15,6 +15,7 @@ import { useQuery } from "@tanstack/react-query"
 import { QueryState } from "@/components/page-state"
 import { alertEventsQuery, alertSetupQuery } from "@/lib/api"
 import { useUrlState } from "@/lib/url-state"
+import { fmtHourMinute } from "@/lib/format"
 
 // Alerts: the console's checks, routed to where the team already works (decision 0020). Counts are
 // what each rule would have fired on in the captured data; nothing is sent until the Phase 2 worker
@@ -28,7 +29,7 @@ function ChannelMark({ c, size = 14 }: { c: Channel; size?: number }) {
 
 // An event with no reported time is listed under "Time unknown", never placed on a date.
 const day = (s: number | null) => (s === null ? "Time unknown" : new Date(s * 1000).toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" }))
-const time = (s: number | null) => (s === null ? "unknown" : new Date(s * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }))
+const time = (s: number | null) => (s === null ? "unknown" : fmtHourMinute(s * 1000))
 const within = (t: number | null, d: number) => t !== null && t >= d && t < d + 86400
 const sevTone = { high: "bg-destructive", medium: "bg-amber-500" }
 const sevText = { high: "text-destructive", medium: "text-amber-700 dark:text-amber-400" }

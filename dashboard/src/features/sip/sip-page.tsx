@@ -17,6 +17,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { PathDiagram, PathLegend } from "./call-path"
 import { type Check, type Outbound, type Route, type SipData, checks, enc, inPaths, inboundPath, outboundPath, providerOf, routes, transport } from "./sip-model"
 import { useUrlPick, useUrlState } from "@/lib/url-state"
+import { fmtDateTime as clock, fmtSeconds as secs } from "@/lib/format"
 
 // +1 numbers read as (705) 710-0749; anything else stays in E.164.
 const pretty = (n: string) => (/^\+1\d{10}$/.test(n) ? `+1 (${n.slice(2, 5)}) ${n.slice(5, 8)}-${n.slice(8)}` : n)
@@ -109,8 +110,6 @@ function Chip({ children, bad }: { children: React.ReactNode; bad?: boolean }) {
   return <span className={cn("rounded-md px-1.5 py-0.5 text-[11px] whitespace-nowrap", bad ? "bg-destructive/10 text-destructive" : "bg-muted text-muted-foreground")}>{children}</span>
 }
 
-const clock = (ms: number) => new Date(ms).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })
-const secs = (s: number) => (s >= 60 ? `${Math.floor(s / 60)}m ${String(Math.round(s % 60)).padStart(2, "0")}s` : `${s.toFixed(1)} s`)
 
 export function SipPage() {
   const test = new URLSearchParams(window.location.search).get("data") === "test"
