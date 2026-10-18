@@ -73,7 +73,9 @@ func Web(ctx context.Context, c config.Config, log *slog.Logger) error {
 	if err != nil {
 		return fmt.Errorf("VOICEGATEWAY_TRUSTED_PROXIES: %w", err)
 	}
-	secure, plain := auth.NewSessions(pgxstore.New(pool))
+	// Sessions are written only when they change, or when their expiry has moved 5 minutes; the
+	// idle timeout would otherwise rewrite the row on every request.
+	secure, plain := auth.NewSessions(auth.NewQuietStore(pgxstore.New(pool), 5*time.Minute))
 	accounts := &auth.Service{
 		Users: projects, Secure: secure, Plain: plain, Trusted: trusted,
 		PublicHTTPS: strings.HasPrefix(strings.ToLower(c.PublicURL), "https://"),

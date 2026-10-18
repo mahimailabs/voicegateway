@@ -73,26 +73,28 @@ func (s *Store) UserByEmail(ctx context.Context, email string) (store.User, erro
 	return store.User{ID: row.ID.String(), Email: row.Email, PasswordHash: row.PasswordHash, PasswordVersion: int(row.PasswordVersion)}, nil
 }
 
-// Principal loads a user's email and organisation roles, or store.ErrNotFound.
+// Principal loads a user's email, password version and organisation roles in one query, or
+// store.ErrNotFound.
 func (s *Store) Principal(ctx context.Context, userID string) (store.Principal, error) {
 	id, err := uuid(userID)
 	if err != nil {
 		return store.Principal{}, store.ErrNotFound
 	}
-	u, err := s.q.UserByID(ctx, id)
-	if errors.Is(err, pgx.ErrNoRows) {
+	// One query for the user and every role: the gate runs it on every request, so it is one round
+	// trip, never cached, and a role change or removal applies on the next request on every replica.
+	rows, err := s.q.PrincipalRows(ctx, id)
+	if err != nil {
+		return store.Principal{}, fmt.Errorf("principal: %w", err)
+	}
+	if len(rows) == 0 {
 		return store.Principal{}, store.ErrNotFound
 	}
-	if err != nil {
-		return store.Principal{}, fmt.Errorf("user: %w", err)
-	}
-	rows, err := s.q.Memberships(ctx, id)
-	if err != nil {
-		return store.Principal{}, fmt.Errorf("memberships: %w", err)
-	}
+	u := rows[0]
 	p := store.Principal{UserID: u.ID.String(), Email: u.Email, Roles: map[string]string{}, PasswordVersion: int(u.PasswordVersion)}
 	for _, r := range rows {
-		p.Roles[r.OrganisationID] = r.Role
+		if r.OrganisationID.Valid {
+			p.Roles[r.OrganisationID.String] = r.Role.String
+		}
 	}
 	return p, nil
 }
@@ -238,6 +240,22 @@ func (s *Store) AddMembership(ctx context.Context, email, organisationID, role s
 		return "", fmt.Errorf("add membership: %w", err)
 	}
 	return u.ID.String(), nil
+}
+
+// UpdatePasswordHash stores the same password hashed again with current parameters, only while the
+// stored hash is still verifiedHash, the one the sign-in checked. It is not a new password, so
+// password_version stays and no session is signed out. If the hash changed meanwhile, a password
+// reset landed, and it reports false and changes nothing.
+func (s *Store) UpdatePasswordHash(ctx context.Context, userID, verifiedHash, passwordHash string) (bool, error) {
+	id, err := uuid(userID)
+	if err != nil {
+		return false, fmt.Errorf("update password hash: %w", err)
+	}
+	n, err := s.q.UpdatePasswordHash(ctx, UpdatePasswordHashParams{ID: id, PasswordHash: passwordHash, VerifiedHash: verifiedHash})
+	if err != nil {
+		return false, fmt.Errorf("update password hash: %w", err)
+	}
+	return n == 1, nil
 }
 
 // SetPassword replaces an account's password and moves its password_version on, which signs the
