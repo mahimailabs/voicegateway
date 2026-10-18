@@ -285,12 +285,17 @@ func byID(msgs []stream.Message) map[string]stream.Message {
 	return out
 }
 
-// deadLetter moves an entry to the dead-letter stream with any TURN password blanked, since the
-// body there is not the stored, stripped one.
+// deadLetter moves an entry to the dead-letter stream with its secrets removed as for storage,
+// since the body there is not the stored, stripped one. A webhook, or an entry whose kind is
+// unknown, may be an Egress or Ingress one; any other keeps all but a TURN password.
 func (s *Sink) deadLetter(ctx context.Context, m stream.Message, reason string) {
 	s.Log.Warn("sink: dead-lettering entry", "entry", m.ID, "reason", reason)
+	scrub := deadLetterWebhook
+	if m.Err == nil && m.Envelope.Kind != event.KindLiveKitWebhook {
+		scrub = blankTURNPassword
+	}
 	_ = s.retry(ctx, "dead-letter", func(ctx context.Context) error {
-		return s.Stream.DeadLetter(ctx, m, reason, blankTURNPassword)
+		return s.Stream.DeadLetter(ctx, m, reason, scrub)
 	})
 }
 
@@ -327,7 +332,7 @@ func toEvent(m stream.Message) (store.Event, error) {
 	payload := e.Payload
 	if e.Kind == event.KindLiveKitWebhook {
 		var err error
-		if payload, err = withoutTURNPassword(payload); err != nil {
+		if payload, err = withoutWebhookSecrets(payload); err != nil {
 			return store.Event{}, err
 		}
 	}
