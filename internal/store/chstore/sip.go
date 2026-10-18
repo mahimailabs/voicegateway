@@ -17,7 +17,7 @@ func (s *Store) StoreSIPRead(ctx context.Context, read store.LayerRead, sip *sto
 		if err != nil {
 			return fmt.Errorf("encode sip config: %w", err)
 		}
-		batch, err := s.conn.PrepareBatch(ctx, `INSERT INTO sip_reads (organisation_id, project_id, read_at, config)`)
+		batch, err := s.conn.PrepareBatch(pollInsert(ctx), `INSERT INTO sip_reads (organisation_id, project_id, read_at, config)`)
 		if err != nil {
 			return fmt.Errorf("prepare sip read: %w", err)
 		}

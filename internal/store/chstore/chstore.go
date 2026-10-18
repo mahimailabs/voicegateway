@@ -301,15 +301,19 @@ const unlinkedLookback = 24 * time.Hour
 // lastSpanBefore (when it was stored, if no span reported an end), none of whose spans joined a
 // call and that no trace link names. It returns how many it recorded. Readers count unmatched
 // with FINAL: two workers sweeping at once can write the same trace before a merge folds it.
+// spans is read without FINAL: an unmerged duplicate span changes none of the aggregates, and the
+// unmatched check reads only the lookback window, since an older row names a trace that ended
+// before it.
 func (s *Store) CountUnlinkedTraces(ctx context.Context, lastSpanBefore time.Time) (uint64, error) {
 	const unlinked = `
 		SELECT organisation_id, project_id, toString(trace_id) AS key
-		FROM spans FINAL
+		FROM spans
 		WHERE ifNull(start_time, inserted_at) >= @since
 		  AND (organisation_id, project_id, trace_id) NOT IN (SELECT organisation_id, project_id, trace_id FROM trace_calls)
 		GROUP BY organisation_id, project_id, trace_id
 		HAVING ifNull(max(end_time), max(inserted_at)) < @before AND countIf(call_id != '') = 0
-		   AND (organisation_id, project_id, key) NOT IN (SELECT organisation_id, project_id, key FROM unmatched WHERE kind = @kind)`
+		   AND (organisation_id, project_id, key) NOT IN
+		       (SELECT organisation_id, project_id, key FROM unmatched WHERE kind = @kind AND inserted_at >= @since)`
 	args := []any{
 		clickhouse.Named("since", lastSpanBefore.Add(-unlinkedLookback)),
 		clickhouse.Named("before", lastSpanBefore),
@@ -458,10 +462,11 @@ func (s *Store) CallSpans(ctx context.Context, organisationID, projectID, callID
 }
 
 // chatHistory returns the chat_history.json of the call's latest session report, nil when it has
-// none.
+// none. events is read without FINAL: a duplicate shares the dedupe key and payload, so either copy
+// is the same answer.
 func (s *Store) chatHistory(ctx context.Context, organisationID, projectID, callID string) ([]byte, error) {
 	rows, err := s.conn.Query(ctx, `
-		SELECT payload FROM events FINAL
+		SELECT payload FROM events
 		WHERE organisation_id = @org AND project_id = @project AND kind = @kind AND call_id = @call
 		ORDER BY received_at DESC LIMIT 1`,
 		clickhouse.Named("org", organisationID), clickhouse.Named("project", projectID),

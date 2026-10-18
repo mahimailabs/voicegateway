@@ -72,7 +72,7 @@ func (s *Store) storeSamples(ctx context.Context, t sampled, rows []sampleRow) e
 	if len(rows) == 0 {
 		return nil
 	}
-	batch, err := s.conn.PrepareBatch(ctx, `INSERT INTO `+t.table+` (organisation_id, project_id, read_at, `+t.id+`, status, updated_at, `+t.body+`)`)
+	batch, err := s.conn.PrepareBatch(pollInsert(ctx), `INSERT INTO `+t.table+` (organisation_id, project_id, read_at, `+t.id+`, status, updated_at, `+t.body+`)`)
 	if err != nil {
 		return fmt.Errorf("prepare %s: %w", t.table, err)
 	}

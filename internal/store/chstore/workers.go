@@ -16,7 +16,7 @@ import (
 // behind it.
 func (s *Store) StoreWorkerRead(ctx context.Context, read store.LayerRead, endpoints []store.WorkerEndpointRead, samples []store.WorkerSample) error {
 	if len(samples) > 0 {
-		batch, err := s.conn.PrepareBatch(ctx, `INSERT INTO worker_samples (organisation_id, project_id, read_at, endpoint_id, nodename, load, active_jobs)`)
+		batch, err := s.conn.PrepareBatch(pollInsert(ctx), `INSERT INTO worker_samples (organisation_id, project_id, read_at, endpoint_id, nodename, load, active_jobs)`)
 		if err != nil {
 			return fmt.Errorf("prepare worker samples: %w", err)
 		}
@@ -31,7 +31,7 @@ func (s *Store) StoreWorkerRead(ctx context.Context, read store.LayerRead, endpo
 		}
 	}
 	if len(endpoints) > 0 {
-		batch, err := s.conn.PrepareBatch(ctx, `INSERT INTO worker_endpoint_reads (organisation_id, project_id, endpoint_id, read_at, ok, error_class, every_ms)`)
+		batch, err := s.conn.PrepareBatch(pollInsert(ctx), `INSERT INTO worker_endpoint_reads (organisation_id, project_id, endpoint_id, read_at, ok, error_class, every_ms)`)
 		if err != nil {
 			return fmt.Errorf("prepare worker endpoint reads: %w", err)
 		}
@@ -120,7 +120,7 @@ func (s *Store) StoreCloudAgentsRead(ctx context.Context, read store.LayerRead, 
 		if err != nil {
 			return fmt.Errorf("encode cloud agents: %w", err)
 		}
-		batch, err := s.conn.PrepareBatch(ctx, `INSERT INTO cloud_agent_reads (organisation_id, project_id, read_at, agents)`)
+		batch, err := s.conn.PrepareBatch(pollInsert(ctx), `INSERT INTO cloud_agent_reads (organisation_id, project_id, read_at, agents)`)
 		if err != nil {
 			return fmt.Errorf("prepare cloud agents read: %w", err)
 		}
