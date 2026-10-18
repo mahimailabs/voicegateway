@@ -347,3 +347,78 @@ type StoredKey struct {
 type KeyScope struct {
 	KeyID, OrganisationID, ProjectID string
 }
+
+// ErrIdempotencyConflict means an invitation with that idempotency key exists already.
+var ErrIdempotencyConflict = errors.New("the idempotency key is in use")
+
+// ErrInvalidInvitation is an invitation with a bad email, role or base URL, a password too short
+// for a link, or a reused idempotency key.
+var ErrInvalidInvitation = errors.New("invalid invitation")
+
+// ErrOtherOrganisations means a reset's member belongs to an organisation the requester does not
+// administer.
+var ErrOtherOrganisations = errors.New("the member belongs to organisations the requester does not administer")
+
+// ErrInvalidLink is the one answer for an unknown, accepted, revoked or expired invitation link.
+var ErrInvalidLink = errors.New("the invitation is no longer valid")
+
+// ErrWrongPassword means an existing account's password did not match.
+var ErrWrongPassword = errors.New("wrong password")
+
+// TooManyAttempts is sign-in's limit, reached: try again after Wait.
+type TooManyAttempts struct{ Wait time.Duration }
+
+func (TooManyAttempts) Error() string { return "too many failed sign-ins" }
+
+// PendingLink is what the accept screen shows of an open link: never whether an account exists.
+type PendingLink struct {
+	Kind             string // "invite" or "reset"
+	OrganisationName string
+	Role             *string // nil for a reset
+	Email            string
+}
+
+// ErrUserExists means an account with that email already exists.
+var ErrUserExists = errors.New("a user with that email exists")
+
+// Invitation is an invitation or a password reset link as an admin lists it: never its token.
+// Role is nil for a reset; InvitedBy is the inviter's email, nil when unknown or the instance API.
+type Invitation struct {
+	ID, Kind, Email string
+	Role            *string
+	InvitedBy       *string
+	CreatedAt       time.Time
+	ExpiresAt       time.Time
+	EmailedAt       *time.Time
+	AcceptedAt      *time.Time
+	RevokedAt       *time.Time
+}
+
+// State is an invitation's derived state at now: accepted, revoked, expired or pending.
+func (i Invitation) State(now time.Time) string {
+	switch {
+	case i.AcceptedAt != nil:
+		return "accepted"
+	case i.RevokedAt != nil:
+		return "revoked"
+	case !now.Before(i.ExpiresAt):
+		return "expired"
+	}
+	return "pending"
+}
+
+// NewInvitation is a link to store. UserID is set for a reset, Role for an invite; InvitedBy and
+// IdempotencyKey are optional.
+type NewInvitation struct {
+	Kind, OrganisationID, Email string
+	Role, UserID, InvitedBy     *string
+	IdempotencyKey              *string
+	TokenSHA256                 []byte
+	ExpiresAt                   time.Time
+}
+
+// OpenInvitation is an open, unexpired link as the accept screen reads it.
+type OpenInvitation struct {
+	ID, Kind, OrganisationID, OrganisationName, Email string
+	Role, UserID                                      *string
+}

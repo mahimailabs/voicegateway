@@ -136,7 +136,7 @@ func (f *fixture) addProjectCall(org string) string {
 }
 
 // call sends one API request as a session or a project key, checks the response against the
-// contract when the operation is one 06b or 06c added, and returns the status and body.
+// contract when the operation is one 06b, 06c or 06d added, and returns the status and body.
 type call struct {
 	method, path, body string
 	cookie             *http.Cookie
@@ -165,7 +165,7 @@ func (f *fixture) send(h http.Handler, c call) (int, []byte) {
 	res := rec.Result()
 	body := rec.Body.Bytes()
 	// A cross-site request is refused by CrossOriginProtection before the API, in plain text.
-	if (strings.Contains(c.path, "/members") || strings.Contains(c.path, "/keys")) && c.headers["Origin"] == "" {
+	if (strings.Contains(c.path, "/members") || strings.Contains(c.path, "/keys") || strings.Contains(c.path, "/invitations")) && c.headers["Origin"] == "" {
 		res.Body = io.NopCloser(bytes.NewReader(body))
 		vreq := httptest.NewRequest(c.method, "http://voicegateway.example"+c.path, strings.NewReader(c.body))
 		if c.body != "" {

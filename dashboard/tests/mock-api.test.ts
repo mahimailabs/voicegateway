@@ -526,12 +526,19 @@ describe("settings reads", () => {
     expect(body.items.find((r: { ruleId: string }) => r.ruleId === "cut-off").to).toEqual(["email"])
   })
 
-  test("invitations are the organisation's, valid ones only, and an unknown organisation is not found", async () => {
-    storage({ "vg.invites": [{ email: "a@example.com", role: "Viewer" }, { email: "not an email", role: "Admin" }, { email: "b@example.com", role: "Owner" }] })
+  test("invitations are kept in memory as web without SMTP answers them, and an unknown organisation is not found", async () => {
+    const post = (body: unknown) => fetch("http://console.test/api/v1/org/default/invitations", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })
+    const created = await post({ email: "a@example.com", role: "Viewer" })
+    const answer = await created.json()
+    expect(created.status).toBe(201)
+    expect(valid("CreatedInvitation", answer)).toBe("")
+    expect(answer.link).toMatch(/\/invite#[A-Za-z0-9_-]{43}$/)
+    expect((await post({ email: "not an email", role: "Admin" })).status).toBe(400)
+    expect((await post({ email: "b@example.com", role: "Owner" })).status).toBe(400)
     const { status, body } = await get("http://console.test/api/v1/org/default/invitations")
     expect(status).toBe(200)
     expect(valid("Invitations", body)).toBe("")
-    expect(body.items).toEqual([{ email: "a@example.com", role: "Viewer" }])
+    expect(body.items.map((i: { email: string; state: string }) => [i.email, i.state])).toEqual([["a@example.com", "pending"]])
     const other = await get("http://console.test/api/v1/org/other/invitations")
     expect(other.status).toBe(404)
     expect(valid("Error", other.body)).toBe("")

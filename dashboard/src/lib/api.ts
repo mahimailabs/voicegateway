@@ -2,6 +2,8 @@ import { infiniteQueryOptions } from "@tanstack/react-query"
 import { currentScope } from "@/lib/url-state"
 import { client } from "@/lib/api-types/client.gen"
 import {
+  createInvitation as createInvitationCall,
+  createPasswordReset as createPasswordResetCall,
   createProjectKey as createProjectKeyCall,
   getAlertSetup,
   getCall,
@@ -25,6 +27,7 @@ import {
   listIssues,
   listProjectKeys,
   removeMember as removeMemberCall,
+  revokeInvitation as revokeInvitationCall,
   revokeProjectKey as revokeProjectKeyCall,
   updateMember as updateMemberCall,
 } from "@/lib/api-types"
@@ -188,7 +191,6 @@ export const callStatsQuery = (from: Date, to: Date) => ({
 export const projectSettingsQuery = () => ({ queryKey: ["settings", currentScope()], queryFn: () => data(getProjectSettings({ ...thrown, path: scope() })) })
 export const issueDispositionsQuery = () => ({ queryKey: ["issue-dispositions", currentScope()], queryFn: () => data(getIssueDispositions({ ...thrown, path: scope() })) })
 export const alertSetupQuery = () => ({ queryKey: ["alert-setup", currentScope()], queryFn: () => data(getAlertSetup({ ...thrown, path: scope() })) })
-export const invitationsQuery = () => ({ queryKey: ["invitations", currentScope().org], queryFn: () => data(getInvitations({ ...thrown, path: { orgId: currentScope().org } })) })
 export const fetchWorkspaces = () => data(getWorkspaces(thrown))
 
 // The organisation's members (phase 06b). Any member reads the list; an Admin changes roles and
@@ -202,3 +204,9 @@ export const projectKeysQuery = (projectId: string) => ({ queryKey: ["project-ke
 export const createProjectKey = (projectId: string, name: string) => data(createProjectKeyCall({ ...thrown, path: keysPath(projectId), body: { name } }))
 export const revokeProjectKey = (projectId: string, keyId: string) => data(revokeProjectKeyCall({ ...thrown, path: { ...keysPath(projectId), keyId } })).then(() => undefined)
 export const removeMember = (userId: string) => data(removeMemberCall({ ...thrown, path: { orgId: currentScope().org, userId } })).then(() => undefined)
+// Invitations and password reset links (phase 06d), Admin only. With SMTP set the server emails a
+// link and never answers it; without SMTP the link is in the create's answer and nowhere else.
+export const invitationsQuery = () => ({ queryKey: ["invitations", currentScope().org], queryFn: () => data(getInvitations({ ...thrown, path: { orgId: currentScope().org } })) })
+export const createInvitation = (email: string, role: Member["role"]) => data(createInvitationCall({ ...thrown, path: { orgId: currentScope().org }, body: { email, role } }))
+export const revokeInvitation = (invitationId: string) => data(revokeInvitationCall({ ...thrown, path: { orgId: currentScope().org, invitationId } })).then(() => undefined)
+export const createPasswordReset = (userId: string) => data(createPasswordResetCall({ ...thrown, path: { orgId: currentScope().org, userId } }))

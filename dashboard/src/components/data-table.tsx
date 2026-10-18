@@ -104,6 +104,7 @@ export function DataTable<T extends RowData & object>({
   filtered = false,
   server,
   phoneColumns,
+  urlPrefix = "",
 }: {
   data: T[]
   columns: Columns<T>
@@ -127,14 +128,17 @@ export function DataTable<T extends RowData & object>({
   // At phone width only these columns show (plus row selection), so a row stacks what matters in its
   // first cell instead of scrolling sideways.
   phoneColumns?: string[]
+  // Prefixes the URL keys, for a table that shares the URL with a page's own, such as one in the
+  // Settings modal.
+  urlPrefix?: string
 }) {
   const phone = useIsPhone()
   // Filters and sort live in the URL (?q=, ?sort=), so a shared link opens the same rows. Each page has
-  // one table, so the keys never collide.
-  const [own, setOwn] = useUrlState<FilterQuery>("q", emptyQuery)
+  // one table; a table over a page, in Settings, prefixes its keys so they never collide.
+  const [own, setOwn] = useUrlState<FilterQuery>(urlPrefix + "q", emptyQuery)
   const query = controlled ?? own
   const setQuery = onQueryChange ?? setOwn
-  const [sorting, setSortingUrl] = useUrlState<SortingState>("sort", sort)
+  const [sorting, setSortingUrl] = useUrlState<SortingState>(urlPrefix + "sort", sort)
   const setSorting = (u: SortingState | ((old: SortingState) => SortingState)) => setSortingUrl(typeof u === "function" ? u(sorting) : u)
   const [pagination, setPagination] = useState<PaginationState>({ pageIndex: 0, pageSize })
   const rows = useMemo(() => (filtered ? data : data.filter((r) => matches(r, query, fields))), [data, query, fields, filtered])

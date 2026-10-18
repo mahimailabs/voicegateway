@@ -1,12 +1,13 @@
 import { useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { EnvelopeSimple as Envelope, WebhooksLogo, Buildings, Database, Key as KeyIcon, Clock, EnvelopeSimple, GearSix, FrameCorners, Lock, UsersThree, X, Plug, Plus, TreeStructure, User } from "@phosphor-icons/react"
+import { CircleHalf, DotsThree, Stack, EnvelopeSimple as Envelope, WebhooksLogo, Buildings, Database, Key as KeyIcon, Clock, EnvelopeSimple, GearSix, FrameCorners, Lock, UsersThree, X, Plug, Plus, TreeStructure, User } from "@phosphor-icons/react"
 import type { Icon } from "@phosphor-icons/react"
 import { toast } from "sonner"
 import { Badge } from "@/components/ui/badge"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { ProviderLogo } from "@/components/provider-logo"
 import { Button } from "@/components/ui/button"
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui/field"
 import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/input-group"
@@ -21,8 +22,10 @@ import { NewProjectDialog } from "@/components/new-project-dialog"
 import { currentOrg, currentScope, scopePrefix, useUrlState } from "@/lib/url-state"
 import { type WidgetId, widgets } from "@/features/embed/widgets"
 import { DEFAULTS, type Thresholds as T } from "@/lib/thresholds"
-import { ApiError, callTotalsQuery, createProjectKey, projectKeysQuery, revokeProjectKey, invitationsQuery, latestMatchingCallQuery, mediaServerQuery, membersQuery, projectSettingsQuery, removeMember, updateMember } from "@/lib/api"
-import type { Invitation, Invitations, Member, ProjectKey, ProjectSettings } from "@/lib/api-types"
+import { ApiError, callTotalsQuery, createInvitation, createPasswordReset, createProjectKey, projectKeysQuery, revokeInvitation, revokeProjectKey, invitationsQuery, latestMatchingCallQuery, mediaServerQuery, membersQuery, projectSettingsQuery, removeMember, updateMember } from "@/lib/api"
+import type { Invitation, Member, ProjectKey, ProjectSettings } from "@/lib/api-types"
+import { DataTable, type Columns, type Field as FilterField } from "@/components/data-table"
+import { DataGridColumnHeader } from "@/components/reui/data-grid/data-grid-column-header"
 import { CopyCommand } from "@/components/copy-command"
 import { refreshSession, roleIn, useSession } from "@/lib/session"
 import { useLocalSave } from "@/lib/local-store"
@@ -194,8 +197,7 @@ function Organisation() {
   )
 }
 
-type Role = Invitation["role"]
-type Invite = Invitation
+type Role = Member["role"]
 
 const roles: { role: Role; description: string }[] = [
   { role: "Admin", description: "Everything, including settings, projects, API keys and members." },
@@ -241,8 +243,18 @@ function MemberList({ isAdmin }: { isAdmin: boolean }) {
   }
   const change = useMutation({ mutationFn: (v: { userId: string; role: Member["role"] }) => updateMember(v.userId, v.role), ...done })
   const remove = useMutation({ mutationFn: (userId: string) => removeMember(userId), ...done })
-  // Removing someone is not undone from here (there is no way to add them back until invitations
-  // land), so it asks first.
+  // A reset link follows the invitation's rule: emailed to the member with SMTP, else shown once.
+  const [resetFor, setResetFor] = useState<Outcome | null>(null)
+  const reset = useMutation({
+    mutationFn: (m: Member) => createPasswordReset(m.userId),
+    onSuccess: (r, m) => {
+      setProblem(null)
+      setResetFor({ email: m.email, link: r.link, emailed: r.emailed, resend: () => reset.mutate(m) })
+      return qc.invalidateQueries({ queryKey: invitationsQuery().queryKey })
+    },
+    onError: (e: Error) => setProblem(e instanceof ApiError && e.code === "member_of_other_organisations" ? "They also belong to an organisation you do not administer; an admin of every one of them can reset their password." : errorText(e)),
+  })
+  // Removing someone is not undone from here (they need a new invitation), so it asks first.
   const [removing, setRemoving] = useState<Member | null>(null)
   return (
     <Group label="Members">
@@ -269,9 +281,21 @@ function MemberList({ isAdmin }: { isAdmin: boolean }) {
                     </SelectContent>
                   </Select>
                   {!self && (
-                    <Button variant="ghost" size="sm" onClick={() => setRemoving(m)} aria-label={`Remove ${m.email}`}>
-                      Remove
-                    </Button>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="ghost" size="icon-sm" aria-label={`Actions for ${m.email}`}>
+                          <DotsThree />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem disabled={reset.isPending} onSelect={() => reset.mutate(m)}>
+                          Password reset
+                        </DropdownMenuItem>
+                        <DropdownMenuItem variant="destructive" onSelect={() => setRemoving(m)}>
+                          Remove
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   )}
                 </div>
               ) : (
@@ -287,11 +311,16 @@ function MemberList({ isAdmin }: { isAdmin: boolean }) {
           {problem}
         </p>
       )}
+      {resetFor && (
+        <div className="pt-3">
+          <Delivery outcome={resetFor} what="password reset link" onDone={() => setResetFor(null)} pending={reset.isPending} />
+        </div>
+      )}
       <Dialog open={removing !== null} onOpenChange={(o) => !o && setRemoving(null)}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>{`Remove ${removing?.email ?? ""}?`}</DialogTitle>
-            <DialogDescription>{`They lose access to ${org().name} on their next request. Their account stays, and adding them back needs the server's user add command until invitations arrive.`}</DialogDescription>
+            <DialogDescription>{`They lose access to ${org().name} on their next request. Their account stays; invite them again to add them back.`}</DialogDescription>
           </DialogHeader>
           <DialogFooter>
             <Button variant="outline" onClick={() => setRemoving(null)}>
@@ -313,22 +342,54 @@ function MemberList({ isAdmin }: { isAdmin: boolean }) {
   )
 }
 
-// Invites wait in this browser until invitation links arrive (phase 06d); getInvitations reads
-// them back. Admins only, as getInvitations is.
+// What a create or a reset answered: the link without SMTP, shown once; with SMTP, whether the
+// email went, and never a link.
+type Outcome = { email: string; link: string | null; emailed: boolean; resend: () => void }
+
+// The answer to one invitation or reset: copy the link once, or the email's fate with Resend,
+// which is off while its request runs so repeated clicks send one email.
+function Delivery({ outcome, what, onDone, pending }: { outcome: Outcome; what: string; onDone: () => void; pending: boolean }) {
+  if (outcome.link)
+    return (
+      <div className="space-y-3">
+        <p className="text-[13px] text-muted-foreground">{`Copy the ${what} for ${outcome.email} now. It is not shown again; the server keeps only its hash.`}</p>
+        <CopyCommand text={outcome.link} label={`${what[0].toUpperCase()}${what.slice(1)}`} />
+        <Button size="sm" variant="outline" onClick={onDone}>
+          Done
+        </Button>
+      </div>
+    )
+  if (outcome.emailed) return <p className="text-[13px] text-muted-foreground">{`Emailed to ${outcome.email}.`}</p>
+  return (
+    <div className="flex flex-wrap items-center gap-3">
+      <p role="alert" className="text-[13px] text-destructive">{`Could not send the email to ${outcome.email}.`}</p>
+      <Button size="sm" variant="outline" onClick={outcome.resend} disabled={pending}>
+        Resend
+      </Button>
+    </div>
+  )
+}
+
+// The Invite form (createInvitation) and the organisation's invitations. Admins only, as the
+// operations are.
 function Invites() {
-  const read = useQuery(invitationsQuery())
-  const setInvites = useLocalSave<Invite[], Invitations>("vg.invites", invitationsQuery().queryKey, (d) => d?.items ?? [])
-  const list = read.data?.items ?? []
+  const qc = useQueryClient()
   const [email, setEmail] = useState("")
   const [role, setRole] = useState<Role>("Member")
+  const [outcome, setOutcome] = useState<Outcome | null>(null)
+  const [problem, setProblem] = useState<string | null>(null)
+  const create = useMutation({
+    mutationFn: (v: { email: string; role: Role }) => createInvitation(v.email, v.role),
+    onSuccess: (c, v) => {
+      setOutcome({ email: v.email, link: c.link, emailed: c.emailed, resend: () => create.mutate(v) })
+      setEmail("")
+      setProblem(null)
+      return qc.invalidateQueries({ queryKey: invitationsQuery().queryKey })
+    },
+    onError: (e: Error) => setProblem(e instanceof ApiError && e.code === "already_member" ? "That email's account is already a member." : errorText(e)),
+  })
   const clean = email.trim().toLowerCase()
-  const valid = read.isSuccess && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(clean) && !list.some((i) => i.email === clean)
-  const invite = () => {
-    const added = clean
-    setInvites((current) => (current.some((x) => x.email === added) ? current : [...current, { email: added, role }]))
-    setEmail("")
-    toast(`Invited ${added} as ${role}`, { action: { label: "Undo", onClick: () => setInvites((current) => current.filter((x) => x.email !== added)) } })
-  }
+  const valid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(clean) && !create.isPending
   return (
     <>
       <section className="pt-6">
@@ -336,13 +397,13 @@ function Invites() {
           className="grid grid-cols-1 items-start gap-3 sm:grid-cols-[minmax(0,220px)_minmax(0,1fr)] sm:gap-8 border-b pb-6"
           onSubmit={(e) => {
             e.preventDefault()
-            if (valid) invite()
+            if (valid) create.mutate({ email: clean, role })
           }}
           aria-label="Invite people"
         >
           <div className="space-y-0.5">
             <p className="text-[14px] font-medium">Invite people</p>
-            <p className="text-[13px] text-muted-foreground">They get a link to join {org().name}. Links arrive with a later release; until then invites wait here.</p>
+            <p className="text-[13px] text-muted-foreground">{`They get a link to join ${org().name}, valid for 7 days.`}</p>
           </div>
           <div className="space-y-3">
             <InputGroup>
@@ -363,34 +424,110 @@ function Invites() {
                 <Plus /> Send invite
               </Button>
             </div>
+            {problem && (
+              <p role="alert" className="text-[13px] text-destructive">
+                {problem}
+              </p>
+            )}
+            {outcome && <Delivery outcome={outcome} what="invitation link" onDone={() => setOutcome(null)} pending={create.isPending} />}
           </div>
         </form>
       </section>
-      {list.length > 0 && (
-        <Group label="Pending invitations">
-          {list.map((i, k) => (
-            <Row
-              key={i.email}
-              title={i.email}
-              description={`${i.role} · invite pending`}
-              value={
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => {
-                    setInvites((current) => current.filter((x) => x.email !== i.email))
-                    toast(`Revoked the invite for ${i.email}`, { action: { label: "Undo", onClick: () => setInvites((current) => (current.some((x) => x.email === i.email) ? current : [...current, i])) } })
-                  }}
-                >
-                  Revoke
-                </Button>
-              }
-              last={k === list.length - 1}
-            />
-          ))}
-        </Group>
-      )}
+      <InvitationList />
     </>
+  )
+}
+
+const states: Invitation["state"][] = ["pending", "accepted", "revoked", "expired"]
+const when = (iso: string) => new Date(iso).toLocaleString()
+
+const invitationFields: FilterField<Invitation>[] = [
+  { id: "state", label: "State", type: "select", icon: <CircleHalf />, options: states.map((v) => ({ value: v, label: v })), get: (i) => i.state },
+  { id: "kind", label: "Kind", type: "select", icon: <Stack />, options: [{ value: "invite", label: "Invite" }, { value: "reset", label: "Password reset" }], get: (i) => i.kind },
+]
+
+// Three columns, so Revoke stays in view in the Settings pane at every width: the role, who made
+// the link and when it expires sit under the email, and both wrap rather than widen the table.
+const invitationColumns = (revoke: (i: Invitation) => void): Columns<Invitation> => [
+  {
+    id: "email",
+    accessorFn: (i) => i.email,
+    size: 180,
+    header: ({ column }) => <DataGridColumnHeader title="Invitation" column={column} />,
+    cell: ({ row }) => {
+      const i = row.original
+      return (
+        <span className="block min-w-0 whitespace-normal">
+          <span className="block break-all">{i.email}</span>
+          <span className="block text-[12px] text-muted-foreground">{`${i.kind === "reset" ? "Password reset" : i.role} · expires ${when(i.expiresAt)} · by ${i.invitedBy ?? "unknown"}`}</span>
+        </span>
+      )
+    },
+  },
+  { id: "state", accessorFn: (i) => i.state, size: 90, header: ({ column }) => <DataGridColumnHeader title="State" column={column} />, cell: ({ row }) => row.original.state },
+  {
+    id: "actions",
+    size: 76,
+    enableSorting: false,
+    header: () => null,
+    cell: ({ row }) =>
+      row.original.state === "pending" && (
+        <Button variant="ghost" size="sm" onClick={() => revoke(row.original)} aria-label={`Revoke ${row.original.email}`}>
+          Revoke
+        </Button>
+      ),
+  },
+]
+
+// The organisation's invitations and reset links (getInvitations), newest first as the server
+// sends them; the state filter and the sort are in the URL. Revoke asks first.
+function InvitationList() {
+  const read = useQuery(invitationsQuery())
+  const qc = useQueryClient()
+  const [revoking, setRevoking] = useState<Invitation | null>(null)
+  const [problem, setProblem] = useState<string | null>(null)
+  const revoke = useMutation({
+    mutationFn: (id: string) => revokeInvitation(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: invitationsQuery().queryKey }),
+    onError: (e: Error) => setProblem(errorText(e)),
+  })
+  const columns = invitationColumns(setRevoking)
+  return (
+    <Group label="Invitations">
+      {!read.isSuccess && <Row title="Invitations" description={read.isError ? errorText(read.error) : undefined} value={read.isError ? "Could not be read" : "Loading"} last />}
+      {read.isSuccess && (
+        <div className="pt-2">
+          <DataTable data={read.data.items} columns={columns} fields={invitationFields} getRowId={(i) => i.id} phoneColumns={["email", "state", "actions"]} urlPrefix="invites." empty="No invitations match these filters." />
+        </div>
+      )}
+      {problem && (
+        <p role="alert" className="pt-3 text-[13px] text-destructive">
+          {problem}
+        </p>
+      )}
+      <Dialog open={revoking !== null} onOpenChange={(o) => !o && setRevoking(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>{`Revoke the ${revoking?.kind === "reset" ? "reset link" : "invitation"} for ${revoking?.email ?? ""}?`}</DialogTitle>
+            <DialogDescription>{revoking?.kind === "reset" ? "The link stops working at once. Make a new reset link if they still need one." : "The link stops working at once. Invite them again for a new one."}</DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRevoking(null)}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => {
+                if (revoking) revoke.mutate(revoking.id)
+                setRevoking(null)
+              }}
+            >
+              Revoke
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </Group>
   )
 }
 
