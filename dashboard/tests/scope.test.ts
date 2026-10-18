@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { currentScope, entryPath, firstProjectPath, scopeRewrite, scopeUnknown } from "../src/lib/url-state.ts"
+import { currentScope, entryPath, firstProjectPath, orgOnly, scopeRewrite, scopeUnknown } from "../src/lib/url-state.ts"
 import { setWorkspaces } from "../src/lib/workspaces.ts"
 import type { Workspace } from "../src/lib/api-types/index.ts"
 
@@ -39,5 +39,16 @@ describe("unknown scope", () => {
     setWorkspaces(read)
     open("/org/acme/project/prod/")
     expect(entryPath({ pathname: "/calls", search: "?q=1", hash: "" })).toBe("/org/acme/project/prod/calls?q=1")
+  })
+
+  // A 06b review follow-up: an organisation with no project yet still opens its organisation
+  // settings, so its admin can manage People before adding a project.
+  it("keeps the organisation of a member whose organisation has no project", () => {
+    setWorkspaces([{ id: "acme", name: "Acme", projects: [] }] as unknown as Workspace[])
+    open("/org/acme/project/default-project/")
+    expect(scopeUnknown()).toBe(true)
+    expect(orgOnly()).toBe(true)
+    open("/org/nope/project/default-project/")
+    expect(orgOnly()).toBe(false)
   })
 })

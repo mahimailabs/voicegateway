@@ -221,15 +221,20 @@ export function TurnAnatomy({ lanes, e2e, turns, budget }: { lanes: Lane[]; e2e:
 }
 
 // Each call as a block, coloured by its median answer against the budget.
-export function CallTracker({ calls, budget }: { calls: { id?: string; room: string; p50: number | null }[]; budget: number }) {
+// One block per call, coloured by its median answer. With onOpen, each block is a button that opens
+// its call.
+export function CallTracker({ calls, budget, onOpen }: { calls: { id?: string; room: string; p50: number | null }[]; budget: number; onOpen?: (id: string) => void }) {
+  const tone = (p50: number | null) => (p50 === null ? "bg-muted-foreground/20" : p50 > budget ? "bg-destructive" : p50 > budget * 0.67 ? "bg-amber-500" : "bg-good")
   return (
     <div className="flex h-7 gap-[3px]">
       {calls.map((c) => (
         <Tooltip key={c.id ?? c.room}>
           <TooltipTrigger asChild>
-            <span
-              className={cn("h-full min-w-1.5 flex-1 rounded-[3px] transition-opacity hover:opacity-70", c.p50 === null ? "bg-muted-foreground/20" : c.p50 > budget ? "bg-destructive" : c.p50 > budget * 0.67 ? "bg-amber-500" : "bg-good")}
-            />
+            {onOpen && c.id ? (
+              <button type="button" aria-label={`Open the call in ${c.room}`} onClick={() => onOpen(c.id!)} className={cn("h-full min-w-1.5 flex-1 cursor-pointer rounded-[3px] transition-opacity hover:opacity-70", tone(c.p50))} />
+            ) : (
+              <span className={cn("h-full min-w-1.5 flex-1 rounded-[3px] transition-opacity hover:opacity-70", tone(c.p50))} />
+            )}
           </TooltipTrigger>
           <TooltipContent className="text-xs">{`${c.room} · ${c.p50 === null ? "answer not measured" : fmtMs(c.p50)}`}</TooltipContent>
         </Tooltip>

@@ -29,6 +29,7 @@ var routeAccess = map[string]access{
 	"GET /api/v1/workspaces":                                     {"Viewer", scopePrincipal},
 	"GET /api/v1/org/{orgId}/project/{projectId}/calls":          {"Viewer", scopeProject},
 	"GET /api/v1/org/{orgId}/project/{projectId}/calls/{callId}": {"Viewer", scopeProject},
+	"GET /api/v1/org/{orgId}/project/{projectId}/call-stats":     {"Viewer", scopeProject},
 	"GET /api/v1/org/{orgId}/project/{projectId}/media-server":   {"Viewer", scopeProject},
 	"GET /api/v1/org/{orgId}/project/{projectId}/sip":            {"Viewer", scopeProject},
 	"GET /api/v1/org/{orgId}/project/{projectId}/egress":         {"Viewer", scopeProject},

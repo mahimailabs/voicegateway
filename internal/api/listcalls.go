@@ -413,11 +413,11 @@ func toSummary(r store.CallListRow) callSummary {
 
 func toTotals(t *store.CallTotals, budget float64) callTotals {
 	n := func(v int64) *int64 { return &v }
-	zero := int64(0)
 	out := callTotals{
 		CallCount: n(t.CallCount),
-		// The server never infers console or local, so none of the matched calls is one.
-		ByChannel: channelCount{Phone: n(t.Phone), Web: n(t.Web), Console: &zero, Local: &zero, Unknown: n(t.Unknown)},
+		// Console and local are null, not 0: no stored source tells those channels apart yet, the
+		// same rule getCallStats follows.
+		ByChannel: channelCount{Phone: n(t.Phone), Web: n(t.Web), Unknown: n(t.Unknown)},
 		Answers: answerTotals{
 			Turns: n(t.AnswerTurns), OverBudget: n(t.OverBudget), BudgetMs: int(budget), P50Ms: t.P50Ms,
 			ValuesMs: t.ValuesMs, ValuesTruncated: t.ValuesTruncated,

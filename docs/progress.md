@@ -309,6 +309,20 @@ What changed:
 - **Contract:** the three operations, a `last_admin` error code, and session-cookie access text on every operation. The Redocly rule `reads-only` became `operation-tags`: a read is tagged Console reads and a write Console writes, and check-sources ties each to its method.
 - **Console:** Settings, People lists the members, with a role picker and Remove for Admins, never on their own row. A Member or Viewer sees it read-only, with no Invite form. The Account Role row shows the signed-in role. The mock serves the member reads and writes in memory.
 
-Checks 1 to 10 and 7a pass: Go on real Postgres, the route table against the router and the contract, and the console with Vitest. The manual check (a Viewer on the Compose stack behind HTTPS) is not run yet.
+Checks 1 to 10 and 7a pass: Go on real Postgres, the route table against the router and the contract, and the console with Vitest. Merged as #380 (a22179c4).
+
+Manual check: the pair reviewer reports running it on a live stack, and that it passed: CLI add and reset, 403s by role, 409 `last_admin`, 400 for a bad role, reset-password signing old sessions out, and the UI at 7 sizes as admin and viewer ([#380 comment](https://github.com/mahimailabs/voicegateway/pull/380#issuecomment-6243768946)).
+
+### 2026-10-18: phase 04e, Overview from storage
+
+With the mock off, the Overview opens on real stored calls (spec `docs/specs/phase04e-overview.md`). With 04c and 04d this closes the plan task "Connect the console".
+
+What changed:
+- **`getCallStats`:** call counts, channels, calls per day and hour, answer times and one row per agent, read from the Postgres call summaries in one transaction and totalled in Go with the console's percentile rule. A day or hour with no stored call is null before the project was connected or still to come, and a partial one counts the calls so far.
+- **Not computed yet:** turn anatomy, the stage chain, providers, anatomy turns and issue counts are null, with an `x-null-reason`, never an empty list. `complete` is true and its description says ingest gaps are not detected yet. The limits are written in `docs/api/coverage.md`.
+- **Overview:** every section renders from its own read. A read web does not serve yet shows "Not served by this server yet", and any other failure its error. An agent's per-call strip opens the call.
+- **From the 06b review:** removing a member asks first. An organisation with no project still opens its organisation settings, People among them.
+
+Checks 1 to 8 and 3a pass: Go on real Postgres against the contract, and the console with Vitest. The manual check (one real call on Compose with the mock off) is not run yet.
 
 Next: 06c, project API keys.

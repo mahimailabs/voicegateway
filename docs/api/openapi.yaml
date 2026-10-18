@@ -3163,14 +3163,14 @@ components:
               minimum: 0
               x-unit: count
               description: "Matching calls with channel console."
-              x-null-reason: "Unknown when part of the range is not stored."
+              x-null-reason: "Unknown when part of the range is not stored, and until a stored source tells this channel apart, which none does yet."
               x-source: { kind: computed, file: dashboard/src/mocks/summaries.ts, pointer: null, detail: "Matching calls with channel console." }
             local:
               type: [ integer, "null" ]
               minimum: 0
               x-unit: count
               description: "Matching calls with channel local."
-              x-null-reason: "Unknown when part of the range is not stored."
+              x-null-reason: "Unknown when part of the range is not stored, and until a stored source tells this channel apart, which none does yet."
               x-source: { kind: computed, file: dashboard/src/mocks/summaries.ts, pointer: null, detail: "Matching calls with channel local." }
             unknown:
               type: [ integer, "null" ]
@@ -3415,7 +3415,7 @@ components:
           x-source: { kind: computed, file: docs/api/coverage.md, pointer: null, detail: "Exclusive range end, UTC." }
         complete:
           type: boolean
-          description: "false when retention, an ingest gap or a source outage leaves part of the range unstored. Totals are then null rather than an undercount."
+          description: "false when retention, an ingest gap or a source outage leaves part of the range unstored; totals are then null rather than an undercount. The server does not detect ingest gaps yet: true means every call stored since the project was connected, not that nothing was lost."
           x-source: { kind: computed, file: docs/api/coverage.md, pointer: null, detail: "false when retention, an ingest gap or a source outage leaves part of the range unstored. Totals are then null rather than an undercount." }
         callCount:
           type: [ integer, "null" ]
@@ -3484,7 +3484,7 @@ components:
                 type: [ integer, "null" ]
                 description: "Calls started that day."
                 x-unit: count
-                x-null-reason: "Null when the stored range is incomplete (retention, ingest gap or a source outage), so a total would undercount. Never zero for missing data."
+                x-null-reason: "Null when the stored range is incomplete (retention, ingest gap or a source outage), so a total would undercount. Never zero for missing data. Also null for a day or hour before the project was connected or still to come, when nothing could have been stored; a partial day or hour counts the calls so far."
                 x-source: { kind: computed, file: docs/api/coverage.md, pointer: null, detail: "Calls started that day." }
                 minimum: 0
         byHour:
@@ -3506,7 +3506,7 @@ components:
                 type: [ integer, "null" ]
                 description: "Calls started in that hour."
                 x-unit: count
-                x-null-reason: "Null when the stored range is incomplete (retention, ingest gap or a source outage), so a total would undercount. Never zero for missing data."
+                x-null-reason: "Null when the stored range is incomplete (retention, ingest gap or a source outage), so a total would undercount. Never zero for missing data. Also null for a day or hour before the project was connected or still to come, when nothing could have been stored; a partial day or hour counts the calls so far."
                 x-source: { kind: computed, file: docs/api/coverage.md, pointer: null, detail: "Calls started in that hour." }
                 minimum: 0
               answerP50Ms:
@@ -3608,45 +3608,47 @@ components:
               type: [ integer, "null" ]
               description: "High-severity issues."
               x-unit: count
-              x-null-reason: "Null when the stored range is incomplete (retention, ingest gap or a source outage), so a total would undercount. Never zero for missing data."
+              x-null-reason: "Null when the stored range is incomplete (retention, ingest gap or a source outage), so a total would undercount. Never zero for missing data. Not computed by this server yet: issue counts need the Issues engine."
               x-source: { kind: computed, file: docs/api/coverage.md, pointer: null, detail: "High-severity issues." }
               minimum: 0
             medium:
               type: [ integer, "null" ]
               description: "Medium-severity issues."
               x-unit: count
-              x-null-reason: "Null when the stored range is incomplete (retention, ingest gap or a source outage), so a total would undercount. Never zero for missing data."
+              x-null-reason: "Null when the stored range is incomplete (retention, ingest gap or a source outage), so a total would undercount. Never zero for missing data. Not computed by this server yet: issue counts need the Issues engine."
               x-source: { kind: computed, file: docs/api/coverage.md, pointer: null, detail: "Medium-severity issues." }
               minimum: 0
             low:
               type: [ integer, "null" ]
               description: "Low-severity issues."
               x-unit: count
-              x-null-reason: "Null when the stored range is incomplete (retention, ingest gap or a source outage), so a total would undercount. Never zero for missing data."
+              x-null-reason: "Null when the stored range is incomplete (retention, ingest gap or a source outage), so a total would undercount. Never zero for missing data. Not computed by this server yet: issue counts need the Issues engine."
               x-source: { kind: computed, file: docs/api/coverage.md, pointer: null, detail: "Low-severity issues." }
               minimum: 0
             info:
               type: [ integer, "null" ]
               description: "Informational issues."
               x-unit: count
-              x-null-reason: "Null when the stored range is incomplete (retention, ingest gap or a source outage), so a total would undercount. Never zero for missing data."
+              x-null-reason: "Null when the stored range is incomplete (retention, ingest gap or a source outage), so a total would undercount. Never zero for missing data. Not computed by this server yet: issue counts need the Issues engine."
               x-source: { kind: computed, file: docs/api/coverage.md, pointer: null, detail: "Informational issues." }
               minimum: 0
         anatomyTurns:
           type: [ integer, "null" ]
           description: "Turns with a transcript or a measured answer: what Turn anatomy counts each stage's turns against."
           x-unit: count
-          x-null-reason: "Null when the stored range is incomplete (retention, ingest gap or a source outage), so a total would undercount. Never zero for missing data."
+          x-null-reason: "Null when the stored range is incomplete (retention, ingest gap or a source outage), so a total would undercount. Never zero for missing data. Not computed by this server yet: it needs each turn's stage timings, which the stored call summaries do not hold."
           x-source: { kind: computed, file: dashboard/src/features/overview/visuals.tsx, pointer: null, detail: "Turns with a transcript or a measured answer." }
           minimum: 0
         stages:
-          type: array
+          type: [ array, "null" ]
+          x-null-reason: "Not computed by this server yet: it needs each turn's stage timings, which the stored call summaries do not hold."
           description: "Turn anatomy for all agents: one entry per stage that any turn reported. Stages nothing reports are absent, not zero."
           x-source: { kind: computed, file: dashboard/src/features/overview/visuals.tsx, pointer: null, detail: "Turn anatomy for all agents: one entry per stage that any turn reported. Stages nothing reports are absent, not zero." }
           items:
             $ref: "#/components/schemas/StageTiming"
         chain:
-          type: array
+          type: [ array, "null" ]
+          x-null-reason: "Not computed by this server yet: it needs each turn's stage timings, which the stored call summaries do not hold."
           description: "Every stage a turn passes through for all agents, each its own median duration over the turns that reported it. Stages nothing reports are absent, not zero."
           x-source: { kind: computed, file: dashboard/src/features/overview/latency-chain.tsx, pointer: null, detail: "Every stage's median duration over the turns that reported it." }
           items:
@@ -3694,7 +3696,7 @@ components:
                 type: [ integer, "null" ]
                 description: "High and medium findings on this agent's calls."
                 x-unit: count
-                x-null-reason: "Null when the stored range is incomplete (retention, ingest gap or a source outage), so a total would undercount. Never zero for missing data."
+                x-null-reason: "Null when the stored range is incomplete (retention, ingest gap or a source outage), so a total would undercount. Never zero for missing data. Not computed by this server yet: issue counts need the Issues engine."
                 x-source: { kind: computed, file: docs/api/coverage.md, pointer: null, detail: "High and medium findings on this agent's calls." }
                 minimum: 0
               models:
@@ -3704,7 +3706,8 @@ components:
                 items:
                   type: string
               providers:
-                type: array
+                type: [ array, "null" ]
+                x-null-reason: "Not computed by this server yet: it needs each turn's stage timings, which the stored call summaries do not hold."
                 description: "The model providers this agent's turns used, from the model each stage's span names, with the median time each stage took there."
                 x-source: { kind: computed, file: dashboard/src/features/overview/wire-data.ts, pointer: null, detail: "Providers from the model named on each stage's span, with the stage's median time." }
                 items:
@@ -3713,17 +3716,19 @@ components:
                 type: [ integer, "null" ]
                 description: "This agent's turns with a transcript or a measured answer."
                 x-unit: count
-                x-null-reason: "Null when the stored range is incomplete (retention, ingest gap or a source outage), so a total would undercount. Never zero for missing data."
+                x-null-reason: "Null when the stored range is incomplete (retention, ingest gap or a source outage), so a total would undercount. Never zero for missing data. Not computed by this server yet: it needs each turn's stage timings, which the stored call summaries do not hold."
                 x-source: { kind: computed, file: dashboard/src/features/overview/visuals.tsx, pointer: null, detail: "This agent's turns with a transcript or a measured answer." }
                 minimum: 0
               stages:
-                type: array
+                type: [ array, "null" ]
+                x-null-reason: "Not computed by this server yet: it needs each turn's stage timings, which the stored call summaries do not hold."
                 description: "Turn anatomy for this agent only."
                 x-source: { kind: computed, file: dashboard/src/features/overview/visuals.tsx, pointer: null, detail: "Turn anatomy for this agent only." }
                 items:
                   $ref: "#/components/schemas/StageTiming"
               chain:
-                type: array
+                type: [ array, "null" ]
+                x-null-reason: "Not computed by this server yet: it needs each turn's stage timings, which the stored call summaries do not hold."
                 description: "Every stage a turn passes through, for this agent only."
                 x-source: { kind: computed, file: dashboard/src/features/overview/latency-chain.tsx, pointer: null, detail: "Every stage's median duration over this agent's turns that reported it." }
                 items:

@@ -825,7 +825,7 @@ export type CallStats = {
      */
     to: string;
     /**
-     * false when retention, an ingest gap or a source outage leaves part of the range unstored. Totals are then null rather than an undercount.
+     * false when retention, an ingest gap or a source outage leaves part of the range unstored; totals are then null rather than an undercount. The server does not detect ingest gaps yet: true means every call stored since the project was connected, not that nothing was lost.
      */
     complete: boolean;
     /**
@@ -969,11 +969,11 @@ export type CallStats = {
     /**
      * Turn anatomy for all agents: one entry per stage that any turn reported. Stages nothing reports are absent, not zero.
      */
-    stages: Array<StageTiming>;
+    stages: Array<StageTiming> | null;
     /**
      * Every stage a turn passes through for all agents, each its own median duration over the turns that reported it. Stages nothing reports are absent, not zero.
      */
-    chain: Array<ChainStage>;
+    chain: Array<ChainStage> | null;
     /**
      * One row per agent that took calls in the range, plus one with key null for calls no agent is identified on.
      */
@@ -1009,7 +1009,7 @@ export type CallStats = {
         /**
          * The model providers this agent's turns used, from the model each stage's span names, with the median time each stage took there.
          */
-        providers: Array<ProviderUse>;
+        providers: Array<ProviderUse> | null;
         /**
          * This agent's turns with a transcript or a measured answer.
          */
@@ -1017,11 +1017,11 @@ export type CallStats = {
         /**
          * Turn anatomy for this agent only.
          */
-        stages: Array<StageTiming>;
+        stages: Array<StageTiming> | null;
         /**
          * Every stage a turn passes through, for this agent only.
          */
-        chain: Array<ChainStage>;
+        chain: Array<ChainStage> | null;
         /**
          * This agent's calls, oldest first, each with its median answer, for the per-call strip. At most 500, the most recent; see callsTruncated.
          */

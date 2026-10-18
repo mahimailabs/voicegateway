@@ -941,6 +941,29 @@ func (q *Queries) ProjectByLiveKitKey(ctx context.Context, livekitApiKey string)
 	return i, err
 }
 
+const projectConnected = `-- name: ProjectConnected :one
+SELECT created_at, now()::timestamptz AS now FROM projects WHERE organisation_id = $1 AND id = $2
+`
+
+type ProjectConnectedParams struct {
+	OrganisationID string
+	ProjectID      string
+}
+
+type ProjectConnectedRow struct {
+	CreatedAt pgtype.Timestamptz
+	Now       pgtype.Timestamptz
+}
+
+// When a project was connected, and the Postgres clock: buckets before the first, or after the
+// second, could hold no stored call.
+func (q *Queries) ProjectConnected(ctx context.Context, arg ProjectConnectedParams) (ProjectConnectedRow, error) {
+	row := q.db.QueryRow(ctx, projectConnected, arg.OrganisationID, arg.ProjectID)
+	var i ProjectConnectedRow
+	err := row.Scan(&i.CreatedAt, &i.Now)
+	return i, err
+}
+
 const putListSnapshot = `-- name: PutListSnapshot :exec
 INSERT INTO list_snapshots (id, organisation_id, project_id, filters, at, totals)
 VALUES ($1, $2, $3, $4, $5, $6)
@@ -1141,6 +1164,65 @@ func (q *Queries) StaleCalls(ctx context.Context, maxCalls int32) ([]StaleCallsR
 			&i.ProjectID,
 			&i.ID,
 			&i.SummaryStaleAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const statsCalls = `-- name: StatsCalls :many
+SELECT id, room_name, start_at, channel, answer_ms, agent_key, models
+FROM call_list
+WHERE organisation_id = $1 AND project_id = $2 AND servable
+  AND start_at >= $3 AND start_at < $4
+ORDER BY start_at, id
+`
+
+type StatsCallsParams struct {
+	OrganisationID string
+	ProjectID      string
+	FromAt         pgtype.Timestamptz
+	ToAt           pgtype.Timestamptz
+}
+
+type StatsCallsRow struct {
+	ID       pgtype.UUID
+	RoomName pgtype.Text
+	StartAt  pgtype.Timestamptz
+	Channel  string
+	AnswerMs []float64
+	AgentKey pgtype.Text
+	Models   []string
+}
+
+// getCallStats' calls: every servable call of a project that started in [from_at, to_at).
+func (q *Queries) StatsCalls(ctx context.Context, arg StatsCallsParams) ([]StatsCallsRow, error) {
+	rows, err := q.db.Query(ctx, statsCalls,
+		arg.OrganisationID,
+		arg.ProjectID,
+		arg.FromAt,
+		arg.ToAt,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []StatsCallsRow
+	for rows.Next() {
+		var i StatsCallsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.RoomName,
+			&i.StartAt,
+			&i.Channel,
+			&i.AnswerMs,
+			&i.AgentKey,
+			&i.Models,
 		); err != nil {
 			return nil, err
 		}

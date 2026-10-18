@@ -305,3 +305,20 @@ type SignInKey struct {
 	Kind, Key string
 	Max       int
 }
+
+// StatsRead is what getCallStats totals: a project's servable calls in a range, oldest first, when
+// the project was connected, and the Postgres clock at the read.
+type StatsRead struct {
+	Connected, Now time.Time
+	Calls          []StatsCall
+}
+
+// StatsCall is one call as getCallStats counts it. AnswerMs holds its measured answer times in turn
+// order; AgentKey is nil when no agent was identified.
+type StatsCall struct {
+	ID, Room, Channel string
+	StartAt           time.Time
+	AnswerMs          []float64
+	AgentKey          *string
+	Models            []string
+}
