@@ -373,6 +373,47 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (pgtype.
 	return id, err
 }
 
+const createWorkerEndpoint = `-- name: CreateWorkerEndpoint :one
+INSERT INTO project_worker_endpoints (organisation_id, project_id, id, host, url_sealed)
+VALUES ($1, $2, $3, $4, $5)
+RETURNING organisation_id, project_id, id, host, created_at
+`
+
+type CreateWorkerEndpointParams struct {
+	OrganisationID string
+	ProjectID      string
+	ID             string
+	Host           string
+	UrlSealed      []byte
+}
+
+type CreateWorkerEndpointRow struct {
+	OrganisationID string
+	ProjectID      string
+	ID             string
+	Host           string
+	CreatedAt      pgtype.Timestamptz
+}
+
+func (q *Queries) CreateWorkerEndpoint(ctx context.Context, arg CreateWorkerEndpointParams) (CreateWorkerEndpointRow, error) {
+	row := q.db.QueryRow(ctx, createWorkerEndpoint,
+		arg.OrganisationID,
+		arg.ProjectID,
+		arg.ID,
+		arg.Host,
+		arg.UrlSealed,
+	)
+	var i CreateWorkerEndpointRow
+	err := row.Scan(
+		&i.OrganisationID,
+		&i.ProjectID,
+		&i.ID,
+		&i.Host,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const deferStale = `-- name: DeferStale :exec
 UPDATE calls SET
     summary_failures = summary_failures + 1,
@@ -386,6 +427,25 @@ WHERE id = $1 AND summary_stale_at IS NOT NULL
 func (q *Queries) DeferStale(ctx context.Context, id pgtype.UUID) error {
 	_, err := q.db.Exec(ctx, deferStale, id)
 	return err
+}
+
+const deleteWorkerEndpoint = `-- name: DeleteWorkerEndpoint :execrows
+DELETE FROM project_worker_endpoints
+WHERE organisation_id = $1 AND project_id = $2 AND id = $3
+`
+
+type DeleteWorkerEndpointParams struct {
+	OrganisationID string
+	ProjectID      string
+	ID             string
+}
+
+func (q *Queries) DeleteWorkerEndpoint(ctx context.Context, arg DeleteWorkerEndpointParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteWorkerEndpoint, arg.OrganisationID, arg.ProjectID, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const failedSignIns = `-- name: FailedSignIns :one
@@ -1586,6 +1646,45 @@ func (q *Queries) UserByID(ctx context.Context, id pgtype.UUID) (UserByIDRow, er
 	var i UserByIDRow
 	err := row.Scan(&i.ID, &i.Email, &i.PasswordVersion)
 	return i, err
+}
+
+const workerEndpoints = `-- name: WorkerEndpoints :many
+SELECT organisation_id, project_id, id, host, url_sealed, created_at
+FROM project_worker_endpoints
+WHERE organisation_id = $1 AND project_id = $2
+ORDER BY created_at, id
+`
+
+type WorkerEndpointsParams struct {
+	OrganisationID string
+	ProjectID      string
+}
+
+func (q *Queries) WorkerEndpoints(ctx context.Context, arg WorkerEndpointsParams) ([]ProjectWorkerEndpoint, error) {
+	rows, err := q.db.Query(ctx, workerEndpoints, arg.OrganisationID, arg.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ProjectWorkerEndpoint
+	for rows.Next() {
+		var i ProjectWorkerEndpoint
+		if err := rows.Scan(
+			&i.OrganisationID,
+			&i.ProjectID,
+			&i.ID,
+			&i.Host,
+			&i.UrlSealed,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const workspaceProjects = `-- name: WorkspaceProjects :many

@@ -116,6 +116,15 @@ type ProjectKey struct {
 	RevokedAt      pgtype.Timestamptz
 }
 
+type ProjectWorkerEndpoint struct {
+	OrganisationID string
+	ProjectID      string
+	ID             string
+	Host           string
+	UrlSealed      []byte
+	CreatedAt      pgtype.Timestamptz
+}
+
 type Session struct {
 	Token  string
 	Data   []byte

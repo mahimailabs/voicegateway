@@ -41,6 +41,15 @@ type Layers interface {
 	IngressSince(ctx context.Context, organisationID, projectID string, since time.Time, limit int) ([]store.IngressSeen, error)
 	IngressChanges(ctx context.Context, organisationID, projectID string, ids []string) ([]store.StatusChange, error)
 	IngressWebhooks(ctx context.Context, organisationID, projectID string, ids []string, since time.Time) ([]store.WebhookStatus, error)
+	LatestCloudAgents(ctx context.Context, organisationID, projectID string) (store.CloudAgentsRead, error)
+	WorkerSamples(ctx context.Context, organisationID, projectID string, since time.Time, limit int) ([]store.WorkerSample, error)
+	WorkerEndpointStatus(ctx context.Context, organisationID, projectID string) (map[string]store.LayerStatus, error)
+}
+
+// WorkerEndpoints lists the worker metrics endpoints a project lists, by id and host; their URLs
+// are never read here.
+type WorkerEndpoints interface {
+	WorkerEndpoints(ctx context.Context, organisationID, projectID string) ([]store.WorkerEndpoint, error)
 }
 
 // Accounts reads what a signed-in user may see, and changes an organisation's members.

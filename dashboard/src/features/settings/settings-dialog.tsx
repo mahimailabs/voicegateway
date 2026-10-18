@@ -1,6 +1,6 @@
 import { useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { EnvelopeSimple as Envelope, WebhooksLogo, Buildings, Database, Key as KeyIcon, Clock, Copy, EnvelopeSimple, GearSix, FrameCorners, Lock, UsersThree, X, Plug, Plus, TreeStructure, User } from "@phosphor-icons/react"
+import { EnvelopeSimple as Envelope, WebhooksLogo, Buildings, Database, Key as KeyIcon, Clock, EnvelopeSimple, GearSix, FrameCorners, Lock, UsersThree, X, Plug, Plus, TreeStructure, User } from "@phosphor-icons/react"
 import type { Icon } from "@phosphor-icons/react"
 import { toast } from "sonner"
 import { Badge } from "@/components/ui/badge"
@@ -454,32 +454,6 @@ function Integrations() {
   )
 }
 
-// One copyable command, as in the reference's MCP tab. The values come from the environment, so no
-// key or address is ever written into the page.
-function Command({ text }: { text: string }) {
-  return (
-    <div className="relative rounded-lg bg-foreground px-4 py-3 pr-12 font-mono text-[12px] leading-relaxed whitespace-pre text-background">
-      {text}
-      <Button
-        variant="ghost"
-        size="icon-sm"
-        className="absolute top-2 right-2 text-background/70 hover:bg-background/10 hover:text-background"
-        aria-label="Copy command"
-        onClick={() => {
-          try {
-            void navigator.clipboard?.writeText(text)
-            toast("Copied")
-          } catch {
-            // Clipboard is unavailable; the command stays selectable.
-          }
-        }}
-      >
-        <Copy />
-      </Button>
-    </div>
-  )
-}
-
 const mcpClients = [
   { key: "claude", name: "Claude Code", logo: "claudecode", command: 'claude mcp add --transport http voicegateway "$VOICEGATEWAY_MCP_URL" \\\n  --header "Authorization: Bearer $VOICEGATEWAY_API_KEY"' },
   { key: "codex", name: "Codex", logo: "codex", command: 'codex mcp add voicegateway --url "$VOICEGATEWAY_MCP_URL" \\\n  --bearer-token-env-var VOICEGATEWAY_API_KEY' },
@@ -671,7 +645,7 @@ function Mcp() {
           </TabsList>
           {mcpClients.map((c) => (
             <TabsContent key={c.key} value={c.key}>
-              <Command text={c.command} />
+              <CopyCommand text={c.command} label={`${c.name} MCP command`} />
             </TabsContent>
           ))}
         </Tabs>
@@ -868,7 +842,7 @@ function Embeds() {
       <section className="pt-6">
         <h3 className="pb-1 text-[14px] font-semibold">Snippet</h3>
         <p className="pb-3 text-[13px] text-muted-foreground">Your backend asks VoiceGateway for a token and puts it in place of EMBED_TOKEN.</p>
-        <Command text={snippet} />
+        <CopyCommand text={snippet} label="Embed snippet" />
       </section>
       <Group label="Access" footer="Tokens and allowed origins are kept on the server, from Phase 2. Until then widgets show captured data and say they are a preview.">
         <Row

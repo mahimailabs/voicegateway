@@ -26,7 +26,7 @@ import (
 )
 
 // quietLayers answers every layer read as freshly read and empty, so the media server, SIP,
-// egress and ingress reads answer 200: the role gate is under test, not the layers.
+// egress, ingress, Cloud agents and workers reads answer 200: the role gate is under test, not the layers.
 type quietLayers struct{}
 
 func (quietLayers) LayerStatus(context.Context, string, string, string) (store.LayerStatus, error) {
@@ -78,10 +78,22 @@ func (quietLayers) IngressWebhooks(context.Context, string, string, []string, ti
 	return nil, nil
 }
 
+func (quietLayers) LatestCloudAgents(context.Context, string, string) (store.CloudAgentsRead, error) {
+	return store.CloudAgentsRead{ReadAt: time.Now()}, nil
+}
+
+func (quietLayers) WorkerSamples(context.Context, string, string, time.Time, int) ([]store.WorkerSample, error) {
+	return nil, nil
+}
+
+func (quietLayers) WorkerEndpointStatus(context.Context, string, string) (map[string]store.LayerStatus, error) {
+	return nil, nil
+}
+
 // membersAPI is the API behind the sign-in gate, with every read it serves wired.
 func (f *fixture) membersAPI(s *auth.Service) http.Handler {
 	return (&api.API{
-		Projects: f.pg, Calls: f.pg, Traces: emptyTraces{}, Layers: quietLayers{}, Accounts: f.pg, Keys: f.pg, NewKey: auth.NewKey,
+		Projects: f.pg, Calls: f.pg, Traces: emptyTraces{}, Layers: quietLayers{}, Endpoints: f.pg, Accounts: f.pg, Keys: f.pg, NewKey: auth.NewKey,
 		Log: slog.New(slog.NewJSONHandler(f.logs, nil)), Now: time.Now, Gate: s.Gate,
 	}).Routes()
 }
@@ -202,6 +214,8 @@ func TestRolesGateEveryRoute(t *testing.T) {
 		"/api/v1/org/org-a/project/p/sip",
 		"/api/v1/org/org-a/project/p/egress",
 		"/api/v1/org/org-a/project/p/ingress",
+		"/api/v1/org/org-a/project/p/agents",
+		"/api/v1/org/org-a/project/p/workers",
 		"/api/v1/org/org-a/members",
 	}
 	for _, role := range []string{"viewer", "member", "admin"} {
@@ -233,7 +247,7 @@ func TestRolesGateEveryRoute(t *testing.T) {
 
 	// A project key (phase 06c, which retired the interim token) reads its project, nothing else.
 	token := f.projectKey("org-a", "p")
-	for _, path := range reads[1:7] {
+	for _, path := range reads[1:9] {
 		if status, _ := f.send(web, call{method: http.MethodGet, path: path, token: token}); status != http.StatusOK {
 			t.Errorf("key GET %s = %d, want 200", path, status)
 		}

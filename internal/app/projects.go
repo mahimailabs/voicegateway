@@ -206,3 +206,71 @@ func RevokeKey(ctx context.Context, c config.Config, organisationID, projectID, 
 	defer pool.Close()
 	return pgstore.NewStore(pool, nil).RevokeProjectKey(ctx, organisationID, projectID, keyID)
 }
+
+// WorkerEndpointCommand is what `voicegateway project workers` acts on: a project and, for add, the
+// worker's metrics URL or, for remove, the endpoint's id.
+type WorkerEndpointCommand struct {
+	OrganisationID string
+	ProjectID      string
+}
+
+// workerEndpoints opens the store a workers command acts through.
+func workerEndpoints(ctx context.Context, c config.Config, in WorkerEndpointCommand) (*pgstore.Store, func(), error) {
+	if strings.TrimSpace(in.ProjectID) == "" {
+		return nil, nil, errors.New("missing --project")
+	}
+	sealer, err := seal.New(c.SecretKey)
+	if err != nil {
+		return nil, nil, err
+	}
+	pool, err := pgxpool.New(ctx, c.PostgresURL)
+	if err != nil {
+		return nil, nil, fmt.Errorf("postgres: %w", redactErr(err, c.PostgresURL))
+	}
+	return pgstore.NewStore(pool, sealer), pool.Close, nil
+}
+
+// AddWorkerEndpoint lists a self-hosted worker's Prometheus metrics URL for a project. The URL is
+// sealed under the configured key; only its scheme and host are stored in the clear.
+func AddWorkerEndpoint(ctx context.Context, c config.Config, in WorkerEndpointCommand, rawURL string) (store.WorkerEndpoint, error) {
+	if strings.TrimSpace(rawURL) == "" {
+		return store.WorkerEndpoint{}, errors.New("missing the worker metrics URL")
+	}
+	s, done, err := workerEndpoints(ctx, c, in)
+	if err != nil {
+		return store.WorkerEndpoint{}, err
+	}
+	defer done()
+	return s.AddWorkerEndpoint(ctx, orgOrDefault(in.OrganisationID), in.ProjectID, rawURL)
+}
+
+// RemoveWorkerEndpoint drops one of a project's listed endpoints by id.
+func RemoveWorkerEndpoint(ctx context.Context, c config.Config, in WorkerEndpointCommand, id string) error {
+	s, done, err := workerEndpoints(ctx, c, in)
+	if err != nil {
+		return err
+	}
+	defer done()
+	return s.RemoveWorkerEndpoint(ctx, orgOrDefault(in.OrganisationID), in.ProjectID, strings.TrimSpace(id))
+}
+
+// ListWorkerEndpoints lists a project's endpoints by id and host, never their URLs.
+func ListWorkerEndpoints(ctx context.Context, c config.Config, in WorkerEndpointCommand) ([]store.WorkerEndpoint, error) {
+	s, done, err := workerEndpoints(ctx, c, in)
+	if err != nil {
+		return nil, err
+	}
+	defer done()
+	org := orgOrDefault(in.OrganisationID)
+	if _, err := s.Project(ctx, org, in.ProjectID); err != nil {
+		return nil, err
+	}
+	return s.WorkerEndpoints(ctx, org, in.ProjectID)
+}
+
+func orgOrDefault(org string) string {
+	if org == "" {
+		return "default"
+	}
+	return org
+}

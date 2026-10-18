@@ -20,9 +20,11 @@ type API struct {
 	Calls    Calls
 	Traces   Traces
 	Layers   Layers
-	Accounts Accounts
-	Stats    Stats
-	Keys     Keys
+	// Endpoints lists each project's worker metrics endpoints, from Postgres.
+	Endpoints WorkerEndpoints
+	Accounts  Accounts
+	Stats     Stats
+	Keys      Keys
 	// NewKey draws a project key: its key_id, the SHA-256 of its secret, and the full key
 	// (auth.NewKey).
 	NewKey func() (keyID string, secretSHA256 []byte, full string, err error)
@@ -65,6 +67,8 @@ func (a *API) Routes() http.Handler {
 	handle(r, http.MethodGet, project+"/sip", a.sip)
 	handle(r, http.MethodGet, project+"/egress", a.egress)
 	handle(r, http.MethodGet, project+"/ingress", a.ingress)
+	handle(r, http.MethodGet, project+"/agents", a.cloudAgents)
+	handle(r, http.MethodGet, project+"/workers", a.workers)
 	handle(r, http.MethodGet, project+"/keys", a.listProjectKeys)
 	handle(r, http.MethodPost, project+"/keys", a.createProjectKey)
 	handle(r, http.MethodDelete, project+"/keys/{keyId}", a.revokeProjectKey)
@@ -78,7 +82,7 @@ func (a *API) Routes() http.Handler {
 func requirePrincipal(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if _, ok := store.PrincipalFrom(r.Context()); !ok {
-			unauthenticated(w, r, "sign in, or send a valid API token")
+			unauthenticated(w, r, "sign in, or send a valid API key")
 			return
 		}
 		next.ServeHTTP(w, r)

@@ -56,12 +56,13 @@ var workers atomic.Int64
 const every = time.Second
 
 type fixture struct {
-	agent    atomic.Pointer[lksdk.Room] // the test agent's connection, once it took a job
-	layers   *chstore.Store
-	rdb      *redis.Client
-	chURL    string
-	url      string
-	projects *projects
+	agent     atomic.Pointer[lksdk.Room] // the test agent's connection, once it took a job
+	layers    *chstore.Store
+	rdb       *redis.Client
+	chURL     string
+	url       string
+	projects  *projects
+	endpoints *endpoints
 }
 
 func newFixture(t *testing.T) *fixture {
@@ -139,8 +140,9 @@ func newFixture(t *testing.T) *fixture {
 	}
 	return &fixture{
 		layers: layers, rdb: rdb, chURL: chURL,
-		url:      fmt.Sprintf("http://%s:%s", host, port.Port()),
-		projects: &projects{secrets: map[string]string{}},
+		url:       fmt.Sprintf("http://%s:%s", host, port.Port()),
+		projects:  &projects{secrets: map[string]string{}},
+		endpoints: &endpoints{},
 	}
 }
 
@@ -195,7 +197,7 @@ func (f *fixture) getRead(t *testing.T, project, read string) (int, []byte) {
 	t.Helper()
 	gate, key := api.KeyFor(org, project)
 	srv := httptest.NewServer((&api.API{
-		Projects: f.projects, Layers: f.layers, Log: quiet(), Now: time.Now, Gate: gate,
+		Projects: f.projects, Layers: f.layers, Endpoints: f.endpoints, Log: quiet(), Now: time.Now, Gate: gate,
 	}).Routes())
 	defer srv.Close()
 	req, err := http.NewRequest(http.MethodGet, srv.URL+"/api/v1/org/"+org+"/project/"+project+"/"+read, nil)

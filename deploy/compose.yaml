@@ -16,6 +16,9 @@ x-voicegateway-env: &voicegateway-env
   # Proxies whose X-Forwarded-For and X-Forwarded-Proto web believes, comma-separated.
   VOICEGATEWAY_TRUSTED_PROXIES: ${VOICEGATEWAY_TRUSTED_PROXIES:-}
   VOICEGATEWAY_LOG_LEVEL: ${VOICEGATEWAY_LOG_LEVEL:-info}
+  # Retired in phase 06c and no longer accepted. Passed through only so web can warn an upgrade
+  # that still sets it; removed after V1.
+  VOICEGATEWAY_API_TOKEN: ${VOICEGATEWAY_API_TOKEN:-}
 
 x-voicegateway-depends: &voicegateway-depends
   postgres: { condition: service_healthy }

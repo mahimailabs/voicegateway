@@ -87,7 +87,7 @@ func TestUnknownAPIPathIsGated(t *testing.T) {
 func TestLayerRoutesAreGated(t *testing.T) {
 	gate, key := KeyFor("org_1", "prj_1")
 	a := &API{Gate: gate}
-	for _, route := range []string{"/media-server", "/sip", "/egress", "/ingress"} {
+	for _, route := range []string{"/media-server", "/sip", "/egress", "/ingress", "/agents", "/workers"} {
 		for _, auth := range []string{"", "Bearer 0123456789abcdef0123456789abcdee", key} {
 			t.Run(route+" "+auth, func(t *testing.T) {
 				req := httptest.NewRequest(http.MethodGet, "/api/v1/org/org_1/project/prj_1"+route, nil)

@@ -16,6 +16,7 @@ Phase 1: the console, UI first. Spec: docs/specs/phase01-console.md.
 | Setup | none | PRODUCT.md, ARCHITECTURE.md, DESIGN.md (The Clean Room seed), CLAUDE.md and decisions 0005 to 0013 written for the Go platform | 2026-10-12 |
 | Go spike | none | Four gates passed: ingest (0 lost in 12 runs), LiveKit webhooks in Go, Agents spans joined to calls, ocb collector build. Results in decision 0009 | 2026-10-11 |
 | 05c egress and ingress | docs/specs/phase05-livekit-layers.md | The worker lists egress and ingress per project every 15 s and stores redacted projections (ClickHouse 00006); getEgress and getIngress serve them with sourceStatus and histories joined with stored webhooks; Egress gains streams and outcome (#345, LIMIT_REACHED reads as cut_short). Checks 8 (TestEgressLive) and 9 (TestIngressLive) pass against livekit-server --dev 1.13.3, with LiveKit's own IOInfo client playing the egress and ingress services | 2026-10-18 |
+| 05d agent workers and Cloud agents | docs/specs/phase05-livekit-layers.md | `voicegateway project workers` add, remove and list keep each project's worker metrics URLs in Postgres `project_worker_endpoints` (00006), sealed under VOICEGATEWAY_SECRET_KEY with only scheme and host in the clear. The worker reads them every 15 s (lk_agents_worker_load, lk_agents_active_job_count per nodename, prometheus/common expfmt) and LiveKit Cloud agents every 60 s (AgentClient.ListAgents, ListAgentVersions), storing worker_samples, worker_endpoint_reads and cloud_agent_reads (ClickHouse 00007). getWorkers and getCloudAgents serve them with sourceStatus; Workers gains endpoints and per-worker endpointId and sourceStatus; a self-hosted server answers Cloud agents as not applying with no Cloud call. Checks 10 (TestWorkersFromMetrics, synctest), 11 (TestCloudAgentsSelfHosted) and 12 (TestReadsMatchContract, all six reads) pass. Not additive: CloudAgents versions[].createdAt and deployedAt were widened to nullable, against the spec's "changes stay additive", following its "a zero or absent source time is null" and CLAUDE.md's unknown-never-zero; the dashboard already handles null. A worker's id is now endpointId/nodename (Prometheus has no LiveKit worker id). Before any API or dashboard form can add endpoints, the worker needs an SSRF guard that rejects link-local and metadata addresses at dial time; today only the CLI adds them | 2026-10-18 |
 
 ## In progress (Phase 1)
 
@@ -325,7 +326,7 @@ What changed:
 
 Checks 1 to 8 and 3a pass: Go on real Postgres against the contract, and the console with Vitest. Merged as #383 (971a2d6d), and the plan task "Connect the console" is ticked.
 
-Manual check: the pair reviewer reports a real call on a fresh live stack (`livekit-server --dev` and a LiveKit Agents worker) with the mock off. The call opened from the agent strip and from the Calls list at 7 sizes, and every unserved section said so ([#383 comment](https://github.com/mahimailabs/voicegateway/pull/383#issuecomment-6244255916)). The comment does not say the stack was Compose, which the spec names, so a run on Compose (`make up`) is still open.
+Manual check: the pair reviewer reports a real call on a fresh live stack (`livekit-server --dev` and a LiveKit Agents worker) with the mock off. The call opened from the agent strip and from the Calls list at 7 sizes, and every unserved section said so ([#383 comment](https://github.com/mahimailabs/voicegateway/pull/383#issuecomment-6244255916)). On #387 the pair reviewer then ran it on Compose too, with a real call (`compose-call-387c`): the call opened from the Overview's strip and from the Calls list at 7 sizes, and unserved sections said so ([#387 comment](https://github.com/mahimailabs/voicegateway/pull/387#issuecomment-6245244091)). Their stack was `deploy/compose.yaml` with the head's binary built on the host, since their container cannot fetch Go modules; every other service was the pinned image.
 
 ### 2026-10-18: phase 06c, project API keys
 
@@ -336,11 +337,13 @@ What changed:
 - **The gate:** a Bearer key is checked in constant time. A malformed, unknown or revoked key, and any Bearer that is not a key, all answer the same 401 after the same comparison, against a dummy hash when there is no stored one. `last_used_at` is one conditional update, at most once a minute.
 - **What a key reads:** its own project, as a read-only Viewer. Other projects and organisation operations answer 403, and `getWorkspaces` shows its one project.
 - **Admin only:** `listProjectKeys`, `createProjectKey` and `revokeProjectKey`, in Settings, Access, API keys, or with `voicegateway key create` and `key revoke --key-id`. The secret shows once. Revoke asks first, and revoking twice is 204. A project's keys are deleted with it.
-- **The interim token is retired:** `VOICEGATEWAY_API_TOKEN` is no longer read or accepted, and `deploy/compose.yaml` and the dev env drop it. If it is still set, web logs one warning and starts.
+- **The interim token is retired:** `VOICEGATEWAY_API_TOKEN` is no longer read or accepted, and the dev env no longer generates it. If it is still set, web logs one warning and starts. `deploy/compose.yaml` still passes it to web until after V1, only so that warning reaches Compose upgrades.
 - **Later:** ingest from the SDK and OTLP with project keys, and the MCP server that reads with them.
 
 Upgrading: create a key per project (`voicegateway key create --org <o> --project <p> --name <n>`, or in Settings), use it in place of the token in scripts, then delete `VOICEGATEWAY_API_TOKEN`.
 
-Checks 1 to 10 and 3a pass: Go on real Postgres against the contract, the CLI, and the console with Vitest. The manual check (a key on Compose behind HTTPS) is not run yet.
+Checks 1 to 10 and 3a pass: Go on real Postgres against the contract, the CLI, and the console with Vitest.
+
+Manual check: the pair reviewer reports it passed on Compose behind HTTPS ([#387 comment](https://github.com/mahimailabs/voicegateway/pull/387#issuecomment-6245244091)). A key from `voicegateway key create` read its project, got 403 elsewhere, and was refused like every other bad credential. The console created, showed once and revoked keys at 7 sizes, and no secret appeared in the logs.
 
 Next: 06d, invitation links.

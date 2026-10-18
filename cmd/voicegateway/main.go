@@ -120,7 +120,91 @@ func projectCommand() *cobra.Command {
 	f.StringVar(&in.LiveKitAPIKey, "livekit-api-key", os.Getenv("LIVEKIT_API_KEY"), "LiveKit API key (default: LIVEKIT_API_KEY)")
 
 	cmd := &cobra.Command{Use: "project", Short: "Manage LiveKit projects"}
-	cmd.AddCommand(add)
+	cmd.AddCommand(add, workersCommand())
+	return cmd
+}
+
+// workersCommand lists the Prometheus metrics endpoints of a project's self-hosted agent workers
+// (phase 05d). A URL that carries a credential can come from VOICEGATEWAY_WORKER_METRICS_URL instead
+// of the command line, so it stays out of shell history and process listings; either way it is
+// sealed at rest and never printed back.
+func workersCommand() *cobra.Command {
+	var in app.WorkerEndpointCommand
+	load := func() (config.Config, error) {
+		c, err := config.Load(os.Getenv)
+		if err != nil {
+			return c, fmt.Errorf("configuration:\n%w", err)
+		}
+		return c, nil
+	}
+	add := &cobra.Command{
+		Use:   "add [url]",
+		Short: "List a worker's metrics URL (or from VOICEGATEWAY_WORKER_METRICS_URL)",
+		Args:  cobra.MaximumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			c, err := load()
+			if err != nil {
+				return err
+			}
+			raw := os.Getenv("VOICEGATEWAY_WORKER_METRICS_URL")
+			if len(args) == 1 {
+				raw = args[0]
+			}
+			e, err := app.AddWorkerEndpoint(cmd.Context(), c, in, raw)
+			if err != nil {
+				return fmt.Errorf("add worker endpoint: %w", err)
+			}
+			_, err = fmt.Fprintf(cmd.OutOrStdout(), "added worker endpoint %s (%s) to project %s/%s\n", e.ID, e.Host, e.OrganisationID, e.ProjectID)
+			return err
+		},
+	}
+	remove := &cobra.Command{
+		Use:   "remove <id>",
+		Short: "Stop reading a worker metrics endpoint",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			c, err := load()
+			if err != nil {
+				return err
+			}
+			if err := app.RemoveWorkerEndpoint(cmd.Context(), c, in, args[0]); err != nil {
+				return fmt.Errorf("remove worker endpoint: %w", err)
+			}
+			_, err = fmt.Fprintf(cmd.OutOrStdout(), "removed worker endpoint %s\n", args[0])
+			return err
+		},
+	}
+	list := &cobra.Command{
+		Use:   "list",
+		Short: "List a project's worker metrics endpoints",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			c, err := load()
+			if err != nil {
+				return err
+			}
+			endpoints, err := app.ListWorkerEndpoints(cmd.Context(), c, in)
+			if err != nil {
+				return fmt.Errorf("list worker endpoints: %w", err)
+			}
+			out := cmd.OutOrStdout()
+			if len(endpoints) == 0 {
+				_, err = fmt.Fprintln(out, "no worker endpoints listed")
+				return err
+			}
+			for _, e := range endpoints {
+				if _, err := fmt.Fprintf(out, "%s\t%s\tadded %s\n", e.ID, e.Host, e.CreatedAt.UTC().Format(time.RFC3339)); err != nil {
+					return err
+				}
+			}
+			return nil
+		},
+	}
+	cmd := &cobra.Command{Use: "workers", Short: "Manage a project's agent worker metrics endpoints"}
+	f := cmd.PersistentFlags()
+	f.StringVar(&in.ProjectID, "project", "", "project id")
+	f.StringVar(&in.OrganisationID, "org", "default", "organisation id")
+	cmd.AddCommand(add, remove, list)
 	return cmd
 }
 
