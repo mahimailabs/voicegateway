@@ -10,7 +10,7 @@ const cases = [
 
 for (const { path, first, next } of cases) {
   test(path + " tabs support keyboard navigation and labelled panels", async ({ page }, testInfo) => {
-    await page.addInitScript((theme) => localStorage.setItem("vg-theme", theme), testInfo.project.name)
+    await page.addInitScript((theme) => localStorage.setItem("vg-theme", theme), testInfo.project.use.colorScheme ?? "light")
     await page.goto(scope + path)
     const initial = page.getByRole("tab", { name: first })
     const following = page.getByRole("tab", { name: next })

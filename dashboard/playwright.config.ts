@@ -14,7 +14,10 @@ export default defineConfig({
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
   },
-  projects: ["light", "dark"].map((theme) => ({ name: theme, use: { colorScheme: theme as "light" | "dark" } })),
+  projects: (["light", "dark"] as const).flatMap((colorScheme) => [
+    { name: colorScheme, use: { colorScheme } },
+    { name: "phone-" + colorScheme, use: { colorScheme, viewport: { width: 390, height: 844 } } },
+  ]),
   webServer: {
     command: "npm run preview -- --host 127.0.0.1 --port 5198 --strictPort",
     url: "http://127.0.0.1:5198",

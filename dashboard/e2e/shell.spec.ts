@@ -25,15 +25,16 @@ for (const [path, heading] of pages) {
     const errors: string[] = []
     page.on("pageerror", (error) => errors.push(error.message))
     page.on("console", (message) => { if (message.type() === "error") errors.push(message.text()) })
-    await page.addInitScript((theme) => localStorage.setItem("vg-theme", theme), testInfo.project.name)
+    await page.addInitScript((theme) => localStorage.setItem("vg-theme", theme), testInfo.project.use.colorScheme ?? "light")
     const response = await page.goto(scope + path)
     expect(response?.status()).toBe(200)
-    await expect(page).toHaveURL(new RegExp(scope + path + "(?:\\?|$)"))
-    await expect(page.locator("html")).toHaveClass(testInfo.project.name === "dark" ? /dark/ : /^(?!.*\bdark\b)/)
+    await expect(page).toHaveURL((url) => url.pathname === scope + path)
+    await expect(page.locator("html")).toHaveClass(testInfo.project.use.colorScheme === "dark" ? /dark/ : /^(?!.*\bdark\b)/)
     if (heading) await expect(page.getByRole("heading", { name: heading, exact: true })).toBeVisible()
     else await expect(page.getByRole("textbox", { name: "Filter rooms", exact: true })).toBeVisible()
     await expect(page.getByText("Loading calls", { exact: true })).toHaveCount(0)
-    if (path === "overview") {
+    // The desktop sidebar provides the complete route inventory; phones collapse it.
+    if (path === "overview" && (page.viewportSize()?.width ?? 0) >= 768) {
       const links = await page.locator('[data-sidebar="menu-button"][href^="/"]').evaluateAll((items) => items.map((item) => item.getAttribute("href")))
       expect(links.length).toBeGreaterThan(0)
       for (const href of links) expect(pages.map(([route]) => scope + route), "every internal sidebar link has a test").toContain(href)
