@@ -358,3 +358,18 @@ ORDER BY start_at, id;
 -- When a project was connected, and the Postgres clock: buckets before the first, or after the
 -- second, could hold no stored call.
 SELECT created_at, now()::timestamptz AS now FROM projects WHERE organisation_id = @organisation_id AND id = @project_id;
+
+-- name: CreateWorkerEndpoint :one
+INSERT INTO project_worker_endpoints (organisation_id, project_id, id, host, url_sealed)
+VALUES ($1, $2, $3, $4, $5)
+RETURNING organisation_id, project_id, id, host, created_at;
+
+-- name: WorkerEndpoints :many
+SELECT organisation_id, project_id, id, host, url_sealed, created_at
+FROM project_worker_endpoints
+WHERE organisation_id = $1 AND project_id = $2
+ORDER BY created_at, id;
+
+-- name: DeleteWorkerEndpoint :execrows
+DELETE FROM project_worker_endpoints
+WHERE organisation_id = $1 AND project_id = $2 AND id = $3;
