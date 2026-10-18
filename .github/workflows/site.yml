@@ -1,6 +1,7 @@
 name: Site
 
-# site/docs (docs.voicegateway.dev) and site/web (voicegateway.dev). ci.yml only
+# site/docs (docs.voicegateway.dev). voicegateway.dev lives in the private
+# voicegateway-web repository (decision 0030). ci.yml only
 # triggers on src/voicegateway/** and friends, so without this a site-only PR had
 # no gate: broken MDX, a type error or a bad import would merge clean and fail
 # the deploy.
@@ -42,43 +43,3 @@ jobs:
       - run: npm ci
       - run: npm test
       - run: npm run build
-
-  web:
-    name: web
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: site/web
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          persist-credentials: false
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-          cache-dependency-path: site/web/package-lock.json
-      - name: No em dashes
-        run: '! grep -rn "—" src/'
-      - run: npm ci
-      - run: npm run check
-      # prebuild copies the repo-root collector.sh and install.sh into public/.
-      - run: npm run build
-
-  landing:
-    name: landing
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          persist-credentials: false
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 9.15.0
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 24
-          cache: pnpm
-          cache-dependency-path: site/landing/pnpm-lock.yaml
-      - run: pnpm --dir site/landing install --frozen-lockfile
-      - run: make landing-check

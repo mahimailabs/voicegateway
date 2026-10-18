@@ -44,9 +44,8 @@ Contributions outside `ee/` follow [LICENSE](LICENSE); Enterprise code follows [
 
 ## Sites and project tools
 
-- `site/landing/`: the Cloudflare Pages frontend; run `make landing-check`.
 - `site/docs/`: the Fumadocs application and its own build commands.
-- `site/web/`: the existing D1/API Worker, privately reached by the landing. Do not remove its database or restore its old apex-domain claim.
+- voicegateway.dev and its waitlist API live in the private `voicegateway-web` repository (decision 0030).
 - `.mcp.json`: the shared V1 project tooling. The [legacy MCP example](docs/contributing/mcp-legacy.example.json) is optional reference for the published Python CLI; merge any needed entries rather than overwriting the V1 tool configuration.
 
 ## Published Python release

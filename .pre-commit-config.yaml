@@ -15,7 +15,7 @@ repos:
         # duplicate screenshot once reached main and stayed there. uv.lock
         # and the dashboard's npm lockfile are tracked files allowed over it.
         args: [--maxkb=250]
-        exclude: ^(uv\.lock|dashboard/package-lock\.json|site/landing/pnpm-lock\.yaml)$
+        exclude: ^(uv\.lock|dashboard/package-lock\.json)$
     -   id: check-toml
     -   id: check-yaml
         args:

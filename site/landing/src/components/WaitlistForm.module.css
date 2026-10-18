@@ -1,9 +1,0 @@
-.form { width: 100%; }
-.fields { display: flex; gap: 8px; }
-.fields input { flex: 1; min-width: 0; }
-.privacy { color: var(--color-muted); font-size: 11px; line-height: 1.6; margin-top: 10px; }
-.privacy a { color: inherit; text-decoration: underline; }
-.error { color: #b00020; font-size: 13px; line-height: 1.6; margin-top: 12px; }
-.error a { text-decoration: underline; }
-.success { color: var(--color-ink); font-size: 15px; line-height: 1.6; padding: 20px; background: var(--color-surface); border-radius: 12px; }
-@media (max-width: 380px) { .fields { flex-direction: column; } }
