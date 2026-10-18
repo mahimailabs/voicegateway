@@ -412,6 +412,12 @@ const (
 		`"roomName":"call-1","participantIdentity":"streamer","participantName":"sec-name-2","participantMetadata":"sec-metadata-2",` +
 		`"state":{"status":"ENDPOINT_COMPLETE","roomId":"RM_1","endedAt":"1700000060000000000"}},` +
 		`"id":"EV_IN_2","createdAt":"1700000060"}`
+	// Statuses newer than protocol v1.52.1.
+	egressUpdatedNewStatus = `{"event":"egress_updated","egressInfo":{"egressId":"EG_3","roomId":"RM_1","status":"EGRESS_FROM_THE_FUTURE",` +
+		`"streamResults":[{"url":"rtmp://a.rtmp.youtube.com/live2/sec-rtmp-key-3","status":"ACTIVE"},{"url":"rtmp://b.example.com/app/sec-b-key","status":"STREAM_FROM_THE_FUTURE"}],` +
+		`"stream":{"info":[{"url":"mux://sec-mux-key-3","status":"STREAM_GONE_SIDEWAYS"}]}},"id":"EV_EG_3","createdAt":"1700000030"}`
+	ingressNewStatus = `{"event":"ingress_started","ingressInfo":{"ingressId":"IN_3","streamKey":"sec-ingress-key-3","roomName":"call-1",` +
+		`"state":{"status":"ENDPOINT_FROM_THE_FUTURE","roomId":"RM_1"}},"id":"EV_IN_3","createdAt":"1700000030"}`
 )
 
 // An Egress or Ingress webhook is stored with none of its credentials, stream keys, tokens, names,
@@ -446,6 +452,20 @@ func TestSinkStripsEgressAndIngressSecrets(t *testing.T) {
 			[]string{"sec-ingress-key-2", "sec-name-2", "sec-metadata-2"},
 			[]string{`"event":"ingress_ended"`, `"ingressId":"IN_2"`, `"url":"rtmp://ingest.example.com"`, `"participantIdentity":"streamer"`, `"status":"ENDPOINT_COMPLETE"`},
 		},
+		{
+			"EV_EG_3", egressUpdatedNewStatus,
+			[]string{"sec-rtmp-key-3", "sec-b-key", "sec-mux-key-3"},
+			[]string{
+				`"status":"EGRESS_FROM_THE_FUTURE"`, `"egressId":"EG_3"`,
+				`"streamResults":[{"url":"rtmp://a.rtmp.youtube.com"},{"status":"STREAM_FROM_THE_FUTURE","url":"rtmp://b.example.com"}]`,
+				`"stream":{"info":[{"status":"STREAM_GONE_SIDEWAYS","url":"mux://"}]}`,
+			},
+		},
+		{
+			"EV_IN_3", ingressNewStatus,
+			[]string{"sec-ingress-key-3"},
+			[]string{`"status":"ENDPOINT_FROM_THE_FUTURE"`, `"ingressId":"IN_3"`, `"roomId":"RM_1"`},
+		},
 	}
 	for _, tt := range tests {
 		f.append(t, event.KindLiveKitWebhook, tt.id, tt.body)
@@ -474,5 +494,26 @@ func TestSinkStripsEgressAndIngressSecrets(t *testing.T) {
 				t.Logf("stored payload = %s", payload)
 			}
 		})
+	}
+}
+
+// An Egress webhook that does not decode is dead-lettered with its payload withheld, since its
+// secrets cannot be found reliably, and with the reason it failed.
+func TestDeadLetterWithholdsUndecodableEgress(t *testing.T) {
+	f := newFixture(t)
+	f.append(t, event.KindLiveKitWebhook, "EV_EG_9", `{"event":"egress_started","egressInfo":{"egressId":"EG_9","streamResults":[{"url":"rtmp://a.rtmp.youtube.com/live2/sec-rtmp-key"`)
+	run(t, f.sink("w1", f.events), func() bool { return f.streamLen() == 0 })
+	dead := f.rdb.XRange(context.Background(), stream.DeadLetters(stream.Ingest), "-", "+").Val()
+	if len(dead) != 1 {
+		t.Fatalf("dead letters = %d, want 1", len(dead))
+	}
+	if body := dead[0].Values["payload"]; body != "" {
+		t.Errorf("dead-lettered payload = %q, want it withheld", body)
+	}
+	if reason := dead[0].Values["dead_reason"]; reason != errWebhookUndecodable.Error() {
+		t.Errorf("dead reason = %q, want %q", reason, errWebhookUndecodable.Error())
+	}
+	if n := f.rows(t); n != 0 {
+		t.Errorf("rows = %d, want 0", n)
 	}
 }

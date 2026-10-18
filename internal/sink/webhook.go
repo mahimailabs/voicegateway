@@ -35,6 +35,7 @@ func withoutWebhookSecrets(body []byte) ([]byte, error) {
 	if !carriesEgressOrIngress(body) {
 		return withoutTURNPassword(body)
 	}
+	statuses := unknownStatuses(body)
 	var ev livekit.WebhookEvent
 	// DiscardUnknown drops fields newer than livekit/protocol v1.52.1 too: a field this code has
 	// not reviewed is not stored.
@@ -58,7 +59,151 @@ func withoutWebhookSecrets(body []byte) ([]byte, error) {
 	if err := json.Compact(&compact, out); err != nil {
 		return nil, errWebhookUndecodable
 	}
-	return compact.Bytes(), nil
+	if !statuses.any() {
+		return compact.Bytes(), nil
+	}
+	return withStatuses(compact.Bytes(), statuses)
+}
+
+// statusNames are the Egress, stream result and Ingress status names that livekit/protocol
+// v1.52.1 does not know. DiscardUnknown drops an unknown enum name with the unknown fields, and an
+// absent status reads back as the zero one (EGRESS_STARTING, ACTIVE, ENDPOINT_INACTIVE). A status
+// name is not a secret, so it is put back as LiveKit sent it. Stream results are matched by their
+// index, which protojson keeps.
+type statusNames struct {
+	egress, ingress string
+	// streams and deprecatedStreams map an index in streamResults and in stream.info to its name.
+	streams, deprecatedStreams map[int]string
+}
+
+func (s statusNames) any() bool {
+	return s.egress != "" || s.ingress != "" || len(s.streams) > 0 || len(s.deprecatedStreams) > 0
+}
+
+// rawStatus is the status member of a message, kept as JSON.
+type rawStatus struct {
+	Status json.RawMessage `json:"status"`
+}
+
+// rawEgress is an EgressInfo's status and its stream results' statuses, under either JSON name.
+type rawEgress struct {
+	Status         json.RawMessage `json:"status"`
+	StreamResults  []rawStatus     `json:"streamResults"`
+	StreamResults2 []rawStatus     `json:"stream_results"`
+	Stream         *struct {
+		Info []rawStatus `json:"info"`
+	} `json:"stream"`
+}
+
+// rawIngress is an IngressInfo's state status.
+type rawIngress struct {
+	State *rawStatus `json:"state"`
+}
+
+// unknownStatuses reads the status names in a webhook body that this protocol version does not
+// know, checked against the enums' descriptors. A body that does not parse here has none; its
+// decoding fails on its own.
+func unknownStatuses(body []byte) statusNames {
+	var doc struct {
+		EgressInfo   *rawEgress  `json:"egressInfo"`
+		EgressInfo2  *rawEgress  `json:"egress_info"`
+		IngressInfo  *rawIngress `json:"ingressInfo"`
+		IngressInfo2 *rawIngress `json:"ingress_info"`
+	}
+	if json.Unmarshal(body, &doc) != nil {
+		return statusNames{}
+	}
+	out := statusNames{streams: map[int]string{}, deprecatedStreams: map[int]string{}}
+	egressStatus := livekit.EgressStatus(0).Descriptor()
+	streamStatus := livekit.StreamInfo_Status(0).Descriptor()
+	for _, e := range []*rawEgress{doc.EgressInfo, doc.EgressInfo2} {
+		if e == nil {
+			continue
+		}
+		if name := unknownName(e.Status, egressStatus); name != "" {
+			out.egress = name
+		}
+		for i, r := range append(e.StreamResults, e.StreamResults2...) {
+			if name := unknownName(r.Status, streamStatus); name != "" {
+				out.streams[i] = name
+			}
+		}
+		if e.Stream != nil {
+			for i, r := range e.Stream.Info {
+				if name := unknownName(r.Status, streamStatus); name != "" {
+					out.deprecatedStreams[i] = name
+				}
+			}
+		}
+	}
+	ingressStatus := livekit.IngressState_Status(0).Descriptor()
+	for _, i := range []*rawIngress{doc.IngressInfo, doc.IngressInfo2} {
+		if i != nil && i.State != nil {
+			if name := unknownName(i.State.Status, ingressStatus); name != "" {
+				out.ingress = name
+			}
+		}
+	}
+	return out
+}
+
+// unknownName is a status given as a name that enum has no value for. A number, which protojson
+// keeps, or a known name is not one.
+func unknownName(raw json.RawMessage, enum protoreflect.EnumDescriptor) string {
+	var name string
+	if len(raw) == 0 || json.Unmarshal(raw, &name) != nil || name == "" {
+		return ""
+	}
+	if enum.Values().ByName(protoreflect.Name(name)) != nil {
+		return ""
+	}
+	return name
+}
+
+// withStatuses puts unknown status names back into a re-encoded webhook body.
+func withStatuses(body []byte, statuses statusNames) ([]byte, error) {
+	dec := json.NewDecoder(bytes.NewReader(body))
+	dec.UseNumber()
+	var doc map[string]any
+	if err := dec.Decode(&doc); err != nil {
+		return nil, errWebhookUndecodable
+	}
+	if info, ok := doc["egressInfo"].(map[string]any); ok {
+		if statuses.egress != "" {
+			info["status"] = statuses.egress
+		}
+		setListStatuses(info["streamResults"], statuses.streams)
+		if stream, ok := info["stream"].(map[string]any); ok {
+			setListStatuses(stream["info"], statuses.deprecatedStreams)
+		}
+	}
+	if info, ok := doc["ingressInfo"].(map[string]any); ok && statuses.ingress != "" {
+		state, ok := info["state"].(map[string]any)
+		if !ok {
+			state = map[string]any{}
+			info["state"] = state
+		}
+		state["status"] = statuses.ingress
+	}
+	var out bytes.Buffer
+	enc := json.NewEncoder(&out)
+	enc.SetEscapeHTML(false)
+	if err := enc.Encode(doc); err != nil {
+		return nil, errWebhookUndecodable
+	}
+	return bytes.TrimSuffix(out.Bytes(), []byte("\n")), nil
+}
+
+// setListStatuses sets the status of each listed message at its index.
+func setListStatuses(list any, names map[int]string) {
+	items, _ := list.([]any)
+	for i, name := range names {
+		if i < len(items) {
+			if item, ok := items[i].(map[string]any); ok {
+				item["status"] = name
+			}
+		}
+	}
 }
 
 // redactEgress keeps an Egress's ids, room, status, timings, errors and where its results went, and
