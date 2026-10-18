@@ -72,6 +72,23 @@ type CallSummary struct {
 	ComputedAt     pgtype.Timestamptz
 }
 
+type Invitation struct {
+	ID             pgtype.UUID
+	Kind           string
+	OrganisationID string
+	Email          string
+	Role           pgtype.Text
+	UserID         pgtype.UUID
+	TokenSha256    []byte
+	InvitedBy      pgtype.UUID
+	IdempotencyKey pgtype.Text
+	CreatedAt      pgtype.Timestamptz
+	ExpiresAt      pgtype.Timestamptz
+	EmailedAt      pgtype.Timestamptz
+	AcceptedAt     pgtype.Timestamptz
+	RevokedAt      pgtype.Timestamptz
+}
+
 type ListSnapshot struct {
 	ID             string
 	OrganisationID string

@@ -42,6 +42,10 @@ var routeAccess = map[string]access{
 	"GET /api/v1/org/{orgId}/members":                             {"Viewer", scopeOrganisation},
 	"PATCH /api/v1/org/{orgId}/members/{userId}":                  {"Admin", scopeOrganisation},
 	"DELETE /api/v1/org/{orgId}/members/{userId}":                 {"Admin", scopeOrganisation},
+	"POST /api/v1/org/{orgId}/members/{userId}/password-reset":    {"Admin", scopeOrganisation},
+	"GET /api/v1/org/{orgId}/invitations":                         {"Admin", scopeOrganisation},
+	"POST /api/v1/org/{orgId}/invitations":                        {"Admin", scopeOrganisation},
+	"DELETE /api/v1/org/{orgId}/invitations/{invitationId}":       {"Admin", scopeOrganisation},
 }
 
 // roleRank orders the contract's role names, and the stored ones, Viewer < Member < Admin; an

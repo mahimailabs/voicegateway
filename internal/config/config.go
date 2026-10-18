@@ -36,6 +36,10 @@ type Config struct {
 	// TrustedProxies are the proxies (addresses and CIDRs, comma-separated) whose X-Forwarded-For
 	// and X-Forwarded-Proto web believes.
 	TrustedProxies string
+	// SMTPURL is the SMTP server invitations are emailed through (smtps:// or smtp:// with
+	// STARTTLS); empty sends nothing, and the console shows links to copy. It holds a password and is
+	// never logged. SMTPFrom is the sender's address, required with it.
+	SMTPURL, SMTPFrom string
 	// WorkerEndpointsPublicOnly makes the worker refuse private and loopback addresses for worker
 	// metrics endpoints, as well as the link-local and metadata addresses it always refuses. For an
 	// install whose endpoints are entered by people it should not trust with its network, such as
@@ -77,6 +81,8 @@ func Load(getenv func(string) string) (Config, error) {
 		WebAddr:        optional("VOICEGATEWAY_WEB_ADDR", ":8080"),
 		PublicURL:      optional("VOICEGATEWAY_PUBLIC_URL", ""),
 		TrustedProxies: optional("VOICEGATEWAY_TRUSTED_PROXIES", ""),
+		SMTPURL:        optional("VOICEGATEWAY_SMTP_URL", ""),
+		SMTPFrom:       optional("VOICEGATEWAY_SMTP_FROM", ""),
 		ConsoleDir:     optional("VOICEGATEWAY_CONSOLE_DIR", ""),
 		PostgresURL:    required("VOICEGATEWAY_POSTGRES_URL"),
 		ClickHouseURL:  required("VOICEGATEWAY_CLICKHOUSE_URL"),

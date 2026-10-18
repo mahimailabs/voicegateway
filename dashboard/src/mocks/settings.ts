@@ -1,4 +1,4 @@
-import type { AlertRuleSetup, AlertSetup, CreatedProjectKey, Invitation, Invitations, Member, Members, ProjectKey, ProjectKeys, IssueDisposition, IssueDispositions, ProjectSettings, Thresholds } from "@/lib/api-types"
+import type { AlertRuleSetup, AlertSetup, CreatedInvitation, CreatedPasswordReset, CreatedProjectKey, Invitation, Invitations, Member, Members, ProjectKey, ProjectKeys, IssueDisposition, IssueDispositions, ProjectSettings, Thresholds } from "@/lib/api-types"
 import { readLocal } from "@/lib/local-store"
 
 // The settings reads, served from what the console saved in this browser (lib/local-store.ts) until
@@ -97,13 +97,40 @@ export function revokeKey(project: string, keyId: string): boolean {
   return true
 }
 
-const ROLES = new Set<string>(["Admin", "Member", "Viewer"])
-export function invitations(): Invitations {
-  const saved = readLocal("vg.invites")
-  const items: Invitation[] = []
-  for (const v of Array.isArray(saved) ? saved : []) {
-    const { email, role } = record(v)
-    if (typeof email === "string" && /^[^\s@]+@[^\s@]+$/.test(email) && typeof role === "string" && ROLES.has(role) && !items.some((i) => i.email === email)) items.push({ email, role: role as Invitation["role"] })
-  }
-  return { items }
+// Invitations and reset links, in memory, as web without SMTP answers them: each create returns
+// its link once, and only a hash-like id is kept.
+let invitationList: Invitation[] = []
+const DAY = 24 * 60 * 60 * 1000
+const linkFor = () => `${globalThis.location?.origin ?? "http://localhost"}/invite#${draw(43, "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_")}`
+
+export const invitations = (): Invitations => ({ items: [...invitationList].sort((a, b) => b.createdAt.localeCompare(a.createdAt)).map((i) => ({ ...i, state: i.state === "pending" && Date.parse(i.expiresAt) <= Date.now() ? "expired" : i.state })) })
+
+// Replaces the open link for the same email and kind, as web does.
+function addLink(kind: Invitation["kind"], email: string, role: Invitation["role"], lifetime: number): { invitation: Invitation; link: string } {
+  invitationList = invitationList.map((i) => (i.email === email && i.kind === kind && i.state === "pending" ? { ...i, state: "revoked" } : i))
+  const now = new Date()
+  const invitation: Invitation = { id: crypto.randomUUID(), kind, email, role, state: "pending", createdAt: now.toISOString(), expiresAt: new Date(now.getTime() + lifetime).toISOString(), invitedBy: "ada@example.com" }
+  invitationList = [...invitationList, invitation]
+  return { invitation, link: linkFor() }
+}
+
+export function invite(email: string, role: Member["role"]): CreatedInvitation | "already_member" {
+  const clean = email.toLowerCase()
+  if (memberList.some((m) => m.email === clean)) return "already_member"
+  const { invitation, link } = addLink("invite", clean, role, 7 * DAY)
+  return { invitation, link, emailed: false }
+}
+
+export function passwordReset(userId: string): CreatedPasswordReset | "not_found" {
+  const m = memberList.find((x) => x.userId === userId)
+  if (!m) return "not_found"
+  const { invitation, link } = addLink("reset", m.email, null, DAY)
+  return { link, expiresAt: invitation.expiresAt, emailed: false }
+}
+
+/** Revokes a link, keeping an accepted one accepted; false when there is no such link. */
+export function revokeInvitation(id: string): boolean {
+  if (!invitationList.some((i) => i.id === id)) return false
+  invitationList = invitationList.map((i) => (i.id === id && i.state === "pending" ? { ...i, state: "revoked" } : i))
+  return true
 }

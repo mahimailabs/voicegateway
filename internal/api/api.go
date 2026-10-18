@@ -25,6 +25,12 @@ type API struct {
 	Accounts  Accounts
 	Stats     Stats
 	Keys      Keys
+	// Invitations lists and revokes invitations; Inviter makes them and reset links.
+	Invitations Invitations
+	Inviter     Inviter
+	// LinkBase is an invitation link's base for a request: VOICEGATEWAY_PUBLIC_URL, or the
+	// request's scheme and Host (auth.Service.LinkBase).
+	LinkBase func(r *http.Request) string
 	// NewKey draws a project key: its key_id, the SHA-256 of its secret, and the full key
 	// (auth.NewKey).
 	NewKey func() (keyID string, secretSHA256 []byte, full string, err error)
@@ -75,6 +81,10 @@ func (a *API) Routes() http.Handler {
 	handle(r, http.MethodGet, "/api/v1/org/{orgId}/members", a.getMembers)
 	handle(r, http.MethodPatch, "/api/v1/org/{orgId}/members/{userId}", a.updateMember)
 	handle(r, http.MethodDelete, "/api/v1/org/{orgId}/members/{userId}", a.removeMember)
+	handle(r, http.MethodPost, "/api/v1/org/{orgId}/members/{userId}/password-reset", a.createPasswordReset)
+	handle(r, http.MethodGet, "/api/v1/org/{orgId}/invitations", a.getInvitations)
+	handle(r, http.MethodPost, "/api/v1/org/{orgId}/invitations", a.createInvitation)
+	handle(r, http.MethodDelete, "/api/v1/org/{orgId}/invitations/{invitationId}", a.revokeInvitation)
 	return r
 }
 

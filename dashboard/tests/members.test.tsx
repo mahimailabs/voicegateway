@@ -2,6 +2,7 @@
 import { cleanup, render, screen, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
+import { Outlet, RouterProvider, createMemoryHistory, createRootRoute, createRoute, createRouter } from "@tanstack/react-router"
 import { seen } from "./fetch-call.ts"
 import { afterEach, beforeAll, expect, test, vi } from "vitest"
 
@@ -64,17 +65,30 @@ function signedInAs(role: string) {
   setCurrentSession({ email: "ada@example.com", organisations: [{ id: "default", role }] })
 }
 
-const show = (ui: React.ReactNode) => render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>{ui}</QueryClientProvider>)
+// Under a router: the invitations list keeps its filter and sort in the URL.
+function show(ui: React.ReactNode) {
+  const root = createRootRoute({ component: () => <Outlet /> })
+  const router = createRouter({ routeTree: root.addChildren([createRoute({ getParentRoute: () => root, path: "/", component: () => ui })]), history: createMemoryHistory({ initialEntries: ["/"] }) })
+  return render(
+    <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+      <RouterProvider router={router} />
+    </QueryClientProvider>,
+  )
+}
 
-test("an Admin sees every member, with a role picker on each and Remove on all but their own", async () => {
+test("an Admin sees every member, with a role picker on each and a row menu on all but their own", async () => {
   serve()
   signedInAs("admin")
   show(<People />)
   expect(await screen.findByText("ada@example.com (you)")).toBeTruthy()
   for (const email of ["ada@example.com", "bob@example.com", "cat@example.com"]) expect(screen.getByLabelText(`Role of ${email}`)).toBeTruthy()
-  expect(screen.queryByLabelText("Remove ada@example.com")).toBeNull()
-  expect(screen.getByLabelText("Remove bob@example.com")).toBeTruthy()
-  expect(screen.getByLabelText("Remove cat@example.com")).toBeTruthy()
+  expect(screen.queryByLabelText("Actions for ada@example.com")).toBeNull()
+  expect(screen.getByLabelText("Actions for bob@example.com")).toBeTruthy()
+  expect(screen.getByLabelText("Actions for cat@example.com")).toBeTruthy()
+  const user = userEvent.setup()
+  await user.click(screen.getByLabelText("Actions for bob@example.com"))
+  const menu = await screen.findByRole("menu")
+  expect(within(menu).getAllByRole("menuitem").map((i) => i.textContent)).toEqual(["Password reset", "Remove"])
 })
 
 test("changing a role calls updateMember", async () => {
@@ -107,14 +121,14 @@ test("a Viewer sees the list with no role picker, no Remove and no Invite form",
   const bob = (await screen.findByText("bob@example.com")).closest("[data-slot=item]")
   expect(bob?.querySelector("[data-slot=item-actions]")?.textContent).toBe("Member")
   expect(screen.queryByLabelText(/^Role of /)).toBeNull()
-  expect(screen.queryByLabelText(/^Remove /)).toBeNull()
+  expect(screen.queryByLabelText(/^Actions for /)).toBeNull()
   expect(screen.queryByRole("form", { name: "Invite people" })).toBeNull()
 })
 
-test("the Role row shows the signed-in user's role", () => {
+test("the Role row shows the signed-in user's role", async () => {
   signedInAs("member")
   show(<Account />)
-  expect(screen.getByText("Role").closest("[data-slot=item]")?.textContent).toContain("Member")
+  expect((await screen.findByText("Role")).closest("[data-slot=item]")?.textContent).toContain("Member")
 })
 
 test("demoting yourself reads the session again and hides the admin controls", async () => {
@@ -135,13 +149,15 @@ test("Remove asks first, and only the confirmation calls removeMember", async ()
   signedInAs("admin")
   show(<People />)
   const user = userEvent.setup()
-  await user.click(await screen.findByLabelText("Remove bob@example.com"))
+  await user.click(await screen.findByLabelText("Actions for bob@example.com"))
+  await user.click(within(await screen.findByRole("menu")).getByRole("menuitem", { name: "Remove" }))
   const dialog = await screen.findByRole("dialog")
   expect(within(dialog).getByText("Remove bob@example.com?")).toBeTruthy()
   expect(calls.some((c) => c.method === "DELETE")).toBe(false)
   await user.click(within(dialog).getByRole("button", { name: "Cancel" }))
   expect(calls.some((c) => c.method === "DELETE")).toBe(false)
-  await user.click(screen.getByLabelText("Remove bob@example.com"))
+  await user.click(screen.getByLabelText("Actions for bob@example.com"))
+  await user.click(within(await screen.findByRole("menu")).getByRole("menuitem", { name: "Remove" }))
   await user.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Remove" }))
   await vi.waitFor(() => expect(calls.find((c) => c.method === "DELETE")?.url).toBe("/api/v1/org/default/members/u-bob"))
 })
