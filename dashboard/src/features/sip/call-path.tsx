@@ -100,7 +100,7 @@ export function PathLegend() {
 export function PathDiagram({ path, compact, vertical }: { path: Path; compact?: boolean; vertical?: boolean }) {
   if (vertical) return <PathColumn path={path} />
   return (
-    <div className={cn("flex items-start overflow-x-auto px-2 pb-1", compact ? "pt-2" : "pt-3")}>
+    <div role="region" aria-label="SIP call path" tabIndex={0} className={cn("flex items-start overflow-x-auto px-2 pb-1 focus-visible:outline-2 focus-visible:outline-ring", compact ? "pt-2" : "pt-3")}>
       {path.hops.map((h, k) => (
         <div key={`${h.title}${k}`} className="contents">
           <HopView hop={h} compact={compact} />

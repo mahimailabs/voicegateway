@@ -41,6 +41,12 @@ for (const [path, heading] of pages) {
     await page.waitForLoadState("networkidle")
     // Wait for the built page's fonts before contrast analysis.
     await page.evaluate(() => document.fonts.ready)
+    // Scan the settled drawer, not an intermediate fade with blended text colors.
+    await page.evaluate(async () => {
+      await Promise.all(document.getAnimations().filter((animation) =>
+        animation.effect?.getComputedTiming().iterations !== Infinity
+      ).map((animation) => animation.finished.catch(() => undefined)))
+    })
     const results = await new AxeBuilder({ page }).analyze()
     await testInfo.attach("axe", { body: JSON.stringify(results, null, 2), contentType: "application/json" })
     await testInfo.attach("browser-errors", { body: JSON.stringify(errors), contentType: "application/json" })

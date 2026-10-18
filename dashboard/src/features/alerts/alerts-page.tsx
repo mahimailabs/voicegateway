@@ -83,7 +83,7 @@ function RuleCard({ r, days, setup }: { r: Rule; days: number[]; setup: Setup })
           <p className="mt-1 text-[11px] text-muted-foreground">{r.state ? `ongoing · ${r.source}` : `would have fired · ${r.source}`}</p>
         </div>
         {!r.state && days.length > 0 && (
-          <div className="flex h-8 items-end gap-[3px]" aria-label="Fired per day">
+          <div className="flex h-8 items-end gap-[3px]" role="img" aria-label="Fired per day">
             {perDay.map((n, k) => (
               <Tooltip key={k}>
                 <TooltipTrigger asChild>

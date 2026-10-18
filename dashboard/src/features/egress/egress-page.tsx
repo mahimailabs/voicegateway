@@ -26,7 +26,7 @@ const docs = "https://docs.livekit.io"
 const outcome = (s: string) => s.replace("EGRESS_", "").replace("_", " ").toLowerCase()
 const statusTone = (s: string) =>
   s === "EGRESS_COMPLETE"
-    ? "bg-primary/10 text-primary"
+    ? "bg-primary/10 text-foreground"
     : s === "EGRESS_FAILED"
       ? "bg-destructive/10 text-destructive"
       : s === "EGRESS_ABORTED" || s === "EGRESS_LIMIT_REACHED"

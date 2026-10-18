@@ -242,7 +242,7 @@ function MediaServerView({ data }: { data: MediaServerData }) {
                             </span>
                           )
                         })}
-                        <span className="ml-auto pl-1 text-[11px] whitespace-nowrap text-muted-foreground tnum">
+                        <span className="ml-auto pl-1 text-[11px] whitespace-nowrap text-foreground tnum">
                           {r.createdMs !== null ? dur(r.lastSeen! - r.createdMs / 1000) : "length unknown"}
                           {open ? "+" : ""}
                         </span>
