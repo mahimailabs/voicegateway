@@ -65,7 +65,7 @@ jobs:
           make project-add NAME="CI copy" | tee copy.log
           grep -q "added project default/ci-copy" copy.log
           if make project-add NAME="CI project" > dup.log 2>&1; then echo "duplicate project ID was accepted"; exit 1; fi
-          grep -q "project already exists" dup.log
+          grep -q "a project with this id already exists" dup.log
           ! grep -q "ci-only-secret" add.log copy.log dup.log
       - name: Logs on failure
         if: failure()
