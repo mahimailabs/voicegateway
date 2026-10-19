@@ -21,9 +21,6 @@ func (s *Store) PutEntitlement(ctx context.Context, org string, e store.Entitlem
 			}
 			return err
 		}
-		if _, err := tx.Exec(ctx, "LOCK TABLE calls IN SHARE ROW EXCLUSIVE MODE"); err != nil {
-			return err
-		}
 		var old store.Entitlement
 		err := tx.QueryRow(ctx, "SELECT from_at,to_at,limit_minutes,active,revision FROM organisation_entitlements WHERE organisation_id=$1", org).Scan(&old.From, &old.To, &old.LimitMinutes, &old.Active, &old.Revision)
 		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
@@ -35,9 +32,18 @@ func (s *Store) PutEntitlement(ctx context.Context, org string, e store.Entitlem
 			}
 			return store.ErrEntitlementRevision
 		}
+		first := errors.Is(err, pgx.ErrNoRows)
+		if first {
+			if _, err := tx.Exec(ctx, "LOCK TABLE calls IN SHARE ROW EXCLUSIVE MODE"); err != nil {
+				return err
+			}
+		}
 		if _, err := tx.Exec(ctx, `INSERT INTO organisation_entitlements(organisation_id,from_at,to_at,limit_minutes,active,revision)
             VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT(organisation_id) DO UPDATE SET from_at=$2,to_at=$3,limit_minutes=$4,active=$5,revision=$6`, org, e.From, e.To, e.LimitMinutes, e.Active, e.Revision); err != nil {
 			return err
+		}
+		if !first {
+			return nil
 		}
 		// Backfill existing calls on first activation. Subsequent changes are captured by the
 		// trigger. DO NOTHING prevents a stale backfill overwriting a concurrent worker update.

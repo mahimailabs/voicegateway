@@ -21,6 +21,7 @@ CREATE INDEX profiled_call_usage_period ON profiled_call_usage(organisation_id, 
 CREATE FUNCTION record_profiled_call_usage() RETURNS trigger LANGUAGE plpgsql AS $$
 DECLARE finish timestamptz;
 BEGIN
+    IF NEW.end_state = 'open' THEN RETURN NEW; END IF;
     IF EXISTS (SELECT 1 FROM organisation_entitlements WHERE organisation_id = NEW.organisation_id) THEN
         finish := CASE NEW.end_state WHEN 'observed' THEN NEW.ended_at WHEN 'inferred' THEN NEW.last_activity_at END;
         INSERT INTO profiled_call_usage(call_id, organisation_id, effective_end, seconds)
