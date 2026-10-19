@@ -442,3 +442,10 @@ The Python runtime (src/), its Alembic migrations, packaging, examples, benchmar
 Added opt-in hosted entitlements, durable closed-call usage, ingestion refusals and console usage
 warnings. See phase06g-cloud-limits.md. The private control plane owns verified subscription sync;
 production activation and end-to-end billing proof remain pending. Self-hosted is unchanged.
+
+Quota review follow-up: reduced renewal/replay lock scope, avoided open-call ledger writes,
+and rendered billing timestamps in UTC with an explicit exclusive end. At exhaustion, known
+indexed calls may finish and send their final reports while the current entitlement is active;
+every OTLP record must identify a known call in the authenticated project. A real-Postgres
+regression verifies a refused new room, accepted room_finished, observed closure and complete
+usage, mixed-call refusal, project isolation and revocation. Full Cloud integration remains open.

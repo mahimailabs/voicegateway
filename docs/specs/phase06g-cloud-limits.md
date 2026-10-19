@@ -23,3 +23,11 @@ Acceptance: threshold and expiry tests; concurrent replays; retention, fractiona
 period isolation tests in real Postgres; instance-only writes and organisation-only reads;
 console warning and unknown-state tests. Subscription verification/renewal belongs to the private
 Cloud integration and must pass before enabling enforcement in production.
+
+At exhaustion, an active entitlement in its current period permits final telemetry for calls
+already indexed in the authenticated project and overlapping that period. Every span, log record
+and metric point must identify a known call; mixed known/new batches and unattributed records are
+refused. Metrics use point identity, never the process resource. A finished indexed call remains
+eligible for its late session report. Revocation and expiry still refuse all uploads. Events still
+queued before the index exists do not qualify for this exception; queue admission is not a call
+reservation. This distinction must be exercised in the Cloud end-to-end rollout check.

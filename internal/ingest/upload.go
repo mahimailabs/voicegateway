@@ -103,7 +103,7 @@ func (u *Uploads) verify(w http.ResponseWriter, r *http.Request) (*projectKeys, 
 	keys, code := u.check(r)
 	switch code {
 	case http.StatusOK:
-		return keys, checkQuota(w, r, u.Quota, keys.project.OrganisationID)
+		return keys, true
 	case http.StatusServiceUnavailable:
 		unavailable(w)
 	default:
@@ -148,6 +148,9 @@ func (u *Uploads) check(r *http.Request) (*projectKeys, int) {
 // appendEnvelope attributes e to the verified project and appends it, answering 503 on failure so
 // the agent retries. It reports whether the envelope was appended.
 func (u *Uploads) appendEnvelope(w http.ResponseWriter, r *http.Request, keys *projectKeys, e event.Envelope) bool {
+	if !checkEnvelopeQuota(w, r, u.Quota, keys.project.OrganisationID, keys.project.ID, e.Kind, e.Payload) {
+		return false
+	}
 	e.OrganisationID, e.ProjectID, e.ReceivedAt = keys.project.OrganisationID, keys.project.ID, u.Now()
 	if _, err := u.Stream.Append(r.Context(), e); err != nil {
 		u.Log.Error("upload: append failed", "kind", e.Kind, "project", keys.project.ID, "err", err)

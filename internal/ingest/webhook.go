@@ -60,7 +60,7 @@ func (h *Webhooks) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !checkQuota(w, r, h.Quota, keys.project.OrganisationID) {
+	if !checkEnvelopeQuota(w, r, h.Quota, keys.project.OrganisationID, keys.project.ID, event.KindLiveKitWebhook, body) {
 		return
 	}
 

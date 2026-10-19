@@ -4,6 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
+
+	"github.com/mahimailabs/voicegateway/internal/event"
 
 	"github.com/jackc/pgx/v5"
 
@@ -71,4 +74,26 @@ func (s *Store) EntitlementUsage(ctx context.Context, org string) (store.Entitle
 		return u, fmt.Errorf("entitlement usage: %w", err)
 	}
 	return u, nil
+}
+
+// KnownQuotaCalls requires every identity to match the authenticated project and billing period.
+// Closed calls remain eligible so the final session report can arrive after room_finished.
+func (s *Store) KnownQuotaCalls(ctx context.Context, org, project string, refs []event.CallIdentity, from, to time.Time) (bool, error) {
+	if len(refs) == 0 {
+		return false, nil
+	}
+	for _, ref := range refs {
+		var exists bool
+		err := s.pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM calls WHERE organisation_id=$1 AND project_id=$2
+   AND (($3<>'' AND room_sid=$3) OR ($3='' AND $4<>'' AND job_id=$4))
+   AND coalesce(started_at,first_seen_at)<$6
+   AND (end_state='open' OR coalesce(ended_at,last_activity_at)>=$5))`, org, project, ref.RoomSID, ref.JobID, from, to).Scan(&exists)
+		if err != nil {
+			return false, err
+		}
+		if !exists {
+			return false, nil
+		}
+	}
+	return true, nil
 }

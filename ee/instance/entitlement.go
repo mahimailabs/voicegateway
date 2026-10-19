@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/mahimailabs/voicegateway/internal/api"
+	"github.com/mahimailabs/voicegateway/internal/event"
 	"github.com/mahimailabs/voicegateway/internal/store"
 )
 
@@ -114,4 +115,31 @@ func (h *Handlers) getEntitlement(w http.ResponseWriter, r *http.Request) {
 		WarningPercent int  `json:"warningPercent"`
 		IngestAllowed  bool `json:"ingestAllowed"`
 	}{u, warning(u), allowed(u, time.Now())})
+}
+
+// Continue allows a known call to finish while an active current allowance is exhausted.
+// Revocation and expiry never inherit this exception. Mixed exports must name only known calls.
+func (q *Quota) Continue(ctx context.Context, org, project string, kind event.Kind, payload []byte) (bool, error) {
+	u, err := q.Store.EntitlementUsage(ctx, org)
+	if errors.Is(err, store.ErrNotFound) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	now := q.Now()
+	if !u.Active || now.Before(u.From) || !now.Before(u.To) {
+		return false, nil
+	}
+	refs, err := event.CallIdentities(kind, payload)
+	if err != nil {
+		return false, nil
+	}
+	known, ok := q.Store.(interface {
+		KnownQuotaCalls(context.Context, string, string, []event.CallIdentity, time.Time, time.Time) (bool, error)
+	})
+	if !ok {
+		return false, nil
+	}
+	return known.KnownQuotaCalls(ctx, org, project, refs, u.From, u.To)
 }
