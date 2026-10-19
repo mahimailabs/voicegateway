@@ -21,5 +21,7 @@ type Entitlement struct {
 // EntitlementUsage survives deletion of the underlying telemetry.
 type EntitlementUsage struct {
 	Entitlement
-	CallSeconds int64 `json:"callSeconds"`
+	CallSeconds     int64 `json:"callSeconds"`
+	UnmeasuredCalls int64 `json:"unmeasuredCalls"`
+	OpenCalls       int64 `json:"openCalls"`
 }

@@ -1826,6 +1826,14 @@ export type OrganisationEntitlement = {
     active: boolean;
     revision: number;
     callSeconds: number;
+    /**
+     * Retained closed calls first seen in this billing period whose duration is missing or invalid. Excluded from measured seconds. This count can decrease with retention.
+     */
+    unmeasuredCalls: number;
+    /**
+     * Retained open calls first seen in this billing period. Their duration is not yet measured. This count can decrease with retention.
+     */
+    openCalls: number;
     warningPercent: 0 | 80 | 95 | 100;
     ingestAllowed: boolean;
 };

@@ -5669,6 +5669,8 @@ components:
       - active
       - revision
       - callSeconds
+      - unmeasuredCalls
+      - openCalls
       - warningPercent
       - ingestAllowed
       properties:
@@ -5726,6 +5728,28 @@ components:
             file: ee/instance/entitlement.go
             pointer: null
             detail: Durable measured usage and current entitlement status.
+        unmeasuredCalls:
+          type: integer
+          minimum: 0
+          x-unit: count
+          x-configuration: true
+          description: Retained closed calls first seen in this billing period whose duration is missing or invalid. Excluded from measured seconds. This count can decrease with retention.
+          x-source:
+            kind: computed
+            file: internal/store/pgstore/entitlements.go
+            pointer: null
+            detail: Counts retained calls first seen within the explicit billing period.
+        openCalls:
+          type: integer
+          minimum: 0
+          x-unit: count
+          x-configuration: true
+          description: Retained open calls first seen in this billing period. Their duration is not yet measured. This count can decrease with retention.
+          x-source:
+            kind: computed
+            file: internal/store/pgstore/entitlements.go
+            pointer: null
+            detail: Counts retained calls first seen within the explicit billing period.
         warningPercent:
           x-unit: percent
           type: integer

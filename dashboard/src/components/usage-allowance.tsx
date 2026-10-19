@@ -17,7 +17,8 @@ export function UsageAllowance() {
     <AlertTitle>{!usage.ingestAllowed ? "Telemetry ingestion paused" : usage.warningPercent >= 80 ? `${usage.warningPercent}% of allowance used` : "Profiled call usage"}</AlertTitle>
     <AlertDescription>
       <p>{Math.floor(usage.callSeconds / 60).toLocaleString()} / {usage.limitMinutes.toLocaleString()} minutes for {periodDate.format(new Date(usage.from))} until {periodDate.format(new Date(usage.to))} UTC (end exclusive).</p>
-      <p>Closed calls are counted. In-flight calls may take usage over the allowance. No automatic overage charges. Existing data stays readable and your voice calls continue.</p>
+      <p>{usage.openCalls.toLocaleString()} open calls and {usage.unmeasuredCalls.toLocaleString()} closed calls with unknown duration, first seen in this period, are excluded from measured usage.</p>
+      <p>Measured closed calls are counted. In-flight calls may take usage over the allowance. No automatic overage charges. Existing data stays readable and your voice calls continue.</p>
       <Button variant="link" asChild><a href="https://voicegateway.dev/support" target="_blank" rel="noreferrer">Request more capacity</a></Button>
     </AlertDescription>
   </Alert>

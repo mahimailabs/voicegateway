@@ -65,9 +65,16 @@ func (s *Store) EntitlementUsage(ctx context.Context, org string) (store.Entitle
 	var u store.EntitlementUsage
 	err := s.pool.QueryRow(ctx, `SELECT e.from_at,e.to_at,e.limit_minutes,e.active,e.revision,
         coalesce((SELECT floor(sum(seconds))::bigint FROM profiled_call_usage u
-            WHERE u.organisation_id=e.organisation_id AND u.effective_end>=e.from_at AND u.effective_end<e.to_at),0)
+            WHERE u.organisation_id=e.organisation_id AND u.effective_end>=e.from_at AND u.effective_end<e.to_at),0),
+        (SELECT count(*) FROM calls c WHERE c.organisation_id=e.organisation_id
+          AND c.first_seen_at>=e.from_at AND c.first_seen_at<e.to_at AND c.end_state<>'open'
+          AND (c.started_at IS NULL OR
+            (CASE c.end_state WHEN 'observed' THEN c.ended_at WHEN 'inferred' THEN c.last_activity_at END) IS NULL OR
+            (CASE c.end_state WHEN 'observed' THEN c.ended_at WHEN 'inferred' THEN c.last_activity_at END)<c.started_at)),
+        (SELECT count(*) FROM calls c WHERE c.organisation_id=e.organisation_id
+          AND c.first_seen_at>=e.from_at AND c.first_seen_at<e.to_at AND c.end_state='open')
         FROM organisation_entitlements e WHERE e.organisation_id=$1`, org).
-		Scan(&u.From, &u.To, &u.LimitMinutes, &u.Active, &u.Revision, &u.CallSeconds)
+		Scan(&u.From, &u.To, &u.LimitMinutes, &u.Active, &u.Revision, &u.CallSeconds, &u.UnmeasuredCalls, &u.OpenCalls)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return u, store.ErrNotFound
 	}

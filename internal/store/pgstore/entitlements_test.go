@@ -150,6 +150,12 @@ func TestEntitlementUnknownDuration(t *testing.T) {
 		t.Fatal(err)
 	}
 	insert()
+	if _, err := pool.Exec(ctx, "UPDATE calls SET first_seen_at=$1", from); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, "INSERT INTO calls(organisation_id,project_id,first_seen_at,end_state) VALUES('default','quota',$1,'open')", from); err != nil {
+		t.Fatal(err)
+	}
 	var unknown, measuredZero int
 	if err := pool.QueryRow(ctx, `SELECT count(*) FILTER (WHERE seconds IS NULL), count(*) FILTER (WHERE seconds=0) FROM profiled_call_usage`).Scan(&unknown, &measuredZero); err != nil {
 		t.Fatal(err)
@@ -160,5 +166,8 @@ func TestEntitlementUnknownDuration(t *testing.T) {
 	u, err := s.EntitlementUsage(ctx, "default")
 	if err != nil || u.CallSeconds != 0 {
 		t.Fatalf("usage %+v %v", u, err)
+	}
+	if u.UnmeasuredCalls != 4 || u.OpenCalls != 1 {
+		t.Fatalf("excluded calls %+v", u)
 	}
 }

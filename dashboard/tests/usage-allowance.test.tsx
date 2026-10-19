@@ -14,9 +14,10 @@ describe("usage allowance", () => {
     expect(container.textContent).toBe("")
   })
   it("shows a quota warning without claiming calls will stop", () => {
-    state.value = { data: { callSeconds: 114000, limitMinutes: 2000, from: "2026-10-01T00:00:00Z", to: "2026-11-01T00:00:00Z", warningPercent: 95, ingestAllowed: true } }
+    state.value = { data: { callSeconds: 114000, openCalls: 3, unmeasuredCalls: 2, limitMinutes: 2000, from: "2026-10-01T00:00:00Z", to: "2026-11-01T00:00:00Z", warningPercent: 95, ingestAllowed: true } }
     render(<UsageAllowance />)
     expect(screen.getByText("95% of allowance used")).toBeTruthy()
+    expect(screen.getByText(/3 open calls and 2 closed calls with unknown duration/)).toBeTruthy()
     expect(screen.getByText(/Oct 1, 2026.*until Nov 1, 2026.*UTC \(end exclusive\)/)).toBeTruthy()
     expect(screen.getByRole("link", { name: "Request more capacity" }).getAttribute("href")).toBe("https://voicegateway.dev/support")
   })
