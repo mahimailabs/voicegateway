@@ -7,7 +7,7 @@ A fresh session reads this to know where the project stands.
 
 ## Current Phase
 
-Phase 1: the console, UI first. Spec: docs/specs/phase01-console.md.
+Phases 01 to 06f are on main (06f, adding a project from the console, merged in #419). The next phase has no spec yet.
 
 ## Done
 
@@ -55,7 +55,7 @@ Phase 1: the console, UI first. Spec: docs/specs/phase01-console.md.
 Plan agreed 2026-10-15: a team builds V1 with Cloud (decision 0024) over 30 days, release target 5 Nov.
 
 1. Freeze the contract: finish Phase 1's OpenAPI spec with x-source, generated types and the mock API, so the lanes build against one interface.
-2. Build V1 on its own branch; main keeps the current release until V1 replaces it. Phase 0 (removing the old Python core) lands with that switch.
+2. Build V1 on its own branch; main keeps the current release until V1 replaces it. Phase 0 (removing the old Python core) is done (2026-10-18).
 3. Lanes in parallel: ingest and calls, projects and auth, LiveKit surfaces, actions (alerts, recordings, MCP, capacity test, embed tokens), Cloud control plane with Stripe self-serve, release hardening.
 4. One pinned tracking issue on GitHub, split into owned issues with acceptance checks.
 
@@ -74,7 +74,6 @@ Plan agreed 2026-10-15: a team builds V1 with Cloud (decision 0024) over 30 days
 
 ## Known Issues
 
-- The old Python code in src/ no longer matches the docs. It stays until Phase 0.
 - Docker Desktop on the dev Mac stopped starting new containers during the spike; it needs a restart.
 - Project MCP servers (shadcn, magicui) need a one-time approval in Claude Code. The gopls MCP server was removed on 2026-10-17: its fsnotify watcher opened one file handle per file in the tree (about 61,000) and exhausted the system file table.
 
@@ -433,3 +432,7 @@ An Admin of an organisation with no project adds one from the console's empty st
 With VOICEGATEWAY_WORKER_ENDPOINTS_PUBLIC_ONLY enabled, all eleven worker LiveKit reads use the existing dial-time address guard. The pinned server-sdk-go v2.19.0 accepts a custom HTTP client only for AgentClient; the other reads use livekit/protocol generated Twirp clients and the native access-token grants used by the SDK. Regression tests cover listening and closed internal addresses, metadata and private networks; refused addresses remain unreachable. A container-backed test compares responses and authentication failures against the native SDK.
 
 Local make go-test go-lint passed; Docker-dependent tests require CI. The Cloud owner accepted the initial deployment's region-failover/proxy tradeoffs; the temporary Cloud project-creation gate is removed alongside the guard. No hosted onboarding completion is claimed.
+
+### 2026-10-18: Phase 0, old Python release retired
+
+The Python runtime (src/), its Alembic migrations, packaging, examples, benchmarks, Railway and Codecov config, the root docker-compose.yml, the legacy contributor guides, four specs for the old console and the six workflows that built, tested and published it are removed, as are the vg-* Claude commands that drove that code. The Go binary, deploy/, the Makefile and the Go, Dashboard, Site and Docker workflows read none of them. The public installers stay at the root (install.sh, collector.sh, docker-compose.collector.yml, docker-compose.autoupdate.yml) because voicegateway.dev serves the scripts; their shell tests moved to tools/tests/. Open: the installers still install the old Python collector.

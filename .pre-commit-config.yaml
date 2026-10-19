@@ -1,6 +1,3 @@
-default_language_version:
-    python: python3
-
 # .claude/skills/impeccable/ is a vendored third-party skill, kept byte for
 # byte so `npx impeccable update` diffs cleanly. Its font index is over the
 # size cap by design.
@@ -12,23 +9,16 @@ repos:
     hooks:
     -   id: check-added-large-files
         # 250 KiB, not the 500 KiB default. The default is why a 404 KiB
-        # duplicate screenshot once reached main and stayed there. uv.lock
-        # and the dashboard's npm lockfile are tracked files allowed over it.
+        # duplicate screenshot once reached main and stayed there. The
+        # dashboard's npm lockfile is the one tracked file allowed over it.
         args: [--maxkb=250]
-        exclude: ^(uv\.lock|dashboard/package-lock\.json)$
+        exclude: ^dashboard/package-lock\.json$
     -   id: check-toml
     -   id: check-yaml
         args:
         -   --unsafe
     -   id: end-of-file-fixer
     -   id: trailing-whitespace
--   repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.14.3
-    hooks:
-    -   id: ruff
-        args:
-        - --fix
-    -   id: ruff-format
 # Go checks (CLAUDE.md Code quality). They use the tool versions pinned in go.mod, so they run only
 # where Go is installed; the Go workflow runs the same checks in CI.
 -   repo: local

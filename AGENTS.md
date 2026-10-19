@@ -12,7 +12,8 @@ All rules live in [CLAUDE.md](CLAUDE.md), so the two files cannot drift. Read it
 Quick commands:
 
 ```bash
-uv sync --extra dev --extra dashboard            # install
-uv run pytest -q -n auto -m "not integration"    # unit tests
-uv run --with ruff ruff check src                # lint
+make help    # list the targets
+make up      # start the six-service stack
+make test    # Go tests with -race and the dashboard tests
+make lint    # Go lint, dashboard lint and TypeScript checks
 ```

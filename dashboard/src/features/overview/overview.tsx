@@ -24,6 +24,7 @@ import { wireData } from "./wire-data"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import { useUrlState } from "@/lib/url-state"
+import { useIsPhone } from "@/hooks/use-mobile"
 
 // The whole stack at a glance: four numbers with their shape, the path a call takes with each part's
 // state, where a turn's time goes, and where the models are. Every figure comes from the same data and
@@ -145,6 +146,8 @@ type Reads = { cloud: UseQueryResult<CloudAgents>; media: UseQueryResult<MediaSe
 
 function OverviewView({ stats, cloud: cloudRead, media, sip: sipQ, egress: egressQ, ingress: ingressQ, workers: workersQ, probes: probesQ }: { stats: CallStats } & Reads) {
   const navigate = useNavigate()
+  // Phones have no room for the globe. A hidden globe still draws every frame, so it is not mounted.
+  const phone = useIsPhone()
   const [pick, setPick] = useUrlState("agent", "all")
   const [open, setOpen] = useState(false)
   const rooms = useMemo<MediaServerData | null>(() => (media.data ? fromContract(media.data) : null), [media.data])
@@ -394,9 +397,11 @@ function OverviewView({ stats, cloud: cloudRead, media, sip: sipQ, egress: egres
             <Unavailable query={probesQ} />
           ) : (
           <div className="flex items-center gap-4">
-            <div className="hidden shrink-0 overflow-hidden rounded-xl bg-muted/40 sm:block">
-              <ProviderGlobe probes={probe} size={210} />
-            </div>
+            {!phone && (
+              <div className="shrink-0 overflow-hidden rounded-xl bg-muted/40">
+                <ProviderGlobe probes={probe} size={210} />
+              </div>
+            )}
             <ul className="min-w-0 flex-1 space-y-3">
               {probe.endpoints.map((e) => {
                 const I = roleIcon[e.role] ?? HardDrives

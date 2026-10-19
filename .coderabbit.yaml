@@ -12,45 +12,5 @@ reviews:
   auto_review:
     enabled: true
     drafts: false
-  path_instructions:
-    - path: "**/*.py"
-      instructions: |
-        Review Python with awareness of the LiveKit Agents + FastAPI + SQLite stack. Ensure:
-          - Each public function and class has a docstring covering purpose, parameters, return.
-          - Avoid generic exception handling (e.g., `except Exception`) unless re-raised or logged with context.
-          - Prefer typing.Protocol over abstract base classes for plugin/middleware interfaces.
-          - Async path is async all the way down — flag any blocking I/O on the async path.
-    - path: "src/voicegateway/middleware/**/*.py"
-      instructions: |
-        Middleware wraps provider plugin calls. Additionally:
-          - Cost tracking writes must include the current `session_id` from the ContextVar.
-          - Latency measurements must use `time.monotonic`, not `time.time`.
-          - Failures in middleware must never crash the underlying request. Log and continue.
-    - path: "src/voicegateway/repository/**/*.py"
-      instructions: |
-        SQLite storage layer. Additionally:
-          - All migrations must be idempotent (`CREATE TABLE IF NOT EXISTS`, guarded `ALTER TABLE`).
-          - Existing rows must be preserved or migrated, never dropped silently.
-          - Indexed any new foreign-key column.
-    - path: "src/voicegateway/server/mcp/**/*.py"
-      instructions: |
-        MCP tools. Additionally:
-          - Every tool must respect bearer-token auth via `server/mcp/auth.py`.
-          - Destructive operations (write, delete, rotate) must require a `confirm` argument.
-          - Any sensitive value at rest goes through `src/voicegateway/core/crypto.py` Fernet. No plaintext keys in DB or logs.
-          - Responses are structured JSON, never prose.
-    - path: "src/voicegateway/tests/**/*.py"
-      instructions: |
-        Tests. Additionally:
-          - Avoid broad `except Exception` in tests. Each assertion failure should surface naturally.
-          - Use the in-memory MCP fixture for MCP tests, never a live server.
-          - Migration tests must use frozen fixtures from `src/voicegateway/tests/fixtures/sqlite/`. Never regenerate fixtures in-place.
-          - Integration tests are gated by the `integration` marker. CI runs them nightly with secrets, not on every PR.
-    - path: "src/dashboard/frontend/**/*.{ts,tsx}"
-      instructions: |
-        Dashboard frontend. Additionally:
-          - State management stays inside React components or hooks. No global mutable state.
-          - Recharts is the chart library. Do not introduce additional chart libs.
-          - All API calls go through the typed client in `src/dashboard/frontend/src/lib/api.ts`.
 chat:
   auto_reply: true
