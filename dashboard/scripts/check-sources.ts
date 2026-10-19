@@ -118,12 +118,14 @@ export function checkSpec(spec: Doc, repo = root) {
     for (const method of ["get", "post", "put", "patch", "delete"]) {
       const operation = (item as Doc)[method]
       if (!operation) continue
-      if (operation["x-access"]?.principal !== "organisation_member") fail(name, "missing mandatory authorisation policy")
-      const expectedTag = method === "get" ? "Console reads" : "Console writes"
+      // The instance API (phase 06e) takes the instance token alone, at the role Instance.
+      const instance = name.startsWith("/api/v1/instance/")
+      if (operation["x-access"]?.principal !== (instance ? "instance" : "organisation_member")) fail(name, "missing mandatory authorisation policy")
+      const expectedTag = instance ? "Instance" : method === "get" ? "Console reads" : "Console writes"
       if (!(operation.tags ?? []).includes(expectedTag)) fail(name, `a ${method} must be tagged ${expectedTag}`)
-      const expectedScope = name.includes("{projectId}") ? "project" : name.includes("{orgId}") ? "organisation" : "principal"
+      const expectedScope = instance ? "instance" : name.includes("{projectId}") ? "project" : name.includes("{orgId}") ? "organisation" : "principal"
       if (operation["x-access"]?.scope !== expectedScope) fail(name, "access scope does not match the resource boundary")
-      if (!["Viewer", "Member", "Admin"].includes(operation["x-access"]?.minimumRole)) fail(name, "missing supported organisation role")
+      if (!(instance ? ["Instance"] : ["Viewer", "Member", "Admin"]).includes(operation["x-access"]?.minimumRole)) fail(name, "missing supported organisation role")
       if (expectedScope === "project" && operation["x-access"]?.projectIsolation !== "required") fail(name, "project isolation is mandatory")
       const embed = operation["x-embed-access"]
       if (embed !== undefined) {

@@ -499,3 +499,47 @@ SELECT EXISTS (
 
 -- name: OrganisationName :one
 SELECT name FROM organisations WHERE id = $1;
+
+-- name: PutOrganisation :one
+-- Creates an organisation with a caller-chosen id, or renames it (phase 06e). Parallel puts for one
+-- id meet the primary key: exactly one inserts, and created is true for that one alone.
+INSERT INTO organisations (id, name) VALUES (@id, @name)
+ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name
+RETURNING id, name, created_at, (xmax = 0)::boolean AS created;
+
+-- name: OrganisationSummary :one
+-- An organisation's members, admins and open invitations, counted at this read (phase 06e).
+SELECT o.id, o.name, o.created_at,
+    (SELECT count(*) FROM memberships m WHERE m.organisation_id = o.id) AS members,
+    (SELECT count(*) FROM memberships m WHERE m.organisation_id = o.id AND m.role = 'admin') AS admins,
+    (SELECT count(*) FROM invitations i
+        WHERE i.organisation_id = o.id AND i.kind = 'invite' AND i.accepted_at IS NULL AND i.revoked_at IS NULL AND i.expires_at > now()) AS pending_invitations
+FROM organisations o WHERE o.id = @id;
+
+-- name: OrganisationUsage :one
+-- An organisation's profiled call time in [from, to) (phase 06e, decision 0029). An observed call
+-- ends at ended_at; an inferred one at its last activity, a lower bound. A call is measured when
+-- its start and end are known and the end is not before the start, and counts in the period that
+-- holds its end. Exact durations are summed first and the sum is rounded down to whole seconds
+-- once, never per call. Open calls, and closed calls with no end or an end before their start,
+-- are counted apart by their start and never summed.
+WITH period_calls AS (
+    SELECT started_at, end_state,
+        CASE end_state WHEN 'observed' THEN ended_at WHEN 'inferred' THEN last_activity_at END AS effective_end
+    FROM calls WHERE organisation_id = @organisation_id
+), classified AS (
+    SELECT *,
+        started_at IS NOT NULL AND effective_end >= started_at
+            AND effective_end >= @from_at::timestamptz AND effective_end < @to_at::timestamptz AS measured,
+        started_at >= @from_at::timestamptz AND started_at < @to_at::timestamptz AS started_in_period
+    FROM period_calls
+)
+SELECT
+    COALESCE(floor(sum(extract(epoch FROM effective_end - started_at)) FILTER (WHERE measured)), 0)::bigint AS call_seconds,
+    count(*) FILTER (WHERE measured) AS calls,
+    count(*) FILTER (WHERE measured AND end_state = 'inferred') AS inferred_calls,
+    COALESCE(floor(sum(extract(epoch FROM effective_end - started_at)) FILTER (WHERE measured AND end_state = 'inferred')), 0)::bigint AS inferred_call_seconds,
+    count(*) FILTER (WHERE end_state = 'open' AND started_in_period) AS unended_calls,
+    count(*) FILTER (WHERE end_state IN ('observed', 'inferred') AND started_in_period
+        AND (effective_end IS NULL OR effective_end < started_at)) AS unmeasured_calls
+FROM classified;

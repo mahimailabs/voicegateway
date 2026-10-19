@@ -101,6 +101,7 @@ db.sqlite3-journal
 
 # Flask stuff:
 instance/
+!/ee/instance/
 .webassets-cache
 
 # Scrapy stuff:

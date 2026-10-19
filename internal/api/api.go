@@ -39,6 +39,9 @@ type API struct {
 	// default, 1500 ms. Interim, until thresholds are stored per project.
 	AnswerBudgetMs int
 	Now            func() time.Time
+	// Instance serves the instance API (phase 06e), from ee/instance; with no handler set it is
+	// off, and every /api/v1/instance path answers 404 as if it did not exist.
+	Instance InstanceHandlers
 	// Gate runs before every /api/v1 route: auth.Service.Gate, which identifies a signed-in user or
 	// the interim token (decision 0027).
 	// Nil denies every request, so a router wired without a gate never serves openly.
@@ -56,6 +59,7 @@ func (a *API) Routes() http.Handler {
 	if a.Gate != nil {
 		r.Use(a.Gate)
 	}
+	r.Use(a.Instance.guard)
 	r.Use(requirePrincipal)
 	r.NotFound(func(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, http.StatusNotFound, codeNotFound, "no such API path")
@@ -85,6 +89,11 @@ func (a *API) Routes() http.Handler {
 	handle(r, http.MethodGet, "/api/v1/org/{orgId}/invitations", a.getInvitations)
 	handle(r, http.MethodPost, "/api/v1/org/{orgId}/invitations", a.createInvitation)
 	handle(r, http.MethodDelete, "/api/v1/org/{orgId}/invitations/{invitationId}", a.revokeInvitation)
+	const instance = "/api/v1/instance/organisations/{orgId}"
+	handle(r, http.MethodPut, instance, a.Instance.PutOrganisation)
+	handle(r, http.MethodGet, instance, a.Instance.GetOrganisation)
+	handle(r, http.MethodPost, instance+"/invitations", a.Instance.CreateOrganisationInvitation)
+	handle(r, http.MethodGet, instance+"/usage", a.Instance.GetOrganisationUsage)
 	return r
 }
 

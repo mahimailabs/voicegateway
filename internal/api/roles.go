@@ -10,7 +10,8 @@ import (
 )
 
 // access is a route's minimum organisation role (decision 0019) and what it is scoped to: a
-// project, an organisation, or the signed-in principal alone.
+// project, an organisation, the signed-in principal alone, or the instance (phase 06e), whose
+// routes take the instance token and nothing else, at the role Instance.
 type access struct {
 	min   string
 	scope string
@@ -20,6 +21,7 @@ const (
 	scopeProject      = "project"
 	scopeOrganisation = "organisation"
 	scopePrincipal    = "principal"
+	scopeInstance     = "instance"
 )
 
 // routeAccess is every /api/v1 route's access, by method and chi pattern. Routes registers a route
@@ -46,6 +48,10 @@ var routeAccess = map[string]access{
 	"GET /api/v1/org/{orgId}/invitations":                         {"Admin", scopeOrganisation},
 	"POST /api/v1/org/{orgId}/invitations":                        {"Admin", scopeOrganisation},
 	"DELETE /api/v1/org/{orgId}/invitations/{invitationId}":       {"Admin", scopeOrganisation},
+	"PUT /api/v1/instance/organisations/{orgId}":                  {"Instance", scopeInstance},
+	"GET /api/v1/instance/organisations/{orgId}":                  {"Instance", scopeInstance},
+	"POST /api/v1/instance/organisations/{orgId}/invitations":     {"Instance", scopeInstance},
+	"GET /api/v1/instance/organisations/{orgId}/usage":            {"Instance", scopeInstance},
 }
 
 // roleRank orders the contract's role names, and the stored ones, Viewer < Member < Admin; an
@@ -107,13 +113,22 @@ func keyMay(acc access) bool {
 // allow answers 403 a caller whose organisation role is below a route's minimum. A user outside
 // the organisation in the path is told so. A project API key names no user: it is a read-only
 // Viewer of its one project, and is refused every other project and every organisation operation.
+// The instance token calls the instance routes and nothing else, and nothing else calls them.
 func allow(acc access, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if acc.scope == scopePrincipal {
+		p, _ := store.PrincipalFrom(r.Context())
+		if p.Instance != (acc.scope == scopeInstance) {
+			if p.Instance {
+				writeError(w, r, http.StatusForbidden, codeForbidden, "the instance token calls the instance API only")
+			} else {
+				writeError(w, r, http.StatusForbidden, codeForbidden, "this needs the instance token")
+			}
+			return
+		}
+		if acc.scope == scopePrincipal || acc.scope == scopeInstance {
 			next.ServeHTTP(w, r)
 			return
 		}
-		p, _ := store.PrincipalFrom(r.Context())
 		if k := p.Key; k != nil {
 			own := k.OrganisationID == chi.URLParam(r, "orgId") && k.ProjectID == chi.URLParam(r, "projectId")
 			if !keyMay(acc) || !own {

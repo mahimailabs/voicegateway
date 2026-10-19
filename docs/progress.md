@@ -371,6 +371,16 @@ What changed:
 - **From the pair review and CodeRabbit:** the reset guard fails closed (no requester, or an admin since deleted, allows a member of the link's organisation alone), and at use the member must still belong to that organisation. A reset locks the member's row, so resets from two organisations at once leave one open link. The invitations list is three columns that wrap, so Revoke is in view at pane widths 343, 632 and 820 px, and a member's Password reset and Remove share one row menu.
 - **Console:** `/invite#<token>` renders before the session gate, drops the fragment, and asks for one password. People's Invite form calls `createInvitation` (link once without SMTP; "Emailed to", or Resend after a failed send), the invitations list is a DataTable with its state filter and sort in the URL (`urlPrefix`), and members have a Password reset action. `vg.invites` is gone; the mock serves the new operations in memory.
 
+### 2026-10-18: phase 06e, the instance API (in review)
+
+An operator's program, holding `VOICEGATEWAY_INSTANCE_TOKEN`, creates an organisation, invites its first admin, reads whether they joined and reads the organisation's call time (spec `docs/specs/phase06e-instance-api.md`, decisions 0028 and 0029). Not done until the pair review, CI's SMTP container checks and the manual check pass.
+
+What changed:
+- **`ee/instance`:** `putOrganisation`, `getOrganisation`, `createOrganisationInvitation` (06d's `invite.Create` with no inviting user and the required `Idempotency-Key`) and `getOrganisationUsage`. Each call logs its operation, organisation and outcome only.
+- **Gate:** the token is kept as its SHA-256 and compared in constant time. A new `instance` scope in `routeAccess`: the token calls those four routes and nothing else, and a session or project key on them is 403. With the token unset every instance path is 404; a Bearer that matches nothing stays 401 with the challenge. Setting the token needs `VOICEGATEWAY_PUBLIC_URL`.
+- **Usage:** an observed call ends at `ended_at`, an inferred one at `last_activity_at` (decision 0029 with #412). A call counts in the period that holds its end, when its start is known. Exact durations are summed, then rounded down to whole seconds once. Open calls are counted apart and never summed. No migration: the query reads `calls` by organisation.
+- **Validation:** the implementation owner reports checks 1 to 4 and 7 passed against Postgres 16 in its cloud copy. Local lint, contract and test checks are repeated for the PR; Docker-dependent tests skip on this Mac because Docker is stopped. CI must run all container checks, including the Mailpit checks 5 and 6, before merge.
+
 ### 2026-10-18: worker endpoint dial guard
 
 The worker checks every address it dials for a worker metrics endpoint, after DNS, with `code.dny.dev/ssrf` v0.3.0 (the 05d follow-up: an SSRF guard before any API or console form can add endpoints).
@@ -395,3 +405,7 @@ Added Testing Library tests around the real Calls page and drawer with the exist
 2026-10-18 (#325, PR #411): added exact-pinned Playwright/axe checks for 14 deep URLs in both themes, six keyboard tab checks, an isolated captured-data Vite preview target and Dashboard CI failure artifacts. Fixed application labels, tab/panel relationships, list and chart roles, scrolling focus and contrast without axe exclusions. Two pinned Scalar production patches apply during installation. Clean installation, all 68 desktop/phone browser tests (zero serious/critical axe findings and browser errors), all 153 unit tests, API contract checks, lint, TypeScript and build pass locally. The phone sweep also covers the focusable Turn anatomy scroll region. Coordinated the affected UI files with Claude and incorporated the merged invitations settings changes. This covers the console shell, not backend/auth integration; pair review passed and PR #411 merged at 0bccaa65.
 
 2026-10-18: added the Connect alert rule-to-delivery worked example using capture-cloud.json (2304.3 ms), with explicit hypothetical retry, failure and recovery outcomes. No evaluator or delivery implementation is claimed; pair review passed; PR #414 is awaiting merge.
+
+### 2026-10-18: instance API review corrections (#417)
+
+Closed calls with missing or reversed timestamps are excluded from measured usage and counted separately by start period. Inferred seconds are exposed separately, and fractional-duration fixtures reject per-call rounding. The image build now copies the Enterprise source tree required by the instance API; the first Compose CI run caught that missing build input. Container acceptance remains a merge gate.
