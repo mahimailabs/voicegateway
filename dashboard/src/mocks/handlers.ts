@@ -146,7 +146,7 @@ export const handlers = [
       url = null
     }
     if (!url || !["ws:", "wss:", "http:", "https:"].includes(url.protocol) || !url.hostname) return fail(400, "invalid_request", "livekitUrl must be a ws, wss, http or https URL with a host")
-    const out = addProject(String(params.orgId), name, text(body?.livekitApiKey))
+    const out = await addProject(String(params.orgId), name, text(body?.livekitApiKey))
     if (out === "project_exists") return fail(409, "project_exists", "this organisation already has a project with that id; choose another name")
     if (out === "livekit_key_in_use") return fail(409, "livekit_key_in_use", "this LiveKit API key is already used by a project on this server; each project needs its own key")
     return HttpResponse.json(out, { status: 201, headers: { "Cache-Control": "no-store" } })

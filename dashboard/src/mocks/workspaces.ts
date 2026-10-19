@@ -14,12 +14,12 @@ const slug = (s: string) =>
 const project = (name: string) => ({ id: slug(name), name })
 
 // Projects added through the mock's createProject, kept in this browser so the page load that opens a
-// new project still finds it. Only the id, name and LiveKit key are kept; the secret is never stored.
-type Added = { orgId: string; id: string; name: string; livekitApiKey: string }
+// new project still finds it. Only project metadata and a key fingerprint are kept; credentials are never stored.
+type Added = { orgId: string; id: string; name: string; keyFingerprint: string }
 const ADDED = "vg.mock-projects"
 const added = (): Added[] => {
   const saved = readLocal(ADDED)
-  return Array.isArray(saved) ? saved.filter((a): a is Added => typeof a?.orgId === "string" && typeof a?.id === "string" && typeof a?.name === "string" && typeof a?.livekitApiKey === "string") : []
+  return Array.isArray(saved) ? saved.filter((a): a is Added => typeof a?.orgId === "string" && typeof a?.id === "string" && typeof a?.name === "string" && typeof a?.keyFingerprint === "string") : []
 }
 
 export const workspaces = (): Workspaces => ({
@@ -31,10 +31,13 @@ export const knownProject = (orgId: unknown, projectId: unknown) => workspaces()
 export const knownOrg = (orgId: unknown) => workspaces().items.some((o) => o.id === orgId)
 
 // createProject as web answers it: the id is the name's slug, a taken id or LiveKit key is refused.
-export function addProject(orgId: string, name: string, livekitApiKey: string): WorkspaceProject | "project_exists" | "livekit_key_in_use" {
+export async function addProject(orgId: string, name: string, livekitApiKey: string): Promise<WorkspaceProject | "project_exists" | "livekit_key_in_use"> {
+  // Web Crypto avoids persisting a credential just to reproduce the API's uniqueness check.
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(livekitApiKey))
+  const keyFingerprint = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("")
   const p = project(name.trim())
   if (knownProject(orgId, p.id)) return "project_exists"
-  if (added().some((a) => a.livekitApiKey === livekitApiKey)) return "livekit_key_in_use"
-  writeLocal(ADDED, [...added(), { orgId, ...p, livekitApiKey }])
+  if (added().some((a) => a.keyFingerprint === keyFingerprint)) return "livekit_key_in_use"
+  writeLocal(ADDED, [...added(), { orgId, ...p, keyFingerprint }])
   return p
 }
