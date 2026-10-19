@@ -1,6 +1,7 @@
 import { JOIN_MS } from "@/lib/thresholds"
 import type { CloudAgents } from "@/lib/api-types"
 import type { MediaServerData, Room } from "../media-server/room-drawer"
+import { fmtDateTime } from "@/lib/format"
 
 // The agents of a project, from two reads: LiveKit Cloud's CloudAgent API for deployed agents, and the
 // jobs and agent participants in the rooms we watched for every agent, including self-hosted workers
@@ -95,4 +96,4 @@ export function checks(list: Agent[]): Check[] {
 }
 
 /** A time LiveKit or a worker reported, short; null means it did not report one, never "never". */
-export const reportedTime = (iso: string | null) => (iso ? new Date(iso).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "not reported")
+export const reportedTime = (iso: string | null) => (iso ? fmtDateTime(iso) : "not reported")
