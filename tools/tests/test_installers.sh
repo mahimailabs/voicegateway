@@ -48,15 +48,15 @@ run_install() {
 
 rm -rf "$WORK/voicegateway"
 run_install || fail "fresh install exited non-zero: $(cat "$WORK/out")"
-grep -qx 'git -c advice.detachedHead=false clone --quiet --branch v1.0.0-preview.4 --depth 1 https://github.com/mahimailabs/voicegateway.git voicegateway' "$LOG" || fail "fresh install clones the pinned tag: $(cat "$LOG")"
-grep -qx 'make -C voicegateway up image=ghcr.io/mahimailabs/voicegateway:1.0.0-preview.4' "$LOG" || fail "make up uses the pinned image"
+grep -qx 'git -c advice.detachedHead=false clone --quiet --branch v1.0.0-preview.5 --depth 1 https://github.com/mahimailabs/voicegateway.git voicegateway' "$LOG" || fail "fresh install clones the pinned tag: $(cat "$LOG")"
+grep -qx 'make -C voicegateway up image=ghcr.io/mahimailabs/voicegateway:1.0.0-preview.5' "$LOG" || fail "make up uses the pinned image"
 grep -qx 'make -C voicegateway preflight image=' "$LOG" || fail "preflight runs after up"
 grep -q 'make user-add' "$WORK/out" || fail "next steps name make user-add"
 pass "fresh install clones the release, starts it from the image and runs preflight"
 
 run_install || fail "re-run exited non-zero"
-grep -qx 'git -C voicegateway fetch --depth 1 origin tag v1.0.0-preview.4' "$LOG" || fail "re-run fetches the tag"
-grep -qx 'git -C voicegateway checkout --quiet v1.0.0-preview.4' "$LOG" || fail "re-run checks out the tag"
+grep -qx 'git -C voicegateway fetch --depth 1 origin tag v1.0.0-preview.5' "$LOG" || fail "re-run fetches the tag"
+grep -qx 'git -C voicegateway checkout --quiet v1.0.0-preview.5' "$LOG" || fail "re-run checks out the tag"
 grep -q ' clone ' "$LOG" && fail "re-run must not clone again"
 pass "re-running updates the existing checkout"
 

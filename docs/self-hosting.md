@@ -12,9 +12,9 @@ Run VoiceGateway on your own machine or server, connect your LiveKit project and
 ## 1. Start the stack
 
 ```bash
-git clone --branch v1.0.0-preview.4 --depth 1 https://github.com/mahimailabs/voicegateway.git
+git clone --branch v1.0.0-preview.5 --depth 1 https://github.com/mahimailabs/voicegateway.git
 cd voicegateway
-VOICEGATEWAY_IMAGE=ghcr.io/mahimailabs/voicegateway:1.0.0-preview.4 make up
+VOICEGATEWAY_IMAGE=ghcr.io/mahimailabs/voicegateway:1.0.0-preview.5 make up
 make preflight
 ```
 
