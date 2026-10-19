@@ -46,7 +46,7 @@ A near-monochrome Apple palette with one blue signal.
 
 ### Status
 - **Healthy** (#1e7b34 light, #30d158 dark): success, healthy node.
-- **Failed** (#d70015 light, #ff453a dark): error, failed call, dropped leg.
+- **Failed** (#d70015 light, #ff6259 dark): error, failed call, dropped leg.
 - Status is always a label plus color, never color alone.
 
 ### Named Rules

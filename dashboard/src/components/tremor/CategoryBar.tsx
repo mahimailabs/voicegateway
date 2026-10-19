@@ -149,8 +149,8 @@ const CategoryBar = React.forwardRef<HTMLDivElement, CategoryBarProps>(
       <div
         ref={forwardedRef}
         className={cx(className)}
-        aria-label="Category bar"
-        aria-valuenow={marker?.value}
+        role="img"
+        aria-label={"Category bar: " + values.join(", ") + (marker ? "; marker " + marker.value : "")}
         tremor-id="tremor-raw"
         {...props}
       >

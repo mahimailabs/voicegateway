@@ -30,6 +30,8 @@ export function ApiDocsPage() {
           content: spec,
           withDefaultFonts: false,
           telemetry: false,
+          // Keep Scalar secondary text readable in both themes.
+          customCss: ".light-mode { --scalar-color-3: #6e6e73; } .dark-mode { --scalar-color-3: #a1a1a6; }",
           showDeveloperTools: "never",
           hideClientButton: true,
           documentDownloadType: "yaml",

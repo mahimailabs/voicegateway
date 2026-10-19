@@ -1,0 +1,13 @@
+diff --git a/node_modules/@scalar/api-client/dist/v2/components/code-input/CodeInputLite.vue.script.js b/node_modules/@scalar/api-client/dist/v2/components/code-input/CodeInputLite.vue.script.js
+index 0d4b37e..43e9b7e 100644
+--- a/node_modules/@scalar/api-client/dist/v2/components/code-input/CodeInputLite.vue.script.js
++++ b/node_modules/@scalar/api-client/dist/v2/components/code-input/CodeInputLite.vue.script.js
+@@ -605,7 +605,7 @@ var CodeInputLite_vue_vue_type_script_setup_true_lang_default = /*@__PURE__*/ de
+ 					"aria-activedescendant": displayVariablesDropdown.value ? activeOptionId.value : void 0,
+ 					"aria-autocomplete": __props.withVariables ? "list" : void 0,
+ 					"aria-controls": displayVariablesDropdown.value ? listboxId.value : void 0,
+-					"aria-expanded": displayVariablesDropdown.value ? "true" : void 0,
++					"aria-expanded": __props.withVariables ? String(displayVariablesDropdown.value) : void 0,
+ 					"aria-invalid": __props.error ? "true" : void 0,
+ 					"aria-label": ariaLabel.value,
+ 					"aria-labelledby": ariaLabelledby.value,

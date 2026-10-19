@@ -2,7 +2,7 @@
 
 ## Goal
 
-Agree what each of the seven alert rules does once the worker sends them: when a rule fires, how events are grouped and deduplicated, when it recovers, how delivery is retried, and what the console shows when delivery fails. This is the definition step from `v1-connect-plan.md` ("Define alert behaviour"); it does not claim delivery is built.
+Agree what each of the seven alert rules does once the worker sends them: when a rule fires, how events are grouped and deduplicated, when it recovers, how delivery is retried, and what the console shows when delivery fails. This is the definition step from `v1-connect-plan.md` ("Define alert behaviour"); it does not claim delivery is built. The [worked example](#worked-example-slow-answer-to-webhook) follows one incident through that contract.
 
 ## Context
 
@@ -77,6 +77,26 @@ A rule whose source is not connected for a project, such as no agent uploads or 
 
 - The Alerts page history lists incidents (opened, reminders, resolved) and their deliveries, newest first, beside the occurrences it shows today.
 - **Recommended:** incidents and deliveries follow the project's trace retention, and default to 30 days when none is set.
+
+## Worked example: slow-answer to webhook
+
+**Captured input, illustrative delivery.** [capture-cloud.json](../../dashboard/src/mocks/capture-cloud.json) records room `vg-capture-1791864362`, agent name `vg-capture` (`lk.agent_name`), and `turns[1].e2eMs = 2304.3`. The call ended at `2026-10-13T04:07:33.383500Z`. The [preview adapter](../../dashboard/src/mocks/fixtures.ts) uses the room as its call id because this capture predates call identity. That preview id is the occurrence id below, not a prescription for production call ids. The greeting's unknown answer time is not zero and does not trigger the rule.
+
+The following is an acceptance scenario, not a record of notifications sent. Assume this captured call is stored in example project `example-project`, the rule is enabled with the default 1500 ms threshold, and webhook channel `example-webhook` is configured. `T` is the time evaluation and the first delivery start after storage; it is not inferred from a capture clock.
+
+1. **Trigger and group.** 2304.3 ms exceeds 1500 ms, opening example incident `example-incident` for subject `example-project` + `vg-capture`. Other slow turns in this call still count as one occurrence. A different slow call for the same subject joins this incident. Re-storing the original call (including after a redelivered webhook) matches the stored occurrence and sends nothing. While still firing, reminders are limited to one every 4 hours and carry the count since the last message. This medium-severity rule has no count-doubling reminder.
+2. **Send.** Create one durable firing delivery for this incident and channel. Its message identifies the rule, subject, incident, occurrence, measured 2304.3 ms versus the 1500 ms threshold, and a link to inspect the call. Carry an idempotency key derived from incident id, this firing change and channel in a header. For illustration only: `Idempotency-Key: example-incident/firing-1/example-webhook`. The header name, serialization and payload schema are not API decisions here. Retries reuse the same key; a reminder or resolved change gets its own key.
+3. **Retry.** With immediate responses, the attempts are:
+
+   | Attempt | Time | Response | Recorded result |
+   | --- | --- | --- | --- |
+   | 1 | T | 500 | Retrying; next attempt T + 30 s |
+   | 2 | T + 30 s | 500 | Retrying; next attempt T + 90 s (another 1 min) |
+   | 3 | T + 90 s | 200 | Delivered; no further retry |
+
+   This scenario records three attempts and one successful delivery. If attempt 3 also failed, the next delay would be 2 min, then double up to 30 min. A worker restart preserves the delivery and retry state. A timeout can mean the receiver accepted the message without returning a response: at-least-once delivery still needs receiver deduplication, so one successful attempt does not prove only one remote side effect.
+4. **Show failure.** In an alternative outcome, the same firing change receives 400. Do not retry: mark the channel broken. Settings, Integrations shows the broken channel and its last delivery status (400), with a sanitized provider message; Alerts and its history show "Not delivered to example-webhook". If retryable failures instead continue for 24 hours, mark the delivery failed and list it on Issues. Delivery failure does not resolve the incident. Webhook URLs and credentials never appear in this evidence or in browser responses.
+5. **Recover.** In a hypothetical later 30-minute window for this subject, at least five calls are observed and none qualifies as slow. Resolve the incident and send a resolved delivery to the same channel, using a new change key. This recovery window is a scenario condition, not five invented captured calls. Fewer than five calls keep it firing and explain why; a source that stops reporting keeps it firing with "source silent since <time>". If a slow call arrives within 10 minutes of resolution, reopen the same incident and suppress a second firing message under the flap guard.
 
 ## Out of Scope
 

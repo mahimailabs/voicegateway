@@ -126,7 +126,7 @@ export function AppShell() {
           </Link>
         </SidebarMenuButton>
         {badgeOf(it) && (
-          <SidebarMenuBadge style={{ top: "50%", transform: "translateY(-50%)" }} className="h-5 rounded-md bg-foreground/[0.07] px-1.5 text-[10.5px] !text-muted-foreground tnum">
+          <SidebarMenuBadge style={{ top: "50%", transform: "translateY(-50%)" }} className="h-5 rounded-md bg-foreground/[0.07] px-1.5 text-[10.5px] !text-foreground tnum">
             {badgeOf(it)}
           </SidebarMenuBadge>
         )}
@@ -147,7 +147,7 @@ export function AppShell() {
           {/* On "No such project" the page links lead nowhere useful, so only its own link to a project shows. */}
           {!unknown && groups.map((g, i) => (
             <SidebarGroup key={i}>
-              {g.label && <SidebarGroupLabel className="text-[10.5px] font-semibold tracking-[0.08em] text-muted-foreground/80 uppercase">{g.label}</SidebarGroupLabel>}
+              {g.label && <SidebarGroupLabel className="text-[10.5px] font-semibold tracking-[0.08em] text-muted-foreground uppercase">{g.label}</SidebarGroupLabel>}
               <SidebarMenu className="gap-0.5">{g.items.map(nav)}</SidebarMenu>
             </SidebarGroup>
           ))}
