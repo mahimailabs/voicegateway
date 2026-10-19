@@ -76,6 +76,7 @@ func (s *Store) createInvitation(ctx context.Context, in store.NewInvitation) (s
 	params := InsertInvitationParams{
 		Kind: in.Kind, OrganisationID: in.OrganisationID, Email: email, TokenSha256: in.TokenSHA256,
 		Role: textOf(in.Role), IdempotencyKey: textOf(in.IdempotencyKey), ExpiresAt: timestamp(&in.ExpiresAt),
+		EmailStartedAt: timestamp(in.EmailStartedAt),
 	}
 	if params.UserID, err = uuidOf(in.UserID); err != nil {
 		return store.Invitation{}, err
@@ -90,7 +91,12 @@ func (s *Store) createInvitation(ctx context.Context, in store.NewInvitation) (s
 	if err := tx.Commit(ctx); err != nil {
 		return store.Invitation{}, err
 	}
-	return store.Invitation{ID: row.ID.String(), Kind: in.Kind, Email: email, Role: in.Role, CreatedAt: row.CreatedAt.Time.UTC(), ExpiresAt: in.ExpiresAt.UTC()}, nil
+	inv := store.Invitation{ID: row.ID.String(), Kind: in.Kind, Email: email, Role: in.Role, CreatedAt: row.CreatedAt.Time.UTC(), ExpiresAt: in.ExpiresAt.UTC()}
+	if in.EmailStartedAt != nil {
+		at := in.EmailStartedAt.UTC()
+		inv.EmailStartedAt = &at
+	}
+	return inv, nil
 }
 
 // InvitationByIdempotencyKey returns the invitation an idempotency key made, or store.ErrNotFound.
@@ -102,7 +108,7 @@ func (s *Store) InvitationByIdempotencyKey(ctx context.Context, organisationID, 
 	if err != nil {
 		return store.Invitation{}, fmt.Errorf("invitation by key: %w", err)
 	}
-	return invitationOf(r.ID, r.Kind, r.Email, r.Role, r.InvitedByEmail, r.CreatedAt, r.ExpiresAt, r.EmailedAt, r.AcceptedAt, r.RevokedAt), nil
+	return invitationOf(r.ID, r.Kind, r.Email, r.Role, r.InvitedByEmail, r.CreatedAt, r.ExpiresAt, r.EmailedAt, r.AcceptedAt, r.RevokedAt, r.EmailStartedAt, r.EmailFailedAt), nil
 }
 
 // MarkInvitationEmailed records that a link's email was sent.
@@ -117,6 +123,19 @@ func (s *Store) MarkInvitationEmailed(ctx context.Context, id string) error {
 	return nil
 }
 
+// MarkInvitationNotEmailed records that a link's email could not be sent. A recorded success
+// stays.
+func (s *Store) MarkInvitationNotEmailed(ctx context.Context, id string) error {
+	u, err := uuid(id)
+	if err != nil {
+		return err
+	}
+	if err := s.q.MarkInvitationNotEmailed(ctx, u); err != nil {
+		return fmt.Errorf("mark invitation not emailed: %w", err)
+	}
+	return nil
+}
+
 // Invitations lists an organisation's invitations and reset links, newest first.
 func (s *Store) Invitations(ctx context.Context, organisationID string) ([]store.Invitation, error) {
 	rows, err := s.q.ListInvitations(ctx, organisationID)
@@ -125,7 +144,7 @@ func (s *Store) Invitations(ctx context.Context, organisationID string) ([]store
 	}
 	out := make([]store.Invitation, 0, len(rows))
 	for _, r := range rows {
-		out = append(out, invitationOf(r.ID, r.Kind, r.Email, r.Role, r.InvitedByEmail, r.CreatedAt, r.ExpiresAt, r.EmailedAt, r.AcceptedAt, r.RevokedAt))
+		out = append(out, invitationOf(r.ID, r.Kind, r.Email, r.Role, r.InvitedByEmail, r.CreatedAt, r.ExpiresAt, r.EmailedAt, r.AcceptedAt, r.RevokedAt, r.EmailStartedAt, r.EmailFailedAt))
 	}
 	return out, nil
 }
@@ -331,11 +350,12 @@ func resetAllowed(ctx context.Context, q *Queries, organisationID string, by, us
 	return member, nil
 }
 
-func invitationOf(id pgtype.UUID, kind, email string, role, invitedBy pgtype.Text, created, expires, emailed, accepted, revoked pgtype.Timestamptz) store.Invitation {
+func invitationOf(id pgtype.UUID, kind, email string, role, invitedBy pgtype.Text, created, expires, emailed, accepted, revoked, emailStarted, emailFailed pgtype.Timestamptz) store.Invitation {
 	return store.Invitation{
 		ID: id.String(), Kind: kind, Email: email, Role: strOf(role), InvitedBy: strOf(invitedBy),
 		CreatedAt: created.Time.UTC(), ExpiresAt: expires.Time.UTC(),
 		EmailedAt: timeOf(emailed), AcceptedAt: timeOf(accepted), RevokedAt: timeOf(revoked),
+		EmailStartedAt: timeOf(emailStarted), EmailFailedAt: timeOf(emailFailed),
 	}
 }
 

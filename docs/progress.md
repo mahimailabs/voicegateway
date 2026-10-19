@@ -7,7 +7,7 @@ A fresh session reads this to know where the project stands.
 
 ## Current Phase
 
-Phases 01 to 06e are on main (06e, the instance API, merged in #417). The next phase has no spec yet.
+Phases 01 to 06f are on main (06f, adding a project from the console, merged in #419). The next phase has no spec yet.
 
 ## Done
 
@@ -24,6 +24,8 @@ Phases 01 to 06e are on main (06e, the instance API, merged in #417). The next p
 | Webhook secrets | #386 | The sink stores egress_* and ingress_* webhooks without stream keys, URL credentials, storage credentials, signing keys, participant names or metadata, and masks phone numbers; unknown status names newer than protocol v1.52.1 are kept. Webhooks stored before this fix keep their secrets until the 90-day events TTL (00010) removes them, so reset dev and loop stacks | 2026-10-18 |
 
 ## In progress (Phase 1)
+
+- Invitation delivery: persist send-start and confirmed failure, detach bounded sending and outcome recording from request cancellation, and preserve unknown SMTP acceptance as null for instance invitations. Concurrent idempotent repeats wait for the first outcome. Uses go-mail v0.8.1 delivery state rather than treating cleanup errors as rejection. Local Go race/lint pass; container-backed acceptance checks require CI. Deploy the Cloud nullable-outcome consumer before this engine change.
 
 - Public presentation (2026-10-15): README now leads with the current wordmark, an 18-second console teaser, and a hand-drawn call-path diagram. The teaser uses the supplied console screenshot with editorial callouts, explicitly labelled as a preview. Only the finished SVG, GIF and still image are published; media authoring workspaces stay local and gitignored. The companion `voicegateway-web` landing adopts the Clean Room theme, interactive React previews with captured data, and the OSS/Cloud V1 split with automated Stripe activation. Console build/lint and landing build/typecheck/changed-source lint pass; this does not mark Phase 1 or Cloud complete.
 - Console identity: selected Mergepoint concept 02 and Inter Semibold lettering form a single outlined wordmark, with light/dark SVGs in the existing ink and logo-only Gateway Teal. Typography was tuned to the system UI at 16px/600 after reviewing the earlier heavier geometric treatment. A brief electric sweep runs on entry and hover, with a static reduced-motion version. The tab icon and title match; the collapsed rail keeps its toggle. Artwork renders are checked at actual size; live browser verification is pending because localhost access is blocked by a saved browser permission.
@@ -68,10 +70,16 @@ Plan agreed 2026-10-15: a team builds V1 with Cloud (decision 0024) over 30 days
 - Phase 2 candidate: inferred call labels (triage, disposition) from a self-hosted decision model such as Jev or Kev, opt-in and marked as inferred. Evaluate once V1 traces exist.
 - The docs and landing site in site/ still use the old purple theme; when do they move to The Clean Room?
 
+- The worker's LiveKit reads (media server, SIP, egress, ingress, dispatch) dial each project's LiveKit URL with no address guard: server-sdk-go v2.19.0 builds its own `http.Client` over `http.DefaultTransport` for those clients, so `code.dny.dev/ssrf` and `VOICEGATEWAY_WORKER_ENDPOINTS_PUBLIC_ONLY` cover worker metrics endpoints only. Now that an Admin can add a project from the console (06f), a shared Cloud instance needs a guard on these dials before the form is open to customers.
+
 ## Known Issues
 
 - Docker Desktop on the dev Mac stopped starting new containers during the spike; it needs a restart.
 - Project MCP servers (shadcn, magicui) need a one-time approval in Claude Code. The gopls MCP server was removed on 2026-10-17: its fsnotify watcher opened one file handle per file in the tree (about 61,000) and exhausted the system file table.
+
+### 2026-10-18: marketing site moved to a private repository
+
+`site/landing` and `site/web` moved to the private `voicegateway-web` repository, which the Pages project `voicegateway-web` builds for voicegateway.dev. This repository keeps `site/docs`, `site/theme.css`, `install.sh` and `collector.sh`; the private site downloads the two scripts from main on every build. The Site workflow now checks only the docs. See decision 0030, which supersedes 0025.
 
 ### 2026-10-15: landing consolidated into the product repository
 
@@ -409,6 +417,22 @@ Added Testing Library tests around the real Calls page and drawer with the exist
 
 Closed calls with missing or reversed timestamps are excluded from measured usage and counted separately by start period. Inferred seconds are exposed separately, and fractional-duration fixtures reject per-call rounding. The image build now copies the Enterprise source tree required by the instance API; the first Compose CI run caught that missing build input. Container acceptance remains a merge gate.
 
+### 2026-10-19: phase 06f, add a project from the console (built, not yet reviewed)
+
+An Admin of an organisation with no project adds one from the console's empty state, or from the "Add a LiveKit project" dialog in Settings, Organisation and the project switcher (spec `docs/specs/phase06f-console-add-project.md`, decisions 0016 and 0028). A hosted admin has no shell for `voicegateway project add`.
+- **One rule:** `api.CheckProject` checks a new project for both `createProject` and `voicegateway project add` (name with a letter or digit, slug id, ws/wss/http/https URL with a host, key without spaces), and `api.Slug` moved from `internal/app`. Each names fields its own way: flags on the command line, JSON names in the API.
+- **API:** `createProject` `POST /api/v1/org/{orgId}/projects`, Admin at organisation scope, through the same `pgstore.Store.CreateProject` and sealer as the CLI. 201 is the existing `WorkspaceProject` with `Cache-Control: no-store`; 409 `project_exists` and `livekit_key_in_use` (the latter names no project). `store.NewProject` replaces `pgstore.NewProject`, kept as an alias.
+- **Console:** the form (shadcn Field, Input, Button) clears the secret after every submit, shows the API's message inline and opens the new project with a full page load. Members read that an admin must add one. The dialog's disabled placeholder and its unbacked "Observe live rooms" switch are gone. The mock serves `createProject`.
+- Foundation reported checks 1 to 8 passing with container tests in its cloud environment. The Mac integration run passes dashboard tests, lint, TypeScript, API validation/source checks and generated-type comparison. Local Docker is unavailable, so container-backed auth checks skip here and remain a CI gate. The manual Compose check has not been run.
+- Integration review added an instance-token refusal assertion and reproduced/fixed acceptance of trailing JSON, garbage and oversized trailing whitespace. The endpoint now checks the entire body with MaxBytesReader and requires EOF after one JSON object.
+
+
+### 2026-10-19: worker LiveKit connection guard
+
+With VOICEGATEWAY_WORKER_ENDPOINTS_PUBLIC_ONLY enabled, all eleven worker LiveKit reads use the existing dial-time address guard. The pinned server-sdk-go v2.19.0 accepts a custom HTTP client only for AgentClient; the other reads use livekit/protocol generated Twirp clients and the native access-token grants used by the SDK. Regression tests cover listening and closed internal addresses, metadata and private networks; refused addresses remain unreachable. A container-backed test compares responses and authentication failures against the native SDK.
+
+Local make go-test go-lint passed; Docker-dependent tests require CI. The Cloud owner accepted the initial deployment's region-failover/proxy tradeoffs; the temporary Cloud project-creation gate is removed alongside the guard. No hosted onboarding completion is claimed.
+
 ### 2026-10-18: Phase 0, old Python release retired
 
-The Python runtime (src/), its Alembic migrations, packaging, examples, benchmarks, Railway and Codecov config, the root docker-compose.yml, the legacy contributor guides, four specs for the old console and the six workflows that built, tested and published it are removed, as are the vg-* Claude commands that drove that code. The Go binary, deploy/, the Makefile and the Go, Dashboard, Site and Docker workflows read none of them. The public installers stay at the root (install.sh, collector.sh, docker-compose.collector.yml, docker-compose.autoupdate.yml) because voicegateway.dev serves the scripts; their shell tests moved to tools/tests/. site/web/public/demo stays as a frozen build of the retired console. Open: the installers still install the old Python collector.
+The Python runtime (src/), its Alembic migrations, packaging, examples, benchmarks, Railway and Codecov config, the root docker-compose.yml, the legacy contributor guides, four specs for the old console and the six workflows that built, tested and published it are removed, as are the vg-* Claude commands that drove that code. The Go binary, deploy/, the Makefile and the Go, Dashboard, Site and Docker workflows read none of them. The public installers stay at the root (install.sh, collector.sh, docker-compose.collector.yml, docker-compose.autoupdate.yml) because voicegateway.dev serves the scripts; their shell tests moved to tools/tests/. Open: the installers still install the old Python collector.

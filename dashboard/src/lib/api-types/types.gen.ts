@@ -1262,7 +1262,7 @@ export type Error = {
     /**
      * Stable error category.
      */
-    code: 'invalid_request' | 'unauthenticated' | 'forbidden' | 'not_found' | 'source_unavailable' | 'internal_error' | 'range_not_satisfiable' | 'last_admin' | 'already_member' | 'member_of_other_organisations';
+    code: 'invalid_request' | 'unauthenticated' | 'forbidden' | 'not_found' | 'source_unavailable' | 'internal_error' | 'range_not_satisfiable' | 'last_admin' | 'already_member' | 'member_of_other_organisations' | 'project_exists' | 'livekit_key_in_use';
     /**
      * Safe human-readable explanation, excluding upstream credentials and request bodies.
      */
@@ -1460,9 +1460,9 @@ export type InstanceInvitation = {
      */
     expiresAt: string;
     /**
-     * True when the email was sent; false without SMTP, or when the send failed. On a repeat, as it was.
+     * True when the email was sent; false without SMTP, or when the send failed. On a repeat, as it was; a repeat during the first call's send waits for its outcome.
      */
-    emailed: boolean;
+    emailed: boolean | null;
     /**
      * <VOICEGATEWAY_PUBLIC_URL>/invite#<token>, only without SMTP and only in the answer that made it.
      */
@@ -1628,6 +1628,25 @@ export type MemberRoleChange = {
 
 export type Invitations = {
     items: Array<Invitation>;
+};
+
+export type ProjectCreate = {
+    /**
+     * The project's display name; trimmed, with at least one letter or digit. Its slug is the project id.
+     */
+    name: string;
+    /**
+     * The LiveKit server URL, with the scheme ws, wss, http or https and a host, such as wss://your-project.livekit.cloud.
+     */
+    livekitUrl: string;
+    /**
+     * The LiveKit API key; unique on this server, since ingest finds a project by the key that signed a webhook or upload.
+     */
+    livekitApiKey: string;
+    /**
+     * The LiveKit API secret. Sealed before it is stored; never answered or logged.
+     */
+    livekitApiSecret: string;
 };
 
 export type WorkspaceProject = {
@@ -2942,7 +2961,7 @@ export type CreateInvitationErrors = {
      */
     404: Error;
     /**
-     * last_admin, the change would leave the organisation without an admin; already_member, the invited email's account is a member already; member_of_other_organisations, a reset's member belongs to an organisation the requester does not administer.
+     * last_admin, the change would leave the organisation without an admin; already_member, the invited email's account is a member already; member_of_other_organisations, a reset's member belongs to an organisation the requester does not administer; project_exists, the organisation already has a project with the new name's id; livekit_key_in_use, another project on this server uses that LiveKit API key.
      */
     409: Error;
     /**
@@ -3019,6 +3038,60 @@ export type RevokeInvitationResponses = {
 };
 
 export type RevokeInvitationResponse = RevokeInvitationResponses[keyof RevokeInvitationResponses];
+
+export type CreateProjectData = {
+    body: ProjectCreate;
+    path: {
+        /**
+         * Authorised orgId; the server must verify organisation/project ownership before any read.
+         */
+        orgId: string;
+    };
+    query?: never;
+    url: '/api/v1/org/{orgId}/projects';
+};
+
+export type CreateProjectErrors = {
+    /**
+     * invalid_request; never return an empty success result for this failure.
+     */
+    400: Error;
+    /**
+     * unauthenticated; never return an empty success result for this failure.
+     */
+    401: Error;
+    /**
+     * forbidden; never return an empty success result for this failure.
+     */
+    403: Error;
+    /**
+     * not_found; never return an empty success result for this failure.
+     */
+    404: Error;
+    /**
+     * last_admin, the change would leave the organisation without an admin; already_member, the invited email's account is a member already; member_of_other_organisations, a reset's member belongs to an organisation the requester does not administer; project_exists, the organisation already has a project with the new name's id; livekit_key_in_use, another project on this server uses that LiveKit API key.
+     */
+    409: Error;
+    /**
+     * internal_error; never return an empty success result for this failure.
+     */
+    500: Error;
+    /**
+     * source_unavailable; never return an empty success result for this failure.
+     */
+    503: Error;
+};
+
+export type CreateProjectError = CreateProjectErrors[keyof CreateProjectErrors];
+
+export type CreateProjectResponses = {
+    /**
+     * The new project, as getWorkspaces lists it. Never its LiveKit key or secret.
+     */
+    201: WorkspaceProject;
+};
+
+export type CreateProjectResponse = CreateProjectResponses[keyof CreateProjectResponses];
 
 export type GetMembersData = {
     body?: never;
@@ -3104,7 +3177,7 @@ export type RemoveMemberErrors = {
      */
     404: Error;
     /**
-     * last_admin, the change would leave the organisation without an admin; already_member, the invited email's account is a member already; member_of_other_organisations, a reset's member belongs to an organisation the requester does not administer.
+     * last_admin, the change would leave the organisation without an admin; already_member, the invited email's account is a member already; member_of_other_organisations, a reset's member belongs to an organisation the requester does not administer; project_exists, the organisation already has a project with the new name's id; livekit_key_in_use, another project on this server uses that LiveKit API key.
      */
     409: Error;
     /**
@@ -3162,7 +3235,7 @@ export type UpdateMemberErrors = {
      */
     404: Error;
     /**
-     * last_admin, the change would leave the organisation without an admin; already_member, the invited email's account is a member already; member_of_other_organisations, a reset's member belongs to an organisation the requester does not administer.
+     * last_admin, the change would leave the organisation without an admin; already_member, the invited email's account is a member already; member_of_other_organisations, a reset's member belongs to an organisation the requester does not administer; project_exists, the organisation already has a project with the new name's id; livekit_key_in_use, another project on this server uses that LiveKit API key.
      */
     409: Error;
     /**
@@ -3220,7 +3293,7 @@ export type CreatePasswordResetErrors = {
      */
     404: Error;
     /**
-     * last_admin, the change would leave the organisation without an admin; already_member, the invited email's account is a member already; member_of_other_organisations, a reset's member belongs to an organisation the requester does not administer.
+     * last_admin, the change would leave the organisation without an admin; already_member, the invited email's account is a member already; member_of_other_organisations, a reset's member belongs to an organisation the requester does not administer; project_exists, the organisation already has a project with the new name's id; livekit_key_in_use, another project on this server uses that LiveKit API key.
      */
     409: Error;
     /**
@@ -3667,7 +3740,7 @@ export type CreateOrganisationInvitationErrors = {
      */
     404: Error;
     /**
-     * last_admin, the change would leave the organisation without an admin; already_member, the invited email's account is a member already; member_of_other_organisations, a reset's member belongs to an organisation the requester does not administer.
+     * last_admin, the change would leave the organisation without an admin; already_member, the invited email's account is a member already; member_of_other_organisations, a reset's member belongs to an organisation the requester does not administer; project_exists, the organisation already has a project with the new name's id; livekit_key_in_use, another project on this server uses that LiveKit API key.
      */
     409: Error;
     /**

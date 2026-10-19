@@ -93,7 +93,7 @@ func (quietLayers) WorkerEndpointStatus(context.Context, string, string) (map[st
 // membersAPI is the API behind the sign-in gate, with every read it serves wired.
 func (f *fixture) membersAPI(s *auth.Service) http.Handler {
 	return (&api.API{
-		Projects: f.pg, Calls: f.pg, Traces: emptyTraces{}, Layers: quietLayers{}, Endpoints: f.pg, Accounts: f.pg, Keys: f.pg, NewKey: auth.NewKey,
+		Projects: f.pg, NewProjects: f.sealed(), Calls: f.pg, Traces: emptyTraces{}, Layers: quietLayers{}, Endpoints: f.pg, Accounts: f.pg, Keys: f.pg, NewKey: auth.NewKey,
 		Log: slog.New(slog.NewJSONHandler(f.logs, nil)), Now: time.Now, Gate: s.Gate,
 	}).Routes()
 }
@@ -136,7 +136,7 @@ func (f *fixture) addProjectCall(org string) string {
 }
 
 // call sends one API request as a session or a project key, checks the response against the
-// contract when the operation is one 06b, 06c, 06d or 06e added, and returns the status and body.
+// contract when the operation is one 06b, 06c, 06d, 06e or 06f added, and returns the status and body.
 type call struct {
 	method, path, body string
 	cookie             *http.Cookie
@@ -168,7 +168,7 @@ func (f *fixture) send(h http.Handler, c call) (int, []byte) {
 	f.header = res.Header
 	f.mu.Unlock()
 	// A cross-site request is refused by CrossOriginProtection before the API, in plain text.
-	if (strings.Contains(c.path, "/members") || strings.Contains(c.path, "/keys") || strings.Contains(c.path, "/invitations") || strings.HasPrefix(c.path, "/api/v1/instance/")) && c.headers["Origin"] == "" {
+	if (strings.Contains(c.path, "/members") || strings.Contains(c.path, "/keys") || strings.Contains(c.path, "/invitations") || strings.HasPrefix(c.path, "/api/v1/instance/") || strings.HasSuffix(c.path, "/projects")) && c.headers["Origin"] == "" {
 		res.Body = io.NopCloser(bytes.NewReader(body))
 		vreq := httptest.NewRequest(c.method, "http://voicegateway.example"+c.path, strings.NewReader(c.body))
 		if c.body != "" {

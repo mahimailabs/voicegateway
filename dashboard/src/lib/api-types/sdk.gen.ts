@@ -2,7 +2,7 @@
 
 import type { Client, ClientMeta, Options as Options2, RequestResult, TDataShape } from './client';
 import { client } from './client.gen';
-import type { CreateInvitationData, CreateInvitationErrors, CreateInvitationResponses, CreateOrganisationInvitationData, CreateOrganisationInvitationErrors, CreateOrganisationInvitationResponses, CreatePasswordResetData, CreatePasswordResetErrors, CreatePasswordResetResponses, CreateProjectKeyData, CreateProjectKeyErrors, CreateProjectKeyResponses, GetAlertSetupData, GetAlertSetupErrors, GetAlertSetupResponses, GetCallData, GetCallErrors, GetCallResponses, GetCallStatsData, GetCallStatsErrors, GetCallStatsResponses, GetCapacityData, GetCapacityErrors, GetCapacityResponses, GetCloudAgentsData, GetCloudAgentsErrors, GetCloudAgentsResponses, GetEgressData, GetEgressErrors, GetEgressResponses, GetIngressData, GetIngressErrors, GetIngressResponses, GetInvitationsData, GetInvitationsErrors, GetInvitationsResponses, GetIssueDispositionsData, GetIssueDispositionsErrors, GetIssueDispositionsResponses, GetMediaServerData, GetMediaServerErrors, GetMediaServerResponses, GetMembersData, GetMembersErrors, GetMembersResponses, GetOrganisationData, GetOrganisationErrors, GetOrganisationResponses, GetOrganisationUsageData, GetOrganisationUsageErrors, GetOrganisationUsageResponses, GetProjectSettingsData, GetProjectSettingsErrors, GetProjectSettingsResponses, GetProjectSnapshotData, GetProjectSnapshotErrors, GetProjectSnapshotResponses, GetProviderProbesData, GetProviderProbesErrors, GetProviderProbesResponses, GetRecordingMediaData, GetRecordingMediaErrors, GetRecordingMediaResponses, GetSipData, GetSipErrors, GetSipResponses, GetWorkersData, GetWorkersErrors, GetWorkersResponses, GetWorkspacesData, GetWorkspacesErrors, GetWorkspacesResponses, ListAlertEventsData, ListAlertEventsErrors, ListAlertEventsResponses, ListCallsData, ListCallsErrors, ListCallsResponses, ListIssuesData, ListIssuesErrors, ListIssuesResponses, ListProjectKeysData, ListProjectKeysErrors, ListProjectKeysResponses, PutOrganisationData, PutOrganisationErrors, PutOrganisationResponses, RemoveMemberData, RemoveMemberErrors, RemoveMemberResponses, RevokeInvitationData, RevokeInvitationErrors, RevokeInvitationResponses, RevokeProjectKeyData, RevokeProjectKeyErrors, RevokeProjectKeyResponses, UpdateMemberData, UpdateMemberErrors, UpdateMemberResponses } from './types.gen';
+import type { CreateInvitationData, CreateInvitationErrors, CreateInvitationResponses, CreateOrganisationInvitationData, CreateOrganisationInvitationErrors, CreateOrganisationInvitationResponses, CreatePasswordResetData, CreatePasswordResetErrors, CreatePasswordResetResponses, CreateProjectData, CreateProjectErrors, CreateProjectKeyData, CreateProjectKeyErrors, CreateProjectKeyResponses, CreateProjectResponses, GetAlertSetupData, GetAlertSetupErrors, GetAlertSetupResponses, GetCallData, GetCallErrors, GetCallResponses, GetCallStatsData, GetCallStatsErrors, GetCallStatsResponses, GetCapacityData, GetCapacityErrors, GetCapacityResponses, GetCloudAgentsData, GetCloudAgentsErrors, GetCloudAgentsResponses, GetEgressData, GetEgressErrors, GetEgressResponses, GetIngressData, GetIngressErrors, GetIngressResponses, GetInvitationsData, GetInvitationsErrors, GetInvitationsResponses, GetIssueDispositionsData, GetIssueDispositionsErrors, GetIssueDispositionsResponses, GetMediaServerData, GetMediaServerErrors, GetMediaServerResponses, GetMembersData, GetMembersErrors, GetMembersResponses, GetOrganisationData, GetOrganisationErrors, GetOrganisationResponses, GetOrganisationUsageData, GetOrganisationUsageErrors, GetOrganisationUsageResponses, GetProjectSettingsData, GetProjectSettingsErrors, GetProjectSettingsResponses, GetProjectSnapshotData, GetProjectSnapshotErrors, GetProjectSnapshotResponses, GetProviderProbesData, GetProviderProbesErrors, GetProviderProbesResponses, GetRecordingMediaData, GetRecordingMediaErrors, GetRecordingMediaResponses, GetSipData, GetSipErrors, GetSipResponses, GetWorkersData, GetWorkersErrors, GetWorkersResponses, GetWorkspacesData, GetWorkspacesErrors, GetWorkspacesResponses, ListAlertEventsData, ListAlertEventsErrors, ListAlertEventsResponses, ListCallsData, ListCallsErrors, ListCallsResponses, ListIssuesData, ListIssuesErrors, ListIssuesResponses, ListProjectKeysData, ListProjectKeysErrors, ListProjectKeysResponses, PutOrganisationData, PutOrganisationErrors, PutOrganisationResponses, RemoveMemberData, RemoveMemberErrors, RemoveMemberResponses, RevokeInvitationData, RevokeInvitationErrors, RevokeInvitationResponses, RevokeProjectKeyData, RevokeProjectKeyErrors, RevokeProjectKeyResponses, UpdateMemberData, UpdateMemberErrors, UpdateMemberResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -391,6 +391,25 @@ export const revokeInvitation = <ThrowOnError extends boolean = false>(options: 
 });
 
 /**
+ * Add a LiveKit project to the organisation
+ *
+ * Requires Admin membership in the named organisation; a project API key is 403. Adds one LiveKit project (decision 0016) through the same checks and store as voicegateway project add (phase 06f). The id is the name as a slug, as the console makes it. The API secret is sealed under VOICEGATEWAY_SECRET_KEY before it is written and is never answered, logged or read back to the console. A name whose id the organisation already has is 409 project_exists; a LiveKit API key another project on this server already uses is 409 livekit_key_in_use, without naming that project. The answer is not cached.
+ */
+export const createProject = <ThrowOnError extends boolean = false>(options: Options<CreateProjectData, ThrowOnError>): RequestResult<CreateProjectResponses, CreateProjectErrors, ThrowOnError> => (options.client ?? client).post<CreateProjectResponses, CreateProjectErrors, ThrowOnError>({
+    security: [{
+            in: 'cookie',
+            name: 'vg_session',
+            type: 'apiKey'
+        }],
+    url: '/api/v1/org/{orgId}/projects',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
  * Read the organisation's members and their roles
  *
  * Requires membership in the named organisation; every role reads the member list, as a team list. A browser signs in with the session cookie (decision 0027). A project API key names no user and is 403. Missing authentication is 401 and denied membership is 403. Members of other organisations are never returned.
@@ -578,7 +597,7 @@ export const putOrganisation = <ThrowOnError extends boolean = false>(options: O
 /**
  * Invite someone to an organisation, with no inviting user
  *
- * For the instance token only (phase 06e). Makes a phase 06d invitation with no inviting user. The Idempotency-Key header is required; a repeat with the same key answers 200 with the first invitation, link null, nothing revoked and nothing sent. The same key with another email or role is invalid_request. A new key for an email with an open invitation revokes the open link and sends or returns a new one, which is how a caller retries a failed send. With SMTP set, link is always null and emailed says whether the send succeeded. An email whose account is already a member is 409 already_member.
+ * For the instance token only (phase 06e). Makes a phase 06d invitation with no inviting user. The Idempotency-Key header is required; a repeat with the same key answers 200 with the first invitation, link null, nothing revoked and nothing sent. The same key with another email or role is invalid_request. A repeat that arrives while the first call is still sending waits for that send's outcome. A new key for an email with an open invitation revokes the open link and sends or returns a new one, which is how a caller retries a failed send; resend only on emailed false, never on null. With SMTP set, link is always null and emailed says whether the send succeeded, or is null when SMTP acceptance is uncertain or a prior send's outcome was lost. An email whose account is already a member is 409 already_member.
  */
 export const createOrganisationInvitation = <ThrowOnError extends boolean = false>(options: Options<CreateOrganisationInvitationData, ThrowOnError>): RequestResult<CreateOrganisationInvitationResponses, CreateOrganisationInvitationErrors, ThrowOnError> => (options.client ?? client).post<CreateOrganisationInvitationResponses, CreateOrganisationInvitationErrors, ThrowOnError>({
     security: [{

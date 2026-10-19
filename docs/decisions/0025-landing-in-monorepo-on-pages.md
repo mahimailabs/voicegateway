@@ -1,6 +1,6 @@
 # 0025: Landing page in the main repository on Cloudflare Pages
 
-Date: 2026-10-15. Status: accepted, requested by the maintainer.
+Date: 2026-10-15. Status: superseded by 0030 (the marketing site moved to the private `voicegateway-web` repository).
 
 The landing page belongs in `mahimailabs/voicegateway`, alongside the product and documentation. Import the current landing source into `site/landing`; the separate `voicegateway-web` repository is superseded. Cloudflare Pages builds this subdirectory with Node 24, pnpm 9 and a Next.js static export.
 

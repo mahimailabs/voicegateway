@@ -613,3 +613,34 @@ describe("getRecordingMedia", () => {
     expect(valid("Error", await res.json())).toBe("")
   })
 })
+
+describe("createProject", () => {
+  const projects = "http://console.test/api/v1/org/default/projects"
+  const post = (body: unknown) => fetch(projects, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })
+  const fields = { name: "Mock Staging", livekitUrl: "wss://staging.example.com", livekitApiKey: "APImockstaging", livekitApiSecret: "made-up-for-the-test" }
+
+  test("adds a project the workspaces then list, and refuses it twice", async () => {
+    const res = await post(fields)
+    expect(res.status).toBe(201)
+    expect(res.headers.get("Cache-Control")).toBe("no-store")
+    const created = await res.json()
+    expect(valid("WorkspaceProject", created)).toBe("")
+    expect(created).toEqual({ id: "mock-staging", name: "Mock Staging" })
+    const ws = await (await fetch("http://console.test/api/v1/workspaces")).json()
+    expect(ws.items[0].projects).toContainEqual(created)
+    const again = await post(fields)
+    expect(again.status).toBe(409)
+    const e = await again.json()
+    expect(valid("Error", e)).toBe("")
+    expect(e.code).toBe("project_exists")
+  })
+
+  test.each([
+    ["a missing secret", { ...fields, name: "Other", livekitApiSecret: "" }],
+    ["a URL with another scheme", { ...fields, name: "Other", livekitUrl: "ftp://x.example.com" }],
+  ])("%s is 400 in the Error shape", async (_name, body) => {
+    const res = await post(body)
+    expect(res.status).toBe(400)
+    expect(valid("Error", await res.json())).toBe("")
+  })
+})

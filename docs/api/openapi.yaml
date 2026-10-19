@@ -999,6 +999,52 @@ paths:
           $ref: "#/components/responses/InternalError"
         "503":
           $ref: "#/components/responses/SourceUnavailable"
+  /api/v1/org/{orgId}/projects:
+    post:
+      operationId: createProject
+      summary: Add a LiveKit project to the organisation
+      tags:
+        - Console writes
+      x-access:
+        principal: organisation_member
+        minimumRole: Admin
+        browserSessionTransport: session_cookie
+        scope: organisation
+      description: Requires Admin membership in the named organisation; a project API key is 403. Adds one LiveKit project (decision 0016) through the same checks and store as voicegateway project add (phase 06f). The id is the name as a slug, as the console makes it. The API secret is sealed under VOICEGATEWAY_SECRET_KEY before it is written and is never answered, logged or read back to the console. A name whose id the organisation already has is 409 project_exists; a LiveKit API key another project on this server already uses is 409 livekit_key_in_use, without naming that project. The answer is not cached.
+      parameters:
+        - $ref: "#/components/parameters/OrganisationId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProjectCreate"
+      responses:
+        "201":
+          description: The new project, as getWorkspaces lists it. Never its LiveKit key or secret.
+          headers:
+            Cache-Control:
+              description: Always no-store, so no cache keeps the answer.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkspaceProject"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/SourceUnavailable"
   /api/v1/org/{orgId}/members:
     get:
       operationId: getMembers
@@ -1461,7 +1507,7 @@ paths:
         principal: instance
         minimumRole: Instance
         scope: instance
-      description: For the instance token only (phase 06e). Makes a phase 06d invitation with no inviting user. The Idempotency-Key header is required; a repeat with the same key answers 200 with the first invitation, link null, nothing revoked and nothing sent. The same key with another email or role is invalid_request. A new key for an email with an open invitation revokes the open link and sends or returns a new one, which is how a caller retries a failed send. With SMTP set, link is always null and emailed says whether the send succeeded. An email whose account is already a member is 409 already_member.
+      description: For the instance token only (phase 06e). Makes a phase 06d invitation with no inviting user. The Idempotency-Key header is required; a repeat with the same key answers 200 with the first invitation, link null, nothing revoked and nothing sent. The same key with another email or role is invalid_request. A repeat that arrives while the first call is still sending waits for that send's outcome. A new key for an email with an open invitation revokes the open link and sends or returns a new one, which is how a caller retries a failed send; resend only on emailed false, never on null. With SMTP set, link is always null and emailed says whether the send succeeded, or is null when SMTP acceptance is uncertain or a prior send's outcome was lost. An email whose account is already a member is 409 already_member.
       parameters:
         - $ref: "#/components/parameters/InstanceOrganisationId"
         - $ref: "#/components/parameters/IdempotencyKey"
@@ -4543,7 +4589,7 @@ components:
           type: string
           description: Stable error category.
           x-source: { kind: computed, file: docs/api/coverage.md, pointer: null, detail: Stable error category. }
-          enum: [ invalid_request, unauthenticated, forbidden, not_found, source_unavailable, internal_error, range_not_satisfiable, last_admin, already_member, member_of_other_organisations ]
+          enum: [ invalid_request, unauthenticated, forbidden, not_found, source_unavailable, internal_error, range_not_satisfiable, last_admin, already_member, member_of_other_organisations, project_exists, livekit_key_in_use ]
         message:
           type: string
           description: Safe human-readable explanation, excluding upstream credentials and request bodies.
@@ -4845,9 +4891,10 @@ components:
           description: When the link stops working, 7 days after it was made.
           x-source: { kind: configuration, file: migrations/postgres/00009_invitations.sql, pointer: null, detail: "invitations.expires_at." }
         emailed:
-          type: boolean
-          description: True when the email was sent; false without SMTP, or when the send failed. On a repeat, as it was.
-          x-source: { kind: computed, file: internal/invite/invite.go, pointer: null, detail: "The SMTP send's outcome, from invitations.emailed_at on a repeat." }
+          type: [ boolean, "null" ]
+          description: True when the email was sent; false without SMTP, or when the send failed. On a repeat, as it was; a repeat during the first call's send waits for its outcome.
+          x-null-reason: SMTP acceptance is uncertain, or a prior send began but its outcome was never recorded. The email may have been sent; a caller that wants no duplicate must not resend on null.
+          x-source: { kind: computed, file: internal/invite/invite.go, pointer: null, detail: "The SMTP send's outcome; on a repeat, from invitations.emailed_at, email_failed_at and email_started_at." }
         link:
           type: [ string, "null" ]
           format: uri
@@ -5091,6 +5138,34 @@ components:
           items:
             $ref: "#/components/schemas/Invitation"
           x-source: { kind: configuration, file: migrations/postgres/00009_invitations.sql, pointer: null, detail: "The organisation's invitations and reset links, newest first, at most 500. Do not expose to members without Admin permission." }
+    ProjectCreate:
+      type: object
+      additionalProperties: false
+      required: [ name, livekitUrl, livekitApiKey, livekitApiSecret ]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 64
+          description: The project's display name; trimmed, with at least one letter or digit. Its slug is the project id.
+          x-source: { kind: configuration, file: dashboard/src/components/add-project-form.tsx, pointer: null, detail: The name an admin types. }
+        livekitUrl:
+          type: string
+          minLength: 1
+          maxLength: 2048
+          description: The LiveKit server URL, with the scheme ws, wss, http or https and a host, such as wss://your-project.livekit.cloud.
+          x-source: { kind: configuration, file: dashboard/src/components/add-project-form.tsx, pointer: null, detail: The LiveKit URL an admin pastes. }
+        livekitApiKey:
+          type: string
+          minLength: 1
+          maxLength: 256
+          description: The LiveKit API key; unique on this server, since ingest finds a project by the key that signed a webhook or upload.
+          x-source: { kind: configuration, file: dashboard/src/components/add-project-form.tsx, pointer: null, detail: The LiveKit API key an admin pastes. }
+        livekitApiSecret:
+          type: string
+          minLength: 1
+          description: The LiveKit API secret. Sealed before it is stored; never answered or logged.
+          x-source: { kind: configuration, file: dashboard/src/components/add-project-form.tsx, pointer: null, detail: The LiveKit API secret an admin pastes; the form clears it after submit. }
     WorkspaceProject:
       type: object
       additionalProperties: false
@@ -5434,7 +5509,7 @@ components:
           schema:
             $ref: "#/components/schemas/Error"
     Conflict:
-      description: last_admin, the change would leave the organisation without an admin; already_member, the invited email's account is a member already; member_of_other_organisations, a reset's member belongs to an organisation the requester does not administer.
+      description: last_admin, the change would leave the organisation without an admin; already_member, the invited email's account is a member already; member_of_other_organisations, a reset's member belongs to an organisation the requester does not administer; project_exists, the organisation already has a project with the new name's id; livekit_key_in_use, another project on this server uses that LiveKit API key.
       content:
         application/json:
           schema:

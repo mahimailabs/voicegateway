@@ -1,3 +1,0 @@
-openai.svg: LobeHub lobe-icons, @lobehub/icons-static-svg 1.95.1, MIT. See LOBEHUB-LICENSE.txt.
-deepgram.svg: Simple Icons 16.35.0, CC0-1.0 (https://github.com/simple-icons/simple-icons).
-Provider marks identify providers in captured calls; they do not imply endorsement.

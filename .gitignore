@@ -387,7 +387,7 @@ vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 .vite/
 
-# The site/ apps (landing page and docs). Each app's own .gitignore covers its
+# The site/ apps (docs). Each app's own .gitignore covers its
 # build output; the Python template's `lib/` rule above would swallow their source.
 site/*/node_modules/
 !site/**/lib/

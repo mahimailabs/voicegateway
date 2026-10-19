@@ -1,6 +1,6 @@
 import type { PostHog } from 'posthog-js';
 
-// Same PostHog project and setup as voicegateway.dev (site/landing/src/lib/analytics.ts):
+// Same PostHog project and setup as voicegateway.dev (src/lib/analytics.ts in the private voicegateway-web repository):
 // production host only, in-memory ids, no cookies, no autocapture, no recordings. Every
 // event carries site: 'voicegateway-docs' so the admin dashboard can tell docs from the
 // landing page ('voicegateway') and from mahimai.ca (untagged).

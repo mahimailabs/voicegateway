@@ -10,10 +10,9 @@ repos:
     -   id: check-added-large-files
         # 250 KiB, not the 500 KiB default. The default is why a 404 KiB
         # duplicate screenshot once reached main and stayed there. The
-        # dashboard's npm lockfile and the landing site's pnpm lockfile are
-        # tracked files allowed over it.
+        # dashboard's npm lockfile is the one tracked file allowed over it.
         args: [--maxkb=250]
-        exclude: ^(dashboard/package-lock\.json|site/landing/pnpm-lock\.yaml)$
+        exclude: ^dashboard/package-lock\.json$
     -   id: check-toml
     -   id: check-yaml
         args:

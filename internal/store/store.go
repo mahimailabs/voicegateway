@@ -17,6 +17,17 @@ type Project struct {
 	CreatedAt      time.Time
 }
 
+// NewProject is what creating a project needs: voicegateway project add and createProject give the
+// same fields. The secret is sealed before it is written.
+type NewProject struct {
+	OrganisationID   string
+	ID               string
+	Name             string
+	LiveKitURL       string
+	LiveKitAPIKey    string
+	LiveKitAPISecret string
+}
+
 // ErrLiveKitKeyInUse means another project already uses the LiveKit API key, which ingest relies on
 // to find the project an event belongs to.
 var ErrLiveKitKeyInUse = errors.New("LiveKit API key is already used by another project")
@@ -395,6 +406,11 @@ type Invitation struct {
 	EmailedAt       *time.Time
 	AcceptedAt      *time.Time
 	RevokedAt       *time.Time
+	// EmailStartedAt is set when SMTP was set as the link was made, before its send; then
+	// EmailedAt or EmailFailedAt records the outcome. Only EmailStartedAt means the send is in
+	// flight, or its outcome was lost.
+	EmailStartedAt *time.Time
+	EmailFailedAt  *time.Time
 }
 
 // State is an invitation's derived state at now: accepted, revoked, expired or pending.
@@ -418,6 +434,7 @@ type NewInvitation struct {
 	IdempotencyKey              *string
 	TokenSHA256                 []byte
 	ExpiresAt                   time.Time
+	EmailStartedAt              *time.Time // set when the link will be emailed
 }
 
 // Organisation is an organisation as the instance API reads it (phase 06e): its members, admins

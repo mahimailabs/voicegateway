@@ -51,15 +51,9 @@ func Migrate(ctx context.Context, pool *pgxpool.Pool) (int, error) {
 	return len(results), nil
 }
 
-// NewProject is what creating a project needs. The secret is sealed before it is written.
-type NewProject struct {
-	OrganisationID   string
-	ID               string
-	Name             string
-	LiveKitURL       string
-	LiveKitAPIKey    string
-	LiveKitAPISecret string
-}
+// NewProject is what creating a project needs (store.NewProject). The secret is sealed before it
+// is written.
+type NewProject = store.NewProject
 
 // CreateProject stores a project with its LiveKit secret sealed. A LiveKit API key already used by
 // another project is refused with store.ErrLiveKitKeyInUse naming that project, and nothing is

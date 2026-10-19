@@ -42,9 +42,11 @@ type Config struct {
 	// never logged. SMTPFrom is the sender's address, required with it.
 	SMTPURL, SMTPFrom string
 	// WorkerEndpointsPublicOnly makes the worker refuse private and loopback addresses for worker
-	// metrics endpoints, as well as the link-local and metadata addresses it always refuses. For an
-	// install whose endpoints are entered by people it should not trust with its network, such as
-	// Cloud; a self-hosted install's workers usually sit on its own private network.
+	// metrics endpoints, as well as the link-local and metadata addresses it always refuses. It also
+	// puts every LiveKit API read the worker makes behind that same guard, so a project's LiveKit URL
+	// cannot reach the install's network either (scrape.NewDial). For an install whose endpoints and
+	// projects are entered by people it should not trust with its network, such as Cloud; a
+	// self-hosted install's workers usually sit on its own private network.
 	WorkerEndpointsPublicOnly bool
 	// InstanceTokenSHA256 is the SHA-256 of VOICEGATEWAY_INSTANCE_TOKEN, which turns the instance
 	// API on (phase 06e); nil when unset. The token itself is not kept.
