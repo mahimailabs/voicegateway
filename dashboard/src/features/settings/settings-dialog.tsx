@@ -26,6 +26,7 @@ import { ApiError, callTotalsQuery, createInvitation, createPasswordReset, creat
 import type { Invitation, Member, ProjectKey, ProjectSettings } from "@/lib/api-types"
 import { DataTable, type Columns, type Field as FilterField } from "@/components/data-table"
 import { DataGridColumnHeader } from "@/components/reui/data-grid/data-grid-column-header"
+import { mod } from "@/components/command-palette"
 import { CopyCommand } from "@/components/copy-command"
 import { refreshSession, roleIn, useSession } from "@/lib/session"
 import { useLocalSave } from "@/lib/local-store"
@@ -100,7 +101,7 @@ function Group({ label, children, footer }: { label?: string; children: React.Re
 function Row({ title, description, value, mono, icon: I, muted, last }: { title: string; description?: React.ReactNode; value?: React.ReactNode; mono?: boolean; icon?: Icon; muted?: boolean; last?: boolean }) {
   return (
     <>
-      <Item size="sm" className="grid grid-cols-1 items-start gap-3 sm:grid-cols-[minmax(0,220px)_minmax(0,1fr)] sm:gap-8 rounded-none border-0 px-0 py-4">
+      <Item role="listitem" size="sm" className="grid grid-cols-1 items-start gap-3 sm:grid-cols-[minmax(0,220px)_minmax(0,1fr)] sm:gap-8 rounded-none border-0 px-0 py-4">
         <ItemContent className="flex-row items-start gap-3">
           {I && (
             <ItemMedia variant="icon" className={muted ? "mt-0.5 text-muted-foreground" : "mt-0.5"}>
@@ -353,7 +354,7 @@ function Delivery({ outcome, what, onDone, pending }: { outcome: Outcome; what: 
     return (
       <div className="space-y-3">
         <p className="text-[13px] text-muted-foreground">{`Copy the ${what} for ${outcome.email} now. It is not shown again; the server keeps only its hash.`}</p>
-        <CopyCommand text={outcome.link} label={`${what[0].toUpperCase()}${what.slice(1)}`} />
+        <CopyCommand text={outcome.link} label={`${what[0].toUpperCase()}${what.slice(1)}`} copyLabel="Copy link" />
         <Button size="sm" variant="outline" onClick={onDone}>
           Done
         </Button>
@@ -538,7 +539,7 @@ function IntegrationList({ list }: { list: Integration[] }) {
     <ItemGroup className="gap-0 has-data-[size=sm]:gap-0">
       {list.map((x, k) => (
         <span key={x.name} className="contents">
-          <Item size="sm" className="flex-col items-stretch gap-3 rounded-none border-0 px-0 py-4">
+          <Item role="listitem" size="sm" className="flex-col items-stretch gap-3 rounded-none border-0 px-0 py-4">
             <div className="flex items-center gap-4">
               <span className="flex size-10 shrink-0 items-center justify-center rounded-lg border bg-background">{x.icon ? <x.icon size={20} /> : <ProviderLogo provider={x.logo} size={20} />}</span>
               <ItemContent className="min-w-0 gap-0.5">
@@ -1054,7 +1055,7 @@ export function SettingsDialog({ open, onOpenChange, page, onPageChange, orgOnly
               <span className="whitespace-nowrap">
                 Open anywhere with{" "}
                 <KbdGroup>
-                  <Kbd>⌘</Kbd>
+                  <Kbd>{mod}</Kbd>
                   <Kbd>,</Kbd>
                 </KbdGroup>
               </span>

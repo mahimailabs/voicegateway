@@ -24,7 +24,7 @@ Go 1.26 (one binary, `voicegateway`), Postgres 16, ClickHouse 26.1, Redis 8, an 
 Every task goes through the root Makefile.
 
 - Run locally: `make up` starts the six-service stack; `make dev` starts the Vite dev server
-- Test: `make test` (Go with `-race` and the dashboard Vitest tests)
+- Test: `make test` (Go with `-race` and the dashboard Vitest tests); `make dashboard-e2e` for the browser tests
 - Lint and format: `make lint` (Go lint plus oxlint and `tsc --noEmit`); pre-commit runs the Go hooks and file hygiene hooks only
 
 ## Boundaries
@@ -41,7 +41,7 @@ Every task goes through the root Makefile.
 - Tests prove behaviour; coverage is not the goal. One test per rule that matters (a join, an ack after insert, unknown is not zero). Table-driven, run with `-race`.
 - Container tests skip locally with `-short` or without Docker, but fail in CI (`CI` set) rather than skip, so they always run there.
 - Run the real thing instead of mocking it: Redis, ClickHouse and Postgres through testcontainers-go, webhooks from `livekit-server --dev`. Use `testing/synctest` for timers and batch flushes.
-- Frontend: Vitest with Testing Library; Playwright for user flows once adopted (not installed yet). Python SDK, once it lands: pytest with LiveKit Agents' own test helpers (testing-livekit-agents skill).
+- Frontend: Vitest with Testing Library; Playwright with axe for shell and accessibility flows (`make dashboard-e2e`). Python SDK, once it lands: pytest with LiveKit Agents' own test helpers (testing-livekit-agents skill).
 
 ## Before writing code
 

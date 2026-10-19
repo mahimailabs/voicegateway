@@ -2,7 +2,7 @@
 
 import type { Client, ClientMeta, Options as Options2, RequestResult, TDataShape } from './client';
 import { client } from './client.gen';
-import type { CreateInvitationData, CreateInvitationErrors, CreateInvitationResponses, CreatePasswordResetData, CreatePasswordResetErrors, CreatePasswordResetResponses, CreateProjectKeyData, CreateProjectKeyErrors, CreateProjectKeyResponses, GetAlertSetupData, GetAlertSetupErrors, GetAlertSetupResponses, GetCallData, GetCallErrors, GetCallResponses, GetCallStatsData, GetCallStatsErrors, GetCallStatsResponses, GetCapacityData, GetCapacityErrors, GetCapacityResponses, GetCloudAgentsData, GetCloudAgentsErrors, GetCloudAgentsResponses, GetEgressData, GetEgressErrors, GetEgressResponses, GetIngressData, GetIngressErrors, GetIngressResponses, GetInvitationsData, GetInvitationsErrors, GetInvitationsResponses, GetIssueDispositionsData, GetIssueDispositionsErrors, GetIssueDispositionsResponses, GetMediaServerData, GetMediaServerErrors, GetMediaServerResponses, GetMembersData, GetMembersErrors, GetMembersResponses, GetProjectSettingsData, GetProjectSettingsErrors, GetProjectSettingsResponses, GetProjectSnapshotData, GetProjectSnapshotErrors, GetProjectSnapshotResponses, GetProviderProbesData, GetProviderProbesErrors, GetProviderProbesResponses, GetRecordingMediaData, GetRecordingMediaErrors, GetRecordingMediaResponses, GetSipData, GetSipErrors, GetSipResponses, GetWorkersData, GetWorkersErrors, GetWorkersResponses, GetWorkspacesData, GetWorkspacesErrors, GetWorkspacesResponses, ListAlertEventsData, ListAlertEventsErrors, ListAlertEventsResponses, ListCallsData, ListCallsErrors, ListCallsResponses, ListIssuesData, ListIssuesErrors, ListIssuesResponses, ListProjectKeysData, ListProjectKeysErrors, ListProjectKeysResponses, RemoveMemberData, RemoveMemberErrors, RemoveMemberResponses, RevokeInvitationData, RevokeInvitationErrors, RevokeInvitationResponses, RevokeProjectKeyData, RevokeProjectKeyErrors, RevokeProjectKeyResponses, UpdateMemberData, UpdateMemberErrors, UpdateMemberResponses } from './types.gen';
+import type { CreateInvitationData, CreateInvitationErrors, CreateInvitationResponses, CreateOrganisationInvitationData, CreateOrganisationInvitationErrors, CreateOrganisationInvitationResponses, CreatePasswordResetData, CreatePasswordResetErrors, CreatePasswordResetResponses, CreateProjectKeyData, CreateProjectKeyErrors, CreateProjectKeyResponses, GetAlertSetupData, GetAlertSetupErrors, GetAlertSetupResponses, GetCallData, GetCallErrors, GetCallResponses, GetCallStatsData, GetCallStatsErrors, GetCallStatsResponses, GetCapacityData, GetCapacityErrors, GetCapacityResponses, GetCloudAgentsData, GetCloudAgentsErrors, GetCloudAgentsResponses, GetEgressData, GetEgressErrors, GetEgressResponses, GetIngressData, GetIngressErrors, GetIngressResponses, GetInvitationsData, GetInvitationsErrors, GetInvitationsResponses, GetIssueDispositionsData, GetIssueDispositionsErrors, GetIssueDispositionsResponses, GetMediaServerData, GetMediaServerErrors, GetMediaServerResponses, GetMembersData, GetMembersErrors, GetMembersResponses, GetOrganisationData, GetOrganisationErrors, GetOrganisationResponses, GetOrganisationUsageData, GetOrganisationUsageErrors, GetOrganisationUsageResponses, GetProjectSettingsData, GetProjectSettingsErrors, GetProjectSettingsResponses, GetProjectSnapshotData, GetProjectSnapshotErrors, GetProjectSnapshotResponses, GetProviderProbesData, GetProviderProbesErrors, GetProviderProbesResponses, GetRecordingMediaData, GetRecordingMediaErrors, GetRecordingMediaResponses, GetSipData, GetSipErrors, GetSipResponses, GetWorkersData, GetWorkersErrors, GetWorkersResponses, GetWorkspacesData, GetWorkspacesErrors, GetWorkspacesResponses, ListAlertEventsData, ListAlertEventsErrors, ListAlertEventsResponses, ListCallsData, ListCallsErrors, ListCallsResponses, ListIssuesData, ListIssuesErrors, ListIssuesResponses, ListProjectKeysData, ListProjectKeysErrors, ListProjectKeysResponses, PutOrganisationData, PutOrganisationErrors, PutOrganisationResponses, RemoveMemberData, RemoveMemberErrors, RemoveMemberResponses, RevokeInvitationData, RevokeInvitationErrors, RevokeInvitationResponses, RevokeProjectKeyData, RevokeProjectKeyErrors, RevokeProjectKeyResponses, UpdateMemberData, UpdateMemberErrors, UpdateMemberResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -28,7 +28,11 @@ export const listCalls = <ThrowOnError extends boolean = false>(options: Options
             in: 'cookie',
             name: 'vg_session',
             type: 'apiKey'
-        }, { scheme: 'bearer', type: 'http' }],
+        }, {
+            key: 'projectKey',
+            scheme: 'bearer',
+            type: 'http'
+        }],
     url: '/api/v1/org/{orgId}/project/{projectId}/calls',
     ...options
 });
@@ -43,7 +47,11 @@ export const getCall = <ThrowOnError extends boolean = false>(options: Options<G
             in: 'cookie',
             name: 'vg_session',
             type: 'apiKey'
-        }, { scheme: 'bearer', type: 'http' }],
+        }, {
+            key: 'projectKey',
+            scheme: 'bearer',
+            type: 'http'
+        }],
     url: '/api/v1/org/{orgId}/project/{projectId}/calls/{callId}',
     ...options
 });
@@ -58,7 +66,11 @@ export const getCallStats = <ThrowOnError extends boolean = false>(options: Opti
             in: 'cookie',
             name: 'vg_session',
             type: 'apiKey'
-        }, { scheme: 'bearer', type: 'http' }],
+        }, {
+            key: 'projectKey',
+            scheme: 'bearer',
+            type: 'http'
+        }],
     url: '/api/v1/org/{orgId}/project/{projectId}/call-stats',
     ...options
 });
@@ -73,7 +85,11 @@ export const listIssues = <ThrowOnError extends boolean = false>(options: Option
             in: 'cookie',
             name: 'vg_session',
             type: 'apiKey'
-        }, { scheme: 'bearer', type: 'http' }],
+        }, {
+            key: 'projectKey',
+            scheme: 'bearer',
+            type: 'http'
+        }],
     url: '/api/v1/org/{orgId}/project/{projectId}/issues',
     ...options
 });
@@ -88,7 +104,11 @@ export const listAlertEvents = <ThrowOnError extends boolean = false>(options: O
             in: 'cookie',
             name: 'vg_session',
             type: 'apiKey'
-        }, { scheme: 'bearer', type: 'http' }],
+        }, {
+            key: 'projectKey',
+            scheme: 'bearer',
+            type: 'http'
+        }],
     url: '/api/v1/org/{orgId}/project/{projectId}/alert-events',
     ...options
 });
@@ -103,7 +123,11 @@ export const getMediaServer = <ThrowOnError extends boolean = false>(options: Op
             in: 'cookie',
             name: 'vg_session',
             type: 'apiKey'
-        }, { scheme: 'bearer', type: 'http' }],
+        }, {
+            key: 'projectKey',
+            scheme: 'bearer',
+            type: 'http'
+        }],
     url: '/api/v1/org/{orgId}/project/{projectId}/media-server',
     ...options
 });
@@ -118,7 +142,11 @@ export const getCloudAgents = <ThrowOnError extends boolean = false>(options: Op
             in: 'cookie',
             name: 'vg_session',
             type: 'apiKey'
-        }, { scheme: 'bearer', type: 'http' }],
+        }, {
+            key: 'projectKey',
+            scheme: 'bearer',
+            type: 'http'
+        }],
     url: '/api/v1/org/{orgId}/project/{projectId}/agents',
     ...options
 });
@@ -133,7 +161,11 @@ export const getWorkers = <ThrowOnError extends boolean = false>(options: Option
             in: 'cookie',
             name: 'vg_session',
             type: 'apiKey'
-        }, { scheme: 'bearer', type: 'http' }],
+        }, {
+            key: 'projectKey',
+            scheme: 'bearer',
+            type: 'http'
+        }],
     url: '/api/v1/org/{orgId}/project/{projectId}/workers',
     ...options
 });
@@ -148,7 +180,11 @@ export const getSip = <ThrowOnError extends boolean = false>(options: Options<Ge
             in: 'cookie',
             name: 'vg_session',
             type: 'apiKey'
-        }, { scheme: 'bearer', type: 'http' }],
+        }, {
+            key: 'projectKey',
+            scheme: 'bearer',
+            type: 'http'
+        }],
     url: '/api/v1/org/{orgId}/project/{projectId}/sip',
     ...options
 });
@@ -163,7 +199,11 @@ export const getEgress = <ThrowOnError extends boolean = false>(options: Options
             in: 'cookie',
             name: 'vg_session',
             type: 'apiKey'
-        }, { scheme: 'bearer', type: 'http' }],
+        }, {
+            key: 'projectKey',
+            scheme: 'bearer',
+            type: 'http'
+        }],
     url: '/api/v1/org/{orgId}/project/{projectId}/egress',
     ...options
 });
@@ -178,7 +218,11 @@ export const getIngress = <ThrowOnError extends boolean = false>(options: Option
             in: 'cookie',
             name: 'vg_session',
             type: 'apiKey'
-        }, { scheme: 'bearer', type: 'http' }],
+        }, {
+            key: 'projectKey',
+            scheme: 'bearer',
+            type: 'http'
+        }],
     url: '/api/v1/org/{orgId}/project/{projectId}/ingress',
     ...options
 });
@@ -193,7 +237,11 @@ export const getProjectSnapshot = <ThrowOnError extends boolean = false>(options
             in: 'cookie',
             name: 'vg_session',
             type: 'apiKey'
-        }, { scheme: 'bearer', type: 'http' }],
+        }, {
+            key: 'projectKey',
+            scheme: 'bearer',
+            type: 'http'
+        }],
     url: '/api/v1/org/{orgId}/project/{projectId}/snapshot',
     ...options
 });
@@ -208,7 +256,11 @@ export const getCapacity = <ThrowOnError extends boolean = false>(options: Optio
             in: 'cookie',
             name: 'vg_session',
             type: 'apiKey'
-        }, { scheme: 'bearer', type: 'http' }],
+        }, {
+            key: 'projectKey',
+            scheme: 'bearer',
+            type: 'http'
+        }],
     url: '/api/v1/org/{orgId}/project/{projectId}/capacity',
     ...options
 });
@@ -223,7 +275,11 @@ export const getProviderProbes = <ThrowOnError extends boolean = false>(options:
             in: 'cookie',
             name: 'vg_session',
             type: 'apiKey'
-        }, { scheme: 'bearer', type: 'http' }],
+        }, {
+            key: 'projectKey',
+            scheme: 'bearer',
+            type: 'http'
+        }],
     url: '/api/v1/org/{orgId}/project/{projectId}/provider-probes',
     ...options
 });
@@ -238,7 +294,11 @@ export const getProjectSettings = <ThrowOnError extends boolean = false>(options
             in: 'cookie',
             name: 'vg_session',
             type: 'apiKey'
-        }, { scheme: 'bearer', type: 'http' }],
+        }, {
+            key: 'projectKey',
+            scheme: 'bearer',
+            type: 'http'
+        }],
     url: '/api/v1/org/{orgId}/project/{projectId}/settings',
     ...options
 });
@@ -253,7 +313,11 @@ export const getIssueDispositions = <ThrowOnError extends boolean = false>(optio
             in: 'cookie',
             name: 'vg_session',
             type: 'apiKey'
-        }, { scheme: 'bearer', type: 'http' }],
+        }, {
+            key: 'projectKey',
+            scheme: 'bearer',
+            type: 'http'
+        }],
     url: '/api/v1/org/{orgId}/project/{projectId}/issue-dispositions',
     ...options
 });
@@ -268,7 +332,11 @@ export const getAlertSetup = <ThrowOnError extends boolean = false>(options: Opt
             in: 'cookie',
             name: 'vg_session',
             type: 'apiKey'
-        }, { scheme: 'bearer', type: 'http' }],
+        }, {
+            key: 'projectKey',
+            scheme: 'bearer',
+            type: 'http'
+        }],
     url: '/api/v1/org/{orgId}/project/{projectId}/alert-setup',
     ...options
 });
@@ -445,7 +513,11 @@ export const getWorkspaces = <ThrowOnError extends boolean = false>(options?: Op
             in: 'cookie',
             name: 'vg_session',
             type: 'apiKey'
-        }, { scheme: 'bearer', type: 'http' }],
+        }, {
+            key: 'projectKey',
+            scheme: 'bearer',
+            type: 'http'
+        }],
     url: '/api/v1/workspaces',
     ...options
 });
@@ -460,7 +532,79 @@ export const getRecordingMedia = <ThrowOnError extends boolean = false>(options:
             in: 'cookie',
             name: 'vg_session',
             type: 'apiKey'
-        }, { scheme: 'bearer', type: 'http' }],
+        }, {
+            key: 'projectKey',
+            scheme: 'bearer',
+            type: 'http'
+        }],
     url: '/api/v1/org/{orgId}/project/{projectId}/recordings/{recordingId}',
+    ...options
+});
+
+/**
+ * Read an organisation and whether its admin has joined
+ *
+ * For the instance token only (phase 06e). Counts are read at this request. An unknown id is not_found.
+ */
+export const getOrganisation = <ThrowOnError extends boolean = false>(options: Options<GetOrganisationData, ThrowOnError>): RequestResult<GetOrganisationResponses, GetOrganisationErrors, ThrowOnError> => (options.client ?? client).get<GetOrganisationResponses, GetOrganisationErrors, ThrowOnError>({
+    security: [{
+            key: 'instanceToken',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/api/v1/instance/organisations/{orgId}',
+    ...options
+});
+
+/**
+ * Create an organisation, or rename it
+ *
+ * For an operator's program holding the instance token (phase 06e, decision 0028); off, and 404, unless VOICEGATEWAY_INSTANCE_TOKEN is set. The caller chooses the id, so a retried create never makes a second organisation. 201 when this call created it, 200 when it existed; a different name renames it. A session or a project API key is 403.
+ */
+export const putOrganisation = <ThrowOnError extends boolean = false>(options: Options<PutOrganisationData, ThrowOnError>): RequestResult<PutOrganisationResponses, PutOrganisationErrors, ThrowOnError> => (options.client ?? client).put<PutOrganisationResponses, PutOrganisationErrors, ThrowOnError>({
+    security: [{
+            key: 'instanceToken',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/api/v1/instance/organisations/{orgId}',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Invite someone to an organisation, with no inviting user
+ *
+ * For the instance token only (phase 06e). Makes a phase 06d invitation with no inviting user. The Idempotency-Key header is required; a repeat with the same key answers 200 with the first invitation, link null, nothing revoked and nothing sent. The same key with another email or role is invalid_request. A new key for an email with an open invitation revokes the open link and sends or returns a new one, which is how a caller retries a failed send. With SMTP set, link is always null and emailed says whether the send succeeded. An email whose account is already a member is 409 already_member.
+ */
+export const createOrganisationInvitation = <ThrowOnError extends boolean = false>(options: Options<CreateOrganisationInvitationData, ThrowOnError>): RequestResult<CreateOrganisationInvitationResponses, CreateOrganisationInvitationErrors, ThrowOnError> => (options.client ?? client).post<CreateOrganisationInvitationResponses, CreateOrganisationInvitationErrors, ThrowOnError>({
+    security: [{
+            key: 'instanceToken',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/api/v1/instance/organisations/{orgId}/invitations',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Read an organisation's profiled call time in a period
+ *
+ * For the instance token only (phase 06e, decision 0029). A call counts in the period its end falls in, when its start is known; an observed call ends at its end, an inferred one at its last activity, a lower bound. Exact durations are summed, then rounded down to whole seconds once. Calls that started in the period with no end yet are counted in unendedCalls and never summed. Closed calls with a null or negative duration are excluded from the measured totals and counted as unmeasuredCalls by start period. Inferred durations are separately summed in inferredCallSeconds. Turning seconds into billed minutes is the caller's job. A missing or bad from or to, to not after from, or a span over 62 days is invalid_request; an unknown organisation is not_found.
+ */
+export const getOrganisationUsage = <ThrowOnError extends boolean = false>(options: Options<GetOrganisationUsageData, ThrowOnError>): RequestResult<GetOrganisationUsageResponses, GetOrganisationUsageErrors, ThrowOnError> => (options.client ?? client).get<GetOrganisationUsageResponses, GetOrganisationUsageErrors, ThrowOnError>({
+    security: [{
+            key: 'instanceToken',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/api/v1/instance/organisations/{orgId}/usage',
     ...options
 });

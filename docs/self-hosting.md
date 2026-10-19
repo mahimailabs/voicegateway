@@ -12,9 +12,9 @@ Run VoiceGateway on your own machine or server, connect your LiveKit project and
 ## 1. Start the stack
 
 ```bash
-git clone https://github.com/mahimailabs/voicegateway.git
+git clone --branch v1.0.0-preview.2 --depth 1 https://github.com/mahimailabs/voicegateway.git
 cd voicegateway
-VOICEGATEWAY_IMAGE=ghcr.io/mahimailabs/voicegateway:1.0.0-preview.1 make up
+VOICEGATEWAY_IMAGE=ghcr.io/mahimailabs/voicegateway:1.0.0-preview.2 make up
 make preflight
 ```
 
@@ -68,6 +68,24 @@ The agent's uploads and LiveKit's webhooks must reach your VoiceGateway host:
 - Agent on the same machine: `http://localhost:8080` is enough for the uploads.
 - LiveKit Cloud webhooks, or agents elsewhere: VoiceGateway needs a public HTTPS address. Put it behind your reverse proxy, then set `VOICEGATEWAY_PUBLIC_URL=https://<host>` and `VOICEGATEWAY_TRUSTED_PROXIES=<proxy address or CIDR>` in `deploy/.env` and run `make up` again. For a quick test, `cloudflared tunnel --url http://localhost:8080` gives a temporary public URL.
 
+## Invite your team
+
+In the console, open Settings, then People, and invite by email with a role. Without email set up, Settings shows each invitation or password reset link once, to copy and send yourself.
+
+To have VoiceGateway email the links, set these in `deploy/.env` and run `make up` again:
+
+```bash
+VOICEGATEWAY_PUBLIC_URL=https://<host>                  # the base of every emailed link; required with SMTP
+VOICEGATEWAY_SMTP_URL=smtps://user:pass@smtp.example.com:465   # or smtp://...:587 with STARTTLS
+VOICEGATEWAY_SMTP_FROM=VoiceGateway <noreply@example.com>
+```
+
+VoiceGateway only sends over TLS. If your mail server's certificate is signed by your own certificate authority, mount that CA's PEM file into the web container and set `SSL_CERT_FILE` to its path there, for example in an extra Compose file passed with a second `-f`. Otherwise sends fail and the web log shows `could not send the email` with `class: tls`.
+
+## Data retention
+
+Raw telemetry expires after 90 days; infrastructure samples keep their separate 30-day retention. Cleanup runs in the background. Month-partitioned raw tables can retain rows for up to an additional month while waiting for the whole partition to expire. Postgres call summaries remain available after raw telemetry expires.
+
 ## Stop, upgrade and reset
 
 ```bash
@@ -79,8 +97,6 @@ VOICEGATEWAY_IMAGE=ghcr.io/mahimailabs/voicegateway:<new version> make up   # up
 
 ## What is not there yet
 
-- **No invitations yet.** Add teammates from the command line with `make user-add EMAIL=... ROLE=member` (or `viewer`, or `admin`).
-- **No retention limit yet.** Raw call data is kept until you delete it.
 - **Some panels are not served yet**, such as project settings and provider probes: they say "Not served by this server yet".
 - **Notifications** for alerts are not delivered yet.
 

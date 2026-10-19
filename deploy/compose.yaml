@@ -20,6 +20,9 @@ x-voicegateway-env: &voicegateway-env
   # nothing, and Settings shows each link to copy.
   VOICEGATEWAY_SMTP_URL: ${VOICEGATEWAY_SMTP_URL:-}
   VOICEGATEWAY_SMTP_FROM: ${VOICEGATEWAY_SMTP_FROM:-}
+  # Turns on the instance API (/api/v1/instance, ee/), for an operator's program that creates
+  # organisations: at least 32 characters, and needs VOICEGATEWAY_PUBLIC_URL. Empty keeps it off.
+  VOICEGATEWAY_INSTANCE_TOKEN: ${VOICEGATEWAY_INSTANCE_TOKEN:-}
   VOICEGATEWAY_LOG_LEVEL: ${VOICEGATEWAY_LOG_LEVEL:-info}
   # true refuses private and loopback worker metrics endpoints too; link-local and cloud metadata
   # addresses are always refused. Leave false when your agent workers share this network.
@@ -57,7 +60,8 @@ services:
     ulimits:
       nofile: { soft: 262144, hard: 262144 }
     healthcheck:
-      test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1:8123/ping"]
+      # The native port with migrate's own user: /ping on 8123 answers before 9000 takes queries.
+      test: ["CMD", "clickhouse-client", "-q", "SELECT 1"]
       interval: 2s
       retries: 30
 
@@ -91,7 +95,7 @@ services:
   migrate:
     build: { context: .., dockerfile: deploy/Dockerfile }
     # VOICEGATEWAY_IMAGE runs a published image instead of building one, for example
-    # ghcr.io/mahimailabs/voicegateway:1.0.0-preview.1 (see docs/self-hosting.md).
+    # ghcr.io/mahimailabs/voicegateway:1.0.0-preview.2 (see docs/self-hosting.md).
     image: ${VOICEGATEWAY_IMAGE:-voicegateway:dev}
     command: ["migrate"]
     environment: *voicegateway-env

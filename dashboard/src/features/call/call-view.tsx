@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react"
 import { AudioPlayerProvider } from "@/components/elevenlabs/audio-player"
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable"
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Unknown } from "@/components/unknown"
 import type { Call } from "@/lib/api"
 import { type CallModel, buildModel, callLength, fmtMs, interruptionCount, median, turnCount } from "./call-model"
@@ -90,8 +90,8 @@ export function CallView({ call }: { call: Call }) {
               <ResizableHandle withHandle className="after:w-3 aria-[orientation=horizontal]:after:h-3" />
               <ResizablePanel defaultSize="48%" minSize="28%" className="min-h-0">
                 <div className="h-full overflow-y-auto">
-                  <div className="sticky top-0 z-10 overflow-x-auto border-b bg-background/95 px-4 py-2.5 backdrop-blur-sm sm:px-6">
-                    <Tabs value={pane} onValueChange={(v) => setPane(v as typeof pane)}>
+                  <Tabs value={pane} onValueChange={(v) => setPane(v as typeof pane)} className="gap-0">
+                    <div className="sticky top-0 z-10 overflow-x-auto border-b bg-background/95 px-4 py-2.5 backdrop-blur-sm sm:px-6">
                       <TabsList>
                         <TabsTrigger value="insight">{focus ? `Turn ${focus.turn + 1}${focus.speaker ? ` · ${focus.speaker === "caller" ? "Caller" : "Agent"}` : ""}` : "Insights"}</TabsTrigger>
                         <TabsTrigger value="path">Call path</TabsTrigger>
@@ -102,19 +102,21 @@ export function CallView({ call }: { call: Call }) {
                           Trace
                         </TabsTrigger>
                       </TabsList>
-                    </Tabs>
-                  </div>
-                  {pane === "path" ? (
-                    <div className="pb-5">
-                      <CallPathStrip call={call} model={model} onModels={call.spans?.length ? () => setPane("trace") : null} />
                     </div>
-                  ) : (
-                    <div className="px-4 py-5 sm:px-6">
-                      {pane === "insight" && (focus ? <TurnDetail call={call} model={model} turn={focus.turn} speaker={focus.speaker} onBack={() => setFocus(null)} /> : <FindingsList call={call} model={model} onTurn={select} />)}
-                      {pane === "events" && <EventLog call={call} model={model} onSelect={select} />}
-                      {pane === "trace" && call.spans && <TraceChart spans={call.spans} focus={focus} />}
-                    </div>
-                  )}
+                    <TabsContent key={pane} value={pane}>
+                      {pane === "path" ? (
+                        <div className="pb-5">
+                          <CallPathStrip call={call} model={model} onModels={call.spans?.length ? () => setPane("trace") : null} />
+                        </div>
+                      ) : (
+                        <div className="px-4 py-5 sm:px-6">
+                          {pane === "insight" && (focus ? <TurnDetail call={call} model={model} turn={focus.turn} speaker={focus.speaker} onBack={() => setFocus(null)} /> : <FindingsList call={call} model={model} onTurn={select} />)}
+                          {pane === "events" && <EventLog call={call} model={model} onSelect={select} />}
+                          {pane === "trace" && call.spans && <TraceChart spans={call.spans} focus={focus} />}
+                        </div>
+                      )}
+                    </TabsContent>
+                  </Tabs>
                 </div>
               </ResizablePanel>
             </ResizablePanelGroup>

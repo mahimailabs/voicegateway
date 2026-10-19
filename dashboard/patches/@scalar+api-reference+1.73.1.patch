@@ -1,0 +1,13 @@
+diff --git a/node_modules/@scalar/api-reference/dist/components/OperationsList/OperationsList.vue.script.js b/node_modules/@scalar/api-reference/dist/components/OperationsList/OperationsList.vue.script.js
+index 687a390..fe50cb2 100644
+--- a/node_modules/@scalar/api-reference/dist/components/OperationsList/OperationsList.vue.script.js
++++ b/node_modules/@scalar/api-reference/dist/components/OperationsList/OperationsList.vue.script.js
+@@ -30,7 +30,7 @@ var OperationsList_vue_vue_type_script_setup_true_lang_default = /*@__PURE__*/ d
+ 				}), createVNode(unref(ScalarCardSection), { class: "custom-scroll max-h-[60vh]" }, {
+ 					default: withCtx(() => [createElementVNode("ul", {
+ 						"aria-label": unref(translate)("navigation.endpoints", { name: __props.tag.title }),
+-						class: "endpoints"
++						class: "endpoints", tabindex: "0"
+ 					}, [(openBlock(true), createElementBlock(Fragment, null, renderList(operationsAndWebhooks.value, (operationOrWebhook) => {
+ 						return openBlock(), createBlock(OperationsListItem_default, {
+ 							key: operationOrWebhook.id,

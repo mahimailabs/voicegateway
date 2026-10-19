@@ -1,6 +1,7 @@
 package config
 
 import (
+	"crypto/sha256"
 	"encoding/base64"
 	"errors"
 	"fmt"
@@ -45,6 +46,9 @@ type Config struct {
 	// install whose endpoints are entered by people it should not trust with its network, such as
 	// Cloud; a self-hosted install's workers usually sit on its own private network.
 	WorkerEndpointsPublicOnly bool
+	// InstanceTokenSHA256 is the SHA-256 of VOICEGATEWAY_INSTANCE_TOKEN, which turns the instance
+	// API on (phase 06e); nil when unset. The token itself is not kept.
+	InstanceTokenSHA256 []byte
 	// ConsoleDir is the built dashboard web serves (decision 0011); the image sets it. Empty serves
 	// no console, as in development, where the Vite dev server runs it.
 	ConsoleDir string
@@ -120,6 +124,15 @@ func Load(getenv func(string) string) (Config, error) {
 		errs = append(errs, errors.New("VOICEGATEWAY_WORKER_ENDPOINTS_PUBLIC_ONLY must be true or false"))
 	}
 	c.WorkerEndpointsPublicOnly = publicOnly
+
+	// The token is a credential: an error names the variable, never its value.
+	if token := optional("VOICEGATEWAY_INSTANCE_TOKEN", ""); token != "" {
+		if len(token) < 32 {
+			errs = append(errs, errors.New("VOICEGATEWAY_INSTANCE_TOKEN must be at least 32 characters (openssl rand -base64 32)"))
+		}
+		sum := sha256.Sum256([]byte(token))
+		c.InstanceTokenSHA256 = sum[:]
+	}
 
 	if err := c.LogLevel.UnmarshalText([]byte(optional("VOICEGATEWAY_LOG_LEVEL", "info"))); err != nil {
 		errs = append(errs, errors.New("VOICEGATEWAY_LOG_LEVEL must be debug, info, warn or error"))

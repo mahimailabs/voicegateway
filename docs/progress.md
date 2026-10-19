@@ -7,7 +7,7 @@ A fresh session reads this to know where the project stands.
 
 ## Current Phase
 
-Phase 06e: the instance API. Spec: docs/specs/phase06e-instance-api.md (PR #403).
+Phases 01 to 06e are on main (06e, the instance API, merged in #417). The next phase has no spec yet.
 
 ## Done
 
@@ -352,9 +352,13 @@ Manual check: the pair reviewer reports it passed on Compose behind HTTPS ([#387
 
 Next: 06d, invitation links.
 
-### 2026-10-18: phase 06d, invitations and password reset links (in review, #407)
+### 2026-10-18: phase 06d, invitations and password reset links (done, #407 merged as cfcbefba)
 
-An admin invites by email with a role, and makes password reset links for members (spec `docs/specs/phase06d-invitations.md`, decision 0027). Not done until the pair review and the manual check pass.
+An admin invites by email with a role, and makes password reset links for members (spec `docs/specs/phase06d-invitations.md`, decision 0027). The pair review passed at 5b7b2d24, and so did the manual check on 2026-10-18: the Compose stack behind Caddy with `tls internal` (`VOICEGATEWAY_PUBLIC_URL` on a non-localhost https name, so the HTTPS rule applied), mailpit 1.31.4 over implicit TLS, driven with Playwright.
+- Step 1: the invite was emailed with no link on the page; the Member set a password in a second browser and saw the seeded call.
+- Step 2: the reset was emailed; using it signed the first browser out, and the link then answered "no longer valid".
+- Step 3: with SMTP unset, the console showed the link once and copied it exactly, and mailpit received nothing.
+- No token, link or password appeared in the web or proxy logs. The check found two setup gaps, fixed after: ClickHouse's healthcheck pinged 8123 before 9000 took queries, so `migrate` could fail on a fresh start (it now runs `clickhouse-client` as migrate's own user), and a mail server signed by a private CA needs `SSL_CERT_FILE`, now in docs/self-hosting.md.
 
 What changed:
 - **Postgres 00009 `invitations`:** kind invite or reset, the token's SHA-256 only, state derived from its times. One open link per organisation, email and kind (a partial unique index); a create revokes the open one in the same transaction, after taking the organisation's row lock, so parallel creates leave exactly one.
@@ -365,6 +369,16 @@ What changed:
 - **From my own review:** a reset link runs its cross-organisation guard again when used, and is revoked if the member joined an organisation its admin does not run, or the admin lost the role. A new reset replaces every open one for the member. SMTP needs `VOICEGATEWAY_PUBLIC_URL`, so an emailed link never takes its base from a request's Host. A lost race reads as 404, never 401, and a loser's try is not counted as a failed sign-in.
 - **From the pair review and CodeRabbit:** the reset guard fails closed (no requester, or an admin since deleted, allows a member of the link's organisation alone), and at use the member must still belong to that organisation. A reset locks the member's row, so resets from two organisations at once leave one open link. The invitations list is three columns that wrap, so Revoke is in view at pane widths 343, 632 and 820 px, and a member's Password reset and Remove share one row menu.
 - **Console:** `/invite#<token>` renders before the session gate, drops the fragment, and asks for one password. People's Invite form calls `createInvitation` (link once without SMTP; "Emailed to", or Resend after a failed send), the invitations list is a DataTable with its state filter and sort in the URL (`urlPrefix`), and members have a Password reset action. `vg.invites` is gone; the mock serves the new operations in memory.
+
+### 2026-10-18: phase 06e, the instance API (in review)
+
+An operator's program, holding `VOICEGATEWAY_INSTANCE_TOKEN`, creates an organisation, invites its first admin, reads whether they joined and reads the organisation's call time (spec `docs/specs/phase06e-instance-api.md`, decisions 0028 and 0029). Not done until the pair review, CI's SMTP container checks and the manual check pass.
+
+What changed:
+- **`ee/instance`:** `putOrganisation`, `getOrganisation`, `createOrganisationInvitation` (06d's `invite.Create` with no inviting user and the required `Idempotency-Key`) and `getOrganisationUsage`. Each call logs its operation, organisation and outcome only.
+- **Gate:** the token is kept as its SHA-256 and compared in constant time. A new `instance` scope in `routeAccess`: the token calls those four routes and nothing else, and a session or project key on them is 403. With the token unset every instance path is 404; a Bearer that matches nothing stays 401 with the challenge. Setting the token needs `VOICEGATEWAY_PUBLIC_URL`.
+- **Usage:** an observed call ends at `ended_at`, an inferred one at `last_activity_at` (decision 0029 with #412). A call counts in the period that holds its end, when its start is known. Exact durations are summed, then rounded down to whole seconds once. Open calls are counted apart and never summed. No migration: the query reads `calls` by organisation.
+- **Validation:** the implementation owner reports checks 1 to 4 and 7 passed against Postgres 16 in its cloud copy. Local lint, contract and test checks are repeated for the PR; Docker-dependent tests skip on this Mac because Docker is stopped. CI must run all container checks, including the Mailpit checks 5 and 6, before merge.
 
 ### 2026-10-18: worker endpoint dial guard
 
@@ -386,6 +400,14 @@ The pair's audit of 06a, 06b and the gate, items 1 to 4; items 5 and 6 had alrea
 ### 2026-10-18: calls UI regression tests (#324)
 
 Added Testing Library tests around the real Calls page and drawer with the existing MSW handlers: every captured list row across pagination, room/date/duration values, archive and restore, date and shared room filters, call-id navigation, loading/empty/error/retry/not-found states, captured transcript and turn response times, and LLM token usage including the distinction between missing usage and reported zero. All 146 dashboard tests pass locally in about 8 seconds; dashboard lint, application TypeScript, an additional type check of the new tests, and the production build pass. Existing Dashboard CI already runs the suite; its test step passed in 28 seconds on run 39165147240. Review follow-up covers both latest-call lookup and active-list error recovery. No product source or dependencies changed. Phase01's older participant-count list assertion and TTS-usage assertion remain specification/UI gaps: participant count is shown in the drawer, and TTS timing is shown but a TTS usage field is not. These are not claimed complete by this test PR.
+
+2026-10-18 (#325, PR #411): added exact-pinned Playwright/axe checks for 14 deep URLs in both themes, six keyboard tab checks, an isolated captured-data Vite preview target and Dashboard CI failure artifacts. Fixed application labels, tab/panel relationships, list and chart roles, scrolling focus and contrast without axe exclusions. Two pinned Scalar production patches apply during installation. Clean installation, all 68 desktop/phone browser tests (zero serious/critical axe findings and browser errors), all 153 unit tests, API contract checks, lint, TypeScript and build pass locally. The phone sweep also covers the focusable Turn anatomy scroll region. Coordinated the affected UI files with Claude and incorporated the merged invitations settings changes. This covers the console shell, not backend/auth integration; pair review passed and PR #411 merged at 0bccaa65.
+
+2026-10-18: added the Connect alert rule-to-delivery worked example using capture-cloud.json (2304.3 ms), with explicit hypothetical retry, failure and recovery outcomes. No evaluator or delivery implementation is claimed; pair review passed; PR #414 is awaiting merge.
+
+### 2026-10-18: instance API review corrections (#417)
+
+Closed calls with missing or reversed timestamps are excluded from measured usage and counted separately by start period. Inferred seconds are exposed separately, and fractional-duration fixtures reject per-call rounding. The image build now copies the Enterprise source tree required by the instance API; the first Compose CI run caught that missing build input. Container acceptance remains a merge gate.
 
 ### 2026-10-18: Phase 0, old Python release retired
 

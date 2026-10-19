@@ -1,6 +1,6 @@
 # 0027: Built-in accounts, sessions and project keys for sign-in and access
 
-- Status: accepted
+- Status: accepted; the Cloud identity line is replaced by 0028
 - Date: 2026-10-17
 
 ## Context

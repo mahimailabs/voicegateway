@@ -99,6 +99,7 @@ type Created struct {
 	Invitation store.Invitation
 	Link       string // <BaseURL>/invite#<token> only without a Mailer; empty with one, and on an idempotent repeat
 	Emailed    bool   // true when the send succeeded; false without SMTP, or when it failed
+	Repeat     bool   // true when an idempotency key made this invitation on an earlier call
 }
 
 // Pending is what the accept screen shows of a link: its kind ("invite" or "reset"), the
@@ -168,7 +169,7 @@ func (s *Service) Create(ctx context.Context, in Invite) (Created, error) {
 	}
 	link := linkOf(in.BaseURL, token)
 	body := fmt.Sprintf("You are invited to join %s on VoiceGateway as %s.\n\nOpen this link to accept:\n%s\n\nIt expires on %s.\n",
-		org, role, link, inv.ExpiresAt.UTC().Format("2 January 2006 at 15:04 UTC"))
+		org, strings.ToUpper(role[:1])+role[1:], link, inv.ExpiresAt.UTC().Format("2 January 2006 at 15:04 UTC"))
 	return s.deliver(ctx, inv, message{to: email, subject: "Join " + org + " on VoiceGateway", body: body}, link)
 }
 
@@ -185,7 +186,7 @@ func (s *Service) repeat(ctx context.Context, in Invite, email string) (Created,
 	if inv.Kind != "invite" || inv.Email != email || inv.Role == nil || *inv.Role != in.Role {
 		return Created{}, true, ErrInvalid
 	}
-	return Created{Invitation: inv, Emailed: inv.EmailedAt != nil}, true, nil
+	return Created{Invitation: inv, Emailed: inv.EmailedAt != nil, Repeat: true}, true, nil
 }
 
 // ResetLink makes a password reset link for userID, replacing any open one for them. Like Create,

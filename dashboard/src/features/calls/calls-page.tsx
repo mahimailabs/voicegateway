@@ -11,7 +11,7 @@ import { createFilterQuery } from "@/components/reui/filters/filters-query"
 import type { FilterQuery } from "@/components/reui/filters/filters-types"
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet"
 import { Button } from "@/components/ui/button"
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { toast } from "sonner"
 import { setArchived, useArchived } from "./call-archive"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
@@ -441,62 +441,64 @@ export function CallsPage() {
               <Archive /> Archived <span className="ml-1 text-[11px] text-muted-foreground tnum">{known(counts.archived)}</span>
             </TabsTrigger>
           </TabsList>
+          <TabsContent key={view} value={view} className="space-y-3">
+            {server.dropped.length > 0 && (
+              <p className="text-[12px] text-amber-700 dark:text-amber-400">{`Not applied, the server cannot filter on: ${server.dropped.join(", ")}.`}</p>
+            )}
+            {server.nothing && <p className="text-[12px] text-muted-foreground">These filters rule each other out, so no call can match.</p>}
+            {!server.nothing && list.isError && <PageState icon={PhoneCall} title="Calls could not be loaded" detail={errorText(list.error)} retry={() => void list.refetch()} />}
+            {!server.nothing && list.isPending && <PageState icon={PhoneCall} loading title="Loading calls" />}
+            {(server.nothing || list.isSuccess) && (
+            <DataTable
+              key={view}
+              filtered
+              server={{ total: total ?? null, hasMore: Boolean(list.hasNextPage), loading: list.isFetchingNextPage, loadMore: () => void list.fetchNextPage() }}
+              data={rows}
+              columns={columns(tags.of)}
+              fields={fields}
+              query={query}
+              onQueryChange={setQuery}
+              getRowId={(r) => keyOf(r.summary)}
+              onRowClick={(r) => setOpen(r.summary)}
+              phoneColumns={["room"]}
+              sort={DEFAULT_SORT}
+              empty={view === "archived" ? "No archived calls." : "No calls match these filters."}
+              bulk={(sel, clear) =>
+                view === "active" ? (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() =>
+                      archive(
+                        sel.map((r) => r.summary),
+                        true,
+                        clear,
+                      )
+                    }
+                  >
+                    <Archive /> Archive
+                  </Button>
+                ) : (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() =>
+                      archive(
+                        sel.map((r) => r.summary),
+                        false,
+                        clear,
+                      )
+                    }
+                  >
+                    <ArrowCounterClockwise /> Move back to calls
+                  </Button>
+                )
+              }
+            />
+            )}
+            <p className="text-[12px] text-muted-foreground">{`Answer time: caller stops talking to agent audio, per turn. The line marks the ${BUDGET_MS / 1000} s budget, a setting, not a measurement.`}</p>
+          </TabsContent>
         </Tabs>
-        {server.dropped.length > 0 && (
-          <p className="text-[12px] text-amber-700 dark:text-amber-400">{`Not applied, the server cannot filter on: ${server.dropped.join(", ")}.`}</p>
-        )}
-        {server.nothing && <p className="text-[12px] text-muted-foreground">These filters rule each other out, so no call can match.</p>}
-        {!server.nothing && list.isError && <PageState icon={PhoneCall} title="Calls could not be loaded" detail={errorText(list.error)} retry={() => void list.refetch()} />}
-        {!server.nothing && list.isPending && <PageState icon={PhoneCall} loading title="Loading calls" />}
-        {(server.nothing || list.isSuccess) && (
-        <DataTable
-          key={view}
-          filtered
-          server={{ total: total ?? null, hasMore: Boolean(list.hasNextPage), loading: list.isFetchingNextPage, loadMore: () => void list.fetchNextPage() }}
-          data={rows}
-          columns={columns(tags.of)}
-          fields={fields}
-          query={query}
-          onQueryChange={setQuery}
-          getRowId={(r) => keyOf(r.summary)}
-          onRowClick={(r) => setOpen(r.summary)}
-          phoneColumns={["room"]}
-          sort={DEFAULT_SORT}
-          empty={view === "archived" ? "No archived calls." : "No calls match these filters."}
-          bulk={(sel, clear) =>
-            view === "active" ? (
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() =>
-                  archive(
-                    sel.map((r) => r.summary),
-                    true,
-                    clear,
-                  )
-                }
-              >
-                <Archive /> Archive
-              </Button>
-            ) : (
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() =>
-                  archive(
-                    sel.map((r) => r.summary),
-                    false,
-                    clear,
-                  )
-                }
-              >
-                <ArrowCounterClockwise /> Move back to calls
-              </Button>
-            )
-          }
-        />
-        )}
-        <p className="text-[12px] text-muted-foreground">{`Answer time: caller stops talking to agent audio, per turn. The line marks the ${BUDGET_MS / 1000} s budget, a setting, not a measurement.`}</p>
       </section>
       <Sheet open={callId !== undefined} onOpenChange={(o) => !o && setOpen(null)}>
         <SheetContent side="right" onOpenAutoFocus={(e) => e.preventDefault()} onCloseAutoFocus={refocus} onPointerDownOutside={keepOpenOnInsidePress} className="gap-0 p-0 data-[side=right]:w-[80vw] data-[side=right]:sm:max-w-none">
