@@ -1,0 +1,55 @@
+name: Installers
+
+# install.sh and collector.sh are served at voicegateway.dev, which downloads them from main on
+# every build (decision 0030). lint-and-unit checks both with stubs; boot runs the real install the
+# way a user does and waits for the console to answer. The nightly run catches a release tag or
+# published image that stops working without this repository changing.
+
+permissions:
+  contents: read
+
+on:
+  pull_request:
+    paths:
+      - 'Makefile'
+      - 'install.sh'
+      - 'collector.sh'
+      - 'tools/tests/test_installers.sh'
+      - '.github/workflows/installers.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'Makefile'
+      - 'install.sh'
+      - 'collector.sh'
+      - 'tools/tests/test_installers.sh'
+      - '.github/workflows/installers.yml'
+  schedule:
+    - cron: '0 6 * * *'
+  workflow_dispatch:
+
+jobs:
+  lint-and-unit:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+        with:
+          persist-credentials: false
+      - run: sudo apt-get update && sudo apt-get install -y shellcheck
+      - run: make installer-test
+
+  boot:
+    runs-on: ubuntu-24.04   # Docker with Compose v2, git and make are preinstalled
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+        with:
+          persist-credentials: false
+      - name: Install the pinned release as a user would
+        env:
+          VOICEGATEWAY_DIR: ${{ runner.temp }}/voicegateway
+        run: bash install.sh
+      - name: The console answers
+        run: curl -fsS --retry 20 --retry-delay 3 --retry-all-errors http://localhost:8080/healthz
+      - if: failure()
+        working-directory: ${{ runner.temp }}/voicegateway
+        run: docker compose -f deploy/compose.yaml --env-file deploy/.env logs --no-color --tail 200 || true

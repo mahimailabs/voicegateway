@@ -12,11 +12,13 @@ Run VoiceGateway on your own machine or server, connect your LiveKit project and
 ## 1. Start the stack
 
 ```bash
-git clone --branch v1.0.0-preview.2 --depth 1 https://github.com/mahimailabs/voicegateway.git
+git clone --branch v1.0.0-preview.3 --depth 1 https://github.com/mahimailabs/voicegateway.git
 cd voicegateway
-VOICEGATEWAY_IMAGE=ghcr.io/mahimailabs/voicegateway:1.0.0-preview.2 make up
+VOICEGATEWAY_IMAGE=ghcr.io/mahimailabs/voicegateway:1.0.0-preview.3 make up
 make preflight
 ```
+
+Or let `curl -fsSL https://voicegateway.dev/install.sh | bash` run these four commands for you: it checks for Docker, git and make first, and running it again in the same place updates the checkout. Set `VOICEGATEWAY_VERSION` or `VOICEGATEWAY_DIR` to change the release or the folder.
 
 `make up` pulls the published image (amd64 or arm64) and keeps its name in `deploy/.env`, so later commands and new terminals use it too. Without `VOICEGATEWAY_IMAGE`, `make up` builds the image from this checkout, which needs about 10 GB free. Either way it starts six services (web, worker, Postgres, ClickHouse, Redis and an S3 bucket). On the first run it writes `deploy/.env` with fresh random secrets; keep that file, and never commit it. `make preflight` should report OK for postgres, clickhouse, redis and s3.
 

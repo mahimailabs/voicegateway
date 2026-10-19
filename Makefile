@@ -79,3 +79,8 @@ api-types-check: api-types ## Fail when the generated API types are out of date
 	test -z "$$(git ls-files --others --exclude-standard -- $(DASHBOARD)/src/lib/api-types)"
 
 api-check: api-lint api-sources api-types-check ## Validate the console read contract
+
+.PHONY: installer-test
+installer-test: ## Check installer shell syntax and host behavior
+	shellcheck install.sh collector.sh tools/tests/test_installers.sh
+	bash tools/tests/test_installers.sh

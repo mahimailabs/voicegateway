@@ -15,7 +15,7 @@ concurrency:
 env:
   IMAGE: ghcr.io/mahimailabs/voicegateway
   # Stable releases (no pre-release suffix) are also copied to Docker Hub. A name of its own, because
-  # mahimairaja/voicegateway is the Python collector that docker-compose.collector.yml pulls as latest.
+  # mahimairaja/voicegateway is the retired Python collector, which existing installs still pull as latest.
   DOCKERHUB_IMAGE: docker.io/mahimairaja/voicegateway-server
 
 permissions:
