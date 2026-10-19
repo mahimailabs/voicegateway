@@ -82,7 +82,7 @@ type createdInvitation struct {
 	Email        string    `json:"email"`
 	Role         string    `json:"role"`
 	ExpiresAt    time.Time `json:"expiresAt"`
-	Emailed      bool      `json:"emailed"`
+	Emailed      *bool     `json:"emailed"` // null on a repeat whose first send's outcome was lost
 	Link         *string   `json:"link"`
 }
 
@@ -266,7 +266,10 @@ func (h *Handlers) createOrganisationInvitation(w http.ResponseWriter, r *http.R
 		h.fail(w, r, op, id, err)
 		return
 	}
-	out := createdInvitation{InvitationID: c.Invitation.ID, Email: c.Invitation.Email, ExpiresAt: c.Invitation.ExpiresAt, Emailed: c.Emailed}
+	out := createdInvitation{InvitationID: c.Invitation.ID, Email: c.Invitation.Email, ExpiresAt: c.Invitation.ExpiresAt}
+	if !c.EmailUnknown {
+		out.Emailed = &c.Emailed
+	}
 	if c.Invitation.Role != nil {
 		out.Role = contractRole(*c.Invitation.Role)
 	}
@@ -277,7 +280,10 @@ func (h *Handlers) createOrganisationInvitation(w http.ResponseWriter, r *http.R
 	if c.Repeat {
 		status, outcome = http.StatusOK, "repeat"
 	}
-	if !c.Emailed && out.Link == nil {
+	switch {
+	case c.EmailUnknown:
+		outcome += ", email outcome unknown"
+	case !c.Emailed && out.Link == nil:
 		outcome += ", not emailed"
 	}
 	h.done(r, op, id, outcome)

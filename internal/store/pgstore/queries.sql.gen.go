@@ -579,8 +579,8 @@ func (q *Queries) HealCall(ctx context.Context, arg HealCallParams) error {
 }
 
 const insertInvitation = `-- name: InsertInvitation :one
-INSERT INTO invitations (kind, organisation_id, email, role, user_id, token_sha256, invited_by, idempotency_key, expires_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+INSERT INTO invitations (kind, organisation_id, email, role, user_id, token_sha256, invited_by, idempotency_key, expires_at, email_started_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 RETURNING id, created_at
 `
 
@@ -594,6 +594,7 @@ type InsertInvitationParams struct {
 	InvitedBy      pgtype.UUID
 	IdempotencyKey pgtype.Text
 	ExpiresAt      pgtype.Timestamptz
+	EmailStartedAt pgtype.Timestamptz
 }
 
 type InsertInvitationRow struct {
@@ -612,6 +613,7 @@ func (q *Queries) InsertInvitation(ctx context.Context, arg InsertInvitationPara
 		arg.InvitedBy,
 		arg.IdempotencyKey,
 		arg.ExpiresAt,
+		arg.EmailStartedAt,
 	)
 	var i InsertInvitationRow
 	err := row.Scan(&i.ID, &i.CreatedAt)
@@ -619,7 +621,7 @@ func (q *Queries) InsertInvitation(ctx context.Context, arg InsertInvitationPara
 }
 
 const invitationByIdempotencyKey = `-- name: InvitationByIdempotencyKey :one
-SELECT i.id, i.kind, i.email, i.role, i.created_at, i.expires_at, i.emailed_at, i.accepted_at, i.revoked_at, u.email AS invited_by_email
+SELECT i.id, i.kind, i.email, i.role, i.created_at, i.expires_at, i.emailed_at, i.accepted_at, i.revoked_at, u.email AS invited_by_email, i.email_started_at, i.email_failed_at
 FROM invitations i LEFT JOIN users u ON u.id = i.invited_by
 WHERE i.organisation_id = $1 AND i.idempotency_key = $2
 `
@@ -640,6 +642,8 @@ type InvitationByIdempotencyKeyRow struct {
 	AcceptedAt     pgtype.Timestamptz
 	RevokedAt      pgtype.Timestamptz
 	InvitedByEmail pgtype.Text
+	EmailStartedAt pgtype.Timestamptz
+	EmailFailedAt  pgtype.Timestamptz
 }
 
 func (q *Queries) InvitationByIdempotencyKey(ctx context.Context, arg InvitationByIdempotencyKeyParams) (InvitationByIdempotencyKeyRow, error) {
@@ -656,6 +660,8 @@ func (q *Queries) InvitationByIdempotencyKey(ctx context.Context, arg Invitation
 		&i.AcceptedAt,
 		&i.RevokedAt,
 		&i.InvitedByEmail,
+		&i.EmailStartedAt,
+		&i.EmailFailedAt,
 	)
 	return i, err
 }
@@ -901,7 +907,7 @@ func (q *Queries) ListCalls(ctx context.Context, arg ListCallsParams) ([]ListCal
 }
 
 const listInvitations = `-- name: ListInvitations :many
-SELECT i.id, i.kind, i.email, i.role, i.created_at, i.expires_at, i.emailed_at, i.accepted_at, i.revoked_at, u.email AS invited_by_email
+SELECT i.id, i.kind, i.email, i.role, i.created_at, i.expires_at, i.emailed_at, i.accepted_at, i.revoked_at, u.email AS invited_by_email, i.email_started_at, i.email_failed_at
 FROM invitations i LEFT JOIN users u ON u.id = i.invited_by
 WHERE i.organisation_id = $1
 ORDER BY i.created_at DESC, i.id
@@ -919,6 +925,8 @@ type ListInvitationsRow struct {
 	AcceptedAt     pgtype.Timestamptz
 	RevokedAt      pgtype.Timestamptz
 	InvitedByEmail pgtype.Text
+	EmailStartedAt pgtype.Timestamptz
+	EmailFailedAt  pgtype.Timestamptz
 }
 
 func (q *Queries) ListInvitations(ctx context.Context, organisationID string) ([]ListInvitationsRow, error) {
@@ -941,6 +949,8 @@ func (q *Queries) ListInvitations(ctx context.Context, organisationID string) ([
 			&i.AcceptedAt,
 			&i.RevokedAt,
 			&i.InvitedByEmail,
+			&i.EmailStartedAt,
+			&i.EmailFailedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -1115,6 +1125,16 @@ UPDATE invitations SET emailed_at = now() WHERE id = $1
 
 func (q *Queries) MarkInvitationEmailed(ctx context.Context, id pgtype.UUID) error {
 	_, err := q.db.Exec(ctx, markInvitationEmailed, id)
+	return err
+}
+
+const markInvitationNotEmailed = `-- name: MarkInvitationNotEmailed :exec
+UPDATE invitations SET email_failed_at = now() WHERE id = $1 AND emailed_at IS NULL
+`
+
+// The send failed. A recorded success is never overwritten.
+func (q *Queries) MarkInvitationNotEmailed(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, markInvitationNotEmailed, id)
 	return err
 }
 

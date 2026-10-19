@@ -1507,7 +1507,7 @@ paths:
         principal: instance
         minimumRole: Instance
         scope: instance
-      description: For the instance token only (phase 06e). Makes a phase 06d invitation with no inviting user. The Idempotency-Key header is required; a repeat with the same key answers 200 with the first invitation, link null, nothing revoked and nothing sent. The same key with another email or role is invalid_request. A new key for an email with an open invitation revokes the open link and sends or returns a new one, which is how a caller retries a failed send. With SMTP set, link is always null and emailed says whether the send succeeded. An email whose account is already a member is 409 already_member.
+      description: For the instance token only (phase 06e). Makes a phase 06d invitation with no inviting user. The Idempotency-Key header is required; a repeat with the same key answers 200 with the first invitation, link null, nothing revoked and nothing sent. The same key with another email or role is invalid_request. A repeat that arrives while the first call is still sending waits for that send's outcome. A new key for an email with an open invitation revokes the open link and sends or returns a new one, which is how a caller retries a failed send; resend only on emailed false, never on null. With SMTP set, link is always null and emailed says whether the send succeeded, or is null when SMTP acceptance is uncertain or a prior send's outcome was lost. An email whose account is already a member is 409 already_member.
       parameters:
         - $ref: "#/components/parameters/InstanceOrganisationId"
         - $ref: "#/components/parameters/IdempotencyKey"
@@ -4891,9 +4891,10 @@ components:
           description: When the link stops working, 7 days after it was made.
           x-source: { kind: configuration, file: migrations/postgres/00009_invitations.sql, pointer: null, detail: "invitations.expires_at." }
         emailed:
-          type: boolean
-          description: True when the email was sent; false without SMTP, or when the send failed. On a repeat, as it was.
-          x-source: { kind: computed, file: internal/invite/invite.go, pointer: null, detail: "The SMTP send's outcome, from invitations.emailed_at on a repeat." }
+          type: [ boolean, "null" ]
+          description: True when the email was sent; false without SMTP, or when the send failed. On a repeat, as it was; a repeat during the first call's send waits for its outcome.
+          x-null-reason: SMTP acceptance is uncertain, or a prior send began but its outcome was never recorded. The email may have been sent; a caller that wants no duplicate must not resend on null.
+          x-source: { kind: computed, file: internal/invite/invite.go, pointer: null, detail: "The SMTP send's outcome; on a repeat, from invitations.emailed_at, email_failed_at and email_started_at." }
         link:
           type: [ string, "null" ]
           format: uri
