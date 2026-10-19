@@ -349,7 +349,7 @@ func TestInvitationEmailedWhenSMTPIsSet(t *testing.T) {
 	if status != http.StatusCreated || !c.Emailed || c.Link != nil {
 		t.Errorf("createOrganisationInvitation with SMTP = %d %+v, want 201, emailed true and link null", status, c)
 	}
-	if texts := mp.messages(t, "first@example.com"); len(texts) != 1 || !mailedLink.MatchString(texts[0]) || !strings.Contains(texts[0], "acme") {
+	if texts := mp.messages(t, "first@example.com"); len(texts) != 1 || !mailedLink.MatchString(texts[0]) || !strings.Contains(texts[0], "You are invited to join Acme on VoiceGateway") {
 		t.Errorf("mailpit holds %d messages for the invited address, want 1 with the link", len(texts))
 	}
 
