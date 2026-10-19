@@ -1351,27 +1351,41 @@ func (q *Queries) OrganisationSummary(ctx context.Context, id string) (Organisat
 }
 
 const organisationUsage = `-- name: OrganisationUsage :one
+WITH period_calls AS (
+    SELECT started_at, end_state,
+        CASE end_state WHEN 'observed' THEN ended_at WHEN 'inferred' THEN last_activity_at END AS effective_end
+    FROM calls WHERE organisation_id = $1
+), classified AS (
+    SELECT started_at, end_state, effective_end,
+        started_at IS NOT NULL AND effective_end >= started_at
+            AND effective_end >= $2::timestamptz AND effective_end < $3::timestamptz AS measured,
+        started_at >= $2::timestamptz AND started_at < $3::timestamptz AS started_in_period
+    FROM period_calls
+)
 SELECT
-    COALESCE(floor(sum(extract(epoch FROM greatest((CASE end_state WHEN 'observed' THEN ended_at WHEN 'inferred' THEN last_activity_at END) - started_at, interval '0')))
-        FILTER (WHERE (CASE end_state WHEN 'observed' THEN ended_at WHEN 'inferred' THEN last_activity_at END) >= $1::timestamptz AND (CASE end_state WHEN 'observed' THEN ended_at WHEN 'inferred' THEN last_activity_at END) < $2::timestamptz AND started_at IS NOT NULL)), 0)::bigint AS call_seconds,
-    count(*) FILTER (WHERE (CASE end_state WHEN 'observed' THEN ended_at WHEN 'inferred' THEN last_activity_at END) >= $1::timestamptz AND (CASE end_state WHEN 'observed' THEN ended_at WHEN 'inferred' THEN last_activity_at END) < $2::timestamptz AND started_at IS NOT NULL) AS calls,
-    count(*) FILTER (WHERE (CASE end_state WHEN 'observed' THEN ended_at WHEN 'inferred' THEN last_activity_at END) >= $1::timestamptz AND (CASE end_state WHEN 'observed' THEN ended_at WHEN 'inferred' THEN last_activity_at END) < $2::timestamptz AND started_at IS NOT NULL AND end_state = 'inferred') AS inferred_calls,
-    count(*) FILTER (WHERE end_state = 'open' AND started_at >= $1::timestamptz AND started_at < $2::timestamptz) AS unended_calls
-FROM calls
-WHERE organisation_id = $3
+    COALESCE(floor(sum(extract(epoch FROM effective_end - started_at)) FILTER (WHERE measured)), 0)::bigint AS call_seconds,
+    count(*) FILTER (WHERE measured) AS calls,
+    count(*) FILTER (WHERE measured AND end_state = 'inferred') AS inferred_calls,
+    COALESCE(floor(sum(extract(epoch FROM effective_end - started_at)) FILTER (WHERE measured AND end_state = 'inferred')), 0)::bigint AS inferred_call_seconds,
+    count(*) FILTER (WHERE end_state = 'open' AND started_in_period) AS unended_calls,
+    count(*) FILTER (WHERE end_state IN ('observed', 'inferred') AND started_in_period
+        AND (effective_end IS NULL OR effective_end < started_at)) AS unmeasured_calls
+FROM classified
 `
 
 type OrganisationUsageParams struct {
+	OrganisationID string
 	FromAt         pgtype.Timestamptz
 	ToAt           pgtype.Timestamptz
-	OrganisationID string
 }
 
 type OrganisationUsageRow struct {
-	CallSeconds   int64
-	Calls         int64
-	InferredCalls int64
-	UnendedCalls  int64
+	CallSeconds         int64
+	Calls               int64
+	InferredCalls       int64
+	InferredCallSeconds int64
+	UnendedCalls        int64
+	UnmeasuredCalls     int64
 }
 
 // An organisation's profiled call time in [from, to) (phase 06e, decision 0029). An observed call
@@ -1380,13 +1394,15 @@ type OrganisationUsageRow struct {
 // is rounded down to whole seconds once, never per call. A call with no end yet is counted apart
 // and never summed.
 func (q *Queries) OrganisationUsage(ctx context.Context, arg OrganisationUsageParams) (OrganisationUsageRow, error) {
-	row := q.db.QueryRow(ctx, organisationUsage, arg.FromAt, arg.ToAt, arg.OrganisationID)
+	row := q.db.QueryRow(ctx, organisationUsage, arg.OrganisationID, arg.FromAt, arg.ToAt)
 	var i OrganisationUsageRow
 	err := row.Scan(
 		&i.CallSeconds,
 		&i.Calls,
 		&i.InferredCalls,
+		&i.InferredCallSeconds,
 		&i.UnendedCalls,
+		&i.UnmeasuredCalls,
 	)
 	return i, err
 }

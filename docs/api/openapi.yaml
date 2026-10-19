@@ -1510,7 +1510,7 @@ paths:
         principal: instance
         minimumRole: Instance
         scope: instance
-      description: For the instance token only (phase 06e, decision 0029). A call counts in the period its end falls in, when its start is known; an observed call ends at its end, an inferred one at its last activity, a lower bound. Exact durations are summed, then rounded down to whole seconds once. Calls that started in the period with no end yet are counted in unendedCalls and never summed. Turning seconds into billed minutes is the caller's job. A missing or bad from or to, to not after from, or a span over 62 days is invalid_request; an unknown organisation is not_found.
+      description: For the instance token only (phase 06e, decision 0029). A call counts in the period its end falls in, when its start is known; an observed call ends at its end, an inferred one at its last activity, a lower bound. Exact durations are summed, then rounded down to whole seconds once. Calls that started in the period with no end yet are counted in unendedCalls and never summed. Closed calls with a null or negative duration are excluded from the measured totals and counted as unmeasuredCalls by start period. Inferred durations are separately summed in inferredCallSeconds. Turning seconds into billed minutes is the caller's job. A missing or bad from or to, to not after from, or a span over 62 days is invalid_request; an unknown organisation is not_found.
       parameters:
         - $ref: "#/components/parameters/InstanceOrganisationId"
         - name: from
@@ -4857,7 +4857,7 @@ components:
     InstanceUsage:
       type: object
       additionalProperties: false
-      required: [ organisationId, from, to, callSeconds, calls, inferredCalls, unendedCalls ]
+      required: [ organisationId, from, to, callSeconds, calls, inferredCalls, inferredCallSeconds, unendedCalls, unmeasuredCalls ]
       properties:
         organisationId:
           type: string
@@ -4879,14 +4879,14 @@ components:
           minimum: 0
           x-unit: seconds
           x-configuration: true
-          description: The calls counted in calls, each from its start to its end (an inferred call's end is its last activity), summed exactly and then rounded down to whole seconds once, never per call. Calls with no end are not in it. A sum of stored rows at this read, so 0 is a true zero.
+          description: The calls counted in calls, each from its start to its end (an inferred call's end is its last activity), summed exactly and then rounded down to whole seconds once, never per call. Calls with missing or negative durations are excluded. A sum of stored rows at this read, so 0 is a true zero.
           x-source: { kind: computed, file: migrations/postgres/00002_calls.sql, pointer: null, detail: "Sum of the end (ended_at when observed, last_activity_at when inferred) minus started_at over the calls counted in calls, floored once." }
         calls:
           type: integer
           minimum: 0
           x-unit: count
           x-configuration: true
-          description: Calls whose end fell in the period, with a known start. An inferred call's end is its last activity.
+          description: Calls whose end fell in the period, with a known start and an end at or after that start. An inferred call's end is its last activity.
           x-source: { kind: computed, file: migrations/postgres/00002_calls.sql, pointer: null, detail: "calls rows with end_state observed and ended_at in the period, or inferred and last_activity_at in the period, and started_at known." }
         inferredCalls:
           type: integer
@@ -4895,12 +4895,26 @@ components:
           x-configuration: true
           description: Of calls, those whose end was inferred from their last activity rather than observed.
           x-source: { kind: computed, file: migrations/postgres/00002_calls.sql, pointer: null, detail: "The calls counted in calls with end_state inferred." }
+        inferredCallSeconds:
+          type: integer
+          minimum: 0
+          x-unit: seconds
+          x-configuration: true
+          description: Exact durations of measured inferred calls summed and floored once, independently of callSeconds, so their contribution can be labelled as inferred.
+          x-source: { kind: computed, file: internal/store/pgstore/queries.sql, pointer: null, detail: "Sum effective end minus start for measured inferred calls, floored once." }
+        unmeasuredCalls:
+          type: integer
+          minimum: 0
+          x-unit: count
+          x-configuration: true
+          description: Closed calls that started in the period but have a null effective end or an effective end before their start. Excluded from calls and callSeconds; unknown durations are not converted to zero.
+          x-source: { kind: computed, file: internal/store/pgstore/queries.sql, pointer: null, detail: "Closed calls with null or invalid effective end, grouped by started_at." }
         unendedCalls:
           type: integer
           minimum: 0
           x-unit: count
           x-configuration: true
-          description: Calls that started in the period and have no end yet; their time is unknown, so it is not in callSeconds.
+          description: Open calls that started in the period; their time is unknown, so it is not in callSeconds. Open calls started before the period are excluded.
           x-source: { kind: computed, file: migrations/postgres/00002_calls.sql, pointer: null, detail: "calls rows with end_state open and started_at in the period." }
     CreatedPasswordReset:
       type: object

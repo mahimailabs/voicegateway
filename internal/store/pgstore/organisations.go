@@ -51,5 +51,5 @@ func (s *Store) OrganisationUsage(ctx context.Context, id string, from, to time.
 	if err != nil {
 		return store.Usage{}, fmt.Errorf("organisation usage: %w", err)
 	}
-	return store.Usage{CallSeconds: r.CallSeconds, Calls: r.Calls, InferredCalls: r.InferredCalls, UnendedCalls: r.UnendedCalls}, nil
+	return store.Usage{CallSeconds: r.CallSeconds, Calls: r.Calls, InferredCalls: r.InferredCalls, UnendedCalls: r.UnendedCalls, UnmeasuredCalls: r.UnmeasuredCalls, InferredCallSeconds: r.InferredCallSeconds}, nil
 }

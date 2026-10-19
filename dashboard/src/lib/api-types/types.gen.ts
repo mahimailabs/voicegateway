@@ -1483,11 +1483,11 @@ export type InstanceUsage = {
      */
     to: string;
     /**
-     * The calls counted in calls, each from its start to its end (an inferred call's end is its last activity), summed exactly and then rounded down to whole seconds once, never per call. Calls with no end are not in it. A sum of stored rows at this read, so 0 is a true zero.
+     * The calls counted in calls, each from its start to its end (an inferred call's end is its last activity), summed exactly and then rounded down to whole seconds once, never per call. Calls with missing or negative durations are excluded. A sum of stored rows at this read, so 0 is a true zero.
      */
     callSeconds: number;
     /**
-     * Calls whose end fell in the period, with a known start. An inferred call's end is its last activity.
+     * Calls whose end fell in the period, with a known start and an end at or after that start. An inferred call's end is its last activity.
      */
     calls: number;
     /**
@@ -1495,7 +1495,15 @@ export type InstanceUsage = {
      */
     inferredCalls: number;
     /**
-     * Calls that started in the period and have no end yet; their time is unknown, so it is not in callSeconds.
+     * Exact durations of measured inferred calls summed and floored once, independently of callSeconds, so their contribution can be labelled as inferred.
+     */
+    inferredCallSeconds: number;
+    /**
+     * Closed calls that started in the period but have a null effective end or an effective end before their start. Excluded from calls and callSeconds; unknown durations are not converted to zero.
+     */
+    unmeasuredCalls: number;
+    /**
+     * Open calls that started in the period; their time is unknown, so it is not in callSeconds. Open calls started before the period are excluded.
      */
     unendedCalls: number;
 };

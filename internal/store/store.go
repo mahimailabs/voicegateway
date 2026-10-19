@@ -433,7 +433,7 @@ type Organisation struct {
 // summed and then floored to whole seconds; and apart from them the calls that started in it and
 // are still open, whose time is unknown and never summed.
 type Usage struct {
-	CallSeconds, Calls, InferredCalls, UnendedCalls int64
+	CallSeconds, Calls, InferredCalls, InferredCallSeconds, UnendedCalls, UnmeasuredCalls int64
 }
 
 // OpenInvitation is an open, unexpired link as the accept screen reads it.

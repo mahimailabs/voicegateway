@@ -88,13 +88,15 @@ type createdInvitation struct {
 
 // usage is the contract's InstanceUsage.
 type usage struct {
-	OrganisationID string    `json:"organisationId"`
-	From           time.Time `json:"from"`
-	To             time.Time `json:"to"`
-	CallSeconds    int64     `json:"callSeconds"`
-	Calls          int64     `json:"calls"`
-	InferredCalls  int64     `json:"inferredCalls"`
-	UnendedCalls   int64     `json:"unendedCalls"`
+	OrganisationID      string    `json:"organisationId"`
+	From                time.Time `json:"from"`
+	To                  time.Time `json:"to"`
+	CallSeconds         int64     `json:"callSeconds"`
+	Calls               int64     `json:"calls"`
+	InferredCalls       int64     `json:"inferredCalls"`
+	UnendedCalls        int64     `json:"unendedCalls"`
+	UnmeasuredCalls     int64     `json:"unmeasuredCalls"`
+	InferredCallSeconds int64     `json:"inferredCallSeconds"`
 }
 
 func toOrganisation(o store.Organisation) organisation {
@@ -312,6 +314,6 @@ func (h *Handlers) getOrganisationUsage(w http.ResponseWriter, r *http.Request) 
 	h.done(r, op, id, "read")
 	api.WriteJSON(w, http.StatusOK, usage{
 		OrganisationID: id, From: from.UTC(), To: to.UTC(),
-		CallSeconds: u.CallSeconds, Calls: u.Calls, InferredCalls: u.InferredCalls, UnendedCalls: u.UnendedCalls,
+		CallSeconds: u.CallSeconds, Calls: u.Calls, InferredCalls: u.InferredCalls, UnendedCalls: u.UnendedCalls, UnmeasuredCalls: u.UnmeasuredCalls, InferredCallSeconds: u.InferredCallSeconds,
 	})
 }

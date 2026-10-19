@@ -16,6 +16,7 @@ WORKDIR /src
 COPY go.mod go.sum ./
 COPY cmd ./cmd
 COPY internal ./internal
+COPY ee ./ee
 COPY migrations ./migrations
 # Cache mounts keep downloaded modules and build results between builds without baking them into a
 # layer, so a source change rebuilds only what changed.

@@ -82,9 +82,9 @@ func (w *inviteWeb) instanceInvite(org, email, role, key string) (int, instanceI
 }
 
 type instanceUsage struct {
-	OrganisationID                                  string
-	From, To                                        time.Time
-	CallSeconds, Calls, InferredCalls, UnendedCalls int64
+	OrganisationID                                                                        string
+	From, To                                                                              time.Time
+	CallSeconds, Calls, InferredCalls, InferredCallSeconds, UnendedCalls, UnmeasuredCalls int64
 }
 
 // usage calls getOrganisationUsage with the instance token for [from, to).
@@ -387,14 +387,20 @@ func TestUsageCountsEndedCallsOnly(t *testing.T) {
 	f.addProjectCall("acme")
 	f.addProjectCall("other")
 	at := func(d time.Duration) time.Time { return from.Add(10*24*time.Hour + d) }
-	// Durations of 90.4 s and 29.8 s sum to 120.2 s, 120 whole seconds; rounding each call first
-	// would give 119. The inferred call ends at its last activity (decision 0029).
+	// Durations of 90.6 s and 29.6 s sum to 120.2 s, 120 whole seconds; rounding each call first
+	// gives 119 when floored or 121 when rounded to nearest. The inferred call ends at its last activity (decision 0029).
 	for _, c := range []struct {
 		org, sid, state string
 		start, end      *time.Time
 	}{
-		{"acme", "RM_observed", "observed", new(at(0)), new(at(90400 * time.Millisecond))},
-		{"acme", "RM_inferred", "inferred", new(at(time.Hour)), new(at(time.Hour + 29800*time.Millisecond))},
+		{"acme", "RM_observed", "observed", new(at(0)), new(at(90600 * time.Millisecond))},
+		{"acme", "RM_inferred", "inferred", new(at(time.Hour)), new(at(time.Hour + 29600*time.Millisecond))},
+		{"acme", "RM_missing_observed_end", "observed", new(at(4 * time.Hour)), nil},
+		{"acme", "RM_missing_inferred_end", "inferred", new(at(5 * time.Hour)), nil},
+		{"acme", "RM_negative_observed", "observed", new(at(6 * time.Hour)), new(at(6*time.Hour - time.Second))},
+		{"acme", "RM_negative_inferred", "inferred", new(at(7 * time.Hour)), new(at(7*time.Hour - time.Second))},
+		{"acme", "RM_older_unmeasured", "observed", new(from.Add(-time.Hour)), nil},
+		{"acme", "RM_older_open", "open", new(from.Add(-time.Hour)), nil},
 		{"acme", "RM_no_start", "observed", nil, new(at(3 * time.Hour))},
 		{"acme", "RM_after", "observed", new(to.Add(-time.Minute)), new(to.Add(time.Minute))},
 		{"acme", "RM_open", "open", new(at(2 * time.Hour)), nil},
@@ -409,8 +415,8 @@ func TestUsageCountsEndedCallsOnly(t *testing.T) {
 	// addProjectCall's own calls started now, with no end: open, and after the period.
 	status, u := w.usage("acme", from, to)
 	if status != http.StatusOK || u.OrganisationID != "acme" || !u.From.Equal(from) || !u.To.Equal(to) ||
-		u.CallSeconds != 120 || u.Calls != 2 || u.InferredCalls != 1 || u.UnendedCalls != 1 {
-		t.Errorf("getOrganisationUsage = %d %+v, want callSeconds 120, calls 2, inferredCalls 1, unendedCalls 1", status, u)
+		u.CallSeconds != 120 || u.Calls != 2 || u.InferredCalls != 1 || u.InferredCallSeconds != 29 || u.UnendedCalls != 1 || u.UnmeasuredCalls != 4 {
+		t.Errorf("getOrganisationUsage = %d %+v, want callSeconds 120, calls 2, inferredCalls 1, inferredCallSeconds 29, unendedCalls 1, unmeasuredCalls 4", status, u)
 	}
 	if status, u := w.usage("acme", to, to.Add(24*time.Hour)); status != http.StatusOK || u.CallSeconds != 120 || u.Calls != 1 || u.UnendedCalls != 0 {
 		t.Errorf("the next period = %d %+v, want the call that ended in it, 120 s", status, u)
