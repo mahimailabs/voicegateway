@@ -2,6 +2,8 @@ package app
 
 import (
 	"context"
+	"net"
+	"strings"
 	"testing"
 
 	"github.com/mahimailabs/voicegateway/internal/config"
@@ -30,5 +32,40 @@ func TestAddProjectChecksLikeTheAPI(t *testing.T) {
 		if _, err := AddProject(context.Background(), config.Config{}, tt.in); err == nil || err.Error() != tt.want {
 			t.Errorf("AddProject(%+v) = %v, want %q", tt.in, err, tt.want)
 		}
+	}
+}
+
+// voicegateway project add proves the secret with the same LiveKit read as createProject, before it
+// opens the store; --skip-verify leaves the read out. A closed loopback port stands in for a LiveKit
+// server that is not reachable yet.
+func TestAddProjectVerifiesUnlessSkipped(t *testing.T) {
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	closed := "http://" + l.Addr().String()
+	_ = l.Close()
+	in := ProjectInput{Name: "Production", LiveKitURL: closed, LiveKitAPIKey: "APIkey", LiveKitAPISecret: "made-up-for-the-test"}
+	for _, tt := range []struct {
+		name string
+		skip bool
+		want string
+	}{
+		{"verified", false, "could not reach this LiveKit URL"},
+		{"skipped", true, "seal"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			in.SkipVerify = tt.skip
+			_, err := AddProject(context.Background(), config.Config{}, in)
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("AddProject = %v, want an error naming %q", err, tt.want)
+			}
+			if !tt.skip && !strings.Contains(err.Error(), "--skip-verify") {
+				t.Errorf("the error %q does not name --skip-verify", err)
+			}
+			if strings.Contains(err.Error(), in.LiveKitAPISecret) {
+				t.Error("the error holds the secret")
+			}
+		})
 	}
 }

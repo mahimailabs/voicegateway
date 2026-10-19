@@ -1505,35 +1505,6 @@ func (q *Queries) ProjectByID(ctx context.Context, arg ProjectByIDParams) (Proje
 	return i, err
 }
 
-const projectByLiveKitKey = `-- name: ProjectByLiveKitKey :one
-SELECT organisation_id, id, name, livekit_url, livekit_api_key, created_at
-FROM projects
-WHERE livekit_api_key = $1
-`
-
-type ProjectByLiveKitKeyRow struct {
-	OrganisationID string
-	ID             string
-	Name           string
-	LivekitUrl     string
-	LivekitApiKey  string
-	CreatedAt      pgtype.Timestamptz
-}
-
-func (q *Queries) ProjectByLiveKitKey(ctx context.Context, livekitApiKey string) (ProjectByLiveKitKeyRow, error) {
-	row := q.db.QueryRow(ctx, projectByLiveKitKey, livekitApiKey)
-	var i ProjectByLiveKitKeyRow
-	err := row.Scan(
-		&i.OrganisationID,
-		&i.ID,
-		&i.Name,
-		&i.LivekitUrl,
-		&i.LivekitApiKey,
-		&i.CreatedAt,
-	)
-	return i, err
-}
-
 const projectConnected = `-- name: ProjectConnected :one
 SELECT created_at, now()::timestamptz AS now FROM projects WHERE organisation_id = $1 AND id = $2
 `

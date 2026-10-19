@@ -31,6 +31,9 @@ type API struct {
 	// NewProjects creates projects, their LiveKit secrets sealed: the store voicegateway project add
 	// writes through.
 	NewProjects ProjectCreator
+	// VerifyLiveKit proves a new project's LiveKit secret before NewProjects stores it; without it
+	// createProject is off.
+	VerifyLiveKit LiveKitVerifier
 	// LinkBase is an invitation link's base for a request: VOICEGATEWAY_PUBLIC_URL, or the
 	// request's scheme and Host (auth.Service.LinkBase).
 	LinkBase func(r *http.Request) string

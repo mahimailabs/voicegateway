@@ -118,6 +118,7 @@ func projectCommand() *cobra.Command {
 	f.StringVar(&in.OrganisationID, "org", "default", "organisation id")
 	f.StringVar(&in.LiveKitURL, "livekit-url", os.Getenv("LIVEKIT_URL"), "LiveKit server URL (default: LIVEKIT_URL)")
 	f.StringVar(&in.LiveKitAPIKey, "livekit-api-key", os.Getenv("LIVEKIT_API_KEY"), "LiveKit API key (default: LIVEKIT_API_KEY)")
+	f.BoolVar(&in.SkipVerify, "skip-verify", false, "store the project without first checking its key and secret against LiveKit, for a server not reachable yet")
 
 	cmd := &cobra.Command{Use: "project", Short: "Manage LiveKit projects"}
 	cmd.AddCommand(add, workersCommand())

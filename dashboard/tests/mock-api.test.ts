@@ -635,6 +635,16 @@ describe("createProject", () => {
     expect(e.code).toBe("project_exists")
   })
 
+  test("a LiveKit URL that answers nothing is 422 livekit_unreachable, and nothing is added", async () => {
+    const res = await post({ ...fields, name: "Nowhere", livekitUrl: "wss://lk.nowhere.invalid", livekitApiKey: "APInowhere" })
+    expect(res.status).toBe(422)
+    const e = await res.json()
+    expect(valid("Error", e)).toBe("")
+    expect(e.code).toBe("livekit_unreachable")
+    const ws = await (await fetch("http://console.test/api/v1/workspaces")).json()
+    expect(ws.items[0].projects.map((p: { id: string }) => p.id)).not.toContain("nowhere")
+  })
+
   test.each([
     ["a missing secret", { ...fields, name: "Other", livekitApiSecret: "" }],
     ["a URL with another scheme", { ...fields, name: "Other", livekitUrl: "ftp://x.example.com" }],

@@ -55,9 +55,7 @@ func Migrate(ctx context.Context, pool *pgxpool.Pool) (int, error) {
 // is written.
 type NewProject = store.NewProject
 
-// CreateProject stores a project with its LiveKit secret sealed. A LiveKit API key already used by
-// another project is refused with store.ErrLiveKitKeyInUse naming that project, and nothing is
-// written.
+// CreateProject stores a project with its LiveKit secret sealed in its own scope.
 func (s *Store) CreateProject(ctx context.Context, p NewProject) (store.Project, error) {
 	ok, err := s.q.OrganisationExists(ctx, p.OrganisationID)
 	if err != nil {
@@ -65,11 +63,6 @@ func (s *Store) CreateProject(ctx context.Context, p NewProject) (store.Project,
 	}
 	if !ok {
 		return store.Project{}, fmt.Errorf("organisation %s: %w", p.OrganisationID, store.ErrNotFound)
-	}
-	if owner, err := s.ProjectByLiveKitKey(ctx, p.LiveKitAPIKey); err == nil {
-		return store.Project{}, fmt.Errorf("%w: project %s/%s", store.ErrLiveKitKeyInUse, owner.OrganisationID, owner.ID)
-	} else if !errors.Is(err, store.ErrNotFound) {
-		return store.Project{}, err
 	}
 
 	sealed, err := s.sealer.Seal([]byte(p.LiveKitAPISecret), sealContext(p.OrganisationID, p.ID))
@@ -90,26 +83,8 @@ func (s *Store) CreateProject(ctx context.Context, p NewProject) (store.Project,
 			if pgErr.ConstraintName == "projects_pkey" {
 				return store.Project{}, fmt.Errorf("project %s/%s: %w", p.OrganisationID, p.ID, store.ErrProjectExists)
 			}
-			// Another writer took the key between the check and the insert.
-			return store.Project{}, fmt.Errorf("create project %s/%s: %w", p.OrganisationID, p.ID, store.ErrLiveKitKeyInUse)
 		}
 		return store.Project{}, fmt.Errorf("create project %s/%s: %w", p.OrganisationID, p.ID, err)
-	}
-	return store.Project{
-		OrganisationID: row.OrganisationID, ID: row.ID, Name: row.Name,
-		LiveKitURL: row.LivekitUrl, LiveKitAPIKey: row.LivekitApiKey, CreatedAt: row.CreatedAt.Time,
-	}, nil
-}
-
-// ProjectByLiveKitKey finds the project that owns a LiveKit API key, the way ingest attributes an
-// event.
-func (s *Store) ProjectByLiveKitKey(ctx context.Context, key string) (store.Project, error) {
-	row, err := s.q.ProjectByLiveKitKey(ctx, key)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return store.Project{}, store.ErrNotFound
-	}
-	if err != nil {
-		return store.Project{}, fmt.Errorf("project by LiveKit key: %w", err)
 	}
 	return store.Project{
 		OrganisationID: row.OrganisationID, ID: row.ID, Name: row.Name,

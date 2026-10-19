@@ -14,7 +14,8 @@ import type { WorkspaceProject } from "@/lib/api-types"
 const openNewProject = (orgId: string, project: WorkspaceProject) => window.location.assign(`/org/${orgId}/project/${project.id}/overview`)
 
 // Adds a LiveKit project to an organisation through createProject (phase 06f): its name, URL, API key
-// and secret. web checks the fields as voicegateway project add does and seals the secret; the form
+// and secret. web checks the fields as voicegateway project add does, checks connectivity with one
+// LiveKit read (a 422 when it does not verify or the URL gives no answer) and seals it; the form
 // holds the secret only until it is sent, and clears it after every submit. Admins only: callers show
 // it to an Admin of the organisation.
 export function AddProjectForm({ orgId, onCreated = (p) => openNewProject(orgId, p) }: { orgId: string; onCreated?: (project: WorkspaceProject) => void }) {
@@ -60,7 +61,7 @@ export function AddProjectForm({ orgId, onCreated = (p) => openNewProject(orgId,
             <Input id="new-project-secret" type="password" value={secret} onChange={(e) => setSecret(e.target.value)} autoComplete="new-password" />
           </Field>
         </div>
-        <FieldDescription>The secret is encrypted on the server and never shown again. Each project needs its own LiveKit API key.</FieldDescription>
+        <FieldDescription>VoiceGateway checks the key and secret with LiveKit, then encrypts the secret and never shows it again.</FieldDescription>
         {problem && <FieldError>{problem}</FieldError>}
         <Button type="submit" disabled={!ready}>
           {create.isPending ? <Spinner /> : <Plus />} Add project

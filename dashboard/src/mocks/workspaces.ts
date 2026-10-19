@@ -14,12 +14,12 @@ const slug = (s: string) =>
 const project = (name: string) => ({ id: slug(name), name })
 
 // Projects added through the mock's createProject, kept in this browser so the page load that opens a
-// new project still finds it. Only project metadata and a key fingerprint are kept; credentials are never stored.
-type Added = { orgId: string; id: string; name: string; keyFingerprint: string }
+// new project still finds it. Only project metadata is kept; credentials are never stored.
+type Added = { orgId: string; id: string; name: string }
 const ADDED = "vg.mock-projects"
 const added = (): Added[] => {
   const saved = readLocal(ADDED)
-  return Array.isArray(saved) ? saved.filter((a): a is Added => typeof a?.orgId === "string" && typeof a?.id === "string" && typeof a?.name === "string" && typeof a?.keyFingerprint === "string") : []
+  return Array.isArray(saved) ? saved.filter((a): a is Added => typeof a?.orgId === "string" && typeof a?.id === "string" && typeof a?.name === "string") : []
 }
 
 export const workspaces = (): Workspaces => ({
@@ -30,14 +30,10 @@ export const workspaces = (): Workspaces => ({
 export const knownProject = (orgId: unknown, projectId: unknown) => workspaces().items.some((o) => o.id === orgId && o.projects.some((p) => p.id === projectId))
 export const knownOrg = (orgId: unknown) => workspaces().items.some((o) => o.id === orgId)
 
-// createProject as web answers it: the id is the name's slug, a taken id or LiveKit key is refused.
-export async function addProject(orgId: string, name: string, livekitApiKey: string): Promise<WorkspaceProject | "project_exists" | "livekit_key_in_use"> {
-  // Web Crypto avoids persisting a credential just to reproduce the API's uniqueness check.
-  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(livekitApiKey))
-  const keyFingerprint = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("")
+// createProject as web answers it: the id is the name's slug, a taken project id is refused.
+export async function addProject(orgId: string, name: string, _livekitApiKey: string): Promise<WorkspaceProject | "project_exists"> {
   const p = project(name.trim())
   if (knownProject(orgId, p.id)) return "project_exists"
-  if (added().some((a) => a.keyFingerprint === keyFingerprint)) return "livekit_key_in_use"
-  writeLocal(ADDED, [...added(), { orgId, ...p, keyFingerprint }])
+  writeLocal(ADDED, [...added(), { orgId, ...p }])
   return p
 }
