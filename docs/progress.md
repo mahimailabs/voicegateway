@@ -436,3 +436,10 @@ Local make go-test go-lint passed; Docker-dependent tests require CI. The Cloud 
 ### 2026-10-18: Phase 0, old Python release retired
 
 The Python runtime (src/), its Alembic migrations, packaging, examples, benchmarks, Railway and Codecov config, the root docker-compose.yml, the legacy contributor guides, four specs for the old console and the six workflows that built, tested and published it are removed, as are the vg-* Claude commands that drove that code. The Go binary, deploy/, the Makefile and the Go, Dashboard, Site and Docker workflows read none of them. The public installers stay at the root (install.sh, collector.sh, docker-compose.collector.yml, docker-compose.autoupdate.yml) because voicegateway.dev serves the scripts; their shell tests moved to tools/tests/. Open: the installers still install the old Python collector.
+
+### 2026-10-19: a shared instance fails closed without the address guard
+
+`config.Load` now refuses `VOICEGATEWAY_INSTANCE_TOKEN` without `VOICEGATEWAY_WORKER_ENDPOINTS_PUBLIC_ONLY=true`, naming both variables, so web, worker, migrate and every CLI command on a misconfigured shared instance exit with a configuration error instead of reading hosted projects unguarded (the #420 follow-up: removing the Cloud project-creation gate left nothing tying web's acceptance of projects to the worker's guard).
+- **Signal:** the instance token. It is the only setting that marks a shared instance (decision 0028: hosted workspaces are organisations created through the instance API), and `deploy/compose.yaml` passes it, like the guard flag, through the shared `x-voicegateway-env` block, so every role sees both. There is no Cloud overlay in this repository; a Cloud deployment that gives the token to web only still fails closed on web, and must set both on the worker for the instance API's organisations to be read at all.
+- A self-hosted install without the token starts with either value, as before. An unparseable flag is reported once, as itself.
+- Test: `TestSharedInstanceNeedsPublicOnly` (shared with the flag unset or false is refused; shared with true, and self-hosted with any value, start).

@@ -110,3 +110,55 @@ func TestRedact(t *testing.T) {
 		})
 	}
 }
+
+// A shared instance (the instance token is set) refuses to start without the worker address guard,
+// in every role; a self-hosted instance starts with either value.
+func TestSharedInstanceNeedsPublicOnly(t *testing.T) {
+	const token = "aW5zdGFuY2UtdG9rZW4tZm9yLXRoZS10ZXN0cy0wMDA="
+	tests := []struct {
+		name       string
+		token      string
+		publicOnly string
+		wantErr    bool
+	}{
+		{"shared, public-only unset", token, "", true},
+		{"shared, public-only false", token, "false", true},
+		{"shared, public-only true", token, "true", false},
+		{"self-hosted, public-only unset", "", "", false},
+		{"self-hosted, public-only false", "", "false", false},
+		{"self-hosted, public-only true", "", "true", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c, err := Load(env(map[string]string{
+				"VOICEGATEWAY_INSTANCE_TOKEN":               tt.token,
+				"VOICEGATEWAY_WORKER_ENDPOINTS_PUBLIC_ONLY": tt.publicOnly,
+			}))
+			if !tt.wantErr {
+				if err != nil {
+					t.Fatalf("Load() error = %v", err)
+				}
+				if want := tt.publicOnly == "true"; c.WorkerEndpointsPublicOnly != want {
+					t.Errorf("WorkerEndpointsPublicOnly = %v, want %v", c.WorkerEndpointsPublicOnly, want)
+				}
+				return
+			}
+			if err == nil {
+				t.Fatal("Load() started a shared instance without the address guard")
+			}
+			for _, name := range []string{"VOICEGATEWAY_INSTANCE_TOKEN", "VOICEGATEWAY_WORKER_ENDPOINTS_PUBLIC_ONLY must be true"} {
+				if !strings.Contains(err.Error(), name) {
+					t.Errorf("error %q does not name %s", err, name)
+				}
+			}
+			if strings.Contains(err.Error(), token) {
+				t.Error("the error holds the instance token")
+			}
+		})
+	}
+	// An unparseable flag is named once, as itself, not again as the shared-instance rule.
+	_, err := Load(env(map[string]string{"VOICEGATEWAY_INSTANCE_TOKEN": token, "VOICEGATEWAY_WORKER_ENDPOINTS_PUBLIC_ONLY": "maybe"}))
+	if err == nil || !strings.Contains(err.Error(), "VOICEGATEWAY_WORKER_ENDPOINTS_PUBLIC_ONLY must be true or false") || strings.Contains(err.Error(), "is set, so") {
+		t.Errorf("Load() with an unparseable flag = %v", err)
+	}
+}
