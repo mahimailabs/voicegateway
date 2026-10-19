@@ -1262,7 +1262,7 @@ export type Error = {
     /**
      * Stable error category.
      */
-    code: 'invalid_request' | 'unauthenticated' | 'forbidden' | 'not_found' | 'source_unavailable' | 'internal_error' | 'range_not_satisfiable' | 'last_admin' | 'already_member' | 'member_of_other_organisations' | 'project_exists' | 'livekit_key_in_use';
+    code: 'invalid_request' | 'revision_conflict' | 'unauthenticated' | 'forbidden' | 'not_found' | 'source_unavailable' | 'internal_error' | 'range_not_satisfiable' | 'last_admin' | 'already_member' | 'member_of_other_organisations' | 'project_exists' | 'livekit_key_in_use';
     /**
      * Safe human-readable explanation, excluding upstream credentials and request bodies.
      */

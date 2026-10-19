@@ -88,7 +88,7 @@ func (h *Handlers) putEntitlement(w http.ResponseWriter, r *http.Request) {
 	case errors.Is(err, store.ErrNotFound):
 		api.WriteError(w, r, 404, api.CodeNotFound, "no such organisation")
 	case errors.Is(err, store.ErrEntitlementRevision):
-		api.WriteError(w, r, 409, api.CodeInvalidRequest, "stale or conflicting entitlement revision")
+		api.WriteError(w, r, 409, api.CodeRevisionConflict, "stale or conflicting entitlement revision")
 	case err != nil:
 		h.fail(w, r, "putEntitlement", id, err)
 	default:

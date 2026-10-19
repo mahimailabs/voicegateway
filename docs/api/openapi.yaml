@@ -4711,7 +4711,7 @@ components:
           type: string
           description: Stable error category.
           x-source: { kind: computed, file: docs/api/coverage.md, pointer: null, detail: Stable error category. }
-          enum: [ invalid_request, unauthenticated, forbidden, not_found, source_unavailable, internal_error, range_not_satisfiable, last_admin, already_member, member_of_other_organisations, project_exists, livekit_key_in_use ]
+          enum: [ invalid_request, revision_conflict, unauthenticated, forbidden, not_found, source_unavailable, internal_error, range_not_satisfiable, last_admin, already_member, member_of_other_organisations, project_exists, livekit_key_in_use ]
         message:
           type: string
           description: Safe human-readable explanation, excluding upstream credentials and request bodies.

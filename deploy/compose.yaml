@@ -22,8 +22,9 @@ x-voicegateway-env: &voicegateway-env
   VOICEGATEWAY_SMTP_FROM: ${VOICEGATEWAY_SMTP_FROM:-}
   # Turns on the instance API (/api/v1/instance, ee/), for an operator's program that creates
   # organisations: at least 32 characters, and needs VOICEGATEWAY_PUBLIC_URL. Empty keeps it off.
-  VOICEGATEWAY_CLOUD_QUOTAS: ${VOICEGATEWAY_CLOUD_QUOTAS:-false}
   VOICEGATEWAY_INSTANCE_TOKEN: ${VOICEGATEWAY_INSTANCE_TOKEN:-}
+  # Enforce explicit organisation allowances on Cloud ingestion; requires the instance token.
+  VOICEGATEWAY_CLOUD_QUOTAS: ${VOICEGATEWAY_CLOUD_QUOTAS:-false}
   VOICEGATEWAY_LOG_LEVEL: ${VOICEGATEWAY_LOG_LEVEL:-info}
   # true refuses private and loopback worker metrics endpoints too; link-local and cloud metadata
   # addresses are always refused. Leave false when your agent workers share this network.

@@ -16,11 +16,15 @@ import (
 )
 
 type entitlementMemory struct {
-	u      store.EntitlementUsage
-	writes int
+	u        store.EntitlementUsage
+	writes   int
+	writeErr error
 }
 
 func (s *entitlementMemory) PutEntitlement(_ context.Context, _ string, e store.Entitlement) error {
+	if s.writeErr != nil {
+		return s.writeErr
+	}
 	s.u.Entitlement = e
 	s.writes++
 	return nil
@@ -84,6 +88,17 @@ func TestEntitlementAccessAndValidation(t *testing.T) {
 	if st.writes != 1 {
 		t.Fatal("invalid request changed entitlement")
 	}
+	st.writeErr = store.ErrEntitlementRevision
+	conflict := httptest.NewRecorder()
+	router.ServeHTTP(conflict, httptest.NewRequest("PUT", instancePath, bytes.NewReader(body)))
+	var failure struct{ Code string }
+	if err := json.Unmarshal(conflict.Body.Bytes(), &failure); err != nil {
+		t.Fatal(err)
+	}
+	if conflict.Code != 409 || failure.Code != "revision_conflict" {
+		t.Fatalf("conflict %d: %s", conflict.Code, conflict.Body.String())
+	}
+	st.writeErr = nil
 	// Reads stay available even when measured usage exhausted the allowance.
 	st.u.CallSeconds = 120000
 	st.u.From = time.Now().Add(-time.Hour)
