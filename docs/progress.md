@@ -353,9 +353,13 @@ Manual check: the pair reviewer reports it passed on Compose behind HTTPS ([#387
 
 Next: 06d, invitation links.
 
-### 2026-10-18: phase 06d, invitations and password reset links (in review, #407)
+### 2026-10-18: phase 06d, invitations and password reset links (done, #407 merged as cfcbefba)
 
-An admin invites by email with a role, and makes password reset links for members (spec `docs/specs/phase06d-invitations.md`, decision 0027). Not done until the pair review and the manual check pass.
+An admin invites by email with a role, and makes password reset links for members (spec `docs/specs/phase06d-invitations.md`, decision 0027). The pair review passed at 5b7b2d24, and so did the manual check on 2026-10-18: the Compose stack behind Caddy with `tls internal` (`VOICEGATEWAY_PUBLIC_URL` on a non-localhost https name, so the HTTPS rule applied), mailpit 1.31.4 over implicit TLS, driven with Playwright.
+- Step 1: the invite was emailed with no link on the page; the Member set a password in a second browser and saw the seeded call.
+- Step 2: the reset was emailed; using it signed the first browser out, and the link then answered "no longer valid".
+- Step 3: with SMTP unset, the console showed the link once and copied it exactly, and mailpit received nothing.
+- No token, link or password appeared in the web or proxy logs. The check found two setup gaps, fixed after: ClickHouse's healthcheck pinged 8123 before 9000 took queries, so `migrate` could fail on a fresh start (it now runs `clickhouse-client` as migrate's own user), and a mail server signed by a private CA needs `SSL_CERT_FILE`, now in docs/self-hosting.md.
 
 What changed:
 - **Postgres 00009 `invitations`:** kind invite or reset, the token's SHA-256 only, state derived from its times. One open link per organisation, email and kind (a partial unique index); a create revokes the open one in the same transaction, after taking the organisation's row lock, so parallel creates leave exactly one.

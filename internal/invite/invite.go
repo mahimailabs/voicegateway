@@ -168,7 +168,7 @@ func (s *Service) Create(ctx context.Context, in Invite) (Created, error) {
 	}
 	link := linkOf(in.BaseURL, token)
 	body := fmt.Sprintf("You are invited to join %s on VoiceGateway as %s.\n\nOpen this link to accept:\n%s\n\nIt expires on %s.\n",
-		org, role, link, inv.ExpiresAt.UTC().Format("2 January 2006 at 15:04 UTC"))
+		org, strings.ToUpper(role[:1])+role[1:], link, inv.ExpiresAt.UTC().Format("2 January 2006 at 15:04 UTC"))
 	return s.deliver(ctx, inv, message{to: email, subject: "Join " + org + " on VoiceGateway", body: body}, link)
 }
 
