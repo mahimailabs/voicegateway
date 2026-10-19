@@ -1010,7 +1010,7 @@ paths:
         minimumRole: Admin
         browserSessionTransport: session_cookie
         scope: organisation
-      description: Requires Admin membership in the named organisation; a project API key is 403. Adds one LiveKit project (decision 0016) through the same checks and store as voicegateway project add (phase 06f). The id is the name as a slug, as the console makes it. The API secret is sealed under VOICEGATEWAY_SECRET_KEY before it is written and is never answered, logged or read back to the console. A name whose id the organisation already has is 409 project_exists; a LiveKit API key another project on this server already uses is 409 livekit_key_in_use, without naming that project. The answer is not cached.
+      description: Requires Admin membership in the named organisation; a project API key is 403. Adds one LiveKit project (decision 0016) through the same checks and store as voicegateway project add (phase 06f). The id is the name as a slug, as the console makes it. The API secret is sealed under VOICEGATEWAY_SECRET_KEY before it is written and is never answered, logged or read back to the console. Before anything is stored, one LiveKit read (ListRooms under the room-list grant, signed with the given key and secret, through the worker's address guard, 5 s at most) checks connectivity to the supplied endpoint. This does not prove ownership of that server; project-scoped ingestion URLs enforce tenant isolation. LiveKit refusing it is 422 livekit_secret_invalid, and no LiveKit answer at all (no answer, an address the guard refuses, or not a LiveKit server) is 422 livekit_unreachable, which never says which. Only then are the uniqueness rules answered. A name whose id the organisation already has is 409 project_exists. Identical key strings are allowed across projects. The answer is not cached.
       parameters:
         - $ref: "#/components/parameters/OrganisationId"
       requestBody:
@@ -1033,6 +1033,8 @@ paths:
                 $ref: "#/components/schemas/WorkspaceProject"
         "409":
           $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/LiveKitNotVerified"
         "400":
           $ref: "#/components/responses/BadRequest"
         "401":
@@ -4589,7 +4591,7 @@ components:
           type: string
           description: Stable error category.
           x-source: { kind: computed, file: docs/api/coverage.md, pointer: null, detail: Stable error category. }
-          enum: [ invalid_request, unauthenticated, forbidden, not_found, source_unavailable, internal_error, range_not_satisfiable, last_admin, already_member, member_of_other_organisations, project_exists, livekit_key_in_use ]
+          enum: [ invalid_request, unauthenticated, forbidden, not_found, source_unavailable, internal_error, range_not_satisfiable, last_admin, already_member, member_of_other_organisations, project_exists, livekit_secret_invalid, livekit_unreachable ]
         message:
           type: string
           description: Safe human-readable explanation, excluding upstream credentials and request bodies.
@@ -5509,7 +5511,13 @@ components:
           schema:
             $ref: "#/components/schemas/Error"
     Conflict:
-      description: last_admin, the change would leave the organisation without an admin; already_member, the invited email's account is a member already; member_of_other_organisations, a reset's member belongs to an organisation the requester does not administer; project_exists, the organisation already has a project with the new name's id; livekit_key_in_use, another project on this server uses that LiveKit API key.
+      description: last_admin, the change would leave the organisation without an admin; already_member, the invited email's account is a member already; member_of_other_organisations, a reset's member belongs to an organisation the requester does not administer; project_exists, the organisation already has a project with the new name's id.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    LiveKitNotVerified:
+      description: livekit_secret_invalid, LiveKit refused a read signed with the given key and secret; livekit_unreachable, the LiveKit URL gave no LiveKit answer, without saying whether it did not answer, was refused by the address guard or is not a LiveKit server. Nothing is stored.
       content:
         application/json:
           schema:

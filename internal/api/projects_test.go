@@ -2,7 +2,9 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -82,7 +84,7 @@ func TestCreateProjectRejectsTrailingBody(t *testing.T) {
 	for name, suffix := range map[string]string{"second object": "{}", "garbage": "x", "oversize whitespace": strings.Repeat(" ", maxProjectBody)} {
 		t.Run(name, func(t *testing.T) {
 			creator := &countProjectCreates{}
-			a := &API{NewProjects: creator}
+			a := &API{NewProjects: creator, VerifyLiveKit: verifyAs{}}
 			w := httptest.NewRecorder()
 			a.createProject(w, httptest.NewRequest(http.MethodPost, "/", strings.NewReader(body+suffix)))
 			if w.Code != http.StatusBadRequest || creator.calls != 0 {
@@ -99,10 +101,63 @@ func (c *countProjectCreates) CreateProject(_ context.Context, p store.NewProjec
 	return store.Project{ID: p.ID, Name: p.Name}, nil
 }
 
+// verifyAs is a LiveKit verifier that answers err, for tests not about the LiveKit read itself; the
+// real read is tested against livekit-server --dev in internal/auth.
+type verifyAs struct{ err error }
+
+func (v verifyAs) VerifyLiveKit(context.Context, string, string, string) error { return v.err }
+
+// Without a store or without a verifier, nothing could be stored proven, so the route is off.
 func TestCreateProjectDisabled(t *testing.T) {
-	w := httptest.NewRecorder()
-	(&API{}).createProject(w, httptest.NewRequest(http.MethodPost, "/", strings.NewReader(`{"name":"Production","livekitUrl":"http://127.0.0.1","livekitApiKey":"key","livekitApiSecret":"secret"}`)))
-	if w.Code != http.StatusForbidden {
-		t.Fatalf("status=%d, want 403", w.Code)
+	for name, a := range map[string]*API{
+		"no store":    {VerifyLiveKit: verifyAs{}},
+		"no verifier": {NewProjects: &countProjectCreates{}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			w := httptest.NewRecorder()
+			a.createProject(w, httptest.NewRequest(http.MethodPost, "/", strings.NewReader(`{"name":"Production","livekitUrl":"http://127.0.0.1","livekitApiKey":"key","livekitApiSecret":"secret"}`)))
+			if w.Code != http.StatusForbidden {
+				t.Fatalf("status=%d, want 403", w.Code)
+			}
+			if c, ok := a.NewProjects.(*countProjectCreates); ok && c.calls != 0 {
+				t.Fatal("stored a project with no verifier")
+			}
+		})
+	}
+}
+
+// A secret that does not verify, or a URL that gives no LiveKit answer, is a 422 before the store is
+// asked, so its 409s reach only a caller who holds the secret. The answer is fixed: the cause, which
+// can name an address the guard refused, is never in it.
+func TestCreateProjectAnswersTheVerifier(t *testing.T) {
+	body := `{"name":"Production","livekitUrl":"wss://lk.example.com","livekitApiKey":"APIkey","livekitApiSecret":"test-secret"}`
+	cause := errors.New("dial tcp 10.0.0.7:443: prohibited IP address")
+	for _, tt := range []struct {
+		name    string
+		err     error
+		status  int
+		code    string
+		message string
+		stores  int
+	}{
+		{"verified", nil, http.StatusCreated, "", "", 1},
+		{"secret refused", fmt.Errorf("%w: %w", store.ErrLiveKitSecretInvalid, cause), http.StatusUnprocessableEntity, "livekit_secret_invalid", "the LiveKit API secret did not verify for this key", 0},
+		{"no LiveKit answer", fmt.Errorf("%w: %w", store.ErrLiveKitUnreachable, cause), http.StatusUnprocessableEntity, "livekit_unreachable", "could not reach this LiveKit URL", 0},
+		{"an unclassified failure", cause, http.StatusUnprocessableEntity, "livekit_unreachable", "could not reach this LiveKit URL", 0},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			creator := &countProjectCreates{}
+			a := &API{NewProjects: creator, VerifyLiveKit: verifyAs{tt.err}}
+			w := httptest.NewRecorder()
+			a.createProject(w, httptest.NewRequest(http.MethodPost, "/", strings.NewReader(body)))
+			var e struct{ Code, Message string }
+			_ = json.Unmarshal(w.Body.Bytes(), &e)
+			if w.Code != tt.status || e.Code != tt.code || e.Message != tt.message || creator.calls != tt.stores {
+				t.Fatalf("= %d %s, %d stores; want %d %s %q, %d stores", w.Code, w.Body, creator.calls, tt.status, tt.code, tt.message, tt.stores)
+			}
+			if strings.Contains(w.Body.String(), "10.0.0.7") || strings.Contains(w.Body.String(), "test-secret") {
+				t.Errorf("the answer holds the cause or the secret: %s", w.Body)
+			}
+		})
 	}
 }

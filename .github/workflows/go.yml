@@ -51,8 +51,11 @@ jobs:
       - run: make up
       - run: curl --fail --silent --show-error http://localhost:8080/healthz
       - run: make preflight
+      # The URL is a placeholder with no LiveKit behind it, so the LiveKit check is skipped; the
+      # check itself is tested against livekit-server --dev in the Go tests.
       - name: Add a project, then refuse its LiveKit key a second time
         env:
+          SKIP_VERIFY: "1"
           LIVEKIT_URL: wss://ci.example.livekit.cloud
           LIVEKIT_API_KEY: APIci
           LIVEKIT_API_SECRET: ci-only-secret

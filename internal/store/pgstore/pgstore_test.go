@@ -124,11 +124,11 @@ func TestProjectSecretSealed(t *testing.T) {
 		t.Errorf("LiveKitSecret() = %q, %v; want the original secret", secret, err)
 	}
 
-	found, err := s.ProjectByLiveKitKey(ctx, "APIalpha")
+	found, err := s.Project(ctx, "default", "alpha")
 	if err != nil || found.ID != "alpha" {
-		t.Errorf("ProjectByLiveKitKey() = %+v, %v", found, err)
+		t.Errorf("Project() = %+v, %v", found, err)
 	}
-	if _, err := s.ProjectByLiveKitKey(ctx, "APIunknown"); !errors.Is(err, store.ErrNotFound) {
+	if _, err := s.Project(ctx, "default", "unknown"); !errors.Is(err, store.ErrNotFound) {
 		t.Errorf("unknown key err = %v, want ErrNotFound", err)
 	}
 }
@@ -146,7 +146,7 @@ func TestProjectDuplicateLiveKitKey(t *testing.T) {
 		wantErr error
 		names   string
 	}{
-		{name: "key used by another project", p: project("beta", "APIshared"), wantErr: store.ErrLiveKitKeyInUse, names: "default/alpha"},
+		{name: "key used by another project", p: project("beta", "APIshared")},
 		{name: "same id again", p: project("alpha", "APIother"), wantErr: store.ErrProjectExists},
 		{name: "unknown organisation", p: NewProject{OrganisationID: "nope", ID: "x", Name: "X", LiveKitURL: "wss://x", LiveKitAPIKey: "APIx", LiveKitAPISecret: "s"}, wantErr: store.ErrNotFound},
 	}
@@ -166,8 +166,33 @@ func TestProjectDuplicateLiveKitKey(t *testing.T) {
 	if err := pool.QueryRow(ctx, "SELECT count(*) FROM projects").Scan(&n); err != nil {
 		t.Fatal(err)
 	}
-	if n != 1 {
-		t.Errorf("projects = %d after refused creates, want 1", n)
+	if n != 2 {
+		t.Errorf("projects = %d after creates, want 2", n)
+	}
+}
+
+func TestProjectKeysAreScopedAcrossOrganisations(t *testing.T) {
+	s, pool := migrated(t)
+	ctx := t.Context()
+	if _, err := pool.Exec(ctx, "INSERT INTO organisations (id, name) VALUES ('customer', 'Customer')"); err != nil {
+		t.Fatal(err)
+	}
+	for _, org := range []string{"default", "customer"} {
+		p := project("voice", "same-key")
+		p.OrganisationID, p.LiveKitAPISecret = org, org+"-secret"
+		if _, err := s.CreateProject(ctx, p); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, org := range []string{"default", "customer"} {
+		p, err := s.Project(ctx, org, "voice")
+		if err != nil || p.OrganisationID != org || p.LiveKitAPIKey != "same-key" {
+			t.Fatalf("project scope: %+v, %v", p, err)
+		}
+		secret, err := s.LiveKitSecret(ctx, org, "voice")
+		if err != nil || secret != org+"-secret" {
+			t.Fatal("secret did not remain scoped")
+		}
 	}
 }
 

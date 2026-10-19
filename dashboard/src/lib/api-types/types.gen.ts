@@ -1262,7 +1262,7 @@ export type Error = {
     /**
      * Stable error category.
      */
-    code: 'invalid_request' | 'unauthenticated' | 'forbidden' | 'not_found' | 'source_unavailable' | 'internal_error' | 'range_not_satisfiable' | 'last_admin' | 'already_member' | 'member_of_other_organisations' | 'project_exists' | 'livekit_key_in_use';
+    code: 'invalid_request' | 'unauthenticated' | 'forbidden' | 'not_found' | 'source_unavailable' | 'internal_error' | 'range_not_satisfiable' | 'last_admin' | 'already_member' | 'member_of_other_organisations' | 'project_exists' | 'livekit_secret_invalid' | 'livekit_unreachable';
     /**
      * Safe human-readable explanation, excluding upstream credentials and request bodies.
      */
@@ -2961,7 +2961,7 @@ export type CreateInvitationErrors = {
      */
     404: Error;
     /**
-     * last_admin, the change would leave the organisation without an admin; already_member, the invited email's account is a member already; member_of_other_organisations, a reset's member belongs to an organisation the requester does not administer; project_exists, the organisation already has a project with the new name's id; livekit_key_in_use, another project on this server uses that LiveKit API key.
+     * last_admin, the change would leave the organisation without an admin; already_member, the invited email's account is a member already; member_of_other_organisations, a reset's member belongs to an organisation the requester does not administer; project_exists, the organisation already has a project with the new name's id.
      */
     409: Error;
     /**
@@ -3069,9 +3069,13 @@ export type CreateProjectErrors = {
      */
     404: Error;
     /**
-     * last_admin, the change would leave the organisation without an admin; already_member, the invited email's account is a member already; member_of_other_organisations, a reset's member belongs to an organisation the requester does not administer; project_exists, the organisation already has a project with the new name's id; livekit_key_in_use, another project on this server uses that LiveKit API key.
+     * last_admin, the change would leave the organisation without an admin; already_member, the invited email's account is a member already; member_of_other_organisations, a reset's member belongs to an organisation the requester does not administer; project_exists, the organisation already has a project with the new name's id.
      */
     409: Error;
+    /**
+     * livekit_secret_invalid, LiveKit refused a read signed with the given key and secret; livekit_unreachable, the LiveKit URL gave no LiveKit answer, without saying whether it did not answer, was refused by the address guard or is not a LiveKit server. Nothing is stored.
+     */
+    422: Error;
     /**
      * internal_error; never return an empty success result for this failure.
      */
@@ -3177,7 +3181,7 @@ export type RemoveMemberErrors = {
      */
     404: Error;
     /**
-     * last_admin, the change would leave the organisation without an admin; already_member, the invited email's account is a member already; member_of_other_organisations, a reset's member belongs to an organisation the requester does not administer; project_exists, the organisation already has a project with the new name's id; livekit_key_in_use, another project on this server uses that LiveKit API key.
+     * last_admin, the change would leave the organisation without an admin; already_member, the invited email's account is a member already; member_of_other_organisations, a reset's member belongs to an organisation the requester does not administer; project_exists, the organisation already has a project with the new name's id.
      */
     409: Error;
     /**
@@ -3235,7 +3239,7 @@ export type UpdateMemberErrors = {
      */
     404: Error;
     /**
-     * last_admin, the change would leave the organisation without an admin; already_member, the invited email's account is a member already; member_of_other_organisations, a reset's member belongs to an organisation the requester does not administer; project_exists, the organisation already has a project with the new name's id; livekit_key_in_use, another project on this server uses that LiveKit API key.
+     * last_admin, the change would leave the organisation without an admin; already_member, the invited email's account is a member already; member_of_other_organisations, a reset's member belongs to an organisation the requester does not administer; project_exists, the organisation already has a project with the new name's id.
      */
     409: Error;
     /**
@@ -3293,7 +3297,7 @@ export type CreatePasswordResetErrors = {
      */
     404: Error;
     /**
-     * last_admin, the change would leave the organisation without an admin; already_member, the invited email's account is a member already; member_of_other_organisations, a reset's member belongs to an organisation the requester does not administer; project_exists, the organisation already has a project with the new name's id; livekit_key_in_use, another project on this server uses that LiveKit API key.
+     * last_admin, the change would leave the organisation without an admin; already_member, the invited email's account is a member already; member_of_other_organisations, a reset's member belongs to an organisation the requester does not administer; project_exists, the organisation already has a project with the new name's id.
      */
     409: Error;
     /**
@@ -3740,7 +3744,7 @@ export type CreateOrganisationInvitationErrors = {
      */
     404: Error;
     /**
-     * last_admin, the change would leave the organisation without an admin; already_member, the invited email's account is a member already; member_of_other_organisations, a reset's member belongs to an organisation the requester does not administer; project_exists, the organisation already has a project with the new name's id; livekit_key_in_use, another project on this server uses that LiveKit API key.
+     * last_admin, the change would leave the organisation without an admin; already_member, the invited email's account is a member already; member_of_other_organisations, a reset's member belongs to an organisation the requester does not administer; project_exists, the organisation already has a project with the new name's id.
      */
     409: Error;
     /**

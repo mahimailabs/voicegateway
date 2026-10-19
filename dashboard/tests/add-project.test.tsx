@@ -85,13 +85,17 @@ test("a submit sends the fields to createProject, clears the secret and opens th
   expect((screen.getByLabelText("API secret") as HTMLInputElement).value).toBe("")
 })
 
-test("the API's error shows inline, and the secret is cleared", async () => {
-  serve(() => json(409, { code: "project_exists", message: "this organisation already has a project with the id production; choose another name", requestId: "r" }))
+test.each([
+  [409, "project_exists", "this organisation already has a project with the id production; choose another name"],
+  [422, "livekit_secret_invalid", "the LiveKit API secret did not verify for this key"],
+  [422, "livekit_unreachable", "could not reach this LiveKit URL"],
+])("the API's %i %s shows inline, and the secret is cleared", async (status, code, message) => {
+  serve(() => json(status, { code, message, requestId: "r" }))
   signedInAs("admin")
   const onCreated = show()
   const user = await fill()
   await user.click(screen.getByRole("button", { name: "Add project" }))
-  expect((await screen.findByRole("alert")).textContent).toBe("this organisation already has a project with the id production; choose another name")
+  expect((await screen.findByRole("alert")).textContent).toBe(message)
   expect(onCreated).not.toHaveBeenCalled()
   expect((screen.getByLabelText("API secret") as HTMLInputElement).value).toBe("")
   expect(document.body.textContent).not.toContain(SECRET)

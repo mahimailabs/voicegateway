@@ -12,6 +12,7 @@ import (
 	"github.com/mahimailabs/voicegateway/internal/api"
 	"github.com/mahimailabs/voicegateway/internal/auth"
 	"github.com/mahimailabs/voicegateway/internal/config"
+	"github.com/mahimailabs/voicegateway/internal/scrape"
 	"github.com/mahimailabs/voicegateway/internal/seal"
 	"github.com/mahimailabs/voicegateway/internal/store"
 	"github.com/mahimailabs/voicegateway/internal/store/chstore"
@@ -47,6 +48,9 @@ type ProjectInput struct {
 	LiveKitURL       string
 	LiveKitAPIKey    string
 	LiveKitAPISecret string
+	// SkipVerify stores the project without first proving its secret against LiveKit, for an
+	// install that cannot reach its LiveKit server yet (--skip-verify).
+	SkipVerify bool
 }
 
 // projectFlags names each field of a new project as voicegateway project add asks for it.
@@ -57,7 +61,8 @@ var projectFlags = map[string]string{
 
 // AddProject creates a project with its LiveKit secret sealed under the configured key. The fields
 // are checked by api.CheckProject, the rule createProject applies too, and the id defaults to the
-// name's api.Slug.
+// name's api.Slug. Unless in.SkipVerify, one signed LiveKit read checks endpoint connectivity, as
+// createProject does.
 func AddProject(ctx context.Context, c config.Config, in ProjectInput) (store.Project, error) {
 	p, err := api.CheckProject(store.NewProject{
 		OrganisationID: orgOrDefault(in.OrganisationID), ID: in.ID, Name: in.Name,
@@ -69,6 +74,13 @@ func AddProject(ctx context.Context, c config.Config, in ProjectInput) (store.Pr
 	}
 	if err != nil {
 		return store.Project{}, err
+	}
+	// The same connectivity check createProject asks for, through the same address guard; the operator sees the
+	// cause, which never holds the secret.
+	if !in.SkipVerify {
+		if err := scrape.NewVerifier(c.WorkerEndpointsPublicOnly).VerifyLiveKit(ctx, p.LiveKitURL, p.LiveKitAPIKey, p.LiveKitAPISecret); err != nil {
+			return store.Project{}, fmt.Errorf("%w (--skip-verify adds it without this check)", err)
+		}
 	}
 
 	sealer, err := seal.New(c.SecretKey)

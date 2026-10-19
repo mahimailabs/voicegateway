@@ -23,14 +23,14 @@ it("persists project discovery and duplicate detection without the raw LiveKit k
   vi.resetModules()
   const reloaded = await import("../src/mocks/workspaces.js")
   expect(reloaded.knownProject("default", "production")).toBe(true)
-  expect(await reloaded.addProject("default", "Other", key)).toBe("livekit_key_in_use")
+  expect(await reloaded.addProject("default", "Other", key)).toEqual({ id: "other", name: "Other" })
   expect(await reloaded.addProject("default", "Production", "another-test-key")).toBe("project_exists")
   expect(await reloaded.addProject("default", "Staging", "another-test-key")).toEqual({ id: "staging", name: "Staging" })
   expect(stored.get("vg.mock-projects")).not.toContain("another-test-key")
 })
 
-it("refuses concurrent projects with the same key", async () => {
+it("allows independent projects with the same key", async () => {
   const results = await Promise.all([addProject("default", "One", "shared-test-key"), addProject("default", "Two", "shared-test-key")])
-  expect(results.filter((result) => result === "livekit_key_in_use")).toHaveLength(1)
-  expect(JSON.parse(stored.get("vg.mock-projects")!)).toHaveLength(1)
+  expect(results).toEqual([{ id: "one", name: "One" }, { id: "two", name: "Two" }])
+  expect(JSON.parse(stored.get("vg.mock-projects")!)).toHaveLength(2)
 })

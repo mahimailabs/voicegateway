@@ -120,7 +120,6 @@ func TestCreateProjectRefusals(t *testing.T) {
 		code   string
 	}{
 		{"same name", call{body: projectBody("production", "wss://other.example.com", "APIother", testLiveKitSecret), cookie: admin}, http.StatusConflict, "project_exists"},
-		{"same LiveKit key", call{body: projectBody("Other", "wss://other.example.com", "APIprod", testLiveKitSecret), cookie: admin}, http.StatusConflict, "livekit_key_in_use"},
 		{"member", call{body: projectBody("M", "wss://m.example.com", "APIm", testLiveKitSecret), cookie: f.signedIn(s, "member@example.com")}, http.StatusForbidden, "forbidden"},
 		{"viewer", call{body: projectBody("V", "wss://v.example.com", "APIv", testLiveKitSecret), cookie: f.signedIn(s, "viewer@example.com")}, http.StatusForbidden, "forbidden"},
 		{"another organisation's admin", call{body: projectBody("E", "wss://e.example.com", "APIe", testLiveKitSecret), cookie: f.signedIn(s, "eve@example.com")}, http.StatusForbidden, "forbidden"},
@@ -145,11 +144,6 @@ func TestCreateProjectRefusals(t *testing.T) {
 				t.Errorf("the answer holds the secret: %s", body)
 			}
 		})
-	}
-	// The 409 for a taken key does not name the project that holds it.
-	_, body := f.send(web, call{method: http.MethodPost, path: path, body: projectBody("Other", "wss://other.example.com", "APIprod", testLiveKitSecret), cookie: admin})
-	if strings.Contains(string(body), "production") {
-		t.Errorf("livekit_key_in_use names the owner: %s", body)
 	}
 	guarded := http.NewCrossOriginProtection().Handler(web)
 	if status, _ := f.send(guarded, call{method: http.MethodPost, path: path, body: projectBody("Evil", "wss://evil.example.com", "APIevil", testLiveKitSecret), cookie: admin, headers: map[string]string{"Origin": "https://evil.example", "Sec-Fetch-Site": "cross-site"}}); status != http.StatusForbidden {

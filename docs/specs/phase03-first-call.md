@@ -80,8 +80,8 @@ Slice B (c), the worker into ClickHouse. `voicegateway migrate` also applies `mi
 
 `make up`, then `voicegateway project add` with a real LiveKit Cloud project, then `psql` shows the project with a sealed secret and no plaintext.
 
-Slice B (a): add a project for `livekit-server --dev` (key `devkey`), run the server with `webhook.urls` set to `http://localhost:8080/livekit/webhook`, create and delete a room with `lk`, then `XRANGE voicegateway:ingest - +` shows the room_started and room_finished envelopes for that project.
+Slice B (a): add a project for `livekit-server --dev` (key `devkey`), run the server with `webhook.urls` set to `http://localhost:8080/ingest/default/<project-id>/livekit/webhook`, create and delete a room with `lk`, then `XRANGE voicegateway:ingest - +` shows the room_started and room_finished envelopes for that project.
 
-Slice B (b): add a project for a LiveKit Cloud test project, run a LiveKit Agents 1.8.7 agent with `LIVEKIT_OBSERVABILITY_URL=http://localhost:8080` and `record=True` in a test room until it shuts down, then the stream holds `livekit.agent.traces`, `.logs`, `.metrics` and one `livekit.agent.session_report` for that project.
+Slice B (b): add a project for a LiveKit Cloud test project, run a LiveKit Agents 1.8.7 agent with `LIVEKIT_OBSERVABILITY_URL=http://localhost:8080/ingest/default/<project-id>` and `record=True` in a test room until it shuts down, then the stream holds `livekit.agent.traces`, `.logs`, `.metrics` and one `livekit.agent.session_report` for that project.
 
 Slice B (c): with the worker stopped, create and delete a room on `livekit-server --dev`; the stream holds two entries. Start the worker: the stream empties and `events` gains two rows for the project. `make down` then `make up`: the row count is unchanged and `count()` equals `count() FINAL`.
