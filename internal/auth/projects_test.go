@@ -159,3 +159,46 @@ func TestCreateProjectRefusals(t *testing.T) {
 		t.Errorf("%d projects after the refusals, want %d", after, before)
 	}
 }
+
+// The instance token provisions organisations; it never adds a project to one. With the instance
+// API on, an Admin's session through the same handler is the control: the route is there, and the
+// gate refuses only the token.
+func TestInstanceTokenCannotCreateProject(t *testing.T) {
+	f := newFixture(t)
+	f.addUser("admin@example.com", "org-a", "admin")
+	w := f.webWith(nil, instanceToken)
+	path := "/api/v1/org/org-a/projects"
+	for _, tt := range []struct {
+		name   string
+		c      call
+		status int
+		code   string
+	}{
+		{"the instance token", call{body: projectBody("Instance", "wss://i.example.com", "APIinstance", testLiveKitSecret), token: instanceToken}, http.StatusForbidden, "forbidden"},
+		{"the instance token on an unknown organisation", call{path: "/api/v1/org/nobody/projects", body: projectBody("Nobody", "wss://n.example.com", "APInobody", testLiveKitSecret), token: instanceToken}, http.StatusForbidden, "forbidden"},
+		{"an Admin's session", call{body: projectBody("Admin", "wss://a.example.com", "APIadmin", testLiveKitSecret), cookie: w.signIn("admin@example.com")}, http.StatusCreated, ""},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			before := f.count(`SELECT count(*) FROM projects`)
+			tt.c.method = http.MethodPost
+			if tt.c.path == "" {
+				tt.c.path = path
+			}
+			status, body := f.send(w.h, tt.c)
+			var e struct{ Code string }
+			if tt.code != "" {
+				_ = json.Unmarshal(body, &e)
+			}
+			if status != tt.status || e.Code != tt.code {
+				t.Errorf("POST %s = %d %s, want %d %s", tt.c.path, status, body, tt.status, tt.code)
+			}
+			want := before
+			if tt.status == http.StatusCreated {
+				want++
+			}
+			if n := f.count(`SELECT count(*) FROM projects`); n != want {
+				t.Errorf("%d projects after the call, want %d", n, want)
+			}
+		})
+	}
+}
