@@ -12,9 +12,9 @@ Run VoiceGateway on your own machine or server, connect your LiveKit project and
 ## 1. Start the stack
 
 ```bash
-git clone https://github.com/mahimailabs/voicegateway.git
+git clone --branch v1.0.0-preview.2 --depth 1 https://github.com/mahimailabs/voicegateway.git
 cd voicegateway
-VOICEGATEWAY_IMAGE=ghcr.io/mahimailabs/voicegateway:1.0.0-preview.1 make up
+VOICEGATEWAY_IMAGE=ghcr.io/mahimailabs/voicegateway:1.0.0-preview.2 make up
 make preflight
 ```
 
@@ -82,6 +82,10 @@ VOICEGATEWAY_SMTP_FROM=VoiceGateway <noreply@example.com>
 
 VoiceGateway only sends over TLS. If your mail server's certificate is signed by your own certificate authority, mount that CA's PEM file into the web container and set `SSL_CERT_FILE` to its path there, for example in an extra Compose file passed with a second `-f`. Otherwise sends fail and the web log shows `could not send the email` with `class: tls`.
 
+## Data retention
+
+Raw telemetry expires after 90 days; infrastructure samples keep their separate 30-day retention. Cleanup runs in the background. Month-partitioned raw tables can retain rows for up to an additional month while waiting for the whole partition to expire. Postgres call summaries remain available after raw telemetry expires.
+
 ## Stop, upgrade and reset
 
 ```bash
@@ -93,7 +97,6 @@ VOICEGATEWAY_IMAGE=ghcr.io/mahimailabs/voicegateway:<new version> make up   # up
 
 ## What is not there yet
 
-- **No retention limit yet.** Raw call data is kept until you delete it.
 - **Some panels are not served yet**, such as project settings and provider probes: they say "Not served by this server yet".
 - **Notifications** for alerts are not delivered yet.
 
