@@ -13,7 +13,7 @@ CREATE TABLE profiled_call_usage (
     call_id uuid PRIMARY KEY,
     organisation_id text NOT NULL REFERENCES organisations(id),
     effective_end timestamptz,
-    seconds numeric NOT NULL CHECK (seconds >= 0)
+    seconds numeric CHECK (seconds >= 0)
 );
 CREATE INDEX profiled_call_usage_period ON profiled_call_usage(organisation_id, effective_end);
 -- The ledger changes in the worker's call transaction, not on an HTTP poll.
@@ -27,7 +27,7 @@ BEGIN
         INSERT INTO profiled_call_usage(call_id, organisation_id, effective_end, seconds)
         VALUES (NEW.id, NEW.organisation_id, finish,
             CASE WHEN NEW.started_at IS NOT NULL AND finish >= NEW.started_at
-                THEN extract(epoch FROM finish - NEW.started_at) ELSE 0 END)
+                THEN extract(epoch FROM finish - NEW.started_at) ELSE NULL END)
         ON CONFLICT(call_id) DO UPDATE SET effective_end = excluded.effective_end, seconds = excluded.seconds;
     END IF;
     RETURN NEW;
@@ -47,3 +47,10 @@ CREATE TABLE telemetry_admissions (
  to_at timestamptz NOT NULL,
  PRIMARY KEY (organisation_id, project_id, identity_kind, identity_id, from_at)
 );
+
+-- +goose Down
+DROP TABLE telemetry_admissions;
+DROP TRIGGER record_profiled_call_usage ON calls;
+DROP FUNCTION record_profiled_call_usage();
+DROP TABLE profiled_call_usage;
+DROP TABLE organisation_entitlements;

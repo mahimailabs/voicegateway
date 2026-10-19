@@ -125,3 +125,40 @@ func quotaDatabase(t *testing.T) (*Store, *pgxpool.Pool) {
 	}
 	return NewStore(pool, sealer), pool
 }
+
+// A missing or contradictory duration must remain distinguishable from a measured zero.
+func TestEntitlementUnknownDuration(t *testing.T) {
+	s, pool := quotaDatabase(t)
+	ctx := t.Context()
+	if _, err := s.CreateProject(ctx, project("quota", "quota-key")); err != nil {
+		t.Fatal(err)
+	}
+	from := time.Date(2026, 10, 19, 0, 0, 0, 0, time.UTC)
+	e := store.Entitlement{From: from, To: from.Add(30 * 24 * time.Hour), LimitMinutes: 2000, Active: true, Revision: 1}
+	insert := func() {
+		t.Helper()
+		_, err := pool.Exec(ctx, `INSERT INTO calls(organisation_id,project_id,started_at,ended_at,end_state) VALUES
+   ('default','quota',NULL,$1,'observed'),
+   ('default','quota',$2,$1,'observed'),
+   ('default','quota',$1,$1,'observed')`, from, from.Add(time.Hour))
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	insert() // Initial activation backfills the same semantics as later worker writes.
+	if err := s.PutEntitlement(ctx, "default", e); err != nil {
+		t.Fatal(err)
+	}
+	insert()
+	var unknown, measuredZero int
+	if err := pool.QueryRow(ctx, `SELECT count(*) FILTER (WHERE seconds IS NULL), count(*) FILTER (WHERE seconds=0) FROM profiled_call_usage`).Scan(&unknown, &measuredZero); err != nil {
+		t.Fatal(err)
+	}
+	if unknown != 4 || measuredZero != 2 {
+		t.Fatalf("unknown=%d measured zero=%d", unknown, measuredZero)
+	}
+	u, err := s.EntitlementUsage(ctx, "default")
+	if err != nil || u.CallSeconds != 0 {
+		t.Fatalf("usage %+v %v", u, err)
+	}
+}

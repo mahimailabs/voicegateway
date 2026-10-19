@@ -52,8 +52,9 @@ func (s *Store) PutEntitlement(ctx context.Context, org string, e store.Entitlem
 		// trigger. DO NOTHING prevents a stale backfill overwriting a concurrent worker update.
 		_, err = tx.Exec(ctx, `INSERT INTO profiled_call_usage(call_id,organisation_id,effective_end,seconds)
             SELECT id,organisation_id, CASE end_state WHEN 'observed' THEN ended_at WHEN 'inferred' THEN last_activity_at END,
-            CASE WHEN started_at IS NOT NULL THEN greatest(0,extract(epoch FROM
-              (CASE end_state WHEN 'observed' THEN ended_at WHEN 'inferred' THEN last_activity_at END)-started_at)) ELSE 0 END
+            CASE WHEN started_at IS NOT NULL AND
+              (CASE end_state WHEN 'observed' THEN ended_at WHEN 'inferred' THEN last_activity_at END)>=started_at
+              THEN extract(epoch FROM (CASE end_state WHEN 'observed' THEN ended_at WHEN 'inferred' THEN last_activity_at END)-started_at) ELSE NULL END
             FROM calls WHERE organisation_id=$1 ON CONFLICT(call_id) DO NOTHING`, org)
 		return err
 	})
