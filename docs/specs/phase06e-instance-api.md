@@ -74,4 +74,4 @@ An operator's program, holding one instance token, creates an organisation, invi
 
 ## Manual Check
 
-On the Compose stack with `VOICEGATEWAY_INSTANCE_TOKEN` set and no SMTP: `curl` a `putOrganisation`, then an invitation, open the returned link in a private window, set a password, and confirm the new organisation shows in the console's switcher with no other organisation's data.
+On the Compose stack with `VOICEGATEWAY_INSTANCE_TOKEN` set (with `VOICEGATEWAY_WORKER_ENDPOINTS_PUBLIC_ONLY=true`, which it requires since the 2026-10-19 fail-closed follow-up) and no SMTP: `curl` a `putOrganisation`, then an invitation, open the returned link in a private window, set a password, and confirm the new organisation shows in the console's switcher with no other organisation's data.

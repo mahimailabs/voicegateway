@@ -55,7 +55,7 @@ func TestQuotaAcceptsKnownCallFinishAndRefusesNewCall(t *testing.T) {
 	}
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 
-	handler := &ingest.Webhooks{Quota: quota, Projects: s, Stream: quotaJoinAppender{&join.Joiner{Calls: s, Log: logger}}, Log: logger, Now: func() time.Time { return now }}
+	handler := &ingest.Webhooks{Quota: quota, Projects: ingest.ScopedProjects{Store: s, OrganisationID: "default", ProjectID: "continuation"}, Stream: quotaJoinAppender{&join.Joiner{Calls: s, Log: logger}}, Log: logger, Now: func() time.Time { return now }}
 	send := func(room, kind string) int {
 		body := fmt.Sprintf(`{"event":%q,"room":{"sid":%q,"name":"call"},"createdAt":%d}`, kind, room, now.Unix())
 		sum := sha256.Sum256([]byte(body))
@@ -63,7 +63,7 @@ func TestQuotaAcceptsKnownCallFinishAndRefusesNewCall(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		r := httptest.NewRequest("POST", "/livekit/webhook", strings.NewReader(body))
+		r := httptest.NewRequest("POST", "/ingest/default/continuation/livekit/webhook", strings.NewReader(body))
 		r.Header.Set("Authorization", token)
 		w := httptest.NewRecorder()
 		handler.ServeHTTP(w, r)

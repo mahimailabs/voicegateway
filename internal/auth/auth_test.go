@@ -577,7 +577,7 @@ func TestNoSecretInLogs(t *testing.T) {
 	newProject := call{method: http.MethodPost, path: "/api/v1/org/default/projects", body: projectBody("Logs project", "wss://logs.example.com", "APIlogsproject", testLiveKitSecret), cookie: c}
 	f.send(web, newProject)
 	f.send(web, newProject)
-	storeDown := (&api.API{Projects: f.pg, NewProjects: failingProjects{}, Accounts: f.pg, Log: s.Log, Now: time.Now, Gate: s.Gate}).Routes()
+	storeDown := (&api.API{Projects: f.pg, NewProjects: failingProjects{}, VerifyLiveKit: acceptLiveKit{}, Accounts: f.pg, Log: s.Log, Now: time.Now, Gate: s.Gate}).Routes()
 	f.send(storeDown, newProject)
 	if !strings.Contains(f.logs.String(), "the project store is down") {
 		t.Error("the failing project store did not log")

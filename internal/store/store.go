@@ -28,12 +28,16 @@ type NewProject struct {
 	LiveKitAPISecret string
 }
 
-// ErrLiveKitKeyInUse means another project already uses the LiveKit API key, which ingest relies on
-// to find the project an event belongs to.
-var ErrLiveKitKeyInUse = errors.New("LiveKit API key is already used by another project")
-
 // ErrProjectExists means the organisation already has a project with that id.
 var ErrProjectExists = errors.New("a project with this id already exists")
+
+// ErrLiveKitSecretInvalid means LiveKit refused a read signed with the project's key and secret, so
+// the caller has not shown it holds that key's secret.
+var ErrLiveKitSecretInvalid = errors.New("the LiveKit API secret did not verify for this key")
+
+// ErrLiveKitUnreachable means a read of the project's LiveKit URL got no LiveKit answer: the
+// address was refused by the address guard, did not answer, or is not a LiveKit server.
+var ErrLiveKitUnreachable = errors.New("could not reach this LiveKit URL")
 
 // ErrBadRow means storage refused a row for what it holds, not because it is unreachable or busy:
 // retrying the same row cannot succeed.

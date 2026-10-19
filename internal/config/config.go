@@ -51,7 +51,8 @@ type Config struct {
 	// self-hosted install's workers usually sit on its own private network.
 	WorkerEndpointsPublicOnly bool
 	// InstanceTokenSHA256 is the SHA-256 of VOICEGATEWAY_INSTANCE_TOKEN, which turns the instance
-	// API on (phase 06e); nil when unset. The token itself is not kept.
+	// API on (phase 06e); nil when unset. The token itself is not kept. Setting it requires
+	// WorkerEndpointsPublicOnly.
 	InstanceTokenSHA256 []byte
 	// ConsoleDir is the built dashboard web serves (decision 0011); the image sets it. Empty serves
 	// no console, as in development, where the Vite dev server runs it.
@@ -123,8 +124,8 @@ func Load(getenv func(string) string) (Config, error) {
 		errs = append(errs, errors.New("VOICEGATEWAY_S3_USE_SSL must be true or false"))
 	}
 	c.S3.UseSSL = ssl
-	publicOnly, err := strconv.ParseBool(optional("VOICEGATEWAY_WORKER_ENDPOINTS_PUBLIC_ONLY", "false"))
-	if err != nil {
+	publicOnly, publicOnlyErr := strconv.ParseBool(optional("VOICEGATEWAY_WORKER_ENDPOINTS_PUBLIC_ONLY", "false"))
+	if publicOnlyErr != nil {
 		errs = append(errs, errors.New("VOICEGATEWAY_WORKER_ENDPOINTS_PUBLIC_ONLY must be true or false"))
 	}
 	c.WorkerEndpointsPublicOnly = publicOnly
@@ -136,6 +137,13 @@ func Load(getenv func(string) string) (Config, error) {
 		}
 		sum := sha256.Sum256([]byte(token))
 		c.InstanceTokenSHA256 = sum[:]
+		// The instance token marks a shared instance (decision 0028), whose organisations add projects
+		// and endpoints that must not reach its network. Every role refuses to start without the
+		// guard, so a worker can never read a hosted project unguarded and web never accepts one for
+		// it. An unparseable flag is already named above.
+		if publicOnlyErr == nil && !publicOnly {
+			errs = append(errs, errors.New("VOICEGATEWAY_INSTANCE_TOKEN is set, so VOICEGATEWAY_WORKER_ENDPOINTS_PUBLIC_ONLY must be true: a shared instance reads its organisations' LiveKit projects and worker endpoints only through the address guard"))
+		}
 	}
 
 	c.CloudQuotas, err = strconv.ParseBool(optional("VOICEGATEWAY_CLOUD_QUOTAS", "false"))

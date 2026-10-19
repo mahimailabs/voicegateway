@@ -115,8 +115,8 @@ func newFixture(t *testing.T) fixture {
 	producer := stream.NewProducer(rdb, stream.Ingest)
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 	return fixture{
-		handler: &Webhooks{Projects: projects, Stream: producer, Log: log, Now: time.Now},
-		uploads: &Uploads{Projects: projects, Stream: producer, Log: log, Now: time.Now},
+		handler: &Webhooks{Projects: ScopedProjects{Store: projects, OrganisationID: "default", ProjectID: "production"}, Stream: producer, Log: log, Now: time.Now},
+		uploads: &Uploads{Projects: ScopedProjects{Store: projects, OrganisationID: "default", ProjectID: "production"}, Stream: producer, Log: log, Now: time.Now},
 		rdb:     rdb,
 	}
 }

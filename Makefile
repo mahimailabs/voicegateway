@@ -61,9 +61,9 @@ user-add: ## Add the first admin to the running stack: make user-add EMAIL=you@e
 	@test -n "$(EMAIL)" || { echo 'EMAIL is required, for example: make user-add EMAIL=you@example.com'; exit 1; }
 	$(COMPOSE) --env-file deploy/.env run --rm --no-deps -e VOICEGATEWAY_USER_PASSWORD web user add --email "$(EMAIL)" --role "$(or $(ROLE),admin)"
 
-project-add: ## Add a LiveKit project to the running stack: make project-add NAME="Production" (uses LIVEKIT_URL, LIVEKIT_API_KEY, LIVEKIT_API_SECRET)
+project-add: ## Add a LiveKit project to the running stack: make project-add NAME="Production" (uses LIVEKIT_URL, LIVEKIT_API_KEY, LIVEKIT_API_SECRET; SKIP_VERIFY=1 skips the LiveKit check)
 	@test -n "$(NAME)" || { echo 'NAME is required, for example: make project-add NAME="Production"'; exit 1; }
-	$(COMPOSE) --env-file deploy/.env run --rm --no-deps -e LIVEKIT_API_SECRET web project add --name "$(NAME)" --livekit-url "$(LIVEKIT_URL)" --livekit-api-key "$(LIVEKIT_API_KEY)"
+	$(COMPOSE) --env-file deploy/.env run --rm --no-deps -e LIVEKIT_API_SECRET web project add --name "$(NAME)" --livekit-url "$(LIVEKIT_URL)" --livekit-api-key "$(LIVEKIT_API_KEY)"$(if $(SKIP_VERIFY), --skip-verify)
 
 api-lint: ## Validate the pinned OpenAPI contract
 	cd $(DASHBOARD) && REDOCLY_TELEMETRY=off npx --no-install redocly lint ../docs/api/openapi.yaml --config ../redocly.yaml
@@ -79,3 +79,8 @@ api-types-check: api-types ## Fail when the generated API types are out of date
 	test -z "$$(git ls-files --others --exclude-standard -- $(DASHBOARD)/src/lib/api-types)"
 
 api-check: api-lint api-sources api-types-check ## Validate the console read contract
+
+.PHONY: installer-test
+installer-test: ## Check installer shell syntax and host behavior
+	shellcheck install.sh collector.sh tools/tests/test_installers.sh
+	bash tools/tests/test_installers.sh

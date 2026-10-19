@@ -449,3 +449,22 @@ indexed calls may finish and send their final reports while the current entitlem
 every OTLP record must identify a known call in the authenticated project. A real-Postgres
 regression verifies a refused new room, accepted room_finished, observed closure and complete
 usage, mixed-call refusal, project isolation and revocation. Full Cloud integration remains open.
+
+### 2026-10-19: a shared instance fails closed without the address guard
+
+`config.Load` now refuses `VOICEGATEWAY_INSTANCE_TOKEN` without `VOICEGATEWAY_WORKER_ENDPOINTS_PUBLIC_ONLY=true`, naming both variables, so web, worker, migrate and every CLI command on a misconfigured shared instance exit with a configuration error instead of reading hosted projects unguarded (the #420 follow-up: removing the Cloud project-creation gate left nothing tying web's acceptance of projects to the worker's guard).
+- **Signal:** the instance token. It is the only setting that marks a shared instance (decision 0028: hosted workspaces are organisations created through the instance API), and `deploy/compose.yaml` passes it, like the guard flag, through the shared `x-voicegateway-env` block, so every role sees both. There is no Cloud overlay in this repository; a Cloud deployment that gives the token to web only still fails closed on web, and must set both on the worker for the instance API's organisations to be read at all.
+- A self-hosted install without the token starts with either value, as before. An unparseable flag is reported once, as itself.
+- Test: `TestSharedInstanceNeedsPublicOnly` (shared with the flag unset or false is refused; shared with true, and self-hosted with any value, start).
+
+### 2026-10-19: installers install the Go stack
+
+`install.sh` (served at voicegateway.dev/install.sh) now does step 1 of docs/self-hosting.md: it checks for Docker with Compose v2, git and make, checks out v1.0.0-preview.3 into ./voicegateway, starts the stack from ghcr.io/mahimailabs/voicegateway:1.0.0-preview.3 and runs `make preflight`. `VOICEGATEWAY_VERSION` and `VOICEGATEWAY_DIR` override the release and folder; re-running updates the checkout. `collector.sh` stays at its URL but installs nothing: it says the collector is retired and points at install.sh. docker-compose.collector.yml and docker-compose.autoupdate.yml are removed; existing collectors keep running from their own copies. The Installers workflow replaces the collector and pipx/uv container matrices: stubbed host tests, plus a real install on a runner that waits for `/healthz`, nightly as well.
+
+Integration review pins preview.3 after its image publication succeeded. Re-runs refuse an unrelated origin or a dirty working tree before fetch, checkout or make. Local make installer-test passes; the workflow boot test and the maintainer's independent fresh-environment rehearsal remain required. No clean-install acceptance is claimed by these stub tests.
+
+### 2026-10-19: project-scoped LiveKit ingestion
+
+Project-scoped ingestion is in progress (decision 0032). Every active ingestion route selects an organisation and project before native LiveKit signature verification. The global key lookup and uniqueness constraint are removed in migration 00011. ListRooms remains an endpoint connectivity check, not ownership proof: a caller-controlled server can accept any token.
+
+The full Docker-backed Go race suite passed. Scoped routing, webhook body-hash verification, independent Postgres secrets and the fake-endpoint regression pass; Go lint, formatting, module and sqlc checks pass. All 165 dashboard tests pass with one Vitest worker; two default-parallel runs timed out in existing Calls tests. Dashboard lint, TypeScript, OpenAPI validation and all 691 source-attribution checks pass. Quota integration uses migration 00012; the later recordings integration must use 00013. No hosted onboarding completion is claimed.

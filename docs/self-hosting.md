@@ -12,11 +12,13 @@ Run VoiceGateway on your own machine or server, connect your LiveKit project and
 ## 1. Start the stack
 
 ```bash
-git clone --branch v1.0.0-preview.2 --depth 1 https://github.com/mahimailabs/voicegateway.git
+git clone --branch v1.0.0-preview.3 --depth 1 https://github.com/mahimailabs/voicegateway.git
 cd voicegateway
-VOICEGATEWAY_IMAGE=ghcr.io/mahimailabs/voicegateway:1.0.0-preview.2 make up
+VOICEGATEWAY_IMAGE=ghcr.io/mahimailabs/voicegateway:1.0.0-preview.3 make up
 make preflight
 ```
+
+Or let `curl -fsSL https://voicegateway.dev/install.sh | bash` run these four commands for you: it checks for Docker, git and make first, and running it again in the same place updates the checkout. Set `VOICEGATEWAY_VERSION` or `VOICEGATEWAY_DIR` to change the release or the folder.
 
 `make up` pulls the published image (amd64 or arm64) and keeps its name in `deploy/.env`, so later commands and new terminals use it too. Without `VOICEGATEWAY_IMAGE`, `make up` builds the image from this checkout, which needs about 10 GB free. Either way it starts six services (web, worker, Postgres, ClickHouse, Redis and an S3 bucket). On the first run it writes `deploy/.env` with fresh random secrets; keep that file, and never commit it. `make preflight` should report OK for postgres, clickhouse, redis and s3.
 
@@ -41,14 +43,14 @@ export LIVEKIT_API_SECRET=...
 make project-add NAME="Production"
 ```
 
-The secret is encrypted at rest and never shown again. The project then appears in the console's project switcher. VoiceGateway starts reading your media server, SIP, egress and ingress through the LiveKit API right away.
+Before storing anything, VoiceGateway lists your LiveKit rooms once with that key and secret, so a wrong secret or an unreachable URL is refused right away; if your LiveKit server is not reachable from VoiceGateway yet, add `SKIP_VERIFY=1`. The secret is encrypted at rest and never shown again. The project then appears in the console's project switcher. VoiceGateway starts reading your media server, SIP, egress and ingress through the LiveKit API right away.
 
 ## 4. Point your agent at VoiceGateway
 
 In the agent's environment, set:
 
 ```bash
-LIVEKIT_OBSERVABILITY_URL=http://<voicegateway-host>:8080
+LIVEKIT_OBSERVABILITY_URL=http://<voicegateway-host>:8080/ingest/<organisation-id>/<project-id>
 ```
 
 and start the agent session with `record=True`. LiveKit Agents then uploads its traces, logs, metrics and session report to VoiceGateway, signed with the same LiveKit API key and secret. The agent's audio path is untouched: if VoiceGateway is down, calls carry on.
@@ -57,7 +59,7 @@ This setting sends the uploads to VoiceGateway instead of LiveKit Cloud's own ob
 
 ## 5. Send LiveKit's webhooks to VoiceGateway
 
-In your LiveKit project's webhook settings, add `https://<voicegateway-host>/livekit/webhook`, signed with the API key from step 3.
+In your LiveKit project's webhook settings, add `https://<voicegateway-host>/ingest/<organisation-id>/<project-id>/livekit/webhook`, signed with the API key from step 3. Use the organisation and project IDs shown in the console URL. These IDs select the destination; LiveKit signatures still authenticate every request.
 
 Without the webhook, calls still appear, but they have no start or observed end time, duration or participants, because those come from LiveKit's room events. They stay **open** until two hours pass with no activity. VoiceGateway then closes them as inferred, with the last reported activity as the end time when there is one.
 

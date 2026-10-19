@@ -23,7 +23,6 @@ import (
 	"github.com/mahimailabs/voicegateway/internal/auth"
 	"github.com/mahimailabs/voicegateway/internal/config"
 	"github.com/mahimailabs/voicegateway/internal/console"
-	"github.com/mahimailabs/voicegateway/internal/event"
 	"github.com/mahimailabs/voicegateway/internal/ingest"
 	"github.com/mahimailabs/voicegateway/internal/invite"
 	"github.com/mahimailabs/voicegateway/internal/join"
@@ -73,7 +72,6 @@ func Web(ctx context.Context, c config.Config, log *slog.Logger) error {
 	if c.CloudQuotas {
 		quota = &instance.Quota{Store: projects, Now: time.Now}
 	}
-	uploads := &ingest.Uploads{Quota: quota, Projects: projects, Stream: producer, Log: log, Now: time.Now}
 
 	warnRetiredToken(os.Getenv, log)
 	trusted, err := auth.ParseTrusted(c.TrustedProxies)
@@ -120,18 +118,10 @@ func Web(ctx context.Context, c config.Config, log *slog.Logger) error {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", obs.Health)
-	// LiveKit's webhooks and Agents' observability paths (decision 0014), under
-	// LIVEKIT_OBSERVABILITY_URL. They take only POST; any other method is a 405, never the console.
-	handlePost(mux, map[string]http.Handler{
-		"/livekit/webhook":               &ingest.Webhooks{Quota: quota, Projects: projects, Stream: producer, Log: log, Now: time.Now},
-		"/observability/traces/otlp/v0":  uploads.OTLP(event.KindAgentTraces),
-		"/observability/logs/otlp/v0":    uploads.OTLP(event.KindAgentLogs),
-		"/observability/metrics/otlp/v0": uploads.OTLP(event.KindAgentMetrics),
-		"/observability/recordings/v0":   http.HandlerFunc(uploads.SessionReport),
-	})
+	mountIngestion(mux, projects, producer, quota, log, time.Now)
 	mux.Handle("/auth/", accounts.Routes())
 	mux.Handle("/api/v1/", (&api.API{
-		Projects: projects, NewProjects: projects, Calls: projects, Traces: events, Layers: events, Endpoints: projects, Accounts: projects, Stats: projects, Keys: projects, NewKey: auth.NewKey, Log: log, Now: time.Now, Gate: accounts.Gate,
+		Projects: projects, NewProjects: projects, VerifyLiveKit: scrape.NewVerifier(c.WorkerEndpointsPublicOnly), Calls: projects, Traces: events, Layers: events, Endpoints: projects, Accounts: projects, Stats: projects, Keys: projects, NewKey: auth.NewKey, Log: log, Now: time.Now, Gate: accounts.Gate,
 		Invitations: projects, Inviter: NewInviter(links), LinkBase: accounts.LinkBase,
 		Instance:       instanceAPI,
 		AnswerBudgetMs: c.AnswerBudgetMs,

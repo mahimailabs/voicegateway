@@ -20,9 +20,15 @@ import (
 
 // ProjectCreator creates a project with its LiveKit secret sealed: pgstore.Store.CreateProject, the
 // path voicegateway project add takes too. Its errors are store.ErrProjectExists,
-// store.ErrLiveKitKeyInUse and store.ErrNotFound for an unknown organisation.
+// store.ErrNotFound for an unknown organisation.
 type ProjectCreator interface {
 	CreateProject(ctx context.Context, p store.NewProject) (store.Project, error)
+}
+
+// LiveKitVerifier checks the supplied endpoint with a signed read before storing a project
+// (scrape.Verifier). Its errors are store.ErrLiveKitSecretInvalid and store.ErrLiveKitUnreachable.
+type LiveKitVerifier interface {
+	VerifyLiveKit(ctx context.Context, url, apiKey, apiSecret string) error
 }
 
 // maxProjectBody bounds a createProject body, which holds a name, a URL, a key and a secret.
@@ -30,8 +36,10 @@ const maxProjectBody = 4 << 10
 
 // Contract Error codes for createProject.
 const (
-	codeProjectExists   = "project_exists"
-	codeLiveKitKeyInUse = "livekit_key_in_use"
+	codeProjectExists = "project_exists"
+	// The two answers of a LiveKit secret that could not be shown to verify, both 422.
+	codeLiveKitSecretInvalid = "livekit_secret_invalid"
+	codeLiveKitUnreachable   = "livekit_unreachable"
 )
 
 // The fields of a new project, by their contract names; ProjectInputError names them this way, and
@@ -152,10 +160,11 @@ func liveKitURL(raw string) bool {
 }
 
 // createProject serves operationId createProject: an Admin adds a LiveKit project to the
-// organisation, through the same check and create path as voicegateway project add. The secret is
-// sealed by the store and never answered or logged.
+// organisation, through the same check, LiveKit verification and create path as voicegateway
+// project add. The secret is sealed by the store and never answered or logged.
 func (a *API) createProject(w http.ResponseWriter, r *http.Request) {
-	if a.NewProjects == nil {
+	// Without a verifier no key could be proven, so the route stays off rather than store one unproven.
+	if a.NewProjects == nil || a.VerifyLiveKit == nil {
 		writeError(w, r, http.StatusForbidden, "forbidden", "adding projects from the console is off on this install")
 		return
 	}
@@ -184,14 +193,22 @@ func (a *API) createProject(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, http.StatusBadRequest, codeInvalidRequest, err.Error())
 		return
 	}
+	// One signed LiveKit read first: a key is stored, and its 409 answered, only for a caller who
+	// holds its secret. API keys are not secret, so without this anyone could claim another
+	// customer's key with a made-up secret, or learn from the 409 which keys this server holds. The
+	// cause is not logged or answered: it can name addresses the guard refused.
+	switch err := a.VerifyLiveKit.VerifyLiveKit(r.Context(), in.LiveKitURL, in.LiveKitAPIKey, in.LiveKitAPISecret); {
+	case errors.Is(err, store.ErrLiveKitSecretInvalid):
+		writeError(w, r, http.StatusUnprocessableEntity, codeLiveKitSecretInvalid, "the LiveKit API secret did not verify for this key")
+		return
+	case err != nil:
+		writeError(w, r, http.StatusUnprocessableEntity, codeLiveKitUnreachable, "could not reach this LiveKit URL")
+		return
+	}
 	p, err := a.NewProjects.CreateProject(r.Context(), in)
 	switch {
 	case errors.Is(err, store.ErrProjectExists):
 		writeError(w, r, http.StatusConflict, codeProjectExists, fmt.Sprintf("this organisation already has a project with the id %s; choose another name", in.ID))
-		return
-	case errors.Is(err, store.ErrLiveKitKeyInUse):
-		// The project that holds the key may be another organisation's, so it is not named.
-		writeError(w, r, http.StatusConflict, codeLiveKitKeyInUse, "this LiveKit API key is already used by a project on this server; each project needs its own key")
 		return
 	case err != nil:
 		a.failWith(w, r, err, "organisation not found", "the project could not be stored")
