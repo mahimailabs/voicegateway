@@ -100,7 +100,7 @@ func (m *Mailer) Send(ctx context.Context, to, subject, body string) error {
 	if err != nil {
 		return &Error{class: "unreachable", err: err}
 	}
-	if err := c.DialAndSendWithContext(ctx, msg); err != nil {
+	if err := c.DialAndSendWithContext(ctx, msg); err != nil && !msg.IsDelivered() {
 		return &Error{class: classify(err), err: err}
 	}
 	return nil
@@ -115,6 +115,14 @@ type Error struct {
 
 func (e *Error) Error() string { return fmt.Sprintf("smtp: %s", e.class) }
 func (e *Error) Unwrap() error { return e.err }
+
+// DeliveryUnknown reports a missing final DATA acknowledgement. A transport failure
+// here does not prove rejection: the server may already have accepted the message.
+func (e *Error) DeliveryUnknown() bool {
+	var se *mail.SendError
+	return errors.As(e.err, &se) && (se.Reason == mail.ErrAmbiguous ||
+		(se.Reason == mail.ErrSMTPDataClose && se.ErrorCode() == 0))
+}
 
 // Class names the failure.
 func (e *Error) Class() string { return e.class }

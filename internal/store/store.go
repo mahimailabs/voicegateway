@@ -395,6 +395,11 @@ type Invitation struct {
 	EmailedAt       *time.Time
 	AcceptedAt      *time.Time
 	RevokedAt       *time.Time
+	// EmailStartedAt is set when SMTP was set as the link was made, before its send; then
+	// EmailedAt or EmailFailedAt records the outcome. Only EmailStartedAt means the send is in
+	// flight, or its outcome was lost.
+	EmailStartedAt *time.Time
+	EmailFailedAt  *time.Time
 }
 
 // State is an invitation's derived state at now: accepted, revoked, expired or pending.
@@ -418,6 +423,7 @@ type NewInvitation struct {
 	IdempotencyKey              *string
 	TokenSHA256                 []byte
 	ExpiresAt                   time.Time
+	EmailStartedAt              *time.Time // set when the link will be emailed
 }
 
 // Organisation is an organisation as the instance API reads it (phase 06e): its members, admins

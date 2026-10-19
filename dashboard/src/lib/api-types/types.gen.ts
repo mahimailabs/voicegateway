@@ -1460,9 +1460,9 @@ export type InstanceInvitation = {
      */
     expiresAt: string;
     /**
-     * True when the email was sent; false without SMTP, or when the send failed. On a repeat, as it was.
+     * True when the email was sent; false without SMTP, or when the send failed. On a repeat, as it was; a repeat during the first call's send waits for its outcome.
      */
-    emailed: boolean;
+    emailed: boolean | null;
     /**
      * <VOICEGATEWAY_PUBLIC_URL>/invite#<token>, only without SMTP and only in the answer that made it.
      */

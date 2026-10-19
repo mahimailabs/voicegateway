@@ -87,6 +87,8 @@ type Invitation struct {
 	EmailedAt      pgtype.Timestamptz
 	AcceptedAt     pgtype.Timestamptz
 	RevokedAt      pgtype.Timestamptz
+	EmailStartedAt pgtype.Timestamptz
+	EmailFailedAt  pgtype.Timestamptz
 }
 
 type ListSnapshot struct {
