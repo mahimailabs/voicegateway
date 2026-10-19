@@ -123,7 +123,7 @@ func Web(ctx context.Context, c config.Config, log *slog.Logger) error {
 	})
 	mux.Handle("/auth/", accounts.Routes())
 	mux.Handle("/api/v1/", (&api.API{
-		Projects: projects, NewProjects: consoleProjectCreator(c, projects), Calls: projects, Traces: events, Layers: events, Endpoints: projects, Accounts: projects, Stats: projects, Keys: projects, NewKey: auth.NewKey, Log: log, Now: time.Now, Gate: accounts.Gate,
+		Projects: projects, NewProjects: projects, Calls: projects, Traces: events, Layers: events, Endpoints: projects, Accounts: projects, Stats: projects, Keys: projects, NewKey: auth.NewKey, Log: log, Now: time.Now, Gate: accounts.Gate,
 		Invitations: projects, Inviter: NewInviter(links), LinkBase: accounts.LinkBase,
 		Instance:       instanceAPI,
 		AnswerBudgetMs: c.AnswerBudgetMs,

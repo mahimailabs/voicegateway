@@ -3,13 +3,17 @@ package api_test
 import (
 	"context"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/livekit/protocol/livekit"
 	lksdk "github.com/livekit/server-sdk-go/v2"
 	"github.com/twitchtv/twirp"
 
 	"github.com/mahimailabs/voicegateway/internal/scrape"
+	"github.com/mahimailabs/voicegateway/internal/store"
 )
 
 // The guarded LiveKit dial (VOICEGATEWAY_WORKER_ENDPOINTS_PUBLIC_ONLY) builds its own Twirp clients
@@ -67,5 +71,41 @@ func TestGuardedLiveKitDialAnswersLikeTheSDK(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+// A region outage is a failed observation, not an empty room list. The next poll
+// must recover using the same scraper after connectivity returns.
+func TestGuardedLiveKitOutageRecoversOnNextPoll(t *testing.T) {
+	f := newFixture(t)
+	f.addProject("outage", devSecret)
+	room := f.createRoom(t, "call-during-outage")
+	dial := scrape.DialThrough(scrape.NewWorkerClient(false))
+	s := f.scraper(nil)
+	s.Dial = dial
+	f.sample(t, s, 1)
+	before := f.read(t, "outage")
+	if before.SourceStatus == nil || before.SourceStatus.LastGoodReadAt == nil {
+		t.Fatal("initial read did not succeed")
+	}
+	lastGood := *before.SourceStatus.LastGoodReadAt
+	closed := httptest.NewServer(http.NotFoundHandler())
+	closed.Close()
+	s.Dial = func(_ string, key, secret string) scrape.LiveKit { return dial(closed.URL, key, secret) }
+	time.Sleep(every)
+	f.sample(t, s, 1)
+	failed := f.read(t, "outage")
+	if failed.SourceStatus == nil || failed.SourceStatus.ErrorClass == nil || *failed.SourceStatus.ErrorClass != store.ErrorUnreachable {
+		t.Fatalf("outage status = %+v, want unreachable", failed.SourceStatus)
+	}
+	if failed.room(room.GetSid()) == nil || failed.SourceStatus.LastGoodReadAt == nil || !failed.SourceStatus.LastGoodReadAt.Equal(lastGood) {
+		t.Fatal("failed read discarded the last observed room or replaced its observation time")
+	}
+	s.Dial = dial
+	time.Sleep(every)
+	f.sample(t, s, 1)
+	recovered := f.read(t, "outage")
+	if recovered.SourceStatus == nil || recovered.SourceStatus.ErrorClass != nil || recovered.SourceStatus.LastGoodReadAt == nil || !recovered.SourceStatus.LastGoodReadAt.After(lastGood) {
+		t.Fatalf("next poll did not recover: %+v", recovered.SourceStatus)
 	}
 }

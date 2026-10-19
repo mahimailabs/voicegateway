@@ -430,4 +430,4 @@ An Admin of an organisation with no project adds one from the console's empty st
 
 With VOICEGATEWAY_WORKER_ENDPOINTS_PUBLIC_ONLY enabled, all eleven worker LiveKit reads use the existing dial-time address guard. The pinned server-sdk-go v2.19.0 accepts a custom HTTP client only for AgentClient; the other reads use livekit/protocol generated Twirp clients and the native access-token grants used by the SDK. Regression tests cover listening and closed internal addresses, metadata and private networks; refused addresses remain unreachable. A container-backed test compares responses and authentication failures against the native SDK.
 
-Local make go-test go-lint passed; Docker-dependent tests require CI. The temporary Cloud project-creation gate remains until the guard and the initial deployment's region-failover/proxy tradeoffs are reviewed. No hosted onboarding completion is claimed.
+Local make go-test go-lint passed; Docker-dependent tests require CI. The Cloud owner accepted the initial deployment's region-failover/proxy tradeoffs; the temporary Cloud project-creation gate is removed alongside the guard. No hosted onboarding completion is claimed.
