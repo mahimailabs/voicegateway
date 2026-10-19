@@ -19,7 +19,13 @@ export const fmtHourMinute = (t: When) => hourMinute.format(new Date(t))
 
 // A length in seconds: "4.2 s" under a minute, "3m 05s" from a minute. Intl.DurationFormat is not in
 // Node 22, which runs the tests, and its narrow style drops the padded seconds.
-export const fmtSeconds = (s: number) => (s >= 60 ? `${Math.floor(s / 60)}m ${String(Math.round(s % 60)).padStart(2, "0")}s` : `${s.toFixed(1)} s`)
+// It rounds once, before choosing the form, so it never prints "60.0 s" or "1m 60s".
+export const fmtSeconds = (s: number) => {
+  const r = Math.round(s * 10) / 10
+  if (r < 60) return `${r.toFixed(1)} s`
+  const whole = Math.round(r)
+  return `${Math.floor(whole / 60)}m ${String(whole % 60).padStart(2, "0")}s`
+}
 
 // A size in bytes, in 1024 steps: "1.5 MB" from a mebibyte, "12 kB" below.
 export const fmtBytes = (b: number) => (b >= 1024 ** 2 ? megabytes.format(b / 1024 ** 2) : kilobytes.format(Math.round(b / 1024)))

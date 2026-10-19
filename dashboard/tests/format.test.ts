@@ -7,6 +7,9 @@ describe("format", () => {
     [59.9, "59.9 s"],
     [65, "1m 05s"],
     [600, "10m 00s"],
+    [59.96, "1m 00s"],
+    [119.6, "2m 00s"],
+    [3599.7, "60m 00s"],
   ])("fmtSeconds(%s) is %s", (s, want) => expect(fmtSeconds(s)).toBe(want))
 
   it.each([
