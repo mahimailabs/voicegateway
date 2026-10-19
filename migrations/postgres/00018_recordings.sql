@@ -6,6 +6,9 @@
 -- stored_at is when web stored the object; the worker deletes rows and objects 90 days after it,
 -- the raw call data retention of ClickHouse 00010. call_list gains recorded, the one rule for
 -- which calls listCalls and its totals count as recorded.
+-- project_buckets holds the S3 bucket a project brought for its recordings, chosen when the project
+-- is created; a project without a row uses the instance's bucket (VOICEGATEWAY_S3_*). The row never
+-- changes, so a project's recordings never move between buckets: a trigger refuses every update.
 
 -- +goose Up
 ALTER TABLE projects ADD COLUMN recordings boolean NOT NULL DEFAULT false;
@@ -21,6 +24,34 @@ CREATE TABLE call_recordings (
 );
 CREATE INDEX call_recordings_call ON call_recordings (call_id, stored_at);
 CREATE INDEX call_recordings_stored ON call_recordings (stored_at);
+
+CREATE TABLE project_buckets (
+    organisation_id   text        NOT NULL,
+    project_id        text        NOT NULL,
+    -- Host and optional port, as minio-go dials it; use_ssl is the scheme the owner gave.
+    endpoint          text        NOT NULL CHECK (endpoint <> ''),
+    use_ssl           boolean     NOT NULL,
+    bucket            text        NOT NULL CHECK (bucket <> ''),
+    -- Empty when not given: the S3 client asks the bucket for it.
+    region            text        NOT NULL DEFAULT '',
+    access_key        text        NOT NULL CHECK (access_key <> ''),
+    -- AES-256-GCM under VOICEGATEWAY_SECRET_KEY, bound to organisation and project id. Never read
+    -- back to the dashboard.
+    secret_key_sealed bytea       NOT NULL,
+    created_at        timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY (organisation_id, project_id),
+    FOREIGN KEY (organisation_id, project_id) REFERENCES projects (organisation_id, id) ON DELETE CASCADE
+);
+
+-- +goose StatementBegin
+CREATE FUNCTION project_buckets_immutable() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+    RAISE EXCEPTION 'a project''s recording bucket is set when the project is created and never changes';
+END
+$$;
+-- +goose StatementEnd
+CREATE TRIGGER project_buckets_immutable BEFORE UPDATE ON project_buckets
+    FOR EACH ROW EXECUTE FUNCTION project_buckets_immutable();
 
 CREATE OR REPLACE VIEW call_list AS
 SELECT c.organisation_id, c.project_id, c.id, c.room_name, c.room_sid, c.job_id, c.started_at, c.ended_at,
@@ -63,5 +94,7 @@ CROSS JOIN LATERAL (
     FROM call_participants WHERE call_id = c.id
 ) p
 LEFT JOIN call_summaries s ON s.call_id = c.id;
+DROP TABLE project_buckets;
+DROP FUNCTION project_buckets_immutable();
 DROP TABLE call_recordings;
 ALTER TABLE projects DROP COLUMN recordings;

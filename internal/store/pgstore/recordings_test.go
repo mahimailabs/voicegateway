@@ -1,6 +1,7 @@
 package pgstore
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"testing"
@@ -99,5 +100,56 @@ func TestRecordingLinks(t *testing.T) {
 	}
 	if _, err := s.Recording(ctx, "default", "production", c.Recording.ID); err != nil {
 		t.Fatalf("latest recording forgotten too early: %v", err)
+	}
+}
+
+// A bucket a project brings is written with the project, its secret sealed and opened only for that
+// project, and never changes; a project without one uses the instance's bucket.
+func TestProjectBucketFixedAtCreate(t *testing.T) {
+	s, pool := migrated(t)
+	ctx := context.Background()
+	withBucket := project("support", "APIsupport")
+	withBucket.Bucket = &store.ProjectBucket{
+		OrganisationID: "default", ProjectID: "support", Endpoint: "s3.us-east-1.amazonaws.com", UseSSL: true,
+		Bucket: "acme-recordings", Region: "us-east-1", AccessKey: "AKIAEXAMPLE", SecretKey: "bucket-secret",
+	}
+	if _, err := s.CreateProject(ctx, withBucket); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.CreateProject(ctx, project("plain", "APIplain")); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := s.ProjectBucket(ctx, "default", "support")
+	if err != nil || got != *withBucket.Bucket {
+		t.Fatalf("ProjectBucket = %+v, %v; want %+v", got, err, *withBucket.Bucket)
+	}
+	if _, err := s.ProjectBucket(ctx, "default", "plain"); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("a project without a bucket: %v, want store.ErrNotFound", err)
+	}
+	all, err := s.ProjectBuckets(ctx)
+	if err != nil || len(all) != 1 || all[0] != got {
+		t.Fatalf("ProjectBuckets = %+v, %v", all, err)
+	}
+
+	var sealed []byte
+	if err := pool.QueryRow(ctx, "SELECT secret_key_sealed FROM project_buckets WHERE project_id = 'support'").Scan(&sealed); err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(sealed, []byte("bucket-secret")) {
+		t.Fatal("the bucket secret is stored in the clear")
+	}
+	if _, err := pool.Exec(ctx, "UPDATE project_buckets SET bucket = 'elsewhere' WHERE project_id = 'support'"); err == nil {
+		t.Fatal("a project's bucket was changed after create")
+	}
+
+	// A bucket the table refuses leaves no project behind: the two are written together.
+	broken := project("broken", "APIbroken")
+	broken.Bucket = &store.ProjectBucket{Bucket: "b", AccessKey: "k", SecretKey: "s"}
+	if _, err := s.CreateProject(ctx, broken); err == nil {
+		t.Fatal("a bucket with no endpoint was stored")
+	}
+	if _, err := s.Project(ctx, "default", "broken"); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("a project whose bucket was refused was kept: %v", err)
 	}
 }

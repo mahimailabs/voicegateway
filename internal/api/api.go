@@ -43,6 +43,9 @@ type API struct {
 	// VerifyLiveKit proves a new project's LiveKit secret before NewProjects stores it; without it
 	// createProject is off.
 	VerifyLiveKit LiveKitVerifier
+	// VerifyBucket proves a bucket a new project brings for its recordings takes writes and deletes
+	// before NewProjects stores it. Without it, createProject refuses a project that brings one.
+	VerifyBucket BucketVerifier
 	// LinkBase is an invitation link's base for a request: VOICEGATEWAY_PUBLIC_URL, or the
 	// request's scheme and Host (auth.Service.LinkBase).
 	LinkBase func(r *http.Request) string

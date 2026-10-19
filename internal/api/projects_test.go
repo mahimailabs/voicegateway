@@ -94,10 +94,14 @@ func TestCreateProjectRejectsTrailingBody(t *testing.T) {
 	}
 }
 
-type countProjectCreates struct{ calls int }
+type countProjectCreates struct {
+	calls int
+	last  store.NewProject
+}
 
 func (c *countProjectCreates) CreateProject(_ context.Context, p store.NewProject) (store.Project, error) {
 	c.calls++
+	c.last = p
 	return store.Project{ID: p.ID, Name: p.Name}, nil
 }
 
@@ -156,6 +160,114 @@ func TestCreateProjectAnswersTheVerifier(t *testing.T) {
 				t.Fatalf("= %d %s, %d stores; want %d %s %q, %d stores", w.Code, w.Body, creator.calls, tt.status, tt.code, tt.message, tt.stores)
 			}
 			if strings.Contains(w.Body.String(), "10.0.0.7") || strings.Contains(w.Body.String(), "test-secret") {
+				t.Errorf("the answer holds the cause or the secret: %s", w.Body)
+			}
+		})
+	}
+}
+
+// A bucket a project brings is checked by the same rule on both paths: its endpoint is kept as the
+// host and port minio-go dials, its scheme as UseSSL, and it belongs to the new project.
+func TestCheckProjectBucket(t *testing.T) {
+	base := store.NewProject{OrganisationID: "org-a", Name: "Support", LiveKitURL: "wss://lk.example.com", LiveKitAPIKey: "APIkey", LiveKitAPISecret: "s"}
+	ok := store.ProjectBucket{Endpoint: " https://s3.us-east-1.amazonaws.com/ ", Bucket: "acme-recordings", Region: " us-east-1 ", AccessKey: " AKIA ", SecretKey: " kept "}
+	p := base
+	p.Bucket = &ok
+	got, err := CheckProject(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := store.ProjectBucket{OrganisationID: "org-a", ProjectID: "support", Endpoint: "s3.us-east-1.amazonaws.com", UseSSL: true, Bucket: "acme-recordings", Region: "us-east-1", AccessKey: "AKIA", SecretKey: " kept "}
+	if *got.Bucket != want {
+		t.Errorf("bucket = %+v, want %+v", *got.Bucket, want)
+	}
+	p.Bucket = &store.ProjectBucket{Endpoint: "http://seaweedfs:8333", Bucket: "recordings", AccessKey: "k", SecretKey: "s"}
+	if got, err := CheckProject(p); err != nil || got.Bucket.Endpoint != "seaweedfs:8333" || got.Bucket.UseSSL {
+		t.Errorf("http endpoint = %+v, %v", got.Bucket, err)
+	}
+	with := func(change func(*store.ProjectBucket)) store.NewProject {
+		b := ok
+		change(&b)
+		p := base
+		p.Bucket = &b
+		return p
+	}
+	for _, tt := range []struct {
+		name string
+		in   store.NewProject
+		want string
+	}{
+		{"every field missing", with(func(b *store.ProjectBucket) { *b = store.ProjectBucket{SecretKey: " "} }), "missing recordingBucket.endpoint, recordingBucket.bucket, recordingBucket.accessKeyId, recordingBucket.secretAccessKey"},
+		{"other scheme", with(func(b *store.ProjectBucket) { b.Endpoint = "ftp://s3.example.com" }), "recordingBucket.endpoint must be"},
+		{"no scheme", with(func(b *store.ProjectBucket) { b.Endpoint = "s3.example.com" }), "recordingBucket.endpoint must be"},
+		{"a path", with(func(b *store.ProjectBucket) { b.Endpoint = "https://s3.example.com/acme" }), "recordingBucket.endpoint must be"},
+		{"user information", with(func(b *store.ProjectBucket) { b.Endpoint = "https://u:p@s3.example.com" }), "recordingBucket.endpoint must be"},
+		{"bucket name", with(func(b *store.ProjectBucket) { b.Bucket = "Acme_Recordings" }), "recordingBucket.bucket must be"},
+		{"space in region", with(func(b *store.ProjectBucket) { b.Region = "us east" }), "recordingBucket.region must be"},
+		{"space in access key", with(func(b *store.ProjectBucket) { b.AccessKey = "AK IA" }), "recordingBucket.accessKeyId must be"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := CheckProject(tt.in)
+			var invalid *ProjectInputError
+			if !errors.As(err, &invalid) || !strings.HasPrefix(err.Error(), tt.want) {
+				t.Errorf("CheckProject = %v, want a ProjectInputError starting %q", err, tt.want)
+			}
+		})
+	}
+}
+
+// verifyBucketAs is a bucket verifier that answers err and counts its calls; the real write and
+// delete are tested against SeaweedFS in internal/bucket.
+type verifyBucketAs struct {
+	err   error
+	calls *int
+}
+
+func (v verifyBucketAs) VerifyBucket(context.Context, store.ProjectBucket) error {
+	*v.calls++
+	return v.err
+}
+
+// A bucket can never be changed once the project exists, so a project that brings one is stored
+// only after the bucket took a write and a delete. A project without one never asks the bucket, and
+// an install with no bucket verifier refuses one rather than store it unproven.
+func TestCreateProjectAnswersTheBucketVerifier(t *testing.T) {
+	const lk = `"name":"Support","livekitUrl":"wss://lk.example.com","livekitApiKey":"APIkey","livekitApiSecret":"test-secret"`
+	withBucket := `{` + lk + `,"recordingBucket":{"endpoint":"https://s3.example.com","bucket":"acme-recordings","accessKeyId":"AKIA","secretAccessKey":"bucket-secret"}}`
+	cause := errors.New("dial tcp 10.0.0.7:443: prohibited IP address")
+	for _, tt := range []struct {
+		name     string
+		body     string
+		err      error
+		verifier bool
+		status   int
+		code     string
+		checks   int
+		stores   int
+	}{
+		{"verified", withBucket, nil, true, http.StatusCreated, "", 1, 1},
+		{"no bucket brought", `{` + lk + `}`, nil, true, http.StatusCreated, "", 0, 1},
+		{"refused", withBucket, fmt.Errorf("%w: AccessDenied", store.ErrBucketRefused), true, http.StatusUnprocessableEntity, "recording_bucket_refused", 1, 0},
+		{"no S3 answer", withBucket, fmt.Errorf("%w: %w", store.ErrBucketUnreachable, cause), true, http.StatusUnprocessableEntity, "recording_bucket_unreachable", 1, 0},
+		{"no bucket verifier", withBucket, nil, false, http.StatusForbidden, "forbidden", 0, 0},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			creator, checks := &countProjectCreates{}, 0
+			a := &API{NewProjects: creator, VerifyLiveKit: verifyAs{}}
+			if tt.verifier {
+				a.VerifyBucket = verifyBucketAs{tt.err, &checks}
+			}
+			w := httptest.NewRecorder()
+			a.createProject(w, httptest.NewRequest(http.MethodPost, "/", strings.NewReader(tt.body)))
+			var e struct{ Code string }
+			_ = json.Unmarshal(w.Body.Bytes(), &e)
+			if w.Code != tt.status || e.Code != tt.code || checks != tt.checks || creator.calls != tt.stores {
+				t.Fatalf("= %d %s, %d checks, %d stores; want %d %s, %d, %d", w.Code, w.Body, checks, creator.calls, tt.status, tt.code, tt.checks, tt.stores)
+			}
+			if tt.name == "verified" && (creator.last.Bucket == nil || creator.last.Bucket.Endpoint != "s3.example.com" || creator.last.Bucket.SecretKey != "bucket-secret") {
+				t.Errorf("stored bucket = %+v", creator.last.Bucket)
+			}
+			if strings.Contains(w.Body.String(), "10.0.0.7") || strings.Contains(w.Body.String(), "bucket-secret") {
 				t.Errorf("the answer holds the cause or the secret: %s", w.Body)
 			}
 		})

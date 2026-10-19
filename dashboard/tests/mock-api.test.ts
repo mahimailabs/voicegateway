@@ -628,8 +628,20 @@ describe("createProject", () => {
     expect(ws.items[0].projects.map((p: { id: string }) => p.id)).not.toContain("nowhere")
   })
 
+  test("a recording bucket whose endpoint answers nothing is 422 recording_bucket_unreachable, and nothing is added", async () => {
+    const recordingBucket = { endpoint: "https://s3.nowhere.invalid", bucket: "acme-recordings", accessKeyId: "AKIA", secretAccessKey: "bucket-secret" }
+    const res = await post({ ...fields, name: "Bucketless", livekitApiKey: "APIbucketless", recordingBucket })
+    expect(res.status).toBe(422)
+    const e = await res.json()
+    expect(valid("Error", e)).toBe("")
+    expect(e.code).toBe("recording_bucket_unreachable")
+    const ws = await (await fetch("http://console.test/api/v1/workspaces")).json()
+    expect(ws.items[0].projects.map((p: { id: string }) => p.id)).not.toContain("bucketless")
+  })
+
   test.each([
     ["a missing secret", { ...fields, name: "Other", livekitApiSecret: "" }],
+    ["a bucket endpoint with a path", { ...fields, name: "Other", recordingBucket: { endpoint: "https://s3.example.com/acme", bucket: "b-1", accessKeyId: "k", secretAccessKey: "s" } }],
     ["a URL with another scheme", { ...fields, name: "Other", livekitUrl: "ftp://x.example.com" }],
   ])("%s is 400 in the Error shape", async (_name, body) => {
     const res = await post(body)

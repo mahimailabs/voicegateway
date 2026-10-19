@@ -61,9 +61,9 @@ user-add: ## Add the first admin to the running stack: make user-add EMAIL=you@e
 	@test -n "$(EMAIL)" || { echo 'EMAIL is required, for example: make user-add EMAIL=you@example.com'; exit 1; }
 	$(COMPOSE) --env-file deploy/.env run --rm --no-deps -e VOICEGATEWAY_USER_PASSWORD web user add --email "$(EMAIL)" --role "$(or $(ROLE),admin)"
 
-project-add: ## Add a LiveKit project to the running stack: make project-add NAME="Production" (uses LIVEKIT_URL, LIVEKIT_API_KEY, LIVEKIT_API_SECRET; SKIP_VERIFY=1 skips the LiveKit check)
+project-add: ## Add a LiveKit project to the running stack: make project-add NAME="Production" (uses LIVEKIT_URL, LIVEKIT_API_KEY, LIVEKIT_API_SECRET; SKIP_VERIFY=1 skips the LiveKit check; RECORDING_BUCKET_* brings its own recording bucket)
 	@test -n "$(NAME)" || { echo 'NAME is required, for example: make project-add NAME="Production"'; exit 1; }
-	$(COMPOSE) --env-file deploy/.env run --rm --no-deps -e LIVEKIT_API_SECRET web project add --name "$(NAME)" --livekit-url "$(LIVEKIT_URL)" --livekit-api-key "$(LIVEKIT_API_KEY)"$(if $(SKIP_VERIFY), --skip-verify)
+	$(COMPOSE) --env-file deploy/.env run --rm --no-deps -e LIVEKIT_API_SECRET -e RECORDING_BUCKET_SECRET_KEY web project add --name "$(NAME)" --livekit-url "$(LIVEKIT_URL)" --livekit-api-key "$(LIVEKIT_API_KEY)"$(if $(SKIP_VERIFY), --skip-verify)$(if $(RECORDING_BUCKET_ENDPOINT), --recording-bucket-endpoint "$(RECORDING_BUCKET_ENDPOINT)" --recording-bucket "$(RECORDING_BUCKET)" --recording-bucket-region "$(RECORDING_BUCKET_REGION)" --recording-bucket-access-key "$(RECORDING_BUCKET_ACCESS_KEY)")
 
 project-recordings: ## Keep or discard a project's call audio: make project-recordings PROJECT=production SET=on (or off)
 	@test -n "$(PROJECT)" || { echo 'PROJECT is required, for example: make project-recordings PROJECT=production SET=on'; exit 1; }

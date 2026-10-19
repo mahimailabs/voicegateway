@@ -75,10 +75,13 @@ func Web(ctx context.Context, c config.Config, log *slog.Logger) error {
 	if c.CloudQuotas {
 		quota = &instance.Quota{Store: projects, Now: time.Now}
 	}
-	recordings, err := bucket.New(c.S3)
+	instanceBucket, err := bucket.New(c.S3)
 	if err != nil {
 		return err
 	}
+	// A bucket a project brought is dialed through the worker's address guard, as its LiveKit URL is.
+	bucketTransport := scrape.NewWorkerClient(c.WorkerEndpointsPublicOnly).Transport
+	recordings := &bucket.Buckets{Default: instanceBucket, Projects: projects, Transport: bucketTransport}
 
 	warnRetiredToken(os.Getenv, log)
 	trusted, err := auth.ParseTrusted(c.TrustedProxies)
@@ -130,7 +133,7 @@ func Web(ctx context.Context, c config.Config, log *slog.Logger) error {
 	mux.Handle("/api/v1/", (&api.API{
 		Settings: projects, Metadata: projects, StorageBucket: c.S3.Bucket,
 		Live:              live,
-		ResourceEndpoints: projects, ResourceSamples: events, Projects: projects, NewProjects: projects, VerifyLiveKit: scrape.NewVerifier(c.WorkerEndpointsPublicOnly), Calls: projects, Traces: events, Layers: events, Endpoints: projects, Accounts: projects, Stats: projects, Keys: projects, NewKey: auth.NewKey, Log: log, Now: time.Now, Gate: accounts.Gate,
+		ResourceEndpoints: projects, ResourceSamples: events, Projects: projects, NewProjects: projects, VerifyLiveKit: scrape.NewVerifier(c.WorkerEndpointsPublicOnly), VerifyBucket: bucket.NewVerifier(bucketTransport), Calls: projects, Traces: events, Layers: events, Endpoints: projects, Accounts: projects, Stats: projects, Keys: projects, NewKey: auth.NewKey, Log: log, Now: time.Now, Gate: accounts.Gate,
 		Invitations: projects, Inviter: NewInviter(links), LinkBase: accounts.LinkBase,
 		Recordings: projects, Media: recordings,
 		Instance: instanceAPI,
@@ -206,9 +209,13 @@ func Worker(ctx context.Context, c config.Config, log *slog.Logger) error {
 	defer func() { _ = events.Close() }()
 	// The call index needs no sealer: it never reads a LiveKit secret.
 	joiner := &join.Joiner{Changed: live.Notify, Calls: pgstore.NewStore(pool, nil), Traces: events, Log: log, Timeout: 30 * time.Second}
-	recordings, err := bucket.New(c.S3)
+	instanceBucket, err := bucket.New(c.S3)
 	if err != nil {
 		return err
+	}
+	recordings := &bucket.Buckets{
+		Default: instanceBucket, Projects: pgstore.NewStore(pool, sealer),
+		Transport: scrape.NewWorkerClient(c.WorkerEndpointsPublicOnly).Transport,
 	}
 	retention := &bucket.Retention{Bucket: recordings, Links: pgstore.NewStore(pool, nil), Log: log}
 	// One consumer per worker process; a worker that dies leaves its entries to be claimed.

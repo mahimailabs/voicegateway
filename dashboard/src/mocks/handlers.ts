@@ -178,6 +178,21 @@ export const handlers = [
     // LiveKit, so it accepts every secret, and answers a host under the reserved .invalid domain,
     // which resolves nowhere, as web does: no LiveKit answer.
     if (url.hostname.endsWith(".invalid")) return fail(422, "livekit_unreachable", "could not reach this LiveKit URL")
+    // A bucket the project brings is proven the same way, with no S3 behind the mock: every one is
+    // accepted except an endpoint under .invalid.
+    const own = body?.recordingBucket
+    if (own) {
+      const gone = (["endpoint", "bucket", "accessKeyId", "secretAccessKey"] as const).filter((f) => text(own[f]) === "")
+      if (gone.length) return fail(400, "invalid_request", `missing ${gone.map((f) => `recordingBucket.${f}`).join(", ")}`)
+      let endpoint: URL | null = null
+      try {
+        endpoint = new URL(text(own.endpoint))
+      } catch {
+        endpoint = null
+      }
+      if (!endpoint || !["http:", "https:"].includes(endpoint.protocol) || !endpoint.hostname || endpoint.pathname.replace(/\//g, "") !== "") return fail(400, "invalid_request", "recordingBucket.endpoint must be an http or https URL with a host and no path, such as https://s3.us-east-1.amazonaws.com")
+      if (endpoint.hostname.endsWith(".invalid")) return fail(422, "recording_bucket_unreachable", "could not reach this S3 endpoint")
+    }
     const out = await addProject(String(params.orgId), name, text(body?.livekitApiKey))
     if (out === "project_exists") return fail(409, "project_exists", "this organisation already has a project with that id; choose another name")
     return HttpResponse.json(out, { status: 201, headers: { "Cache-Control": "no-store" } })

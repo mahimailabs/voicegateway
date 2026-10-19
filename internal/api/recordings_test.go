@@ -36,7 +36,7 @@ type nopCloser struct{ *bytes.Reader }
 
 func (nopCloser) Close() error { return nil }
 
-func (b bucketMedia) Open(_ context.Context, key string) (io.ReadSeekCloser, error) {
+func (b bucketMedia) Open(_ context.Context, _, _, key string) (io.ReadSeekCloser, error) {
 	if b.down {
 		return nil, errors.New("connection refused")
 	}

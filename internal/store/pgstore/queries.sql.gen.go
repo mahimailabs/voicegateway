@@ -817,6 +817,37 @@ func (q *Queries) InsertInvitation(ctx context.Context, arg InsertInvitationPara
 	return i, err
 }
 
+const insertProjectBucket = `-- name: InsertProjectBucket :exec
+INSERT INTO project_buckets (organisation_id, project_id, endpoint, use_ssl, bucket, region, access_key, secret_key_sealed)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+`
+
+type InsertProjectBucketParams struct {
+	OrganisationID  string
+	ProjectID       string
+	Endpoint        string
+	UseSsl          bool
+	Bucket          string
+	Region          string
+	AccessKey       string
+	SecretKeySealed []byte
+}
+
+// The bucket a project brought for its recordings, written with the project and never updated.
+func (q *Queries) InsertProjectBucket(ctx context.Context, arg InsertProjectBucketParams) error {
+	_, err := q.db.Exec(ctx, insertProjectBucket,
+		arg.OrganisationID,
+		arg.ProjectID,
+		arg.Endpoint,
+		arg.UseSsl,
+		arg.Bucket,
+		arg.Region,
+		arg.AccessKey,
+		arg.SecretKeySealed,
+	)
+	return err
+}
+
 const invitationByIdempotencyKey = `-- name: InvitationByIdempotencyKey :one
 SELECT i.id, i.kind, i.email, i.role, i.created_at, i.expires_at, i.emailed_at, i.accepted_at, i.revoked_at, u.email AS invited_by_email, i.email_started_at, i.email_failed_at
 FROM invitations i LEFT JOIN users u ON u.id = i.invited_by
@@ -1165,6 +1196,52 @@ func (q *Queries) ListInvitations(ctx context.Context, organisationID string) ([
 			&i.InvitedByEmail,
 			&i.EmailStartedAt,
 			&i.EmailFailedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listProjectBuckets = `-- name: ListProjectBuckets :many
+SELECT organisation_id, project_id, endpoint, use_ssl, bucket, region, access_key, secret_key_sealed
+FROM project_buckets
+ORDER BY organisation_id, project_id
+`
+
+type ListProjectBucketsRow struct {
+	OrganisationID  string
+	ProjectID       string
+	Endpoint        string
+	UseSsl          bool
+	Bucket          string
+	Region          string
+	AccessKey       string
+	SecretKeySealed []byte
+}
+
+func (q *Queries) ListProjectBuckets(ctx context.Context) ([]ListProjectBucketsRow, error) {
+	rows, err := q.db.Query(ctx, listProjectBuckets)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListProjectBucketsRow
+	for rows.Next() {
+		var i ListProjectBucketsRow
+		if err := rows.Scan(
+			&i.OrganisationID,
+			&i.ProjectID,
+			&i.Endpoint,
+			&i.UseSsl,
+			&i.Bucket,
+			&i.Region,
+			&i.AccessKey,
+			&i.SecretKeySealed,
 		); err != nil {
 			return nil, err
 		}
@@ -1701,6 +1778,44 @@ func (q *Queries) PrincipalRows(ctx context.Context, id pgtype.UUID) ([]Principa
 		return nil, err
 	}
 	return items, nil
+}
+
+const projectBucket = `-- name: ProjectBucket :one
+SELECT organisation_id, project_id, endpoint, use_ssl, bucket, region, access_key, secret_key_sealed
+FROM project_buckets
+WHERE organisation_id = $1 AND project_id = $2
+`
+
+type ProjectBucketParams struct {
+	OrganisationID string
+	ProjectID      string
+}
+
+type ProjectBucketRow struct {
+	OrganisationID  string
+	ProjectID       string
+	Endpoint        string
+	UseSsl          bool
+	Bucket          string
+	Region          string
+	AccessKey       string
+	SecretKeySealed []byte
+}
+
+func (q *Queries) ProjectBucket(ctx context.Context, arg ProjectBucketParams) (ProjectBucketRow, error) {
+	row := q.db.QueryRow(ctx, projectBucket, arg.OrganisationID, arg.ProjectID)
+	var i ProjectBucketRow
+	err := row.Scan(
+		&i.OrganisationID,
+		&i.ProjectID,
+		&i.Endpoint,
+		&i.UseSsl,
+		&i.Bucket,
+		&i.Region,
+		&i.AccessKey,
+		&i.SecretKeySealed,
+	)
+	return i, err
 }
 
 const projectByID = `-- name: ProjectByID :one

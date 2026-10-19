@@ -13,10 +13,16 @@ type Links interface {
 	ForgetRecordings(ctx context.Context, cutoff time.Time) (int64, error)
 }
 
+// Expirer removes the recording objects stored before a cutoff: a Bucket, or Buckets for every
+// bucket recordings live in.
+type Expirer interface {
+	Expire(ctx context.Context, cutoff time.Time) (int, error)
+}
+
 // Retention deletes recordings older than store.RecordingKeep: their links first, so the API never offers one
 // whose audio is gone, then their objects, by day.
 type Retention struct {
-	Bucket *Bucket
+	Bucket Expirer
 	Links  Links
 	Log    *slog.Logger
 }

@@ -91,7 +91,8 @@ func root() *cobra.Command {
 }
 
 // projectCommand adds LiveKit projects. The secret is read from LIVEKIT_API_SECRET, never a flag,
-// so it stays out of shell history and process listings.
+// so it stays out of shell history and process listings; a recording bucket's secret likewise from
+// RECORDING_BUCKET_SECRET_KEY.
 func projectCommand() *cobra.Command {
 	var in app.ProjectInput
 	add := &cobra.Command{
@@ -104,11 +105,16 @@ func projectCommand() *cobra.Command {
 				return fmt.Errorf("configuration:\n%w", err)
 			}
 			in.LiveKitAPISecret = os.Getenv("LIVEKIT_API_SECRET")
+			in.BucketSecretKey = os.Getenv("RECORDING_BUCKET_SECRET_KEY")
 			p, err := app.AddProject(cmd.Context(), c, in)
 			if err != nil {
 				return fmt.Errorf("add project: %w", err)
 			}
-			_, err = fmt.Fprintf(cmd.OutOrStdout(), "added project %s/%s (%s) for %s, LiveKit key %s\n", p.OrganisationID, p.ID, p.Name, p.LiveKitURL, p.LiveKitAPIKey)
+			bucket := "the instance's bucket"
+			if in.BucketEndpoint != "" {
+				bucket = "its own bucket " + in.BucketName
+			}
+			_, err = fmt.Fprintf(cmd.OutOrStdout(), "added project %s/%s (%s) for %s, LiveKit key %s, recordings in %s\n", p.OrganisationID, p.ID, p.Name, p.LiveKitURL, p.LiveKitAPIKey, bucket)
 			return err
 		},
 	}
@@ -119,6 +125,10 @@ func projectCommand() *cobra.Command {
 	f.StringVar(&in.LiveKitURL, "livekit-url", os.Getenv("LIVEKIT_URL"), "LiveKit server URL (default: LIVEKIT_URL)")
 	f.StringVar(&in.LiveKitAPIKey, "livekit-api-key", os.Getenv("LIVEKIT_API_KEY"), "LiveKit API key (default: LIVEKIT_API_KEY)")
 	f.BoolVar(&in.SkipVerify, "skip-verify", false, "store the project without first checking its key and secret against LiveKit, for a server not reachable yet")
+	f.StringVar(&in.BucketEndpoint, "recording-bucket-endpoint", "", "keep this project's recordings in your own S3 bucket at this http or https endpoint instead of the instance's; set only now, never changed (secret from RECORDING_BUCKET_SECRET_KEY)")
+	f.StringVar(&in.BucketName, "recording-bucket", "", "the S3 bucket name, with --recording-bucket-endpoint")
+	f.StringVar(&in.BucketRegion, "recording-bucket-region", "", "the bucket's region (default: asked of the bucket)")
+	f.StringVar(&in.BucketAccessKey, "recording-bucket-access-key", "", "the S3 access key id, with --recording-bucket-endpoint")
 
 	cmd := &cobra.Command{Use: "project", Short: "Manage LiveKit projects"}
 	cmd.AddCommand(add, workersCommand(), resourcesCommand(), recordingsCommand())

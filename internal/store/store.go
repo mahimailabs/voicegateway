@@ -29,7 +29,28 @@ type NewProject struct {
 	LiveKitURL       string
 	LiveKitAPIKey    string
 	LiveKitAPISecret string
+	// Bucket is the S3 bucket the project keeps its recordings in, when it brings its own; nil uses
+	// the instance's bucket. It is written with the project and never changes.
+	Bucket *ProjectBucket
 }
+
+// ProjectBucket is an S3 bucket a project brought for its recordings, chosen when the project was
+// created. Endpoint is a host with an optional port; SecretKey is sealed before it is written.
+type ProjectBucket struct {
+	OrganisationID, ProjectID string
+	Endpoint                  string
+	UseSSL                    bool
+	Bucket, Region            string
+	AccessKey, SecretKey      string
+}
+
+// ErrBucketRefused means the S3 endpoint answered but refused the access key or secret, or has no
+// bucket of that name.
+var ErrBucketRefused = errors.New("the S3 bucket refused this access key, secret or bucket name")
+
+// ErrBucketUnreachable means a write to the S3 endpoint got no S3 answer: the endpoint is down, the
+// name does not resolve, or the address guard refused it.
+var ErrBucketUnreachable = errors.New("could not reach this S3 endpoint")
 
 // ErrProjectExists means the organisation already has a project with that id.
 var ErrProjectExists = errors.New("a project with this id already exists")

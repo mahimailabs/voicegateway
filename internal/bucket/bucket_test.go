@@ -51,6 +51,13 @@ func needDocker(t *testing.T) {
 // startBucket runs SeaweedFS's single-node S3 endpoint and waits for it to create its bucket.
 func startBucket(t *testing.T) *Bucket {
 	t.Helper()
+	b, _ := startS3(t)
+	return b
+}
+
+// startS3 is startBucket that also returns the endpoint, host and port, the bucket is reached at.
+func startS3(t *testing.T) (*Bucket, string) {
+	t.Helper()
 	needDocker(t)
 	ctx := context.Background()
 	s3, err := testcontainers.Run(ctx, s3Image,
@@ -72,12 +79,12 @@ func startBucket(t *testing.T) *Bucket {
 	}
 	for range 30 {
 		if ok, err := b.client.BucketExists(ctx, b.name); err == nil && ok {
-			return b
+			return b, endpoint
 		}
 		time.Sleep(time.Second)
 	}
 	t.Fatal("bucket was not created")
-	return nil
+	return nil, ""
 }
 
 // Phase 07a, acceptance checks 2 and 4: a stored recording reads back whole and by range; Expire

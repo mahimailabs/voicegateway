@@ -155,6 +155,18 @@ type Project struct {
 	Recordings             bool
 }
 
+type ProjectBucket struct {
+	OrganisationID  string
+	ProjectID       string
+	Endpoint        string
+	UseSsl          bool
+	Bucket          string
+	Region          string
+	AccessKey       string
+	SecretKeySealed []byte
+	CreatedAt       pgtype.Timestamptz
+}
+
 type ProjectKey struct {
 	KeyID          string
 	OrganisationID string

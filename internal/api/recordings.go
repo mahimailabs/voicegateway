@@ -26,7 +26,7 @@ func (a *API) getRecordingMedia(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, http.StatusNotFound, codeNotFound, "recording not found")
 		return
 	}
-	media, err := a.Media.Open(ctx, rec.ObjectKey)
+	media, err := a.Media.Open(ctx, org, project, rec.ObjectKey)
 	if errors.Is(err, store.ErrNotFound) {
 		writeError(w, r, http.StatusNotFound, codeNotFound, "recording not found")
 		return

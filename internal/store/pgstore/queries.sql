@@ -640,3 +640,18 @@ WHERE r.id = @id AND c.organisation_id = @organisation_id AND c.project_id = @pr
 -- name: DeleteExpiredRecordings :execrows
 -- Forgets recordings stored before the cutoff; the worker removes their objects by day.
 DELETE FROM call_recordings WHERE stored_at < @cutoff;
+
+-- name: InsertProjectBucket :exec
+-- The bucket a project brought for its recordings, written with the project and never updated.
+INSERT INTO project_buckets (organisation_id, project_id, endpoint, use_ssl, bucket, region, access_key, secret_key_sealed)
+VALUES (@organisation_id, @project_id, @endpoint, @use_ssl, @bucket, @region, @access_key, @secret_key_sealed);
+
+-- name: ProjectBucket :one
+SELECT organisation_id, project_id, endpoint, use_ssl, bucket, region, access_key, secret_key_sealed
+FROM project_buckets
+WHERE organisation_id = @organisation_id AND project_id = @project_id;
+
+-- name: ListProjectBuckets :many
+SELECT organisation_id, project_id, endpoint, use_ssl, bucket, region, access_key, secret_key_sealed
+FROM project_buckets
+ORDER BY organisation_id, project_id;

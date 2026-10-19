@@ -73,6 +73,8 @@ make project-recordings PROJECT=production SET=on
 
 The agent's `record=True` sends the audio; VoiceGateway stores it in the S3 bucket (`VOICEGATEWAY_S3_*`, SeaweedFS in Compose) and plays it in the call view. Recordings are deleted 90 days after they are stored, like the rest of the raw call data. `SET=off` stops keeping new audio; what is stored stays until it expires.
 
+A project can keep its recordings in your own S3 bucket instead, chosen only when you add the project and never changed afterwards: turn on "Keep recordings in my own S3 bucket" in the Add project form, or pass `RECORDING_BUCKET_ENDPOINT`, `RECORDING_BUCKET`, `RECORDING_BUCKET_ACCESS_KEY` and the secret in `RECORDING_BUCKET_SECRET_KEY` to `make project-add`. VoiceGateway writes and deletes one empty test object first, so the key needs to write, read, list and delete objects under `recordings/`.
+
 ## Reaching VoiceGateway from LiveKit
 
 The agent's uploads and LiveKit's webhooks must reach your VoiceGateway host:

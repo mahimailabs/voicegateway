@@ -132,7 +132,7 @@ func TestCreateProjectRefusals(t *testing.T) {
 		{"name with no letter", call{body: projectBody("!!!", "wss://x.example.com", "APIx", testLiveKitSecret), cookie: admin}, http.StatusBadRequest, "invalid_request"},
 		{"unknown field", call{body: `{"name":"U","livekitUrl":"wss://u.example.com","livekitApiKey":"APIu","livekitApiSecret":"s","id":"chosen"}`, cookie: admin}, http.StatusBadRequest, "invalid_request"},
 		{"not JSON", call{body: `name=x`, cookie: admin}, http.StatusBadRequest, "invalid_request"},
-		{"over 4 KiB", call{body: projectBody("Big", "wss://big.example.com", "APIbig", strings.Repeat("s", 5000)), cookie: admin}, http.StatusBadRequest, "invalid_request"},
+		{"over 8 KiB", call{body: projectBody("Big", "wss://big.example.com", "APIbig", strings.Repeat("s", 9000)), cookie: admin}, http.StatusBadRequest, "invalid_request"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			tt.c.method, tt.c.path = http.MethodPost, path

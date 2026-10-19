@@ -27,9 +27,10 @@ type Recordings interface {
 	Recording(ctx context.Context, organisationID, projectID, recordingID string) (store.Recording, error)
 }
 
-// Media opens a stored recording's audio in the S3 bucket by key, or returns store.ErrNotFound.
+// Media opens a stored recording's audio by key in the bucket its project keeps recordings in, or
+// returns store.ErrNotFound.
 type Media interface {
-	Open(ctx context.Context, key string) (io.ReadSeekCloser, error)
+	Open(ctx context.Context, organisationID, projectID, key string) (io.ReadSeekCloser, error)
 }
 
 // Traces reads what the agent uploaded for a call: its spans, and the turns and usage built from
