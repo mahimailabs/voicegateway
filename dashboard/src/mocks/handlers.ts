@@ -1,5 +1,5 @@
 import { http, HttpResponse, type PathParams } from "msw"
-import type { AlertEvents, AlertSetup, Call, CallPage, CallStats, CreatedInvitation, CreatedPasswordReset, CreatedProjectKey, Invitations, IssueDispositions, Member, Members, ProjectKeys, IssueList, ProjectSettings, ProviderProbes, Workers, CapacityRun, CloudAgents, Egress, Error as ApiErrorBody, Ingress, MediaServer, ProjectSnapshot, Sip, Workspaces } from "@/lib/api-types"
+import type { AlertEvents, AlertSetup, Call, CallPage, CallStats, CreatedInvitation, CreatedPasswordReset, CreatedProjectKey, Invitations, ProjectCreate, WorkspaceProject, IssueDispositions, Member, Members, ProjectKeys, IssueList, ProjectSettings, ProviderProbes, Workers, CapacityRun, CloudAgents, Egress, Error as ApiErrorBody, Ingress, MediaServer, ProjectSnapshot, Sip, Workspaces } from "@/lib/api-types"
 import { callStats } from "./call-stats"
 import { capturedCalls } from "./fixtures"
 import { alertEvents, issueList } from "./insights"
@@ -8,7 +8,7 @@ import { summarize } from "./summaries"
 import { matchesFilters, parseFilters, sortCalls, totals } from "./calls-query"
 import { playbackUrl, recordingMedia } from "./recordings"
 import { alertSetup, changeMember, createKey, invitations, invite, issueDispositions, members, passwordReset, projectKeys, projectSettings, revokeInvitation, revokeKey } from "./settings"
-import { knownOrg, knownProject, workspaces } from "./workspaces"
+import { addProject, knownOrg, knownProject, workspaces } from "./workspaces"
 
 // Everything but the paging parameters, in a stable order, so a cursor can name what it was issued for.
 function filterKey(q: URLSearchParams) {
@@ -128,6 +128,28 @@ export const handlers = [
   http.delete<PathParams, never, ApiErrorBody>(`${project}/keys/:keyId`, ({ params }) => {
     if (!known(params)) return fail(404, "not_found", "No such project.")
     return revokeKey(String(params.projectId), String(params.keyId)) ? new HttpResponse(null, { status: 204 }) : fail(404, "not_found", "No such key in this project.")
+  }),
+
+  // Projects added in the console (phase 06f), kept in this browser (workspaces.ts), with web's checks.
+  http.post<PathParams, Partial<ProjectCreate>, WorkspaceProject | ApiErrorBody>("*/api/v1/org/:orgId/projects", async ({ params, request }) => {
+    if (!knownOrg(params.orgId)) return fail(404, "not_found", "organisation not found")
+    const body = await request.json().catch(() => null)
+    const text = (v: unknown) => (typeof v === "string" ? v.trim() : "")
+    const missing = (["name", "livekitUrl", "livekitApiKey", "livekitApiSecret"] as const).filter((f) => text(body?.[f]) === "")
+    if (missing.length) return fail(400, "invalid_request", `missing ${missing.join(", ")}`)
+    const name = text(body?.name)
+    if (name.length > 64 || !/[a-z0-9]/i.test(name)) return fail(400, "invalid_request", "name must be 1 to 64 characters, with no control characters and at least one letter or digit")
+    let url: URL | null = null
+    try {
+      url = new URL(text(body?.livekitUrl))
+    } catch {
+      url = null
+    }
+    if (!url || !["ws:", "wss:", "http:", "https:"].includes(url.protocol) || !url.hostname) return fail(400, "invalid_request", "livekitUrl must be a ws, wss, http or https URL with a host")
+    const out = addProject(String(params.orgId), name, text(body?.livekitApiKey))
+    if (out === "project_exists") return fail(409, "project_exists", "this organisation already has a project with that id; choose another name")
+    if (out === "livekit_key_in_use") return fail(409, "livekit_key_in_use", "this LiveKit API key is already used by a project on this server; each project needs its own key")
+    return HttpResponse.json(out, { status: 201, headers: { "Cache-Control": "no-store" } })
   }),
 
   // Invitations and reset links, in memory (settings.ts), as web without SMTP answers them.

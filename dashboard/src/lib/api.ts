@@ -4,6 +4,7 @@ import { client } from "@/lib/api-types/client.gen"
 import {
   createInvitation as createInvitationCall,
   createPasswordReset as createPasswordResetCall,
+  createProject as createProjectCall,
   createProjectKey as createProjectKeyCall,
   getAlertSetup,
   getCall,
@@ -31,7 +32,7 @@ import {
   revokeProjectKey as revokeProjectKeyCall,
   updateMember as updateMemberCall,
 } from "@/lib/api-types"
-import type { Call as GeneratedCall, CallPage, CallSummary, CallTotals, EndOfTurnEvent, ItemEvent, Member, OverlapEvent, RecordingSegment, Span, StateEvent, TranscriptEvent, Turn } from "@/lib/api-types"
+import type { Call as GeneratedCall, CallPage, ProjectCreate, CallSummary, CallTotals, EndOfTurnEvent, ItemEvent, Member, OverlapEvent, RecordingSegment, Span, StateEvent, TranscriptEvent, Turn } from "@/lib/api-types"
 
 export type { CallSummary, CallTotals, RecordingSegment, Span, Turn }
 export type SessionEvent = StateEvent | TranscriptEvent | EndOfTurnEvent | OverlapEvent | ItemEvent
@@ -210,3 +211,6 @@ export const invitationsQuery = () => ({ queryKey: ["invitations", currentScope(
 export const createInvitation = (email: string, role: Member["role"]) => data(createInvitationCall({ ...thrown, path: { orgId: currentScope().org }, body: { email, role } }))
 export const revokeInvitation = (invitationId: string) => data(revokeInvitationCall({ ...thrown, path: { orgId: currentScope().org, invitationId } })).then(() => undefined)
 export const createPasswordReset = (userId: string) => data(createPasswordResetCall({ ...thrown, path: { orgId: currentScope().org, userId } }))
+// Adds a LiveKit project to an organisation (phase 06f), Admin only. The secret goes to web, which
+// seals it; the answer is the new project's id and name, never a credential.
+export const createProject = (orgId: string, body: ProjectCreate) => data(createProjectCall({ ...thrown, path: { orgId }, body }))

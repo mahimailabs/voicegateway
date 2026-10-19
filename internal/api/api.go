@@ -28,6 +28,9 @@ type API struct {
 	// Invitations lists and revokes invitations; Inviter makes them and reset links.
 	Invitations Invitations
 	Inviter     Inviter
+	// NewProjects creates projects, their LiveKit secrets sealed: the store voicegateway project add
+	// writes through.
+	NewProjects ProjectCreator
 	// LinkBase is an invitation link's base for a request: VOICEGATEWAY_PUBLIC_URL, or the
 	// request's scheme and Host (auth.Service.LinkBase).
 	LinkBase func(r *http.Request) string
@@ -82,6 +85,7 @@ func (a *API) Routes() http.Handler {
 	handle(r, http.MethodGet, project+"/keys", a.listProjectKeys)
 	handle(r, http.MethodPost, project+"/keys", a.createProjectKey)
 	handle(r, http.MethodDelete, project+"/keys/{keyId}", a.revokeProjectKey)
+	handle(r, http.MethodPost, "/api/v1/org/{orgId}/projects", a.createProject)
 	handle(r, http.MethodGet, "/api/v1/org/{orgId}/members", a.getMembers)
 	handle(r, http.MethodPatch, "/api/v1/org/{orgId}/members/{userId}", a.updateMember)
 	handle(r, http.MethodDelete, "/api/v1/org/{orgId}/members/{userId}", a.removeMember)

@@ -506,6 +506,13 @@ func (failingAccounts) Members(context.Context, string) ([]store.Member, error) 
 	return nil, fmt.Errorf("members: dial tcp 127.0.0.1:5432: connection refused")
 }
 
+// failingProjects is the project store failing on create, to reach createProject's error path.
+type failingProjects struct{}
+
+func (failingProjects) CreateProject(context.Context, store.NewProject) (store.Project, error) {
+	return store.Project{}, fmt.Errorf("create project: the project store is down")
+}
+
 // failingUsers is the account store failing on lookups, to reach sign-in's error path.
 type failingUsers struct{ auth.Users }
 
@@ -565,6 +572,16 @@ func TestNoSecretInLogs(t *testing.T) {
 	down := f.web(unreachableMailer(t))
 	down.invite(c, "default", "unsent@example.com", "Viewer")
 	down.resetLink(c, "default", f.userID("invitee@example.com"))
+	// Phase 06f: a project created through the API, created again (409), and a create whose store
+	// fails, which logs.
+	newProject := call{method: http.MethodPost, path: "/api/v1/org/default/projects", body: projectBody("Logs project", "wss://logs.example.com", "APIlogsproject", testLiveKitSecret), cookie: c}
+	f.send(web, newProject)
+	f.send(web, newProject)
+	storeDown := (&api.API{Projects: f.pg, NewProjects: failingProjects{}, Accounts: f.pg, Log: s.Log, Now: time.Now, Gate: s.Gate}).Routes()
+	f.send(storeDown, newProject)
+	if !strings.Contains(f.logs.String(), "the project store is down") {
+		t.Error("the failing project store did not log")
+	}
 	if !strings.Contains(f.logs.String(), `"class":"unreachable"`) {
 		t.Error("the failed send did not log")
 	}
@@ -581,6 +598,7 @@ func TestNoSecretInLogs(t *testing.T) {
 	for _, secret := range append([]string{
 		password, "a wrong one", c.Value, key, key[len(key)-43:], created, created[len(created)-43:], reset, bob.Value,
 		invited, tokenOf(invited), existing, tokenOf(existing), *resetLink, tokenOf(*resetLink), newPassword, fromReset, joined.Value, smtpPassword,
+		testLiveKitSecret,
 	}, instance...) {
 		if strings.Contains(logs, secret) {
 			t.Errorf("a log line holds a secret %q", secret)

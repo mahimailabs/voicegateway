@@ -81,6 +81,7 @@
     "operations": [
       "createInvitation",
       "createPasswordReset",
+      "createProject",
       "createProjectKey",
       "getAlertSetup",
       "getCall",
@@ -213,6 +214,7 @@
     "operations": [
       "createInvitation",
       "createPasswordReset",
+      "createProject",
       "createProjectKey",
       "getAlertSetup",
       "getCall",

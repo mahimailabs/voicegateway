@@ -68,6 +68,8 @@ Plan agreed 2026-10-15: a team builds V1 with Cloud (decision 0024) over 30 days
 - Phase 2 candidate: inferred call labels (triage, disposition) from a self-hosted decision model such as Jev or Kev, opt-in and marked as inferred. Evaluate once V1 traces exist.
 - The docs and landing site in site/ still use the old purple theme; when do they move to The Clean Room?
 
+- The worker's LiveKit reads (media server, SIP, egress, ingress, dispatch) dial each project's LiveKit URL with no address guard: server-sdk-go v2.19.0 builds its own `http.Client` over `http.DefaultTransport` for those clients, so `code.dny.dev/ssrf` and `VOICEGATEWAY_WORKER_ENDPOINTS_PUBLIC_ONLY` cover worker metrics endpoints only. Now that an Admin can add a project from the console (06f), a shared Cloud instance needs a guard on these dials before the form is open to customers.
+
 ## Known Issues
 
 - The old Python code in src/ no longer matches the docs. It stays until Phase 0.
@@ -409,3 +411,12 @@ Added Testing Library tests around the real Calls page and drawer with the exist
 ### 2026-10-18: instance API review corrections (#417)
 
 Closed calls with missing or reversed timestamps are excluded from measured usage and counted separately by start period. Inferred seconds are exposed separately, and fractional-duration fixtures reject per-call rounding. The image build now copies the Enterprise source tree required by the instance API; the first Compose CI run caught that missing build input. Container acceptance remains a merge gate.
+
+### 2026-10-19: phase 06f, add a project from the console (built, not yet reviewed)
+
+An Admin of an organisation with no project adds one from the console's empty state, or from the "Add a LiveKit project" dialog in Settings, Organisation and the project switcher (spec `docs/specs/phase06f-console-add-project.md`, decisions 0016 and 0028). A hosted admin has no shell for `voicegateway project add`.
+- **One rule:** `api.CheckProject` checks a new project for both `createProject` and `voicegateway project add` (name with a letter or digit, slug id, ws/wss/http/https URL with a host, key without spaces), and `api.Slug` moved from `internal/app`. Each names fields its own way: flags on the command line, JSON names in the API.
+- **API:** `createProject` `POST /api/v1/org/{orgId}/projects`, Admin at organisation scope, through the same `pgstore.Store.CreateProject` and sealer as the CLI. 201 is the existing `WorkspaceProject` with `Cache-Control: no-store`; 409 `project_exists` and `livekit_key_in_use` (the latter names no project). `store.NewProject` replaces `pgstore.NewProject`, kept as an alias.
+- **Console:** the form (shadcn Field, Input, Button) clears the secret after every submit, shows the API's message inline and opens the new project with a full page load. Members read that an admin must add one. The dialog's disabled placeholder and its unbacked "Observe live rooms" switch are gone. The mock serves `createProject`.
+- Foundation reported checks 1 to 8 passing with container tests in its cloud environment. The Mac integration run passes dashboard tests, lint, TypeScript, API validation/source checks and generated-type comparison. Local Docker is unavailable, so container-backed auth checks skip here and remain a CI gate. The manual Compose check has not been run.
+- Integration review added an instance-token refusal assertion and reproduced/fixed acceptance of trailing JSON, garbage and oversized trailing whitespace. The endpoint now checks the entire body with MaxBytesReader and requires EOF after one JSON object.
