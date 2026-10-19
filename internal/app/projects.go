@@ -252,6 +252,17 @@ func RemoveWorkerEndpoint(ctx context.Context, c config.Config, in WorkerEndpoin
 	return s.RemoveWorkerEndpoint(ctx, orgOrDefault(in.OrganisationID), in.ProjectID, strings.TrimSpace(id))
 }
 
+// SetRecordings turns a project's recordings on or off (phase 07a). Off keeps what is stored until
+// it expires.
+func SetRecordings(ctx context.Context, c config.Config, in WorkerEndpointCommand, on bool) error {
+	s, done, err := workerEndpoints(ctx, c, in)
+	if err != nil {
+		return err
+	}
+	defer done()
+	return s.SetProjectRecordings(ctx, orgOrDefault(in.OrganisationID), in.ProjectID, on)
+}
+
 // ListWorkerEndpoints lists a project's endpoints by id and host, never their URLs.
 func ListWorkerEndpoints(ctx context.Context, c config.Config, in WorkerEndpointCommand) ([]store.WorkerEndpoint, error) {
 	s, done, err := workerEndpoints(ctx, c, in)

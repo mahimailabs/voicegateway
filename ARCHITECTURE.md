@@ -78,6 +78,7 @@ voicegateway/
 │   ├── sink/              Sink
 │   ├── live/              Broadcaster
 │   ├── scrape/            Scraper
+│   ├── bucket/            Bucket: recordings in S3, ranged reads, 90-day expiry by day
 │   ├── settle/            Settler, Closer, Rollup, Retention, RecCheck
 │   ├── api/               dashboard API
 │   ├── mcp/               MCP tools

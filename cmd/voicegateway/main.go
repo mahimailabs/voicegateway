@@ -121,7 +121,7 @@ func projectCommand() *cobra.Command {
 	f.BoolVar(&in.SkipVerify, "skip-verify", false, "store the project without first checking its key and secret against LiveKit, for a server not reachable yet")
 
 	cmd := &cobra.Command{Use: "project", Short: "Manage LiveKit projects"}
-	cmd.AddCommand(add, workersCommand(), resourcesCommand())
+	cmd.AddCommand(add, workersCommand(), resourcesCommand(), recordingsCommand())
 	return cmd
 }
 
@@ -290,6 +290,33 @@ func resourcesCommand() *cobra.Command {
 	add.Flags().StringVar(&target, "target", "", "component identifier")
 	add.Flags().StringVar(&containerID, "container", "", "exact cAdvisor container id")
 	cmd.AddCommand(add, remove, list)
+	return cmd
+}
+
+// recordingsCommand turns a project's recordings on or off (phase 07a, decisions 0008 and 0015).
+// They are off by default; the agent must also record its session for any audio to arrive.
+func recordingsCommand() *cobra.Command {
+	var in app.WorkerEndpointCommand
+	cmd := &cobra.Command{
+		Use:       "recordings on|off",
+		Short:     "Keep (on) or discard (off) the call audio a project's agents upload",
+		Args:      cobra.MatchAll(cobra.ExactArgs(1), cobra.OnlyValidArgs),
+		ValidArgs: []string{"on", "off"},
+		RunE: func(cmd *cobra.Command, args []string) error {
+			c, err := config.Load(os.Getenv)
+			if err != nil {
+				return fmt.Errorf("configuration:\n%w", err)
+			}
+			if err := app.SetRecordings(cmd.Context(), c, in, args[0] == "on"); err != nil {
+				return fmt.Errorf("recordings: %w", err)
+			}
+			_, err = fmt.Fprintf(cmd.OutOrStdout(), "recordings %s for project %s\n", args[0], in.ProjectID)
+			return err
+		},
+	}
+	f := cmd.Flags()
+	f.StringVar(&in.ProjectID, "project", "", "project id")
+	f.StringVar(&in.OrganisationID, "org", "default", "organisation id")
 	return cmd
 }
 

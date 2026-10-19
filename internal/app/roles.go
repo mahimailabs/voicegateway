@@ -21,6 +21,7 @@ import (
 	"github.com/mahimailabs/voicegateway/ee/instance"
 	"github.com/mahimailabs/voicegateway/internal/api"
 	"github.com/mahimailabs/voicegateway/internal/auth"
+	"github.com/mahimailabs/voicegateway/internal/bucket"
 	"github.com/mahimailabs/voicegateway/internal/config"
 	"github.com/mahimailabs/voicegateway/internal/console"
 	"github.com/mahimailabs/voicegateway/internal/ingest"
@@ -74,6 +75,10 @@ func Web(ctx context.Context, c config.Config, log *slog.Logger) error {
 	if c.CloudQuotas {
 		quota = &instance.Quota{Store: projects, Now: time.Now}
 	}
+	recordings, err := bucket.New(c.S3)
+	if err != nil {
+		return err
+	}
 
 	warnRetiredToken(os.Getenv, log)
 	trusted, err := auth.ParseTrusted(c.TrustedProxies)
@@ -120,13 +125,14 @@ func Web(ctx context.Context, c config.Config, log *slog.Logger) error {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", obs.Health)
-	mountIngestion(mux, projects, producer, quota, log, time.Now)
+	mountIngestion(mux, projects, producer, quota, recordings, log, time.Now)
 	mux.Handle("/auth/", accounts.Routes())
 	mux.Handle("/api/v1/", (&api.API{
 		Settings: projects, Metadata: projects, StorageBucket: c.S3.Bucket,
 		Live:              live,
 		ResourceEndpoints: projects, ResourceSamples: events, Projects: projects, NewProjects: projects, VerifyLiveKit: scrape.NewVerifier(c.WorkerEndpointsPublicOnly), Calls: projects, Traces: events, Layers: events, Endpoints: projects, Accounts: projects, Stats: projects, Keys: projects, NewKey: auth.NewKey, Log: log, Now: time.Now, Gate: accounts.Gate,
 		Invitations: projects, Inviter: NewInviter(links), LinkBase: accounts.LinkBase,
+		Recordings: projects, Media: recordings,
 		Instance: instanceAPI,
 	}).Routes())
 	if c.ConsoleDir != "" {
@@ -200,6 +206,11 @@ func Worker(ctx context.Context, c config.Config, log *slog.Logger) error {
 	defer func() { _ = events.Close() }()
 	// The call index needs no sealer: it never reads a LiveKit secret.
 	joiner := &join.Joiner{Changed: live.Notify, Calls: pgstore.NewStore(pool, nil), Traces: events, Log: log, Timeout: 30 * time.Second}
+	recordings, err := bucket.New(c.S3)
+	if err != nil {
+		return err
+	}
+	retention := &bucket.Retention{Bucket: recordings, Links: pgstore.NewStore(pool, nil), Log: log}
 	// One consumer per worker process; a worker that dies leaves its entries to be claimed.
 	name, err := os.Hostname()
 	if err != nil {
@@ -307,6 +318,10 @@ func Worker(ctx context.Context, c config.Config, log *slog.Logger) error {
 		return nil
 	})
 	g.Go(func() error {
+		every(gctx, expireRecordingsEvery, "recording retention", retention.Run, log)
+		return nil
+	})
+	g.Go(func() error {
 		return (&sink.Sink{
 			Changed:   live.Notify,
 			Stream:    stream.NewConsumer(rdb, stream.Ingest, workerGroup, name),
@@ -326,11 +341,13 @@ func Worker(ctx context.Context, c config.Config, log *slog.Logger) error {
 }
 
 // sweepEvery is how often the worker closes idle calls and counts unlinked traces;
-// summarizeEvery is how often it rebuilds stale call summaries (phase 04d). Every worker runs both;
-// both are safe to run twice.
+// summarizeEvery is how often it rebuilds stale call summaries (phase 04d); expireRecordingsEvery
+// is how often it deletes recordings past retention (phase 07a). Every worker runs all three; all
+// are safe to run twice.
 const (
-	sweepEvery     = time.Minute
-	summarizeEvery = 10 * time.Second
+	sweepEvery            = time.Minute
+	summarizeEvery        = 10 * time.Second
+	expireRecordingsEvery = time.Hour
 )
 
 // every runs f each period until ctx is cancelled. A failure is logged and retried next period.

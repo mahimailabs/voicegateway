@@ -45,8 +45,13 @@ func (q *Queries) AddMembershipIfAbsent(ctx context.Context, arg AddMembershipIf
 
 const callByID = `-- name: CallByID :one
 SELECT l.id, l.room_name, l.room_sid, l.job_id, l.started_at, l.ended_at, l.end_state, l.first_seen_at,
-       l.participants, l.servable, l.summarized::boolean AS summarized, c.tags, c.archived, c.metadata_revision
+       l.participants, l.servable, l.summarized::boolean AS summarized, c.tags, c.archived, c.metadata_revision,
+       r.id AS recording_id, r.started_at AS recording_started_at
 FROM call_list l JOIN calls c ON c.id = l.id
+LEFT JOIN LATERAL (
+    SELECT id, started_at FROM call_recordings
+    WHERE call_id = l.id ORDER BY stored_at DESC, id LIMIT 1
+) r ON true
 WHERE l.organisation_id = $1 AND l.project_id = $2 AND l.id = $3
 `
 
@@ -57,23 +62,27 @@ type CallByIDParams struct {
 }
 
 type CallByIDRow struct {
-	ID               pgtype.UUID
-	RoomName         pgtype.Text
-	RoomSid          pgtype.Text
-	JobID            pgtype.Text
-	StartedAt        pgtype.Timestamptz
-	EndedAt          pgtype.Timestamptz
-	EndState         string
-	FirstSeenAt      pgtype.Timestamptz
-	Participants     int64
-	Servable         pgtype.Bool
-	Summarized       bool
-	Tags             []string
-	Archived         bool
-	MetadataRevision int64
+	ID                 pgtype.UUID
+	RoomName           pgtype.Text
+	RoomSid            pgtype.Text
+	JobID              pgtype.Text
+	StartedAt          pgtype.Timestamptz
+	EndedAt            pgtype.Timestamptz
+	EndState           string
+	FirstSeenAt        pgtype.Timestamptz
+	Participants       int64
+	Servable           pgtype.Bool
+	Summarized         bool
+	Tags               []string
+	Archived           bool
+	MetadataRevision   int64
+	RecordingID        pgtype.UUID
+	RecordingStartedAt pgtype.Timestamptz
 }
 
 // One call of a project as the API reads it, with the servable rule listCalls shares.
+// With its latest recording: an agent that uploads twice for one call, from two jobs, leaves two,
+// and the call view plays the latest.
 func (q *Queries) CallByID(ctx context.Context, arg CallByIDParams) (CallByIDRow, error) {
 	row := q.db.QueryRow(ctx, callByID, arg.OrganisationID, arg.ProjectID, arg.ID)
 	var i CallByIDRow
@@ -92,6 +101,8 @@ func (q *Queries) CallByID(ctx context.Context, arg CallByIDParams) (CallByIDRow
 		&i.Tags,
 		&i.Archived,
 		&i.MetadataRevision,
+		&i.RecordingID,
+		&i.RecordingStartedAt,
 	)
 	return i, err
 }
@@ -194,7 +205,7 @@ func (q *Queries) CallTags(ctx context.Context, arg CallTagsParams) ([]string, e
 
 const callTotals = `-- name: CallTotals :one
 WITH f AS (
-    SELECT l.organisation_id, l.project_id, l.id, l.room_name, l.room_sid, l.job_id, l.started_at, l.ended_at, l.end_state, l.created_at, l.first_seen_at, l.servable, l.summarized, l.start_at, l.duration_seconds, l.participants, l.channel, l.turn_count, l.answer_ms, l.answer_ms_median, l.models, l.pipeline, l.agent_key
+    SELECT l.organisation_id, l.project_id, l.id, l.room_name, l.room_sid, l.job_id, l.started_at, l.ended_at, l.end_state, l.created_at, l.first_seen_at, l.servable, l.summarized, l.start_at, l.duration_seconds, l.participants, l.channel, l.turn_count, l.answer_ms, l.answer_ms_median, l.models, l.pipeline, l.agent_key, l.recorded
     FROM call_list l JOIN calls c ON c.id = l.id
     WHERE l.organisation_id = $3 AND l.project_id = $4 AND l.created_at <= $5 AND l.servable
       AND ($6::timestamptz IS NULL OR l.start_at >= $6::timestamptz)
@@ -212,7 +223,8 @@ WITH f AS (
       AND (NOT $18::bool OR l.turn_count IS NULL)
       AND (cardinality($19::text[]) = 0 OR c.tags && $19::text[])
       AND ($20::boolean IS NULL OR c.archived = $20::boolean)
-      AND NOT $21::bool
+      AND ($21::bool IS NULL OR l.recorded = $21::bool)
+      AND NOT $22::bool
 ), a AS (
     SELECT u.v, f.start_at, f.id, u.ord
     FROM f, unnest(f.answer_ms) WITH ORDINALITY AS u(v, ord)
@@ -222,6 +234,7 @@ SELECT
     (SELECT count(*) FROM f WHERE channel = 'phone') AS phone,
     (SELECT count(*) FROM f WHERE channel = 'web') AS web,
     (SELECT count(*) FROM f WHERE channel = 'unknown') AS unknown_channel,
+    (SELECT count(*) FROM f WHERE recorded) AS recorded,
     (SELECT count(*) FROM a) AS answer_turns,
     (SELECT count(*) FROM a WHERE a.v > $1::float8) AS over_budget,
     -- Null when no turn measured an answer.
@@ -250,6 +263,7 @@ type CallTotalsParams struct {
 	UnknownTurns    bool
 	Tags            []string
 	Archived        pgtype.Bool
+	Recorded        pgtype.Bool
 	MatchNone       bool
 }
 
@@ -258,6 +272,7 @@ type CallTotalsRow struct {
 	Phone          int64
 	Web            int64
 	UnknownChannel int64
+	Recorded       int64
 	AnswerTurns    int64
 	OverBudget     int64
 	P50Ms          interface{}
@@ -289,6 +304,7 @@ func (q *Queries) CallTotals(ctx context.Context, arg CallTotalsParams) (CallTot
 		arg.UnknownTurns,
 		arg.Tags,
 		arg.Archived,
+		arg.Recorded,
 		arg.MatchNone,
 	)
 	var i CallTotalsRow
@@ -297,6 +313,7 @@ func (q *Queries) CallTotals(ctx context.Context, arg CallTotalsParams) (CallTot
 		&i.Phone,
 		&i.Web,
 		&i.UnknownChannel,
+		&i.Recorded,
 		&i.AnswerTurns,
 		&i.OverBudget,
 		&i.P50Ms,
@@ -363,7 +380,7 @@ func (q *Queries) CountUsers(ctx context.Context) (int64, error) {
 const createProject = `-- name: CreateProject :one
 INSERT INTO projects (organisation_id, id, name, livekit_url, livekit_api_key, livekit_api_secret_sealed)
 VALUES ($1, $2, $3, $4, $5, $6)
-RETURNING organisation_id, id, name, livekit_url, livekit_api_key, created_at
+RETURNING organisation_id, id, name, livekit_url, livekit_api_key, created_at, recordings
 `
 
 type CreateProjectParams struct {
@@ -382,6 +399,7 @@ type CreateProjectRow struct {
 	LivekitUrl     string
 	LivekitApiKey  string
 	CreatedAt      pgtype.Timestamptz
+	Recordings     bool
 }
 
 func (q *Queries) CreateProject(ctx context.Context, arg CreateProjectParams) (CreateProjectRow, error) {
@@ -401,6 +419,7 @@ func (q *Queries) CreateProject(ctx context.Context, arg CreateProjectParams) (C
 		&i.LivekitUrl,
 		&i.LivekitApiKey,
 		&i.CreatedAt,
+		&i.Recordings,
 	)
 	return i, err
 }
@@ -570,6 +589,19 @@ func (q *Queries) DeferStale(ctx context.Context, id pgtype.UUID) error {
 	return err
 }
 
+const deleteExpiredRecordings = `-- name: DeleteExpiredRecordings :execrows
+DELETE FROM call_recordings WHERE stored_at < $1
+`
+
+// Forgets recordings stored before the cutoff; the worker removes their objects by day.
+func (q *Queries) DeleteExpiredRecordings(ctx context.Context, cutoff pgtype.Timestamptz) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteExpiredRecordings, cutoff)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const deleteResourceEndpoint = `-- name: DeleteResourceEndpoint :execrows
 DELETE FROM project_resource_endpoints
 WHERE organisation_id = $1 AND project_id = $2 AND id = $3
@@ -713,6 +745,33 @@ type HealCallParams struct {
 // time a span reported. A value already stored is kept.
 func (q *Queries) HealCall(ctx context.Context, arg HealCallParams) error {
 	_, err := q.db.Exec(ctx, healCall, arg.RoomName, arg.FirstSeenAt, arg.ID)
+	return err
+}
+
+const insertCallRecording = `-- name: InsertCallRecording :exec
+INSERT INTO call_recordings (call_id, object_key, size_bytes, started_at, stored_at)
+VALUES ($1, $2, $3, $4, $5)
+ON CONFLICT (object_key) DO NOTHING
+`
+
+type InsertCallRecordingParams struct {
+	CallID    pgtype.UUID
+	ObjectKey string
+	SizeBytes int64
+	StartedAt pgtype.Timestamptz
+	StoredAt  pgtype.Timestamptz
+}
+
+// Links a stored recording to its call. A redelivered session report names the same object, and
+// adds nothing.
+func (q *Queries) InsertCallRecording(ctx context.Context, arg InsertCallRecordingParams) error {
+	_, err := q.db.Exec(ctx, insertCallRecording,
+		arg.CallID,
+		arg.ObjectKey,
+		arg.SizeBytes,
+		arg.StartedAt,
+		arg.StoredAt,
+	)
 	return err
 }
 
@@ -895,7 +954,7 @@ func (q *Queries) LimitingSignInAttempt(ctx context.Context, arg LimitingSignInA
 
 const listCalls = `-- name: ListCalls :many
 WITH f AS (
-    SELECT l.organisation_id, l.project_id, l.id, l.room_name, l.room_sid, l.job_id, l.started_at, l.ended_at, l.end_state, l.created_at, l.first_seen_at, l.servable, l.summarized, l.start_at, l.duration_seconds, l.participants, l.channel, l.turn_count, l.answer_ms, l.answer_ms_median, l.models, l.pipeline, l.agent_key, c.tags, c.archived, c.metadata_revision,
+    SELECT l.organisation_id, l.project_id, l.id, l.room_name, l.room_sid, l.job_id, l.started_at, l.ended_at, l.end_state, l.created_at, l.first_seen_at, l.servable, l.summarized, l.start_at, l.duration_seconds, l.participants, l.channel, l.turn_count, l.answer_ms, l.answer_ms_median, l.models, l.pipeline, l.agent_key, l.recorded, c.tags, c.archived, c.metadata_revision,
         CASE $6::text
             WHEN 'startedAt'       THEN EXTRACT(EPOCH FROM l.start_at)::double precision
             WHEN 'durationSeconds' THEN l.duration_seconds
@@ -919,11 +978,12 @@ WITH f AS (
       AND (NOT $23::bool OR l.turn_count IS NULL)
       AND (cardinality($24::text[]) = 0 OR c.tags && $24::text[])
       AND ($25::boolean IS NULL OR c.archived = $25::boolean)
-      AND NOT $26::bool
+      AND ($26::bool IS NULL OR l.recorded = $26::bool)
+      AND NOT $27::bool
 )
 SELECT f.id, f.room_name, f.room_sid, f.start_at, f.started_at, f.ended_at, f.end_state, f.duration_seconds,
        f.participants, f.channel, f.turn_count, f.answer_ms, f.answer_ms_median, f.models, f.pipeline, f.agent_key, f.tags, f.archived, f.metadata_revision,
-       (f.sort_key IS NULL) AS key_unknown, COALESCE(f.sort_key, 0)::double precision AS sort_value
+       f.recorded, (f.sort_key IS NULL) AS key_unknown, COALESCE(f.sort_key, 0)::double precision AS sort_value
 FROM f
 WHERE NOT $1::bool
    OR ((f.sort_key IS NULL), COALESCE(f.sort_key, 0), f.id) > ($2::bool, $3::float8, $4::uuid)
@@ -957,6 +1017,7 @@ type ListCallsParams struct {
 	UnknownTurns    bool
 	Tags            []string
 	Archived        pgtype.Bool
+	Recorded        pgtype.Bool
 	MatchNone       bool
 }
 
@@ -980,6 +1041,7 @@ type ListCallsRow struct {
 	Tags             []string
 	Archived         bool
 	MetadataRevision int64
+	Recorded         bool
 	KeyUnknown       interface{}
 	SortValue        float64
 }
@@ -1014,6 +1076,7 @@ func (q *Queries) ListCalls(ctx context.Context, arg ListCallsParams) ([]ListCal
 		arg.UnknownTurns,
 		arg.Tags,
 		arg.Archived,
+		arg.Recorded,
 		arg.MatchNone,
 	)
 	if err != nil {
@@ -1043,6 +1106,7 @@ func (q *Queries) ListCalls(ctx context.Context, arg ListCallsParams) ([]ListCal
 			&i.Tags,
 			&i.Archived,
 			&i.MetadataRevision,
+			&i.Recorded,
 			&i.KeyUnknown,
 			&i.SortValue,
 		); err != nil {
@@ -1161,7 +1225,7 @@ func (q *Queries) ListProjectKeys(ctx context.Context, arg ListProjectKeysParams
 }
 
 const listProjects = `-- name: ListProjects :many
-SELECT organisation_id, id, name, livekit_url, livekit_api_key, created_at
+SELECT organisation_id, id, name, livekit_url, livekit_api_key, created_at, recordings
 FROM projects
 ORDER BY organisation_id, id
 `
@@ -1173,6 +1237,7 @@ type ListProjectsRow struct {
 	LivekitUrl     string
 	LivekitApiKey  string
 	CreatedAt      pgtype.Timestamptz
+	Recordings     bool
 }
 
 func (q *Queries) ListProjects(ctx context.Context) ([]ListProjectsRow, error) {
@@ -1191,6 +1256,7 @@ func (q *Queries) ListProjects(ctx context.Context) ([]ListProjectsRow, error) {
 			&i.LivekitUrl,
 			&i.LivekitApiKey,
 			&i.CreatedAt,
+			&i.Recordings,
 		); err != nil {
 			return nil, err
 		}
@@ -1638,7 +1704,7 @@ func (q *Queries) PrincipalRows(ctx context.Context, id pgtype.UUID) ([]Principa
 }
 
 const projectByID = `-- name: ProjectByID :one
-SELECT organisation_id, id, name, livekit_url, livekit_api_key, created_at
+SELECT organisation_id, id, name, livekit_url, livekit_api_key, created_at, recordings
 FROM projects
 WHERE organisation_id = $1 AND id = $2
 `
@@ -1655,6 +1721,7 @@ type ProjectByIDRow struct {
 	LivekitUrl     string
 	LivekitApiKey  string
 	CreatedAt      pgtype.Timestamptz
+	Recordings     bool
 }
 
 func (q *Queries) ProjectByID(ctx context.Context, arg ProjectByIDParams) (ProjectByIDRow, error) {
@@ -1667,6 +1734,7 @@ func (q *Queries) ProjectByID(ctx context.Context, arg ProjectByIDParams) (Proje
 		&i.LivekitUrl,
 		&i.LivekitApiKey,
 		&i.CreatedAt,
+		&i.Recordings,
 	)
 	return i, err
 }
@@ -1908,6 +1976,41 @@ func (q *Queries) RecordSignInAttempt(ctx context.Context, arg RecordSignInAttem
 	return id, err
 }
 
+const recordingByID = `-- name: RecordingByID :one
+SELECT r.id, r.object_key, r.size_bytes, r.started_at, r.stored_at
+FROM call_recordings r JOIN calls c ON c.id = r.call_id
+WHERE r.id = $1 AND c.organisation_id = $2 AND c.project_id = $3
+`
+
+type RecordingByIDParams struct {
+	ID             pgtype.UUID
+	OrganisationID string
+	ProjectID      string
+}
+
+type RecordingByIDRow struct {
+	ID        pgtype.UUID
+	ObjectKey string
+	SizeBytes int64
+	StartedAt pgtype.Timestamptz
+	StoredAt  pgtype.Timestamptz
+}
+
+// One recording, only within the project that owns its call, so an id from another project is not
+// found.
+func (q *Queries) RecordingByID(ctx context.Context, arg RecordingByIDParams) (RecordingByIDRow, error) {
+	row := q.db.QueryRow(ctx, recordingByID, arg.ID, arg.OrganisationID, arg.ProjectID)
+	var i RecordingByIDRow
+	err := row.Scan(
+		&i.ID,
+		&i.ObjectKey,
+		&i.SizeBytes,
+		&i.StartedAt,
+		&i.StoredAt,
+	)
+	return i, err
+}
+
 const removeMembership = `-- name: RemoveMembership :execrows
 DELETE FROM memberships WHERE organisation_id = $1 AND user_id = $2
 `
@@ -2110,6 +2213,25 @@ type SetPasswordByIDParams struct {
 func (q *Queries) SetPasswordByID(ctx context.Context, arg SetPasswordByIDParams) error {
 	_, err := q.db.Exec(ctx, setPasswordByID, arg.PasswordHash, arg.ID)
 	return err
+}
+
+const setProjectRecordings = `-- name: SetProjectRecordings :execrows
+UPDATE projects SET recordings = $1 WHERE organisation_id = $2 AND id = $3
+`
+
+type SetProjectRecordingsParams struct {
+	Recordings     bool
+	OrganisationID string
+	ID             string
+}
+
+// Turns a project's recordings on or off (phase 07a). Off keeps what is stored until it expires.
+func (q *Queries) SetProjectRecordings(ctx context.Context, arg SetProjectRecordingsParams) (int64, error) {
+	result, err := q.db.Exec(ctx, setProjectRecordings, arg.Recordings, arg.OrganisationID, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const signInAttemptsSince = `-- name: SignInAttemptsSince :one

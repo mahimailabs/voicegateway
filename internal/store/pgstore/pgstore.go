@@ -88,7 +88,7 @@ func (s *Store) CreateProject(ctx context.Context, p NewProject) (store.Project,
 	}
 	return store.Project{
 		OrganisationID: row.OrganisationID, ID: row.ID, Name: row.Name,
-		LiveKitURL: row.LivekitUrl, LiveKitAPIKey: row.LivekitApiKey, CreatedAt: row.CreatedAt.Time,
+		LiveKitURL: row.LivekitUrl, LiveKitAPIKey: row.LivekitApiKey, CreatedAt: row.CreatedAt.Time, Recordings: row.Recordings,
 	}, nil
 }
 
@@ -102,7 +102,7 @@ func (s *Store) Projects(ctx context.Context) ([]store.Project, error) {
 	for _, row := range rows {
 		out = append(out, store.Project{
 			OrganisationID: row.OrganisationID, ID: row.ID, Name: row.Name,
-			LiveKitURL: row.LivekitUrl, LiveKitAPIKey: row.LivekitApiKey, CreatedAt: row.CreatedAt.Time,
+			LiveKitURL: row.LivekitUrl, LiveKitAPIKey: row.LivekitApiKey, CreatedAt: row.CreatedAt.Time, Recordings: row.Recordings,
 		})
 	}
 	return out, nil
@@ -119,7 +119,7 @@ func (s *Store) Project(ctx context.Context, organisationID, projectID string) (
 	}
 	return store.Project{
 		OrganisationID: row.OrganisationID, ID: row.ID, Name: row.Name,
-		LiveKitURL: row.LivekitUrl, LiveKitAPIKey: row.LivekitApiKey, CreatedAt: row.CreatedAt.Time,
+		LiveKitURL: row.LivekitUrl, LiveKitAPIKey: row.LivekitApiKey, CreatedAt: row.CreatedAt.Time, Recordings: row.Recordings,
 	}, nil
 }
 

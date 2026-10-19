@@ -185,12 +185,16 @@ func (s *Store) Call(ctx context.Context, organisationID, projectID, callID stri
 	if err != nil {
 		return store.Call{}, fmt.Errorf("call %s: %w", callID, err)
 	}
-	return store.Call{
+	c := store.Call{
 		Metadata: store.CallMetadata{Tags: row.Tags, Archived: row.Archived, Revision: row.MetadataRevision},
 		ID:       row.ID.String(), RoomName: row.RoomName.String, RoomSID: row.RoomSid.String, JobID: row.JobID.String,
 		StartedAt: timeOf(row.StartedAt), EndedAt: timeOf(row.EndedAt), FirstSeenAt: timeOf(row.FirstSeenAt),
 		EndState: row.EndState, Participants: row.Participants, Servable: row.Servable.Bool, Summarized: row.Summarized,
-	}, nil
+	}
+	if row.RecordingID.Valid {
+		c.Recording = &store.Recording{ID: row.RecordingID.String(), StartedAt: timeOf(row.RecordingStartedAt)}
+	}
+	return c, nil
 }
 
 func timeOf(t pgtype.Timestamptz) *time.Time {
