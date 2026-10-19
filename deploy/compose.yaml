@@ -92,7 +92,7 @@ services:
   migrate:
     build: { context: .., dockerfile: deploy/Dockerfile }
     # VOICEGATEWAY_IMAGE runs a published image instead of building one, for example
-    # ghcr.io/mahimailabs/voicegateway:1.0.0-preview.1 (see docs/self-hosting.md).
+    # ghcr.io/mahimailabs/voicegateway:1.0.0-preview.2 (see docs/self-hosting.md).
     image: ${VOICEGATEWAY_IMAGE:-voicegateway:dev}
     command: ["migrate"]
     environment: *voicegateway-env
