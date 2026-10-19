@@ -56,6 +56,10 @@ An Admin of an organisation with no project adds a LiveKit project from the cons
 
 On the Compose stack, sign in as an admin of an organisation with no project, add a project from the empty state, and land on its overview; then try the same name again and read the 409 under the form.
 
+## Cloud rollout
+
+With `VOICEGATEWAY_WORKER_ENDPOINTS_PUBLIC_ONLY=true`, console project creation returns 403 until the worker LiveKit dial guard lands. Self-hosted project creation remains enabled. The follow-up removes this temporary gate only with guarded reads.
+
 ## Open Questions
 
 - The worker reads every project's LiveKit URL through the LiveKit server SDK every 10 to 60 seconds, with no address guard: the SDK's room, SIP, egress, ingress and dispatch clients use their own `http.Client` over `http.DefaultTransport`, and server-sdk-go v2.19.0 offers no option to pass ours (only its Cloud agents client takes `WithHTTPClient`). `code.dny.dev/ssrf` and `VOICEGATEWAY_WORKER_ENDPOINTS_PUBLIC_ONLY` cover worker metrics endpoints only. On a shared Cloud instance an Admin could point a project at an internal address and read its reachability from the layer's error class. This needs its own phase before Cloud opens this form.

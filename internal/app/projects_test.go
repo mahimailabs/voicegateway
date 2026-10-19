@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/mahimailabs/voicegateway/internal/config"
+	"github.com/mahimailabs/voicegateway/internal/store/pgstore"
 )
 
 func TestAddProjectNamesWhatIsMissing(t *testing.T) {
@@ -30,5 +31,15 @@ func TestAddProjectChecksLikeTheAPI(t *testing.T) {
 		if _, err := AddProject(context.Background(), config.Config{}, tt.in); err == nil || err.Error() != tt.want {
 			t.Errorf("AddProject(%+v) = %v, want %q", tt.in, err, tt.want)
 		}
+	}
+}
+
+func TestConsoleProjectCreationDisabledOnCloud(t *testing.T) {
+	projects := &pgstore.Store{}
+	if consoleProjectCreator(config.Config{WorkerEndpointsPublicOnly: true}, projects) != nil {
+		t.Fatal("Cloud project creation enabled without guarded LiveKit reads")
+	}
+	if consoleProjectCreator(config.Config{}, projects) != projects {
+		t.Fatal("self-hosted project creation disabled")
 	}
 }

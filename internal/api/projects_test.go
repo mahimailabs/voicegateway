@@ -98,3 +98,11 @@ func (c *countProjectCreates) CreateProject(_ context.Context, p store.NewProjec
 	c.calls++
 	return store.Project{ID: p.ID, Name: p.Name}, nil
 }
+
+func TestCreateProjectDisabled(t *testing.T) {
+	w := httptest.NewRecorder()
+	(&API{}).createProject(w, httptest.NewRequest(http.MethodPost, "/", strings.NewReader(`{"name":"Production","livekitUrl":"http://127.0.0.1","livekitApiKey":"key","livekitApiSecret":"secret"}`)))
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("status=%d, want 403", w.Code)
+	}
+}

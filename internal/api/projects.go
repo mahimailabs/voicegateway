@@ -155,6 +155,10 @@ func liveKitURL(raw string) bool {
 // organisation, through the same check and create path as voicegateway project add. The secret is
 // sealed by the store and never answered or logged.
 func (a *API) createProject(w http.ResponseWriter, r *http.Request) {
+	if a.NewProjects == nil {
+		writeError(w, r, http.StatusForbidden, "forbidden", "adding projects from the console is off on this install")
+		return
+	}
 	var body struct {
 		Name             string `json:"name"`
 		LiveKitURL       string `json:"livekitUrl"`
