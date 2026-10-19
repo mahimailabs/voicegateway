@@ -27,4 +27,4 @@ Use a scoped observability base URL and a scoped webhook URL. LiveKit Agents app
 
 This change is not complete until route wiring, schema migration, documentation and end-to-end checks pass.
 
-Migration ordering: 00011 removes global key uniqueness. Unmerged recordings and quota migrations must be renumbered to 00012 and 00013 respectively before integration; no migration already deployed on main is renumbered.
+Migration ordering: 00011 removes global key uniqueness. The quota migration follows as 00012; the unmerged recordings migration must be renumbered to 00013 before integration; no migration already deployed on main is renumbered.
