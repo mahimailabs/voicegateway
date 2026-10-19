@@ -113,6 +113,22 @@ type Organisation struct {
 	CreatedAt pgtype.Timestamptz
 }
 
+type OrganisationEntitlement struct {
+	OrganisationID string
+	FromAt         pgtype.Timestamptz
+	ToAt           pgtype.Timestamptz
+	LimitMinutes   int64
+	Active         bool
+	Revision       int64
+}
+
+type ProfiledCallUsage struct {
+	CallID         pgtype.UUID
+	OrganisationID string
+	EffectiveEnd   pgtype.Timestamptz
+	Seconds        pgtype.Numeric
+}
+
 type Project struct {
 	OrganisationID         string
 	ID                     string

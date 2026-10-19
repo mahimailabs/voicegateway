@@ -48,8 +48,9 @@ type Inviter interface {
 
 // Handlers serve the instance API's four operations.
 type Handlers struct {
-	Store   Store
-	Invites Inviter
+	Entitlements Entitlements
+	Store        Store
+	Invites      Inviter
 	// BaseURL is VOICEGATEWAY_PUBLIC_URL, every invitation link's base; never a request's Host.
 	BaseURL string
 	Log     *slog.Logger
@@ -57,12 +58,17 @@ type Handlers struct {
 
 // API returns the handlers as internal/api registers them.
 func (h *Handlers) API() api.InstanceHandlers {
-	return api.InstanceHandlers{
+	out := api.InstanceHandlers{
 		PutOrganisation:              h.putOrganisation,
 		GetOrganisation:              h.getOrganisation,
 		CreateOrganisationInvitation: h.createOrganisationInvitation,
 		GetOrganisationUsage:         h.getOrganisationUsage,
 	}
+	if h.Entitlements != nil {
+		out.PutEntitlement = h.putEntitlement
+		out.GetEntitlement = h.getEntitlement
+	}
+	return out
 }
 
 // organisation is the contract's InstanceOrganisation.

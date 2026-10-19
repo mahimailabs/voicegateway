@@ -38,6 +38,7 @@ const (
 // as LiveKit Agents 1.8.7 sends them (livekit/agents/telemetry/traces.py): a bearer JWT from the
 // agent's LiveKit key and secret with the observability write grant, and no body hash.
 type Uploads struct {
+	Quota    Quota
 	Projects Projects
 	Stream   Appender
 	Log      *slog.Logger
@@ -102,7 +103,7 @@ func (u *Uploads) verify(w http.ResponseWriter, r *http.Request) (*projectKeys, 
 	keys, code := u.check(r)
 	switch code {
 	case http.StatusOK:
-		return keys, true
+		return keys, checkQuota(w, r, u.Quota, keys.project.OrganisationID)
 	case http.StatusServiceUnavailable:
 		unavailable(w)
 	default:

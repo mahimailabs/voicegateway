@@ -8,6 +8,8 @@ import (
 // InstanceHandlers are the instance API's operations (phase 06e, decision 0028). They are
 // Enterprise code in ee/instance; internal/app sets them only when VOICEGATEWAY_INSTANCE_TOKEN is.
 type InstanceHandlers struct {
+	PutEntitlement               http.HandlerFunc
+	GetEntitlement               http.HandlerFunc
 	PutOrganisation              http.HandlerFunc
 	GetOrganisation              http.HandlerFunc
 	CreateOrganisationInvitation http.HandlerFunc
@@ -35,4 +37,14 @@ func (h InstanceHandlers) guard(next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+// optionalEntitlement is absent on self-hosted installs, including the member-facing read.
+func optionalEntitlement(h http.HandlerFunc) http.HandlerFunc {
+	if h != nil {
+		return h
+	}
+	return func(w http.ResponseWriter, r *http.Request) {
+		writeError(w, r, http.StatusNotFound, codeNotFound, "no entitlement API")
+	}
 }

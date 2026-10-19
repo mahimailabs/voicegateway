@@ -18,6 +18,7 @@ import (
 	"github.com/redis/go-redis/v9"
 	"golang.org/x/sync/errgroup"
 
+	"github.com/mahimailabs/voicegateway/ee/instance"
 	"github.com/mahimailabs/voicegateway/internal/api"
 	"github.com/mahimailabs/voicegateway/internal/auth"
 	"github.com/mahimailabs/voicegateway/internal/config"
@@ -68,7 +69,11 @@ func Web(ctx context.Context, c config.Config, log *slog.Logger) error {
 
 	projects := pgstore.NewStore(pool, sealer)
 	producer := stream.NewProducer(rdb, stream.Ingest)
-	uploads := &ingest.Uploads{Projects: projects, Stream: producer, Log: log, Now: time.Now}
+	var quota ingest.Quota
+	if c.CloudQuotas {
+		quota = &instance.Quota{Store: projects, Now: time.Now}
+	}
+	uploads := &ingest.Uploads{Quota: quota, Projects: projects, Stream: producer, Log: log, Now: time.Now}
 
 	warnRetiredToken(os.Getenv, log)
 	trusted, err := auth.ParseTrusted(c.TrustedProxies)
@@ -108,6 +113,9 @@ func Web(ctx context.Context, c config.Config, log *slog.Logger) error {
 			return errors.New("VOICEGATEWAY_INSTANCE_TOKEN needs VOICEGATEWAY_PUBLIC_URL, the base of every invitation link")
 		}
 		instanceAPI = NewInstanceAPI(projects, links, c.PublicURL, log)
+		if c.CloudQuotas {
+			instanceAPI = (&instance.Handlers{Store: projects, Entitlements: projects, Invites: links, BaseURL: c.PublicURL, Log: log}).API()
+		}
 	}
 
 	mux := http.NewServeMux()
@@ -115,7 +123,7 @@ func Web(ctx context.Context, c config.Config, log *slog.Logger) error {
 	// LiveKit's webhooks and Agents' observability paths (decision 0014), under
 	// LIVEKIT_OBSERVABILITY_URL. They take only POST; any other method is a 405, never the console.
 	handlePost(mux, map[string]http.Handler{
-		"/livekit/webhook":               &ingest.Webhooks{Projects: projects, Stream: producer, Log: log, Now: time.Now},
+		"/livekit/webhook":               &ingest.Webhooks{Quota: quota, Projects: projects, Stream: producer, Log: log, Now: time.Now},
 		"/observability/traces/otlp/v0":  uploads.OTLP(event.KindAgentTraces),
 		"/observability/logs/otlp/v0":    uploads.OTLP(event.KindAgentLogs),
 		"/observability/metrics/otlp/v0": uploads.OTLP(event.KindAgentMetrics),

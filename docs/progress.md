@@ -436,3 +436,9 @@ Local make go-test go-lint passed; Docker-dependent tests require CI. The Cloud 
 ### 2026-10-18: Phase 0, old Python release retired
 
 The Python runtime (src/), its Alembic migrations, packaging, examples, benchmarks, Railway and Codecov config, the root docker-compose.yml, the legacy contributor guides, four specs for the old console and the six workflows that built, tested and published it are removed, as are the vg-* Claude commands that drove that code. The Go binary, deploy/, the Makefile and the Go, Dashboard, Site and Docker workflows read none of them. The public installers stay at the root (install.sh, collector.sh, docker-compose.collector.yml, docker-compose.autoupdate.yml) because voicegateway.dev serves the scripts; their shell tests moved to tools/tests/. Open: the installers still install the old Python collector.
+
+## Organisation minute limits (in review)
+
+Added opt-in hosted entitlements, durable closed-call usage, ingestion refusals and console usage
+warnings. See phase06g-cloud-limits.md. The private control plane owns verified subscription sync;
+production activation and end-to-end billing proof remain pending. Self-hosted is unchanged.

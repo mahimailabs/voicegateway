@@ -13,6 +13,8 @@ import (
 
 // Config is every setting the web and worker roles read at start.
 type Config struct {
+	// CloudQuotas requires operator-issued entitlements before accepting telemetry.
+	CloudQuotas bool
 	// WebAddr is where the web role listens.
 	WebAddr string
 	// PostgresURL holds projects, keys and settings.
@@ -136,6 +138,13 @@ func Load(getenv func(string) string) (Config, error) {
 		c.InstanceTokenSHA256 = sum[:]
 	}
 
+	c.CloudQuotas, err = strconv.ParseBool(optional("VOICEGATEWAY_CLOUD_QUOTAS", "false"))
+	if err != nil {
+		errs = append(errs, errors.New("VOICEGATEWAY_CLOUD_QUOTAS must be true or false"))
+	}
+	if c.CloudQuotas && c.InstanceTokenSHA256 == nil {
+		errs = append(errs, errors.New("VOICEGATEWAY_CLOUD_QUOTAS requires VOICEGATEWAY_INSTANCE_TOKEN"))
+	}
 	if err := c.LogLevel.UnmarshalText([]byte(optional("VOICEGATEWAY_LOG_LEVEL", "info"))); err != nil {
 		errs = append(errs, errors.New("VOICEGATEWAY_LOG_LEVEL must be debug, info, warn or error"))
 	}
