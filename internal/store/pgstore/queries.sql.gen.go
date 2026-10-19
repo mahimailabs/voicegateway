@@ -1317,6 +1317,80 @@ func (q *Queries) OrganisationRoles(ctx context.Context, userID pgtype.UUID) ([]
 	return items, nil
 }
 
+const organisationSummary = `-- name: OrganisationSummary :one
+SELECT o.id, o.name, o.created_at,
+    (SELECT count(*) FROM memberships m WHERE m.organisation_id = o.id) AS members,
+    (SELECT count(*) FROM memberships m WHERE m.organisation_id = o.id AND m.role = 'admin') AS admins,
+    (SELECT count(*) FROM invitations i
+        WHERE i.organisation_id = o.id AND i.kind = 'invite' AND i.accepted_at IS NULL AND i.revoked_at IS NULL AND i.expires_at > now()) AS pending_invitations
+FROM organisations o WHERE o.id = $1
+`
+
+type OrganisationSummaryRow struct {
+	ID                 string
+	Name               string
+	CreatedAt          pgtype.Timestamptz
+	Members            int64
+	Admins             int64
+	PendingInvitations int64
+}
+
+// An organisation's members, admins and open invitations, counted at this read (phase 06e).
+func (q *Queries) OrganisationSummary(ctx context.Context, id string) (OrganisationSummaryRow, error) {
+	row := q.db.QueryRow(ctx, organisationSummary, id)
+	var i OrganisationSummaryRow
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.CreatedAt,
+		&i.Members,
+		&i.Admins,
+		&i.PendingInvitations,
+	)
+	return i, err
+}
+
+const organisationUsage = `-- name: OrganisationUsage :one
+SELECT
+    COALESCE(floor(sum(extract(epoch FROM greatest((CASE end_state WHEN 'observed' THEN ended_at WHEN 'inferred' THEN last_activity_at END) - started_at, interval '0')))
+        FILTER (WHERE (CASE end_state WHEN 'observed' THEN ended_at WHEN 'inferred' THEN last_activity_at END) >= $1::timestamptz AND (CASE end_state WHEN 'observed' THEN ended_at WHEN 'inferred' THEN last_activity_at END) < $2::timestamptz AND started_at IS NOT NULL)), 0)::bigint AS call_seconds,
+    count(*) FILTER (WHERE (CASE end_state WHEN 'observed' THEN ended_at WHEN 'inferred' THEN last_activity_at END) >= $1::timestamptz AND (CASE end_state WHEN 'observed' THEN ended_at WHEN 'inferred' THEN last_activity_at END) < $2::timestamptz AND started_at IS NOT NULL) AS calls,
+    count(*) FILTER (WHERE (CASE end_state WHEN 'observed' THEN ended_at WHEN 'inferred' THEN last_activity_at END) >= $1::timestamptz AND (CASE end_state WHEN 'observed' THEN ended_at WHEN 'inferred' THEN last_activity_at END) < $2::timestamptz AND started_at IS NOT NULL AND end_state = 'inferred') AS inferred_calls,
+    count(*) FILTER (WHERE end_state = 'open' AND started_at >= $1::timestamptz AND started_at < $2::timestamptz) AS unended_calls
+FROM calls
+WHERE organisation_id = $3
+`
+
+type OrganisationUsageParams struct {
+	FromAt         pgtype.Timestamptz
+	ToAt           pgtype.Timestamptz
+	OrganisationID string
+}
+
+type OrganisationUsageRow struct {
+	CallSeconds   int64
+	Calls         int64
+	InferredCalls int64
+	UnendedCalls  int64
+}
+
+// An organisation's profiled call time in [from, to) (phase 06e, decision 0029). An observed call
+// ends at ended_at; an inferred one at its last activity, a lower bound. A call counts in the
+// period that holds its end, when its start is known. Exact durations are summed first and the sum
+// is rounded down to whole seconds once, never per call. A call with no end yet is counted apart
+// and never summed.
+func (q *Queries) OrganisationUsage(ctx context.Context, arg OrganisationUsageParams) (OrganisationUsageRow, error) {
+	row := q.db.QueryRow(ctx, organisationUsage, arg.FromAt, arg.ToAt, arg.OrganisationID)
+	var i OrganisationUsageRow
+	err := row.Scan(
+		&i.CallSeconds,
+		&i.Calls,
+		&i.InferredCalls,
+		&i.UnendedCalls,
+	)
+	return i, err
+}
+
 const principalRows = `-- name: PrincipalRows :many
 SELECT u.id, u.email, u.password_version, m.organisation_id, m.role
 FROM users u LEFT JOIN memberships m ON m.user_id = u.id
@@ -1498,6 +1572,38 @@ func (q *Queries) PutListSnapshot(ctx context.Context, arg PutListSnapshotParams
 		arg.Totals,
 	)
 	return err
+}
+
+const putOrganisation = `-- name: PutOrganisation :one
+INSERT INTO organisations (id, name) VALUES ($1, $2)
+ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name
+RETURNING id, name, created_at, (xmax = 0)::boolean AS created
+`
+
+type PutOrganisationParams struct {
+	ID   string
+	Name string
+}
+
+type PutOrganisationRow struct {
+	ID        string
+	Name      string
+	CreatedAt pgtype.Timestamptz
+	Created   bool
+}
+
+// Creates an organisation with a caller-chosen id, or renames it (phase 06e). Parallel puts for one
+// id meet the primary key: exactly one inserts, and created is true for that one alone.
+func (q *Queries) PutOrganisation(ctx context.Context, arg PutOrganisationParams) (PutOrganisationRow, error) {
+	row := q.db.QueryRow(ctx, putOrganisation, arg.ID, arg.Name)
+	var i PutOrganisationRow
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.CreatedAt,
+		&i.Created,
+	)
+	return i, err
 }
 
 const putSummary = `-- name: PutSummary :exec

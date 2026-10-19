@@ -49,17 +49,33 @@ type inviteWeb struct {
 // web returns web with m as its mailer; nil is no SMTP.
 func (f *fixture) web(m invite.Mailer) *inviteWeb {
 	f.t.Helper()
+	return f.webWith(m, "")
+}
+
+// webWith returns web with m as its mailer and, when token is set, the instance API on with token
+// as VOICEGATEWAY_INSTANCE_TOKEN, as internal/app wires it.
+func (f *fixture) webWith(m invite.Mailer, token string) *inviteWeb {
+	f.t.Helper()
 	s := f.service()
 	links := &invite.Service{Store: f.pg, Hash: auth.HashPassword, Verify: auth.VerifyPassword, Log: s.Log, Now: time.Now}
-	if m != nil {
-		// Web refuses SMTP without VOICEGATEWAY_PUBLIC_URL, so emailed links never take the Host.
-		links.Mailer = m
+	if m != nil || token != "" {
+		// Web refuses SMTP, or the instance token, without VOICEGATEWAY_PUBLIC_URL, so links never
+		// take the Host.
 		s.PublicURL = "https://voicegateway.example"
+	}
+	if m != nil {
+		links.Mailer = m
+	}
+	var instance api.InstanceHandlers
+	if token != "" {
+		sum := sha256.Sum256([]byte(token))
+		s.InstanceTokenSHA256 = sum[:]
+		instance = app.NewInstanceAPI(f.pg, links, s.PublicURL, s.Log)
 	}
 	s.Links = links
 	apiRoutes := (&api.API{
 		Projects: f.pg, Calls: f.pg, Traces: emptyTraces{}, Layers: quietLayers{}, Endpoints: f.pg, Accounts: f.pg, Keys: f.pg, NewKey: auth.NewKey,
-		Invitations: f.pg, Inviter: app.NewInviter(links), LinkBase: s.LinkBase,
+		Invitations: f.pg, Inviter: app.NewInviter(links), LinkBase: s.LinkBase, Instance: instance,
 		Log: s.Log, Now: time.Now, Gate: s.Gate,
 	}).Routes()
 	mux := http.NewServeMux()

@@ -499,3 +499,34 @@ SELECT EXISTS (
 
 -- name: OrganisationName :one
 SELECT name FROM organisations WHERE id = $1;
+
+-- name: PutOrganisation :one
+-- Creates an organisation with a caller-chosen id, or renames it (phase 06e). Parallel puts for one
+-- id meet the primary key: exactly one inserts, and created is true for that one alone.
+INSERT INTO organisations (id, name) VALUES (@id, @name)
+ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name
+RETURNING id, name, created_at, (xmax = 0)::boolean AS created;
+
+-- name: OrganisationSummary :one
+-- An organisation's members, admins and open invitations, counted at this read (phase 06e).
+SELECT o.id, o.name, o.created_at,
+    (SELECT count(*) FROM memberships m WHERE m.organisation_id = o.id) AS members,
+    (SELECT count(*) FROM memberships m WHERE m.organisation_id = o.id AND m.role = 'admin') AS admins,
+    (SELECT count(*) FROM invitations i
+        WHERE i.organisation_id = o.id AND i.kind = 'invite' AND i.accepted_at IS NULL AND i.revoked_at IS NULL AND i.expires_at > now()) AS pending_invitations
+FROM organisations o WHERE o.id = @id;
+
+-- name: OrganisationUsage :one
+-- An organisation's profiled call time in [from, to) (phase 06e, decision 0029). An observed call
+-- ends at ended_at; an inferred one at its last activity, a lower bound. A call counts in the
+-- period that holds its end, when its start is known. Exact durations are summed first and the sum
+-- is rounded down to whole seconds once, never per call. A call with no end yet is counted apart
+-- and never summed.
+SELECT
+    COALESCE(floor(sum(extract(epoch FROM greatest((CASE end_state WHEN 'observed' THEN ended_at WHEN 'inferred' THEN last_activity_at END) - started_at, interval '0')))
+        FILTER (WHERE (CASE end_state WHEN 'observed' THEN ended_at WHEN 'inferred' THEN last_activity_at END) >= @from_at::timestamptz AND (CASE end_state WHEN 'observed' THEN ended_at WHEN 'inferred' THEN last_activity_at END) < @to_at::timestamptz AND started_at IS NOT NULL)), 0)::bigint AS call_seconds,
+    count(*) FILTER (WHERE (CASE end_state WHEN 'observed' THEN ended_at WHEN 'inferred' THEN last_activity_at END) >= @from_at::timestamptz AND (CASE end_state WHEN 'observed' THEN ended_at WHEN 'inferred' THEN last_activity_at END) < @to_at::timestamptz AND started_at IS NOT NULL) AS calls,
+    count(*) FILTER (WHERE (CASE end_state WHEN 'observed' THEN ended_at WHEN 'inferred' THEN last_activity_at END) >= @from_at::timestamptz AND (CASE end_state WHEN 'observed' THEN ended_at WHEN 'inferred' THEN last_activity_at END) < @to_at::timestamptz AND started_at IS NOT NULL AND end_state = 'inferred') AS inferred_calls,
+    count(*) FILTER (WHERE end_state = 'open' AND started_at >= @from_at::timestamptz AND started_at < @to_at::timestamptz) AS unended_calls
+FROM calls
+WHERE organisation_id = @organisation_id;

@@ -263,6 +263,9 @@ type Principal struct {
 	PasswordVersion int
 	// Key is set for a project API key, which names no user: it reads its one project.
 	Key *KeyScope
+	// Instance is true for the instance token (phase 06e), which names no user and no
+	// organisation: it calls the instance API only.
+	Instance bool
 }
 
 type principalKey struct{}
@@ -415,6 +418,22 @@ type NewInvitation struct {
 	IdempotencyKey              *string
 	TokenSHA256                 []byte
 	ExpiresAt                   time.Time
+}
+
+// Organisation is an organisation as the instance API reads it (phase 06e): its members, admins
+// and pending invitations counted at the read.
+type Organisation struct {
+	ID, Name                            string
+	CreatedAt                           time.Time
+	Members, Admins, PendingInvitations int64
+}
+
+// Usage is an organisation's profiled call time in a period (phase 06e, decision 0029): the calls
+// whose end, or last activity when inferred, fell in it, with known starts, their exact durations
+// summed and then floored to whole seconds; and apart from them the calls that started in it and
+// are still open, whose time is unknown and never summed.
+type Usage struct {
+	CallSeconds, Calls, InferredCalls, UnendedCalls int64
 }
 
 // OpenInvitation is an open, unexpired link as the accept screen reads it.

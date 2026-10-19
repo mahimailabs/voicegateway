@@ -9,8 +9,8 @@ rules:
       property: tags
     assertions:
       defined: true
-      enum: ["Console reads", "Console writes"]
-    message: Every operation is a Console read or a Console write; check-sources ties each to its method.
+      enum: ["Console reads", "Console writes", "Instance"]
+    message: Every operation is a Console read, a Console write or an Instance operation; check-sources ties each to its method and path.
   rule/typed-errors:
     subject:
       type: Responses

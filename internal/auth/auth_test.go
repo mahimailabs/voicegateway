@@ -44,6 +44,9 @@ type fixture struct {
 	pool *pgxpool.Pool
 	pg   *pgstore.Store
 	logs *bytes.Buffer
+	// header is the last response's headers from send, under mu: sends run in parallel.
+	mu     sync.Mutex
+	header http.Header
 }
 
 func newFixture(t *testing.T) *fixture {
@@ -565,6 +568,9 @@ func TestNoSecretInLogs(t *testing.T) {
 	if !strings.Contains(f.logs.String(), `"class":"unreachable"`) {
 		t.Error("the failed send did not log")
 	}
+	// Phase 06e: the instance API off and on, refused, an invitation link made, repeated and used,
+	// and a failed send.
+	instance := instanceSecrets(t, f)
 	logs := f.logs.String()
 	if logs == "" {
 		t.Fatal("no log lines to check: the error path did not log")
@@ -572,10 +578,10 @@ func TestNoSecretInLogs(t *testing.T) {
 	if !strings.Contains(logs, "members") {
 		t.Error("the failing member store did not log")
 	}
-	for _, secret := range []string{
+	for _, secret := range append([]string{
 		password, "a wrong one", c.Value, key, key[len(key)-43:], created, created[len(created)-43:], reset, bob.Value,
 		invited, tokenOf(invited), existing, tokenOf(existing), *resetLink, tokenOf(*resetLink), newPassword, fromReset, joined.Value, smtpPassword,
-	} {
+	}, instance...) {
 		if strings.Contains(logs, secret) {
 			t.Errorf("a log line holds a secret %q", secret)
 		}

@@ -25,6 +25,8 @@ tags:
     description: Authorised project-scoped console data.
   - name: Console writes
     description: Organisation changes a signed-in Admin makes (phase 06b).
+  - name: Instance
+    description: The instance API for an operator's program, behind VOICEGATEWAY_INSTANCE_TOKEN (phase 06e, Enterprise code under ee/).
 paths:
   /api/v1/org/{orgId}/project/{projectId}/calls:
     get:
@@ -1368,6 +1370,182 @@ paths:
           $ref: "#/components/responses/InternalError"
         "503":
           $ref: "#/components/responses/SourceUnavailable"
+  /api/v1/instance/organisations/{orgId}:
+    put:
+      operationId: putOrganisation
+      summary: Create an organisation, or rename it
+      tags:
+        - Instance
+      security:
+        - instanceToken: []
+      x-access:
+        principal: instance
+        minimumRole: Instance
+        scope: instance
+      description: For an operator's program holding the instance token (phase 06e, decision 0028); off, and 404, unless VOICEGATEWAY_INSTANCE_TOKEN is set. The caller chooses the id, so a retried create never makes a second organisation. 201 when this call created it, 200 when it existed; a different name renames it. A session or a project API key is 403.
+      parameters:
+        - $ref: "#/components/parameters/InstanceOrganisationId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/InstanceOrganisationPut"
+      responses:
+        "200":
+          description: The organisation existed; it now has the name sent.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InstanceOrganisation"
+        "201":
+          description: This call created the organisation.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InstanceOrganisation"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/SourceUnavailable"
+    get:
+      operationId: getOrganisation
+      summary: Read an organisation and whether its admin has joined
+      tags:
+        - Instance
+      security:
+        - instanceToken: []
+      x-access:
+        principal: instance
+        minimumRole: Instance
+        scope: instance
+      description: For the instance token only (phase 06e). Counts are read at this request. An unknown id is not_found.
+      parameters:
+        - $ref: "#/components/parameters/InstanceOrganisationId"
+      responses:
+        "200":
+          description: The organisation and its counts.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InstanceOrganisation"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/SourceUnavailable"
+  /api/v1/instance/organisations/{orgId}/invitations:
+    post:
+      operationId: createOrganisationInvitation
+      summary: Invite someone to an organisation, with no inviting user
+      tags:
+        - Instance
+      security:
+        - instanceToken: []
+      x-access:
+        principal: instance
+        minimumRole: Instance
+        scope: instance
+      description: For the instance token only (phase 06e). Makes a phase 06d invitation with no inviting user. The Idempotency-Key header is required; a repeat with the same key answers 200 with the first invitation, link null, nothing revoked and nothing sent. The same key with another email or role is invalid_request. A new key for an email with an open invitation revokes the open link and sends or returns a new one, which is how a caller retries a failed send. With SMTP set, link is always null and emailed says whether the send succeeded. An email whose account is already a member is 409 already_member.
+      parameters:
+        - $ref: "#/components/parameters/InstanceOrganisationId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/InvitationCreate"
+      responses:
+        "200":
+          description: The key made this invitation before; nothing was revoked or sent.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InstanceInvitation"
+        "201":
+          description: This call made the invitation.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InstanceInvitation"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/SourceUnavailable"
+  /api/v1/instance/organisations/{orgId}/usage:
+    get:
+      operationId: getOrganisationUsage
+      summary: Read an organisation's profiled call time in a period
+      tags:
+        - Instance
+      security:
+        - instanceToken: []
+      x-access:
+        principal: instance
+        minimumRole: Instance
+        scope: instance
+      description: For the instance token only (phase 06e, decision 0029). A call counts in the period its end falls in, when its start is known; an observed call ends at its end, an inferred one at its last activity, a lower bound. Exact durations are summed, then rounded down to whole seconds once. Calls that started in the period with no end yet are counted in unendedCalls and never summed. Turning seconds into billed minutes is the caller's job. A missing or bad from or to, to not after from, or a span over 62 days is invalid_request; an unknown organisation is not_found.
+      parameters:
+        - $ref: "#/components/parameters/InstanceOrganisationId"
+        - name: from
+          in: query
+          required: true
+          description: Inclusive start of the period, an RFC 3339 instant.
+          schema:
+            type: string
+            format: date-time
+        - name: to
+          in: query
+          required: true
+          description: Exclusive end of the period, an RFC 3339 instant, after from and at most 62 days later.
+          schema:
+            type: string
+            format: date-time
+      responses:
+        "200":
+          description: The organisation's call time in the period.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InstanceUsage"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/SourceUnavailable"
 components:
   securitySchemes:
     consoleSession:
@@ -1380,6 +1558,10 @@ components:
       scheme: bearer
       bearerFormat: vgk_<keyId>_<secret>
       description: A project API key, which an Admin creates in the console. It reads its own project as a Viewer and is refused writes, other projects and organisation operations.
+    instanceToken:
+      type: http
+      scheme: bearer
+      description: VOICEGATEWAY_INSTANCE_TOKEN, for an operator's program (phase 06e). It calls the instance API and nothing else; nothing else calls the instance API.
   schemas:
     Call:
       type: object
@@ -4587,6 +4769,139 @@ components:
           type: boolean
           description: True when the email was sent; false without SMTP, or when the send failed.
           x-source: { kind: computed, file: internal/invite/invite.go, pointer: null, detail: The SMTP send's outcome. }
+    InstanceOrganisationPut:
+      type: object
+      additionalProperties: false
+      required: [ name ]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 200
+          description: The organisation's name, shown in the console.
+          x-source: { kind: configuration, file: migrations/postgres/00001_projects.sql, pointer: null, detail: "organisations.name." }
+    InstanceOrganisation:
+      type: object
+      additionalProperties: false
+      required: [ id, name, createdAt, members, admins, pendingInvitations ]
+      properties:
+        id:
+          type: string
+          pattern: "^[a-z0-9][a-z0-9-]{0,62}$"
+          description: The id the caller chose.
+          x-source: { kind: configuration, file: migrations/postgres/00001_projects.sql, pointer: null, detail: "organisations.id." }
+        name:
+          type: string
+          description: The organisation's name.
+          x-source: { kind: configuration, file: migrations/postgres/00001_projects.sql, pointer: null, detail: "organisations.name." }
+        createdAt:
+          type: string
+          format: date-time
+          description: When the organisation was created.
+          x-source: { kind: configuration, file: migrations/postgres/00001_projects.sql, pointer: null, detail: "organisations.created_at." }
+        members:
+          type: integer
+          minimum: 0
+          x-unit: count
+          x-configuration: true
+          description: Members of the organisation at this read; a count of stored rows, not a measurement.
+          x-source: { kind: configuration, file: migrations/postgres/00004_accounts.sql, pointer: null, detail: "memberships rows of the organisation." }
+        admins:
+          type: integer
+          minimum: 0
+          x-unit: count
+          x-configuration: true
+          description: Members with the Admin role at this read; a count of stored rows, not a measurement.
+          x-source: { kind: configuration, file: migrations/postgres/00004_accounts.sql, pointer: null, detail: "memberships rows of the organisation with role admin." }
+        pendingInvitations:
+          type: integer
+          minimum: 0
+          x-unit: count
+          x-configuration: true
+          description: Invitations neither accepted, revoked nor expired at this read; a count of stored rows, not a measurement.
+          x-source: { kind: configuration, file: migrations/postgres/00009_invitations.sql, pointer: null, detail: "invitations rows of kind invite, open and unexpired." }
+    InstanceInvitation:
+      type: object
+      additionalProperties: false
+      required: [ invitationId, email, role, expiresAt, emailed, link ]
+      properties:
+        invitationId:
+          type: string
+          description: The invitation's id.
+          x-source: { kind: configuration, file: migrations/postgres/00009_invitations.sql, pointer: null, detail: "invitations.id." }
+        email:
+          type: string
+          format: email
+          description: The invited address, case-folded.
+          x-source: { kind: configuration, file: migrations/postgres/00009_invitations.sql, pointer: null, detail: "invitations.email." }
+        role:
+          type: string
+          enum: [ Admin, Member, Viewer ]
+          description: The organisation role the invitation grants, per decision 0019.
+          x-source: { kind: configuration, file: migrations/postgres/00009_invitations.sql, pointer: null, detail: "invitations.role." }
+        expiresAt:
+          type: string
+          format: date-time
+          description: When the link stops working, 7 days after it was made.
+          x-source: { kind: configuration, file: migrations/postgres/00009_invitations.sql, pointer: null, detail: "invitations.expires_at." }
+        emailed:
+          type: boolean
+          description: True when the email was sent; false without SMTP, or when the send failed. On a repeat, as it was.
+          x-source: { kind: computed, file: internal/invite/invite.go, pointer: null, detail: "The SMTP send's outcome, from invitations.emailed_at on a repeat." }
+        link:
+          type: [ string, "null" ]
+          format: uri
+          description: "<VOICEGATEWAY_PUBLIC_URL>/invite#<token>, only without SMTP and only in the answer that made it."
+          x-null-reason: SMTP is set, so the link went by email to its address only, whether or not the send succeeded; or this is a repeat, and only the token's hash is kept.
+          x-source: { kind: computed, file: internal/invite/invite.go, pointer: null, detail: "VOICEGATEWAY_PUBLIC_URL, /invite#, and the token." }
+    InstanceUsage:
+      type: object
+      additionalProperties: false
+      required: [ organisationId, from, to, callSeconds, calls, inferredCalls, unendedCalls ]
+      properties:
+        organisationId:
+          type: string
+          pattern: "^[a-z0-9][a-z0-9-]{0,62}$"
+          description: The organisation read.
+          x-source: { kind: configuration, file: migrations/postgres/00001_projects.sql, pointer: null, detail: "organisations.id." }
+        from:
+          type: string
+          format: date-time
+          description: The period's inclusive start, as sent, in UTC.
+          x-source: { kind: computed, file: ee/instance/instance.go, pointer: null, detail: "The request's from parameter." }
+        to:
+          type: string
+          format: date-time
+          description: The period's exclusive end, as sent, in UTC.
+          x-source: { kind: computed, file: ee/instance/instance.go, pointer: null, detail: "The request's to parameter." }
+        callSeconds:
+          type: integer
+          minimum: 0
+          x-unit: seconds
+          x-configuration: true
+          description: The calls counted in calls, each from its start to its end (an inferred call's end is its last activity), summed exactly and then rounded down to whole seconds once, never per call. Calls with no end are not in it. A sum of stored rows at this read, so 0 is a true zero.
+          x-source: { kind: computed, file: migrations/postgres/00002_calls.sql, pointer: null, detail: "Sum of the end (ended_at when observed, last_activity_at when inferred) minus started_at over the calls counted in calls, floored once." }
+        calls:
+          type: integer
+          minimum: 0
+          x-unit: count
+          x-configuration: true
+          description: Calls whose end fell in the period, with a known start. An inferred call's end is its last activity.
+          x-source: { kind: computed, file: migrations/postgres/00002_calls.sql, pointer: null, detail: "calls rows with end_state observed and ended_at in the period, or inferred and last_activity_at in the period, and started_at known." }
+        inferredCalls:
+          type: integer
+          minimum: 0
+          x-unit: count
+          x-configuration: true
+          description: Of calls, those whose end was inferred from their last activity rather than observed.
+          x-source: { kind: computed, file: migrations/postgres/00002_calls.sql, pointer: null, detail: "The calls counted in calls with end_state inferred." }
+        unendedCalls:
+          type: integer
+          minimum: 0
+          x-unit: count
+          x-configuration: true
+          description: Calls that started in the period and have no end yet; their time is unknown, so it is not in callSeconds.
+          x-source: { kind: computed, file: migrations/postgres/00002_calls.sql, pointer: null, detail: "calls rows with end_state open and started_at in the period." }
     CreatedPasswordReset:
       type: object
       additionalProperties: false
@@ -5123,6 +5438,23 @@ components:
           schema:
             $ref: "#/components/schemas/Error"
   parameters:
+    InstanceOrganisationId:
+      name: orgId
+      in: path
+      required: true
+      description: The organisation's id, chosen by the caller; any other shape is invalid_request.
+      schema:
+        type: string
+        pattern: "^[a-z0-9][a-z0-9-]{0,62}$"
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: 1 to 200 printable characters; a Cloud control plane sends its checkout session id. A repeat with the same key returns the first invitation.
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 200
     KeyId:
       name: keyId
       in: path

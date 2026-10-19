@@ -367,6 +367,16 @@ What changed:
 - **From the pair review and CodeRabbit:** the reset guard fails closed (no requester, or an admin since deleted, allows a member of the link's organisation alone), and at use the member must still belong to that organisation. A reset locks the member's row, so resets from two organisations at once leave one open link. The invitations list is three columns that wrap, so Revoke is in view at pane widths 343, 632 and 820 px, and a member's Password reset and Remove share one row menu.
 - **Console:** `/invite#<token>` renders before the session gate, drops the fragment, and asks for one password. People's Invite form calls `createInvitation` (link once without SMTP; "Emailed to", or Resend after a failed send), the invitations list is a DataTable with its state filter and sort in the URL (`urlPrefix`), and members have a Password reset action. `vg.invites` is gone; the mock serves the new operations in memory.
 
+### 2026-10-18: phase 06e, the instance API (in review)
+
+An operator's program, holding `VOICEGATEWAY_INSTANCE_TOKEN`, creates an organisation, invites its first admin, reads whether they joined and reads the organisation's call time (spec `docs/specs/phase06e-instance-api.md`, decisions 0028 and 0029). Not done until the pair review, CI's SMTP container checks and the manual check pass.
+
+What changed:
+- **`ee/instance`:** `putOrganisation`, `getOrganisation`, `createOrganisationInvitation` (06d's `invite.Create` with no inviting user and the required `Idempotency-Key`) and `getOrganisationUsage`. Each call logs its operation, organisation and outcome only.
+- **Gate:** the token is kept as its SHA-256 and compared in constant time. A new `instance` scope in `routeAccess`: the token calls those four routes and nothing else, and a session or project key on them is 403. With the token unset every instance path is 404; a Bearer that matches nothing stays 401 with the challenge. Setting the token needs `VOICEGATEWAY_PUBLIC_URL`.
+- **Usage:** an observed call ends at `ended_at`, an inferred one at `last_activity_at` (decision 0029 with #412). A call counts in the period that holds its end, when its start is known. Exact durations are summed, then rounded down to whole seconds once. Open calls are counted apart and never summed. No migration: the query reads `calls` by organisation.
+- **Validation:** the implementation owner reports checks 1 to 4 and 7 passed against Postgres 16 in its cloud copy. Local lint, contract and test checks are repeated for the PR; Docker-dependent tests skip on this Mac because Docker is stopped. CI must run all container checks, including the Mailpit checks 5 and 6, before merge.
+
 ### 2026-10-18: worker endpoint dial guard
 
 The worker checks every address it dials for a worker metrics endpoint, after DNS, with `code.dny.dev/ssrf` v0.3.0 (the 05d follow-up: an SSRF guard before any API or console form can add endpoints).

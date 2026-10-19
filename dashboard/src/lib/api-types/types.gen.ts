@@ -1408,6 +1408,98 @@ export type CreatedInvitation = {
     emailed: boolean;
 };
 
+export type InstanceOrganisationPut = {
+    /**
+     * The organisation's name, shown in the console.
+     */
+    name: string;
+};
+
+export type InstanceOrganisation = {
+    /**
+     * The id the caller chose.
+     */
+    id: string;
+    /**
+     * The organisation's name.
+     */
+    name: string;
+    /**
+     * When the organisation was created.
+     */
+    createdAt: string;
+    /**
+     * Members of the organisation at this read; a count of stored rows, not a measurement.
+     */
+    members: number;
+    /**
+     * Members with the Admin role at this read; a count of stored rows, not a measurement.
+     */
+    admins: number;
+    /**
+     * Invitations neither accepted, revoked nor expired at this read; a count of stored rows, not a measurement.
+     */
+    pendingInvitations: number;
+};
+
+export type InstanceInvitation = {
+    /**
+     * The invitation's id.
+     */
+    invitationId: string;
+    /**
+     * The invited address, case-folded.
+     */
+    email: string;
+    /**
+     * The organisation role the invitation grants, per decision 0019.
+     */
+    role: 'Admin' | 'Member' | 'Viewer';
+    /**
+     * When the link stops working, 7 days after it was made.
+     */
+    expiresAt: string;
+    /**
+     * True when the email was sent; false without SMTP, or when the send failed. On a repeat, as it was.
+     */
+    emailed: boolean;
+    /**
+     * <VOICEGATEWAY_PUBLIC_URL>/invite#<token>, only without SMTP and only in the answer that made it.
+     */
+    link: string | null;
+};
+
+export type InstanceUsage = {
+    /**
+     * The organisation read.
+     */
+    organisationId: string;
+    /**
+     * The period's inclusive start, as sent, in UTC.
+     */
+    from: string;
+    /**
+     * The period's exclusive end, as sent, in UTC.
+     */
+    to: string;
+    /**
+     * The calls counted in calls, each from its start to its end (an inferred call's end is its last activity), summed exactly and then rounded down to whole seconds once, never per call. Calls with no end are not in it. A sum of stored rows at this read, so 0 is a true zero.
+     */
+    callSeconds: number;
+    /**
+     * Calls whose end fell in the period, with a known start. An inferred call's end is its last activity.
+     */
+    calls: number;
+    /**
+     * Of calls, those whose end was inferred from their last activity rather than observed.
+     */
+    inferredCalls: number;
+    /**
+     * Calls that started in the period and have no end yet; their time is unknown, so it is not in callSeconds.
+     */
+    unendedCalls: number;
+};
+
 export type CreatedPasswordReset = {
     /**
      * <base>/invite#<token>, the only time the full link exists.
@@ -1691,6 +1783,16 @@ export type Clock = unknown & {
      */
     alignment: 'observed' | 'inferred' | 'unknown';
 };
+
+/**
+ * The organisation's id, chosen by the caller; any other shape is invalid_request.
+ */
+export type InstanceOrganisationId = string;
+
+/**
+ * 1 to 200 printable characters; a Cloud control plane sends its checkout session id. A repeat with the same key returns the first invitation.
+ */
+export type IdempotencyKey = string;
 
 /**
  * A project key's id, the 12 characters after vgk_; one from another project is not_found, and any other value is invalid_request.
@@ -3416,3 +3518,230 @@ export type GetRecordingMediaResponses = {
 };
 
 export type GetRecordingMediaResponse = GetRecordingMediaResponses[keyof GetRecordingMediaResponses];
+
+export type GetOrganisationData = {
+    body?: never;
+    path: {
+        /**
+         * The organisation's id, chosen by the caller; any other shape is invalid_request.
+         */
+        orgId: string;
+    };
+    query?: never;
+    url: '/api/v1/instance/organisations/{orgId}';
+};
+
+export type GetOrganisationErrors = {
+    /**
+     * invalid_request; never return an empty success result for this failure.
+     */
+    400: Error;
+    /**
+     * unauthenticated; never return an empty success result for this failure.
+     */
+    401: Error;
+    /**
+     * forbidden; never return an empty success result for this failure.
+     */
+    403: Error;
+    /**
+     * not_found; never return an empty success result for this failure.
+     */
+    404: Error;
+    /**
+     * internal_error; never return an empty success result for this failure.
+     */
+    500: Error;
+    /**
+     * source_unavailable; never return an empty success result for this failure.
+     */
+    503: Error;
+};
+
+export type GetOrganisationError = GetOrganisationErrors[keyof GetOrganisationErrors];
+
+export type GetOrganisationResponses = {
+    /**
+     * The organisation and its counts.
+     */
+    200: InstanceOrganisation;
+};
+
+export type GetOrganisationResponse = GetOrganisationResponses[keyof GetOrganisationResponses];
+
+export type PutOrganisationData = {
+    body: InstanceOrganisationPut;
+    path: {
+        /**
+         * The organisation's id, chosen by the caller; any other shape is invalid_request.
+         */
+        orgId: string;
+    };
+    query?: never;
+    url: '/api/v1/instance/organisations/{orgId}';
+};
+
+export type PutOrganisationErrors = {
+    /**
+     * invalid_request; never return an empty success result for this failure.
+     */
+    400: Error;
+    /**
+     * unauthenticated; never return an empty success result for this failure.
+     */
+    401: Error;
+    /**
+     * forbidden; never return an empty success result for this failure.
+     */
+    403: Error;
+    /**
+     * not_found; never return an empty success result for this failure.
+     */
+    404: Error;
+    /**
+     * internal_error; never return an empty success result for this failure.
+     */
+    500: Error;
+    /**
+     * source_unavailable; never return an empty success result for this failure.
+     */
+    503: Error;
+};
+
+export type PutOrganisationError = PutOrganisationErrors[keyof PutOrganisationErrors];
+
+export type PutOrganisationResponses = {
+    /**
+     * The organisation existed; it now has the name sent.
+     */
+    200: InstanceOrganisation;
+    /**
+     * This call created the organisation.
+     */
+    201: InstanceOrganisation;
+};
+
+export type PutOrganisationResponse = PutOrganisationResponses[keyof PutOrganisationResponses];
+
+export type CreateOrganisationInvitationData = {
+    body: InvitationCreate;
+    headers: {
+        /**
+         * 1 to 200 printable characters; a Cloud control plane sends its checkout session id. A repeat with the same key returns the first invitation.
+         */
+        'Idempotency-Key': string;
+    };
+    path: {
+        /**
+         * The organisation's id, chosen by the caller; any other shape is invalid_request.
+         */
+        orgId: string;
+    };
+    query?: never;
+    url: '/api/v1/instance/organisations/{orgId}/invitations';
+};
+
+export type CreateOrganisationInvitationErrors = {
+    /**
+     * invalid_request; never return an empty success result for this failure.
+     */
+    400: Error;
+    /**
+     * unauthenticated; never return an empty success result for this failure.
+     */
+    401: Error;
+    /**
+     * forbidden; never return an empty success result for this failure.
+     */
+    403: Error;
+    /**
+     * not_found; never return an empty success result for this failure.
+     */
+    404: Error;
+    /**
+     * last_admin, the change would leave the organisation without an admin; already_member, the invited email's account is a member already; member_of_other_organisations, a reset's member belongs to an organisation the requester does not administer.
+     */
+    409: Error;
+    /**
+     * internal_error; never return an empty success result for this failure.
+     */
+    500: Error;
+    /**
+     * source_unavailable; never return an empty success result for this failure.
+     */
+    503: Error;
+};
+
+export type CreateOrganisationInvitationError = CreateOrganisationInvitationErrors[keyof CreateOrganisationInvitationErrors];
+
+export type CreateOrganisationInvitationResponses = {
+    /**
+     * The key made this invitation before; nothing was revoked or sent.
+     */
+    200: InstanceInvitation;
+    /**
+     * This call made the invitation.
+     */
+    201: InstanceInvitation;
+};
+
+export type CreateOrganisationInvitationResponse = CreateOrganisationInvitationResponses[keyof CreateOrganisationInvitationResponses];
+
+export type GetOrganisationUsageData = {
+    body?: never;
+    path: {
+        /**
+         * The organisation's id, chosen by the caller; any other shape is invalid_request.
+         */
+        orgId: string;
+    };
+    query: {
+        /**
+         * Inclusive start of the period, an RFC 3339 instant.
+         */
+        from: string;
+        /**
+         * Exclusive end of the period, an RFC 3339 instant, after from and at most 62 days later.
+         */
+        to: string;
+    };
+    url: '/api/v1/instance/organisations/{orgId}/usage';
+};
+
+export type GetOrganisationUsageErrors = {
+    /**
+     * invalid_request; never return an empty success result for this failure.
+     */
+    400: Error;
+    /**
+     * unauthenticated; never return an empty success result for this failure.
+     */
+    401: Error;
+    /**
+     * forbidden; never return an empty success result for this failure.
+     */
+    403: Error;
+    /**
+     * not_found; never return an empty success result for this failure.
+     */
+    404: Error;
+    /**
+     * internal_error; never return an empty success result for this failure.
+     */
+    500: Error;
+    /**
+     * source_unavailable; never return an empty success result for this failure.
+     */
+    503: Error;
+};
+
+export type GetOrganisationUsageError = GetOrganisationUsageErrors[keyof GetOrganisationUsageErrors];
+
+export type GetOrganisationUsageResponses = {
+    /**
+     * The organisation's call time in the period.
+     */
+    200: InstanceUsage;
+};
+
+export type GetOrganisationUsageResponse = GetOrganisationUsageResponses[keyof GetOrganisationUsageResponses];

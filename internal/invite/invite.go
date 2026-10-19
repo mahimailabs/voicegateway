@@ -99,6 +99,7 @@ type Created struct {
 	Invitation store.Invitation
 	Link       string // <BaseURL>/invite#<token> only without a Mailer; empty with one, and on an idempotent repeat
 	Emailed    bool   // true when the send succeeded; false without SMTP, or when it failed
+	Repeat     bool   // true when an idempotency key made this invitation on an earlier call
 }
 
 // Pending is what the accept screen shows of a link: its kind ("invite" or "reset"), the
@@ -185,7 +186,7 @@ func (s *Service) repeat(ctx context.Context, in Invite, email string) (Created,
 	if inv.Kind != "invite" || inv.Email != email || inv.Role == nil || *inv.Role != in.Role {
 		return Created{}, true, ErrInvalid
 	}
-	return Created{Invitation: inv, Emailed: inv.EmailedAt != nil}, true, nil
+	return Created{Invitation: inv, Emailed: inv.EmailedAt != nil, Repeat: true}, true, nil
 }
 
 // ResetLink makes a password reset link for userID, replacing any open one for them. Like Create,

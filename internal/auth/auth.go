@@ -68,8 +68,11 @@ type Service struct {
 	// Compare compares two SHA-256 hashes in constant time and reports 1 when they are equal; nil
 	// is subtle.ConstantTimeCompare. Tests count the comparisons through it.
 	Compare func(x, y []byte) int
-	Log     *slog.Logger
-	Now     func() time.Time
+	// InstanceTokenSHA256 is the SHA-256 of VOICEGATEWAY_INSTANCE_TOKEN (phase 06e); nil when it is
+	// unset. A Bearer equal to the token is the instance principal, which names no user.
+	InstanceTokenSHA256 []byte
+	Log                 *slog.Logger
+	Now                 func() time.Time
 
 	proxyWarning sync.Once
 }
@@ -338,7 +341,9 @@ func (s *Service) Gate(next http.Handler) http.Handler {
 			return
 		}
 		if v, isBearer := bearer(r.Header.Get("Authorization")); !ok && isBearer {
-			if p, ok, err = s.keyPrincipal(r.Context(), v); err != nil {
+			if s.isInstanceToken(v) {
+				p, ok = store.Principal{Instance: true}, true
+			} else if p, ok, err = s.keyPrincipal(r.Context(), v); err != nil {
 				s.fail(w, err)
 				return
 			}
@@ -359,6 +364,16 @@ func (s *Service) now() time.Time {
 		return s.Now()
 	}
 	return time.Now()
+}
+
+// isInstanceToken reports whether a Bearer value is the instance token, comparing SHA-256 hashes
+// in constant time; always false when the token is unset.
+func (s *Service) isInstanceToken(v string) bool {
+	if s.InstanceTokenSHA256 == nil {
+		return false
+	}
+	sum := sha256.Sum256([]byte(v))
+	return subtle.ConstantTimeCompare(sum[:], s.InstanceTokenSHA256) == 1
 }
 
 // dummyKeyHash stands in for the stored hash when a presented key is malformed, unknown or revoked,

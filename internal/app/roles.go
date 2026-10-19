@@ -97,7 +97,17 @@ func Web(ctx context.Context, c config.Config, log *slog.Logger) error {
 		Users: projects, Secure: secure, Plain: plain, Trusted: trusted,
 		PublicHTTPS: strings.HasPrefix(strings.ToLower(c.PublicURL), "https://"),
 		PublicURL:   c.PublicURL, Links: links,
-		Log: log, Now: time.Now,
+		InstanceTokenSHA256: c.InstanceTokenSHA256,
+		Log:                 log, Now: time.Now,
+	}
+	// The instance API (phase 06e, ee/instance) is on only with VOICEGATEWAY_INSTANCE_TOKEN.
+	var instanceAPI api.InstanceHandlers
+	if c.InstanceTokenSHA256 != nil {
+		// An invitation link's base never comes from the request's Host header.
+		if c.PublicURL == "" {
+			return errors.New("VOICEGATEWAY_INSTANCE_TOKEN needs VOICEGATEWAY_PUBLIC_URL, the base of every invitation link")
+		}
+		instanceAPI = NewInstanceAPI(projects, links, c.PublicURL, log)
 	}
 
 	mux := http.NewServeMux()
@@ -115,6 +125,7 @@ func Web(ctx context.Context, c config.Config, log *slog.Logger) error {
 	mux.Handle("/api/v1/", (&api.API{
 		Projects: projects, Calls: projects, Traces: events, Layers: events, Endpoints: projects, Accounts: projects, Stats: projects, Keys: projects, NewKey: auth.NewKey, Log: log, Now: time.Now, Gate: accounts.Gate,
 		Invitations: projects, Inviter: NewInviter(links), LinkBase: accounts.LinkBase,
+		Instance:       instanceAPI,
 		AnswerBudgetMs: c.AnswerBudgetMs,
 	}).Routes())
 	if c.ConsoleDir != "" {
