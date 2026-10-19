@@ -94,6 +94,7 @@
       "getIssueDispositions",
       "getMediaServer",
       "getMembers",
+      "getMyOrganisationEntitlement",
       "getProjectSettings",
       "getProjectSnapshot",
       "getProviderProbes",

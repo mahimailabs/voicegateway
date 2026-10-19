@@ -38,6 +38,7 @@ const (
 // as LiveKit Agents 1.8.7 sends them (livekit/agents/telemetry/traces.py): a bearer JWT from the
 // agent's LiveKit key and secret with the observability write grant, and no body hash.
 type Uploads struct {
+	Quota    Quota
 	Projects Projects
 	Stream   Appender
 	Log      *slog.Logger
@@ -147,6 +148,9 @@ func (u *Uploads) check(r *http.Request) (*projectKeys, int) {
 // appendEnvelope attributes e to the verified project and appends it, answering 503 on failure so
 // the agent retries. It reports whether the envelope was appended.
 func (u *Uploads) appendEnvelope(w http.ResponseWriter, r *http.Request, keys *projectKeys, e event.Envelope) bool {
+	if !checkEnvelopeQuota(w, r, u.Quota, keys.project.OrganisationID, keys.project.ID, e.Kind, e.Payload) {
+		return false
+	}
 	e.OrganisationID, e.ProjectID, e.ReceivedAt = keys.project.OrganisationID, keys.project.ID, u.Now()
 	if _, err := u.Stream.Append(r.Context(), e); err != nil {
 		u.Log.Error("upload: append failed", "kind", e.Kind, "project", keys.project.ID, "err", err)

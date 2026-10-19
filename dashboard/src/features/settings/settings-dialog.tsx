@@ -30,6 +30,7 @@ import { mod } from "@/components/command-palette"
 import { CopyCommand } from "@/components/copy-command"
 import { refreshSession, roleIn, useSession } from "@/lib/session"
 import { useLocalSave } from "@/lib/local-store"
+import { UsageAllowance } from "@/components/usage-allowance"
 import { errorText } from "@/components/page-state"
 
 // Settings as a modal over the page you are on (layout from shadcn's sidebar-13 block). Three groups,
@@ -178,6 +179,7 @@ function Organisation() {
   return (
     <>
       <Header title={org().name} description="The organisation that owns your projects. The open-source edition is one organisation with any number of projects and no usage limits." />
+      <UsageAllowance />
       <Group label="Projects">
         {org().projects.map(({ name: p }, k) => (
           <Row key={p} icon={TreeStructure} title={p} description="Current project" value={<ServerUrl />} last={k === org().projects.length - 1} />

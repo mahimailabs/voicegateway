@@ -18,13 +18,13 @@ type ingestionProjects interface {
 
 // mountIngestion resolves the destination from the URL before LiveKit verifies
 // credentials. Identical key strings on independent servers never choose a tenant.
-func mountIngestion(mux *http.ServeMux, projects ingestionProjects, stream ingest.Appender, log *slog.Logger, now func() time.Time) {
+func mountIngestion(mux *http.ServeMux, projects ingestionProjects, stream ingest.Appender, quota ingest.Quota, log *slog.Logger, now func() time.Time) {
 	factories := map[string]func(ingest.Projects) http.Handler{
 		"/livekit/webhook": func(p ingest.Projects) http.Handler {
-			return &ingest.Webhooks{Projects: p, Stream: stream, Log: log, Now: now}
+			return &ingest.Webhooks{Quota: quota, Projects: p, Stream: stream, Log: log, Now: now}
 		},
 		"/observability/recordings/v0": func(p ingest.Projects) http.Handler {
-			u := &ingest.Uploads{Projects: p, Stream: stream, Log: log, Now: now}
+			u := &ingest.Uploads{Quota: quota, Projects: p, Stream: stream, Log: log, Now: now}
 			return http.HandlerFunc(u.SessionReport)
 		},
 	}
@@ -34,7 +34,7 @@ func mountIngestion(mux *http.ServeMux, projects ingestionProjects, stream inges
 		"/observability/metrics/otlp/v0": event.KindAgentMetrics,
 	} {
 		factories[path] = func(p ingest.Projects) http.Handler {
-			u := &ingest.Uploads{Projects: p, Stream: stream, Log: log, Now: now}
+			u := &ingest.Uploads{Quota: quota, Projects: p, Stream: stream, Log: log, Now: now}
 			return u.OTLP(kind)
 		}
 	}

@@ -25,6 +25,8 @@ x-voicegateway-env: &voicegateway-env
   # VOICEGATEWAY_WORKER_ENDPOINTS_PUBLIC_ONLY=true (every role refuses to start without it). Empty
   # keeps it off.
   VOICEGATEWAY_INSTANCE_TOKEN: ${VOICEGATEWAY_INSTANCE_TOKEN:-}
+  # Enforce explicit organisation allowances on Cloud ingestion; requires the instance token.
+  VOICEGATEWAY_CLOUD_QUOTAS: ${VOICEGATEWAY_CLOUD_QUOTAS:-false}
   VOICEGATEWAY_LOG_LEVEL: ${VOICEGATEWAY_LOG_LEVEL:-info}
   # true refuses private and loopback worker metrics endpoints too; link-local and cloud metadata
   # addresses are always refused; it also guards the worker's LiveKit API reads. Leave false when

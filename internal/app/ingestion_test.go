@@ -52,7 +52,7 @@ func TestScopedWebhookAndSessionAuthentication(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			stream := &scopedIngestionStream{}
 			mux := http.NewServeMux()
-			mountIngestion(mux, scopedIngestionStore{}, stream, slog.New(slog.NewTextHandler(io.Discard, nil)), time.Now)
+			mountIngestion(mux, scopedIngestionStore{}, stream, nil, slog.New(slog.NewTextHandler(io.Discard, nil)), time.Now)
 			req := httptest.NewRequest(http.MethodPost, tc.path, strings.NewReader(tc.body))
 			req.Header.Set("Authorization", tc.token)
 			rec := httptest.NewRecorder()
@@ -73,6 +73,46 @@ func (scopedIngestionStore) LiveKitSecret(_ context.Context, org, _ string) (str
 
 type scopedIngestionStream struct{ events []event.Envelope }
 
+type deniedScopedQuota struct{ checked []string }
+
+func (q *deniedScopedQuota) Check(_ context.Context, org string) (bool, int, error) {
+	q.checked = append(q.checked, org)
+	return false, 100, nil
+}
+
+func TestScopedQuotaRunsOnlyAfterAuthentication(t *testing.T) {
+	for _, kind := range []string{"traces", "logs", "metrics"} {
+		t.Run(kind, func(t *testing.T) {
+			q := &deniedScopedQuota{}
+			stream := &scopedIngestionStream{}
+			mux := http.NewServeMux()
+			mountIngestion(mux, scopedIngestionStore{}, stream, q, slog.New(slog.NewTextHandler(io.Discard, nil)), time.Now)
+			token, err := auth.NewAccessToken("same-key", "customer-secret").SetObservabilityGrant(&auth.ObservabilityGrant{Write: true}).ToJWT()
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, tc := range []struct {
+				org    string
+				status int
+			}{
+				{"other", http.StatusUnauthorized},
+				{"customer", http.StatusPaymentRequired},
+			} {
+				req := httptest.NewRequest(http.MethodPost, "/ingest/"+tc.org+"/voice/observability/"+kind+"/otlp/v0", strings.NewReader("\x0a\x00"))
+				req.Header.Set("Authorization", "Bearer "+token)
+				rec := httptest.NewRecorder()
+				mux.ServeHTTP(rec, req)
+				if rec.Code != tc.status {
+					t.Fatalf("%s: status %d", tc.org, rec.Code)
+				}
+			}
+			if len(q.checked) != 1 || q.checked[0] != "customer" || len(stream.events) != 0 {
+				t.Fatalf("quota calls %v; appended %d", q.checked, len(stream.events))
+			}
+		})
+	}
+}
+
 func (s *scopedIngestionStream) Append(_ context.Context, e event.Envelope) (string, error) {
 	s.events = append(s.events, e)
 	return "1-0", nil
@@ -83,7 +123,7 @@ func TestScopedIngestionRoutes(t *testing.T) {
 		t.Run(kind, func(t *testing.T) {
 			stream := &scopedIngestionStream{}
 			mux := http.NewServeMux()
-			mountIngestion(mux, scopedIngestionStore{}, stream, slog.New(slog.NewTextHandler(io.Discard, nil)), time.Now)
+			mountIngestion(mux, scopedIngestionStore{}, stream, nil, slog.New(slog.NewTextHandler(io.Discard, nil)), time.Now)
 			token, err := auth.NewAccessToken("same-key", "customer-secret").SetObservabilityGrant(&auth.ObservabilityGrant{Write: true}).ToJWT()
 			if err != nil {
 				t.Fatal(err)

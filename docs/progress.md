@@ -437,6 +437,19 @@ Local make go-test go-lint passed; Docker-dependent tests require CI. The Cloud 
 
 The Python runtime (src/), its Alembic migrations, packaging, examples, benchmarks, Railway and Codecov config, the root docker-compose.yml, the legacy contributor guides, four specs for the old console and the six workflows that built, tested and published it are removed, as are the vg-* Claude commands that drove that code. The Go binary, deploy/, the Makefile and the Go, Dashboard, Site and Docker workflows read none of them. The public installers stay at the root (install.sh, collector.sh, docker-compose.collector.yml, docker-compose.autoupdate.yml) because voicegateway.dev serves the scripts; their shell tests moved to tools/tests/. Open: the installers still install the old Python collector.
 
+## Organisation minute limits (in review)
+
+Added opt-in hosted entitlements, durable closed-call usage, ingestion refusals and console usage
+warnings. See phase06g-cloud-limits.md. The private control plane owns verified subscription sync;
+production activation and end-to-end billing proof remain pending. Self-hosted is unchanged.
+
+Quota review follow-up: reduced renewal/replay lock scope, avoided open-call ledger writes,
+and rendered billing timestamps in UTC with an explicit exclusive end. At exhaustion, known
+indexed calls may finish and send their final reports while the current entitlement is active;
+every OTLP record must identify a known call in the authenticated project. A real-Postgres
+regression verifies a refused new room, accepted room_finished, observed closure and complete
+usage, mixed-call refusal, project isolation and revocation. Full Cloud integration remains open.
+
 ### 2026-10-19: a shared instance fails closed without the address guard
 
 `config.Load` now refuses `VOICEGATEWAY_INSTANCE_TOKEN` without `VOICEGATEWAY_WORKER_ENDPOINTS_PUBLIC_ONLY=true`, naming both variables, so web, worker, migrate and every CLI command on a misconfigured shared instance exit with a configuration error instead of reading hosted projects unguarded (the #420 follow-up: removing the Cloud project-creation gate left nothing tying web's acceptance of projects to the worker's guard).

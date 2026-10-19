@@ -21,6 +21,18 @@ func env(overrides map[string]string) func(string) string {
 	return func(k string) string { return base[k] }
 }
 
+func TestSelfHostedDoesNotEnableCloudQuotas(t *testing.T) {
+	for _, value := range []string{"", "false"} {
+		c, err := Load(env(map[string]string{"VOICEGATEWAY_CLOUD_QUOTAS": value}))
+		if err != nil || c.CloudQuotas || c.InstanceTokenSHA256 != nil {
+			t.Fatalf("self-hosted configuration requires Cloud access: quotas=%v err=%v", c.CloudQuotas, err)
+		}
+	}
+	if _, err := Load(env(map[string]string{"VOICEGATEWAY_CLOUD_QUOTAS": "true"})); err == nil || !strings.Contains(err.Error(), "VOICEGATEWAY_INSTANCE_TOKEN") {
+		t.Fatalf("Cloud enforcement must require explicit operator authentication: %v", err)
+	}
+}
+
 func TestConfigMissingAndRedacted(t *testing.T) {
 	secrets := []string{"pg-secret", "ch-secret", "redis-secret", "s3-secret", "c2hvcnQta2V5"}
 	tests := []struct {

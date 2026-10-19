@@ -19,10 +19,11 @@ const (
 
 // The contract's Error codes the instance API answers with (phase 06e).
 const (
-	CodeInvalidRequest = codeInvalidRequest
-	CodeNotFound       = codeNotFound
-	CodeAlreadyMember  = codeAlreadyMember
-	CodeInternal       = codeInternal
+	CodeRevisionConflict = "revision_conflict"
+	CodeInvalidRequest   = codeInvalidRequest
+	CodeNotFound         = codeNotFound
+	CodeAlreadyMember    = codeAlreadyMember
+	CodeInternal         = codeInternal
 )
 
 // apiError is the contract's Error: a stable code, a safe message and the request id. It never

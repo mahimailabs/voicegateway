@@ -1262,7 +1262,7 @@ export type Error = {
     /**
      * Stable error category.
      */
-    code: 'invalid_request' | 'unauthenticated' | 'forbidden' | 'not_found' | 'source_unavailable' | 'internal_error' | 'range_not_satisfiable' | 'last_admin' | 'already_member' | 'member_of_other_organisations' | 'project_exists' | 'livekit_secret_invalid' | 'livekit_unreachable';
+    code: 'invalid_request' | 'revision_conflict' | 'unauthenticated' | 'forbidden' | 'not_found' | 'source_unavailable' | 'internal_error' | 'range_not_satisfiable' | 'last_admin' | 'already_member' | 'member_of_other_organisations' | 'project_exists' | 'livekit_secret_invalid' | 'livekit_unreachable';
     /**
      * Safe human-readable explanation, excluding upstream credentials and request bodies.
      */
@@ -1809,6 +1809,33 @@ export type Clock = unknown & {
      * Provenance of offsetToCallStartSeconds only. Observed uses retained alignment evidence; inferred uses an explicitly documented estimate; unknown requires a null offset. originAt may be unknown even when relative alignment is known.
      */
     alignment: 'observed' | 'inferred' | 'unknown';
+};
+
+export type OrganisationEntitlementPut = {
+    from: string;
+    to: string;
+    limitMinutes: number;
+    active: boolean;
+    revision: number;
+};
+
+export type OrganisationEntitlement = {
+    from: string;
+    to: string;
+    limitMinutes: number;
+    active: boolean;
+    revision: number;
+    callSeconds: number;
+    /**
+     * Retained closed calls first seen in this billing period whose duration is missing or invalid. Excluded from measured seconds. This count can decrease with retention.
+     */
+    unmeasuredCalls: number;
+    /**
+     * Retained open calls first seen in this billing period. Their duration is not yet measured. This count can decrease with retention.
+     */
+    openCalls: number;
+    warningPercent: 0 | 80 | 95 | 100;
+    ingestAllowed: boolean;
 };
 
 /**
@@ -3830,3 +3857,157 @@ export type GetOrganisationUsageResponses = {
 };
 
 export type GetOrganisationUsageResponse = GetOrganisationUsageResponses[keyof GetOrganisationUsageResponses];
+
+export type GetOrganisationEntitlementData = {
+    body?: never;
+    path: {
+        /**
+         * The organisation's id, chosen by the caller; any other shape is invalid_request.
+         */
+        orgId: string;
+    };
+    query?: never;
+    url: '/api/v1/instance/organisations/{orgId}/entitlement';
+};
+
+export type GetOrganisationEntitlementErrors = {
+    /**
+     * invalid_request; never return an empty success result for this failure.
+     */
+    400: Error;
+    /**
+     * unauthenticated; never return an empty success result for this failure.
+     */
+    401: Error;
+    /**
+     * forbidden; never return an empty success result for this failure.
+     */
+    403: Error;
+    /**
+     * not_found; never return an empty success result for this failure.
+     */
+    404: Error;
+    /**
+     * internal_error; never return an empty success result for this failure.
+     */
+    500: Error;
+    /**
+     * source_unavailable; never return an empty success result for this failure.
+     */
+    503: Error;
+};
+
+export type GetOrganisationEntitlementError = GetOrganisationEntitlementErrors[keyof GetOrganisationEntitlementErrors];
+
+export type GetOrganisationEntitlementResponses = {
+    /**
+     * Allowance, durable usage and ingestion status.
+     */
+    200: OrganisationEntitlement;
+};
+
+export type GetOrganisationEntitlementResponse = GetOrganisationEntitlementResponses[keyof GetOrganisationEntitlementResponses];
+
+export type PutOrganisationEntitlementData = {
+    body: OrganisationEntitlementPut;
+    path: {
+        /**
+         * The organisation's id, chosen by the caller; any other shape is invalid_request.
+         */
+        orgId: string;
+    };
+    query?: never;
+    url: '/api/v1/instance/organisations/{orgId}/entitlement';
+};
+
+export type PutOrganisationEntitlementErrors = {
+    /**
+     * invalid_request; never return an empty success result for this failure.
+     */
+    400: Error;
+    /**
+     * unauthenticated; never return an empty success result for this failure.
+     */
+    401: Error;
+    /**
+     * forbidden; never return an empty success result for this failure.
+     */
+    403: Error;
+    /**
+     * not_found; never return an empty success result for this failure.
+     */
+    404: Error;
+    /**
+     * Stale revision or conflicting replay.
+     */
+    409: Error;
+    /**
+     * internal_error; never return an empty success result for this failure.
+     */
+    500: Error;
+    /**
+     * source_unavailable; never return an empty success result for this failure.
+     */
+    503: Error;
+};
+
+export type PutOrganisationEntitlementError = PutOrganisationEntitlementErrors[keyof PutOrganisationEntitlementErrors];
+
+export type PutOrganisationEntitlementResponses = {
+    /**
+     * Allowance, durable usage and ingestion status.
+     */
+    200: OrganisationEntitlement;
+};
+
+export type PutOrganisationEntitlementResponse = PutOrganisationEntitlementResponses[keyof PutOrganisationEntitlementResponses];
+
+export type GetMyOrganisationEntitlementData = {
+    body?: never;
+    path: {
+        /**
+         * Authorised orgId; the server must verify organisation/project ownership before any read.
+         */
+        orgId: string;
+    };
+    query?: never;
+    url: '/api/v1/org/{orgId}/entitlement';
+};
+
+export type GetMyOrganisationEntitlementErrors = {
+    /**
+     * invalid_request; never return an empty success result for this failure.
+     */
+    400: Error;
+    /**
+     * unauthenticated; never return an empty success result for this failure.
+     */
+    401: Error;
+    /**
+     * forbidden; never return an empty success result for this failure.
+     */
+    403: Error;
+    /**
+     * not_found; never return an empty success result for this failure.
+     */
+    404: Error;
+    /**
+     * internal_error; never return an empty success result for this failure.
+     */
+    500: Error;
+    /**
+     * source_unavailable; never return an empty success result for this failure.
+     */
+    503: Error;
+};
+
+export type GetMyOrganisationEntitlementError = GetMyOrganisationEntitlementErrors[keyof GetMyOrganisationEntitlementErrors];
+
+export type GetMyOrganisationEntitlementResponses = {
+    /**
+     * Allowance, durable usage and ingestion status.
+     */
+    200: OrganisationEntitlement;
+};
+
+export type GetMyOrganisationEntitlementResponse = GetMyOrganisationEntitlementResponses[keyof GetMyOrganisationEntitlementResponses];

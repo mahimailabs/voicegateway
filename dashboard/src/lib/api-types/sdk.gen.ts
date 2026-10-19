@@ -2,7 +2,7 @@
 
 import type { Client, ClientMeta, Options as Options2, RequestResult, TDataShape } from './client';
 import { client } from './client.gen';
-import type { CreateInvitationData, CreateInvitationErrors, CreateInvitationResponses, CreateOrganisationInvitationData, CreateOrganisationInvitationErrors, CreateOrganisationInvitationResponses, CreatePasswordResetData, CreatePasswordResetErrors, CreatePasswordResetResponses, CreateProjectData, CreateProjectErrors, CreateProjectKeyData, CreateProjectKeyErrors, CreateProjectKeyResponses, CreateProjectResponses, GetAlertSetupData, GetAlertSetupErrors, GetAlertSetupResponses, GetCallData, GetCallErrors, GetCallResponses, GetCallStatsData, GetCallStatsErrors, GetCallStatsResponses, GetCapacityData, GetCapacityErrors, GetCapacityResponses, GetCloudAgentsData, GetCloudAgentsErrors, GetCloudAgentsResponses, GetEgressData, GetEgressErrors, GetEgressResponses, GetIngressData, GetIngressErrors, GetIngressResponses, GetInvitationsData, GetInvitationsErrors, GetInvitationsResponses, GetIssueDispositionsData, GetIssueDispositionsErrors, GetIssueDispositionsResponses, GetMediaServerData, GetMediaServerErrors, GetMediaServerResponses, GetMembersData, GetMembersErrors, GetMembersResponses, GetOrganisationData, GetOrganisationErrors, GetOrganisationResponses, GetOrganisationUsageData, GetOrganisationUsageErrors, GetOrganisationUsageResponses, GetProjectSettingsData, GetProjectSettingsErrors, GetProjectSettingsResponses, GetProjectSnapshotData, GetProjectSnapshotErrors, GetProjectSnapshotResponses, GetProviderProbesData, GetProviderProbesErrors, GetProviderProbesResponses, GetRecordingMediaData, GetRecordingMediaErrors, GetRecordingMediaResponses, GetSipData, GetSipErrors, GetSipResponses, GetWorkersData, GetWorkersErrors, GetWorkersResponses, GetWorkspacesData, GetWorkspacesErrors, GetWorkspacesResponses, ListAlertEventsData, ListAlertEventsErrors, ListAlertEventsResponses, ListCallsData, ListCallsErrors, ListCallsResponses, ListIssuesData, ListIssuesErrors, ListIssuesResponses, ListProjectKeysData, ListProjectKeysErrors, ListProjectKeysResponses, PutOrganisationData, PutOrganisationErrors, PutOrganisationResponses, RemoveMemberData, RemoveMemberErrors, RemoveMemberResponses, RevokeInvitationData, RevokeInvitationErrors, RevokeInvitationResponses, RevokeProjectKeyData, RevokeProjectKeyErrors, RevokeProjectKeyResponses, UpdateMemberData, UpdateMemberErrors, UpdateMemberResponses } from './types.gen';
+import type { CreateInvitationData, CreateInvitationErrors, CreateInvitationResponses, CreateOrganisationInvitationData, CreateOrganisationInvitationErrors, CreateOrganisationInvitationResponses, CreatePasswordResetData, CreatePasswordResetErrors, CreatePasswordResetResponses, CreateProjectData, CreateProjectErrors, CreateProjectKeyData, CreateProjectKeyErrors, CreateProjectKeyResponses, CreateProjectResponses, GetAlertSetupData, GetAlertSetupErrors, GetAlertSetupResponses, GetCallData, GetCallErrors, GetCallResponses, GetCallStatsData, GetCallStatsErrors, GetCallStatsResponses, GetCapacityData, GetCapacityErrors, GetCapacityResponses, GetCloudAgentsData, GetCloudAgentsErrors, GetCloudAgentsResponses, GetEgressData, GetEgressErrors, GetEgressResponses, GetIngressData, GetIngressErrors, GetIngressResponses, GetInvitationsData, GetInvitationsErrors, GetInvitationsResponses, GetIssueDispositionsData, GetIssueDispositionsErrors, GetIssueDispositionsResponses, GetMediaServerData, GetMediaServerErrors, GetMediaServerResponses, GetMembersData, GetMembersErrors, GetMembersResponses, GetMyOrganisationEntitlementData, GetMyOrganisationEntitlementErrors, GetMyOrganisationEntitlementResponses, GetOrganisationData, GetOrganisationEntitlementData, GetOrganisationEntitlementErrors, GetOrganisationEntitlementResponses, GetOrganisationErrors, GetOrganisationResponses, GetOrganisationUsageData, GetOrganisationUsageErrors, GetOrganisationUsageResponses, GetProjectSettingsData, GetProjectSettingsErrors, GetProjectSettingsResponses, GetProjectSnapshotData, GetProjectSnapshotErrors, GetProjectSnapshotResponses, GetProviderProbesData, GetProviderProbesErrors, GetProviderProbesResponses, GetRecordingMediaData, GetRecordingMediaErrors, GetRecordingMediaResponses, GetSipData, GetSipErrors, GetSipResponses, GetWorkersData, GetWorkersErrors, GetWorkersResponses, GetWorkspacesData, GetWorkspacesErrors, GetWorkspacesResponses, ListAlertEventsData, ListAlertEventsErrors, ListAlertEventsResponses, ListCallsData, ListCallsErrors, ListCallsResponses, ListIssuesData, ListIssuesErrors, ListIssuesResponses, ListProjectKeysData, ListProjectKeysErrors, ListProjectKeysResponses, PutOrganisationData, PutOrganisationEntitlementData, PutOrganisationEntitlementErrors, PutOrganisationEntitlementResponses, PutOrganisationErrors, PutOrganisationResponses, RemoveMemberData, RemoveMemberErrors, RemoveMemberResponses, RevokeInvitationData, RevokeInvitationErrors, RevokeInvitationResponses, RevokeProjectKeyData, RevokeProjectKeyErrors, RevokeProjectKeyResponses, UpdateMemberData, UpdateMemberErrors, UpdateMemberResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -625,5 +625,54 @@ export const getOrganisationUsage = <ThrowOnError extends boolean = false>(optio
             type: 'http'
         }],
     url: '/api/v1/instance/organisations/{orgId}/usage',
+    ...options
+});
+
+/**
+ * Read the organisation allowance and measured usage
+ *
+ * Hosted entitlement. Explicit [from,to) period; closed-call seconds survive telemetry deletion. Revision is monotonic per organisation; conflicting or stale updates return 409. Open calls can overshoot the cap. No automatic overages. Disabled on self-hosted installs.
+ */
+export const getOrganisationEntitlement = <ThrowOnError extends boolean = false>(options: Options<GetOrganisationEntitlementData, ThrowOnError>): RequestResult<GetOrganisationEntitlementResponses, GetOrganisationEntitlementErrors, ThrowOnError> => (options.client ?? client).get<GetOrganisationEntitlementResponses, GetOrganisationEntitlementErrors, ThrowOnError>({
+    security: [{
+            key: 'instanceToken',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/api/v1/instance/organisations/{orgId}/entitlement',
+    ...options
+});
+
+/**
+ * Set the organisation allowance and measured usage
+ *
+ * Hosted entitlement. Explicit [from,to) period; closed-call seconds survive telemetry deletion. Revision is monotonic per organisation; conflicting or stale updates return 409. Open calls can overshoot the cap. No automatic overages. Disabled on self-hosted installs.
+ */
+export const putOrganisationEntitlement = <ThrowOnError extends boolean = false>(options: Options<PutOrganisationEntitlementData, ThrowOnError>): RequestResult<PutOrganisationEntitlementResponses, PutOrganisationEntitlementErrors, ThrowOnError> => (options.client ?? client).put<PutOrganisationEntitlementResponses, PutOrganisationEntitlementErrors, ThrowOnError>({
+    security: [{
+            key: 'instanceToken',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/api/v1/instance/organisations/{orgId}/entitlement',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Read the organisation allowance and measured usage
+ *
+ * Hosted entitlement. Explicit [from,to) period; closed-call seconds survive telemetry deletion. Revision is monotonic per organisation; conflicting or stale updates return 409. Open calls can overshoot the cap. No automatic overages. Disabled on self-hosted installs.
+ */
+export const getMyOrganisationEntitlement = <ThrowOnError extends boolean = false>(options: Options<GetMyOrganisationEntitlementData, ThrowOnError>): RequestResult<GetMyOrganisationEntitlementResponses, GetMyOrganisationEntitlementErrors, ThrowOnError> => (options.client ?? client).get<GetMyOrganisationEntitlementResponses, GetMyOrganisationEntitlementErrors, ThrowOnError>({
+    security: [{
+            in: 'cookie',
+            name: 'vg_session',
+            type: 'apiKey'
+        }],
+    url: '/api/v1/org/{orgId}/entitlement',
     ...options
 });

@@ -1594,6 +1594,128 @@ paths:
           $ref: "#/components/responses/InternalError"
         "503":
           $ref: "#/components/responses/SourceUnavailable"
+  /api/v1/instance/organisations/{orgId}/entitlement:
+    get:
+      operationId: getOrganisationEntitlement
+      summary: Read the organisation allowance and measured usage
+      tags:
+      - Instance
+      security:
+      - instanceToken: []
+      x-access:
+        principal: instance
+        minimumRole: Instance
+        scope: instance
+      description: Hosted entitlement. Explicit [from,to) period; closed-call seconds
+        survive telemetry deletion. Revision is monotonic per organisation; conflicting
+        or stale updates return 409. Open calls can overshoot the cap. No automatic
+        overages. Disabled on self-hosted installs.
+      parameters:
+      - $ref: '#/components/parameters/InstanceOrganisationId'
+      responses:
+        '200':
+          description: Allowance, durable usage and ingestion status.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrganisationEntitlement'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/SourceUnavailable'
+    put:
+      operationId: putOrganisationEntitlement
+      summary: Set the organisation allowance and measured usage
+      tags:
+      - Instance
+      security:
+      - instanceToken: []
+      x-access:
+        principal: instance
+        minimumRole: Instance
+        scope: instance
+      description: Hosted entitlement. Explicit [from,to) period; closed-call seconds
+        survive telemetry deletion. Revision is monotonic per organisation; conflicting
+        or stale updates return 409. Open calls can overshoot the cap. No automatic
+        overages. Disabled on self-hosted installs.
+      parameters:
+      - $ref: '#/components/parameters/InstanceOrganisationId'
+      responses:
+        '200':
+          description: Allowance, durable usage and ingestion status.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrganisationEntitlement'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/SourceUnavailable'
+        '409':
+          description: Stale revision or conflicting replay.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrganisationEntitlementPut'
+  /api/v1/org/{orgId}/entitlement:
+    get:
+      operationId: getMyOrganisationEntitlement
+      summary: Read the organisation allowance and measured usage
+      tags:
+      - Console reads
+      security:
+      - consoleSession: []
+      x-access:
+        principal: organisation_member
+        minimumRole: Viewer
+        scope: organisation
+      description: Hosted entitlement. Explicit [from,to) period; closed-call seconds
+        survive telemetry deletion. Revision is monotonic per organisation; conflicting
+        or stale updates return 409. Open calls can overshoot the cap. No automatic
+        overages. Disabled on self-hosted installs.
+      parameters:
+      - $ref: '#/components/parameters/OrganisationId'
+      responses:
+        '200':
+          description: Allowance, durable usage and ingestion status.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrganisationEntitlement'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/SourceUnavailable'
 components:
   securitySchemes:
     consoleSession:
@@ -4591,7 +4713,7 @@ components:
           type: string
           description: Stable error category.
           x-source: { kind: computed, file: docs/api/coverage.md, pointer: null, detail: Stable error category. }
-          enum: [ invalid_request, unauthenticated, forbidden, not_found, source_unavailable, internal_error, range_not_satisfiable, last_admin, already_member, member_of_other_organisations, project_exists, livekit_secret_invalid, livekit_unreachable ]
+          enum: [ invalid_request, revision_conflict, unauthenticated, forbidden, not_found, source_unavailable, internal_error, range_not_satisfiable, last_admin, already_member, member_of_other_organisations, project_exists, livekit_secret_invalid, livekit_unreachable ]
         message:
           type: string
           description: Safe human-readable explanation, excluding upstream credentials and request bodies.
@@ -5485,6 +5607,173 @@ components:
           originAt: null
           offsetToCallStartSeconds: -0.25
           alignment: inferred
+    OrganisationEntitlementPut:
+      type: object
+      additionalProperties: false
+      required:
+      - from
+      - to
+      - limitMinutes
+      - active
+      - revision
+      properties:
+        from:
+          type: string
+          format: date-time
+          x-source:
+            kind: configuration
+            file: migrations/postgres/00012_entitlements.sql
+            pointer: null
+            detail: Operator-issued entitlement from.
+        to:
+          type: string
+          format: date-time
+          x-source:
+            kind: configuration
+            file: migrations/postgres/00012_entitlements.sql
+            pointer: null
+            detail: Operator-issued entitlement to.
+        limitMinutes:
+          type: integer
+          minimum: 0
+          maximum: 1000000000
+          x-unit: minutes
+          x-configuration: true
+          x-source:
+            kind: configuration
+            file: migrations/postgres/00012_entitlements.sql
+            pointer: null
+            detail: Operator-issued entitlement limitMinutes.
+        active:
+          type: boolean
+          x-source:
+            kind: configuration
+            file: migrations/postgres/00012_entitlements.sql
+            pointer: null
+            detail: Operator-issued entitlement active.
+        revision:
+          x-unit: count
+          type: integer
+          minimum: 1
+          x-configuration: true
+          x-source:
+            kind: configuration
+            file: migrations/postgres/00012_entitlements.sql
+            pointer: null
+            detail: Operator-issued entitlement revision.
+    OrganisationEntitlement:
+      type: object
+      additionalProperties: false
+      required:
+      - from
+      - to
+      - limitMinutes
+      - active
+      - revision
+      - callSeconds
+      - unmeasuredCalls
+      - openCalls
+      - warningPercent
+      - ingestAllowed
+      properties:
+        from:
+          type: string
+          format: date-time
+          x-source:
+            kind: configuration
+            file: migrations/postgres/00012_entitlements.sql
+            pointer: null
+            detail: Operator-issued entitlement from.
+        to:
+          type: string
+          format: date-time
+          x-source:
+            kind: configuration
+            file: migrations/postgres/00012_entitlements.sql
+            pointer: null
+            detail: Operator-issued entitlement to.
+        limitMinutes:
+          type: integer
+          minimum: 0
+          maximum: 1000000000
+          x-unit: minutes
+          x-configuration: true
+          x-source:
+            kind: configuration
+            file: migrations/postgres/00012_entitlements.sql
+            pointer: null
+            detail: Operator-issued entitlement limitMinutes.
+        active:
+          type: boolean
+          x-source:
+            kind: configuration
+            file: migrations/postgres/00012_entitlements.sql
+            pointer: null
+            detail: Operator-issued entitlement active.
+        revision:
+          x-unit: count
+          type: integer
+          minimum: 1
+          x-configuration: true
+          x-source:
+            kind: configuration
+            file: migrations/postgres/00012_entitlements.sql
+            pointer: null
+            detail: Operator-issued entitlement revision.
+        callSeconds:
+          type: integer
+          minimum: 0
+          x-unit: seconds
+          x-configuration: true
+          x-source:
+            kind: computed
+            file: ee/instance/entitlement.go
+            pointer: null
+            detail: Durable measured usage and current entitlement status.
+        unmeasuredCalls:
+          type: integer
+          minimum: 0
+          x-unit: count
+          x-configuration: true
+          description: Retained closed calls first seen in this billing period whose duration is missing or invalid. Excluded from measured seconds. This count can decrease with retention.
+          x-source:
+            kind: computed
+            file: internal/store/pgstore/entitlements.go
+            pointer: null
+            detail: Counts retained calls first seen within the explicit billing period.
+        openCalls:
+          type: integer
+          minimum: 0
+          x-unit: count
+          x-configuration: true
+          description: Retained open calls first seen in this billing period. Their duration is not yet measured. This count can decrease with retention.
+          x-source:
+            kind: computed
+            file: internal/store/pgstore/entitlements.go
+            pointer: null
+            detail: Counts retained calls first seen within the explicit billing period.
+        warningPercent:
+          x-unit: percent
+          type: integer
+          enum:
+          - 0
+          - 80
+          - 95
+          - 100
+          x-configuration: true
+          x-source:
+            kind: computed
+            file: ee/instance/entitlement.go
+            pointer: null
+            detail: Durable measured usage and current entitlement status.
+        ingestAllowed:
+          type: boolean
+          x-source:
+            kind: computed
+            file: ee/instance/entitlement.go
+            pointer: null
+            detail: Durable measured usage and current entitlement status.
+
   responses:
     BadRequest:
       description: invalid_request; never return an empty success result for this failure.

@@ -17,6 +17,7 @@ import {
   getIssueDispositions,
   getMediaServer,
   getMembers,
+  getMyOrganisationEntitlement,
   getProjectSettings,
   getProjectSnapshot,
   getProviderProbes,
@@ -214,3 +215,5 @@ export const createPasswordReset = (userId: string) => data(createPasswordResetC
 // Adds a LiveKit project to an organisation (phase 06f), Admin only. The secret goes to web, which
 // seals it; the answer is the new project's id and name, never a credential.
 export const createProject = (orgId: string, body: ProjectCreate) => data(createProjectCall({ ...thrown, path: { orgId }, body }))
+
+export const entitlementQuery = () => ({ queryKey: ["entitlement", currentScope().org], queryFn: () => data(getMyOrganisationEntitlement({ ...thrown, path: { orgId: currentScope().org } })), refetchInterval: 30_000, retry: false as const })

@@ -96,11 +96,14 @@ func (a *API) Routes() http.Handler {
 	handle(r, http.MethodGet, "/api/v1/org/{orgId}/invitations", a.getInvitations)
 	handle(r, http.MethodPost, "/api/v1/org/{orgId}/invitations", a.createInvitation)
 	handle(r, http.MethodDelete, "/api/v1/org/{orgId}/invitations/{invitationId}", a.revokeInvitation)
+	handle(r, http.MethodGet, "/api/v1/org/{orgId}/entitlement", optionalEntitlement(a.Instance.GetEntitlement))
 	const instance = "/api/v1/instance/organisations/{orgId}"
 	handle(r, http.MethodPut, instance, a.Instance.PutOrganisation)
 	handle(r, http.MethodGet, instance, a.Instance.GetOrganisation)
 	handle(r, http.MethodPost, instance+"/invitations", a.Instance.CreateOrganisationInvitation)
 	handle(r, http.MethodGet, instance+"/usage", a.Instance.GetOrganisationUsage)
+	handle(r, http.MethodGet, instance+"/entitlement", optionalEntitlement(a.Instance.GetEntitlement))
+	handle(r, http.MethodPut, instance+"/entitlement", optionalEntitlement(a.Instance.PutEntitlement))
 	return r
 }
 

@@ -32,6 +32,7 @@ type Appender interface {
 // Webhooks receives LiveKit webhooks. The JWT in Authorization must be signed by a project's LiveKit
 // key and carry the body's SHA-256; livekit/protocol's webhook.Receive checks both.
 type Webhooks struct {
+	Quota    Quota
 	Projects Projects
 	Stream   Appender
 	Log      *slog.Logger
@@ -56,6 +57,10 @@ func (h *Webhooks) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		// The reason is safe to log: it names the check that failed, never the body or a secret.
 		h.Log.Warn("webhook: not verified", "reason", err.Error())
 		http.Error(w, "webhook not verified", http.StatusUnauthorized)
+		return
+	}
+
+	if !checkEnvelopeQuota(w, r, h.Quota, keys.project.OrganisationID, keys.project.ID, event.KindLiveKitWebhook, body) {
 		return
 	}
 
