@@ -36,3 +36,14 @@ $$;
 -- +goose StatementEnd
 CREATE TRIGGER record_profiled_call_usage AFTER INSERT OR UPDATE OF started_at, ended_at, end_state, last_activity_at
 ON calls FOR EACH ROW EXECUTE FUNCTION record_profiled_call_usage();
+
+-- Admission survives queue lag and process restarts; it is not a duration reservation.
+CREATE TABLE telemetry_admissions (
+ organisation_id text NOT NULL REFERENCES organisations(id),
+ project_id text NOT NULL,
+ identity_kind text NOT NULL CHECK (identity_kind IN ('room', 'job')),
+ identity_id text NOT NULL,
+ from_at timestamptz NOT NULL,
+ to_at timestamptz NOT NULL,
+ PRIMARY KEY (organisation_id, project_id, identity_kind, identity_id, from_at)
+);

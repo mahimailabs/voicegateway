@@ -114,7 +114,7 @@ func quotaDatabase(t *testing.T) (*Store, *pgxpool.Pool) {
 		t.Fatal(err)
 	}
 	// This opt-in database must be a fresh disposable instance.
-	_, err = pool.Exec(t.Context(), "TRUNCATE profiled_call_usage,organisation_entitlements,calls,projects CASCADE")
+	_, err = pool.Exec(t.Context(), "TRUNCATE telemetry_admissions,profiled_call_usage,organisation_entitlements,calls,projects CASCADE")
 	if err != nil {
 		t.Fatal(err)
 	}

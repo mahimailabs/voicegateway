@@ -13,6 +13,10 @@ type Quota interface {
 	Check(context.Context, string) (allowed bool, warningPercent int, err error)
 }
 
+type recordingQuota interface {
+	Remember(context.Context, string, string, event.Kind, []byte) error
+}
+
 type continuingQuota interface {
 	Continue(context.Context, string, string, event.Kind, []byte) (bool, error)
 }
@@ -29,6 +33,14 @@ func checkEnvelopeQuota(w http.ResponseWriter, r *http.Request, q Quota, org, pr
 	if err != nil {
 		unavailable(w)
 		return false
+	}
+	if allowed && project != "" {
+		if recorder, ok := q.(recordingQuota); ok {
+			if err := recorder.Remember(r.Context(), org, project, kind, payload); err != nil {
+				unavailable(w)
+				return false
+			}
+		}
 	}
 	if !allowed && project != "" {
 		if continuation, ok := q.(continuingQuota); ok {

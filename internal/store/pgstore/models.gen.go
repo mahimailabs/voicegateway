@@ -173,6 +173,15 @@ type SignInAttempt struct {
 	At   pgtype.Timestamptz
 }
 
+type TelemetryAdmission struct {
+	OrganisationID string
+	ProjectID      string
+	IdentityKind   string
+	IdentityID     string
+	FromAt         pgtype.Timestamptz
+	ToAt           pgtype.Timestamptz
+}
+
 type User struct {
 	ID              pgtype.UUID
 	Email           string

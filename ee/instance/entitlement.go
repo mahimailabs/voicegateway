@@ -143,3 +143,19 @@ func (q *Quota) Continue(ctx context.Context, org, project string, kind event.Ki
 	}
 	return known.KnownQuotaCalls(ctx, org, project, refs, u.From, u.To)
 }
+
+// Remember persists identified calls before the stream append. A retried append therefore
+// keeps its admission if the worker is behind when another call exhausts the allowance.
+func (q *Quota) Remember(ctx context.Context, org, project string, kind event.Kind, payload []byte) error {
+	refs, err := event.CallIdentities(kind, payload)
+	if err != nil {
+		return nil
+	} // Unattributed data is accepted below the cap, but cannot earn an exception.
+	recorder, ok := q.Store.(interface {
+		RememberQuotaCalls(context.Context, string, string, []event.CallIdentity, time.Time) error
+	})
+	if !ok {
+		return errors.New("quota admission store unavailable")
+	}
+	return recorder.RememberQuotaCalls(ctx, org, project, refs, q.Now())
+}

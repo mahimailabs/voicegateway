@@ -87,7 +87,10 @@ func (s *Store) KnownQuotaCalls(ctx context.Context, org, project string, refs [
 		err := s.pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM calls WHERE organisation_id=$1 AND project_id=$2
    AND (($3<>'' AND room_sid=$3) OR ($3='' AND $4<>'' AND job_id=$4))
    AND coalesce(started_at,first_seen_at)<$6
-   AND (end_state='open' OR coalesce(ended_at,last_activity_at)>=$5))`, org, project, ref.RoomSID, ref.JobID, from, to).Scan(&exists)
+   AND (end_state='open' OR coalesce(ended_at,last_activity_at)>=$5)) OR EXISTS(
+    SELECT 1 FROM telemetry_admissions WHERE organisation_id=$1 AND project_id=$2
+    AND (($3<>'' AND identity_kind='room' AND identity_id=$3) OR ($3='' AND identity_kind='job' AND identity_id=$4))
+    AND from_at=$5 AND to_at=$6)`, org, project, ref.RoomSID, ref.JobID, from, to).Scan(&exists)
 		if err != nil {
 			return false, err
 		}
@@ -96,4 +99,28 @@ func (s *Store) KnownQuotaCalls(ctx context.Context, org, project string, refs [
 		}
 	}
 	return true, nil
+}
+
+// RememberQuotaCalls is deliberately separate from the call index: only the worker joins calls.
+func (s *Store) RememberQuotaCalls(ctx context.Context, org, project string, refs []event.CallIdentity, now time.Time) error {
+	return pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
+		for _, ref := range refs {
+			for kind, id := range map[string]string{"room": ref.RoomSID, "job": ref.JobID} {
+				if id == "" {
+					continue
+				}
+				tag, err := tx.Exec(ctx, `INSERT INTO telemetry_admissions(organisation_id,project_id,identity_kind,identity_id,from_at,to_at)
+     SELECT organisation_id,$2,$3,$4,from_at,to_at FROM organisation_entitlements
+     WHERE organisation_id=$1 AND active AND from_at<=$5 AND to_at>$5
+     ON CONFLICT(organisation_id,project_id,identity_kind,identity_id,from_at) DO UPDATE SET to_at=excluded.to_at`, org, project, kind, id, now)
+				if err != nil {
+					return err
+				}
+				if tag.RowsAffected() != 1 {
+					return store.ErrNotFound
+				}
+			}
+		}
+		return nil
+	})
 }

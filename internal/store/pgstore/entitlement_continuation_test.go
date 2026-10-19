@@ -39,6 +39,12 @@ func TestQuotaAcceptsKnownCallFinishAndRefusesNewCall(t *testing.T) {
 	if err := s.PutEntitlement(ctx, "default", entitlement); err != nil {
 		t.Fatal(err)
 	}
+	// Simulate an accepted room_started event waiting in Redis while the worker is behind.
+	quota := &instance.Quota{Store: s, Now: func() time.Time { return now }}
+	queuedStart := []byte(fmt.Sprintf(`{"event":"room_started","room":{"sid":"RM_queued","name":"queued","creationTime":%d},"createdAt":%d}`, start.Unix(), start.Unix()))
+	if err := quota.Remember(ctx, "default", "continuation", event.KindLiveKitWebhook, queuedStart); err != nil {
+		t.Fatal(err)
+	}
 	// This call was indexed before a different call consumed the remaining allowance.
 	id, err := s.UpsertCall(ctx, store.CallUpsert{OrganisationID: "default", ProjectID: "continuation", RoomSID: "RM_existing", StartedAt: &start, FirstSeenAt: &start, LastActivityAt: &start})
 	if err != nil {
@@ -48,7 +54,7 @@ func TestQuotaAcceptsKnownCallFinishAndRefusesNewCall(t *testing.T) {
 		t.Fatal(err)
 	}
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	quota := &instance.Quota{Store: s, Now: func() time.Time { return now }}
+
 	handler := &ingest.Webhooks{Quota: quota, Projects: s, Stream: quotaJoinAppender{&join.Joiner{Calls: s, Log: logger}}, Log: logger, Now: func() time.Time { return now }}
 	send := func(room, kind string) int {
 		body := fmt.Sprintf(`{"event":%q,"room":{"sid":%q,"name":"call"},"createdAt":%d}`, kind, room, now.Unix())
@@ -73,8 +79,16 @@ func TestQuotaAcceptsKnownCallFinishAndRefusesNewCall(t *testing.T) {
 	if err := pool.QueryRow(ctx, "SELECT end_state FROM calls WHERE id=$1", id).Scan(&state); err != nil || state != "observed" {
 		t.Fatalf("end state %s: %v", state, err)
 	}
+	if status := send("RM_queued", "room_finished"); status != 200 {
+		t.Fatalf("queued call finish: %d", status)
+	}
+	// The earlier queued start is then indexed; the observed finish and full duration survive.
+	joiner := &join.Joiner{Calls: s, Log: logger}
+	if err := joiner.Join(ctx, []store.Event{{OrganisationID: "default", ProjectID: "continuation", Kind: string(event.KindLiveKitWebhook), Payload: queuedStart, ReceivedAt: start}}); err != nil {
+		t.Fatal(err)
+	}
 	usage, err := s.EntitlementUsage(ctx, "default")
-	if err != nil || usage.CallSeconds != 3660 {
+	if err != nil || usage.CallSeconds != 7260 {
 		t.Fatalf("finished usage %+v: %v", usage, err)
 	}
 	refs := []event.CallIdentity{{RoomSID: "RM_existing"}}
