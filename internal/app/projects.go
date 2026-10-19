@@ -260,11 +260,3 @@ func orgOrDefault(org string) string {
 	}
 	return org
 }
-
-// Disable Cloud project creation until the worker's LiveKit reads have an address guard.
-func consoleProjectCreator(c config.Config, projects api.ProjectCreator) api.ProjectCreator {
-	if c.WorkerEndpointsPublicOnly {
-		return nil
-	}
-	return projects
-}

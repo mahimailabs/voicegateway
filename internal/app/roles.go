@@ -123,7 +123,7 @@ func Web(ctx context.Context, c config.Config, log *slog.Logger) error {
 	})
 	mux.Handle("/auth/", accounts.Routes())
 	mux.Handle("/api/v1/", (&api.API{
-		Projects: projects, NewProjects: consoleProjectCreator(c, projects), Calls: projects, Traces: events, Layers: events, Endpoints: projects, Accounts: projects, Stats: projects, Keys: projects, NewKey: auth.NewKey, Log: log, Now: time.Now, Gate: accounts.Gate,
+		Projects: projects, NewProjects: projects, Calls: projects, Traces: events, Layers: events, Endpoints: projects, Accounts: projects, Stats: projects, Keys: projects, NewKey: auth.NewKey, Log: log, Now: time.Now, Gate: accounts.Gate,
 		Invitations: projects, Inviter: NewInviter(links), LinkBase: accounts.LinkBase,
 		Instance:       instanceAPI,
 		AnswerBudgetMs: c.AnswerBudgetMs,
@@ -203,6 +203,9 @@ func Worker(ctx context.Context, c config.Config, log *slog.Logger) error {
 		return fmt.Errorf("consumer name: %w", err)
 	}
 
+	// With VOICEGATEWAY_WORKER_ENDPOINTS_PUBLIC_ONLY, the LiveKit API reads dial through the same
+	// address guard as the worker metrics endpoints.
+	dial := scrape.NewDial(c.WorkerEndpointsPublicOnly)
 	log.Info("worker started", "consumer", name)
 	g, gctx := errgroup.WithContext(ctx)
 	g.Go(func() error {
@@ -210,7 +213,7 @@ func Worker(ctx context.Context, c config.Config, log *slog.Logger) error {
 			Projects:  pgstore.NewStore(pool, sealer),
 			Samples:   events,
 			Lock:      &scrape.RedisLock{Client: rdb},
-			Dial:      scrape.DialSDK,
+			Dial:      dial,
 			ID:        name,
 			Log:       log,
 			Now:       time.Now,
@@ -224,7 +227,7 @@ func Worker(ctx context.Context, c config.Config, log *slog.Logger) error {
 			Projects: pgstore.NewStore(pool, sealer),
 			Samples:  events,
 			Lock:     &scrape.RedisLock{Client: rdb},
-			Dial:     scrape.DialSDK,
+			Dial:     dial,
 			Log:      log,
 			Now:      time.Now,
 			Every:    time.Minute,
@@ -236,7 +239,7 @@ func Worker(ctx context.Context, c config.Config, log *slog.Logger) error {
 			Projects: pgstore.NewStore(pool, sealer),
 			Samples:  events,
 			Lock:     &scrape.RedisLock{Client: rdb},
-			Dial:     scrape.DialSDK,
+			Dial:     dial,
 			Log:      log,
 			Now:      time.Now,
 			Every:    15 * time.Second,
@@ -248,7 +251,7 @@ func Worker(ctx context.Context, c config.Config, log *slog.Logger) error {
 			Projects: pgstore.NewStore(pool, sealer),
 			Samples:  events,
 			Lock:     &scrape.RedisLock{Client: rdb},
-			Dial:     scrape.DialSDK,
+			Dial:     dial,
 			Log:      log,
 			Now:      time.Now,
 			Every:    15 * time.Second,
@@ -260,7 +263,7 @@ func Worker(ctx context.Context, c config.Config, log *slog.Logger) error {
 			Projects: pgstore.NewStore(pool, sealer),
 			Samples:  events,
 			Lock:     &scrape.RedisLock{Client: rdb},
-			Dial:     scrape.DialSDK,
+			Dial:     dial,
 			Log:      log,
 			Now:      time.Now,
 			Every:    time.Minute,

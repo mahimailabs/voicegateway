@@ -426,3 +426,10 @@ An Admin of an organisation with no project adds one from the console's empty st
 - **Console:** the form (shadcn Field, Input, Button) clears the secret after every submit, shows the API's message inline and opens the new project with a full page load. Members read that an admin must add one. The dialog's disabled placeholder and its unbacked "Observe live rooms" switch are gone. The mock serves `createProject`.
 - Foundation reported checks 1 to 8 passing with container tests in its cloud environment. The Mac integration run passes dashboard tests, lint, TypeScript, API validation/source checks and generated-type comparison. Local Docker is unavailable, so container-backed auth checks skip here and remain a CI gate. The manual Compose check has not been run.
 - Integration review added an instance-token refusal assertion and reproduced/fixed acceptance of trailing JSON, garbage and oversized trailing whitespace. The endpoint now checks the entire body with MaxBytesReader and requires EOF after one JSON object.
+
+
+### 2026-10-19: worker LiveKit connection guard
+
+With VOICEGATEWAY_WORKER_ENDPOINTS_PUBLIC_ONLY enabled, all eleven worker LiveKit reads use the existing dial-time address guard. The pinned server-sdk-go v2.19.0 accepts a custom HTTP client only for AgentClient; the other reads use livekit/protocol generated Twirp clients and the native access-token grants used by the SDK. Regression tests cover listening and closed internal addresses, metadata and private networks; refused addresses remain unreachable. A container-backed test compares responses and authentication failures against the native SDK.
+
+Local make go-test go-lint passed; Docker-dependent tests require CI. The Cloud owner accepted the initial deployment's region-failover/proxy tradeoffs; the temporary Cloud project-creation gate is removed alongside the guard. No hosted onboarding completion is claimed.

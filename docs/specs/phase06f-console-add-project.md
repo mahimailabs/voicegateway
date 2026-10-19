@@ -58,8 +58,8 @@ On the Compose stack, sign in as an admin of an organisation with no project, ad
 
 ## Cloud rollout
 
-With `VOICEGATEWAY_WORKER_ENDPOINTS_PUBLIC_ONLY=true`, console project creation returns 403 until the worker LiveKit dial guard lands. Self-hosted project creation remains enabled. The follow-up removes this temporary gate only with guarded reads.
+Console project creation is enabled in both editions. Cloud sets `VOICEGATEWAY_WORKER_ENDPOINTS_PUBLIC_ONLY=true` so every worker LiveKit read uses the dial-time address guard.
 
 ## Open Questions
 
-- The worker reads every project's LiveKit URL through the LiveKit server SDK every 10 to 60 seconds, with no address guard: the SDK's room, SIP, egress, ingress and dispatch clients use their own `http.Client` over `http.DefaultTransport`, and server-sdk-go v2.19.0 offers no option to pass ours (only its Cloud agents client takes `WithHTTPClient`). `code.dny.dev/ssrf` and `VOICEGATEWAY_WORKER_ENDPOINTS_PUBLIC_ONLY` cover worker metrics endpoints only. On a shared Cloud instance an Admin could point a project at an internal address and read its reachability from the layer's error class. This needs its own phase before Cloud opens this form.
+- Resolved in the follow-up (progress.md, 2026-10-19: worker LiveKit dial guard): with `VOICEGATEWAY_WORKER_ENDPOINTS_PUBLIC_ONLY=true` the worker's LiveKit reads dial through `code.dny.dev/ssrf`, over livekit/protocol's Twirp clients with our guarded `http.Client` (server-sdk-go v2.19.0 has no option to pass one, except for `AgentClient`), and a refused address is stored as `unreachable`, the same class as a closed port, so the layer's error class no longer reveals reachability. The Cloud owner accepted the loss of SDK region failover and outbound proxy support for the initial Lightsail deployment. Failed reads retain unknown/error status and retry on the next poll; they must never report a successful zero.
