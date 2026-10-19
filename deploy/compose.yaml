@@ -57,7 +57,8 @@ services:
     ulimits:
       nofile: { soft: 262144, hard: 262144 }
     healthcheck:
-      test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1:8123/ping"]
+      # The native port with migrate's own user: /ping on 8123 answers before 9000 takes queries.
+      test: ["CMD", "clickhouse-client", "-q", "SELECT 1"]
       interval: 2s
       retries: 30
 

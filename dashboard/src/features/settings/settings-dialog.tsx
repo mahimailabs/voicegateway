@@ -26,6 +26,7 @@ import { ApiError, callTotalsQuery, createInvitation, createPasswordReset, creat
 import type { Invitation, Member, ProjectKey, ProjectSettings } from "@/lib/api-types"
 import { DataTable, type Columns, type Field as FilterField } from "@/components/data-table"
 import { DataGridColumnHeader } from "@/components/reui/data-grid/data-grid-column-header"
+import { mod } from "@/components/command-palette"
 import { CopyCommand } from "@/components/copy-command"
 import { refreshSession, roleIn, useSession } from "@/lib/session"
 import { useLocalSave } from "@/lib/local-store"
@@ -353,7 +354,7 @@ function Delivery({ outcome, what, onDone, pending }: { outcome: Outcome; what: 
     return (
       <div className="space-y-3">
         <p className="text-[13px] text-muted-foreground">{`Copy the ${what} for ${outcome.email} now. It is not shown again; the server keeps only its hash.`}</p>
-        <CopyCommand text={outcome.link} label={`${what[0].toUpperCase()}${what.slice(1)}`} />
+        <CopyCommand text={outcome.link} label={`${what[0].toUpperCase()}${what.slice(1)}`} copyLabel="Copy link" />
         <Button size="sm" variant="outline" onClick={onDone}>
           Done
         </Button>
@@ -1054,7 +1055,7 @@ export function SettingsDialog({ open, onOpenChange, page, onPageChange, orgOnly
               <span className="whitespace-nowrap">
                 Open anywhere with{" "}
                 <KbdGroup>
-                  <Kbd>⌘</Kbd>
+                  <Kbd>{mod}</Kbd>
                   <Kbd>,</Kbd>
                 </KbdGroup>
               </span>

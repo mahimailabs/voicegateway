@@ -84,6 +84,7 @@ test("an invite without SMTP shows the link once; with SMTP it shows no link, an
   show()
   const user = await sendInvite("new@example.com")
   expect((await screen.findByLabelText("Invitation link")).textContent).toBe(LINK)
+  expect(screen.getByRole("button", { name: "Copy link" })).toBeTruthy()
   await user.click(screen.getByRole("button", { name: "Done" }))
   await waitFor(() => expect(document.body.textContent).not.toContain(LINK))
   cleanup()
