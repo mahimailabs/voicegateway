@@ -63,8 +63,9 @@ services:
     ulimits:
       nofile: { soft: 262144, hard: 262144 }
     healthcheck:
-      # The native port with migrate's own user: /ping on 8123 answers before 9000 takes queries.
-      test: ["CMD", "clickhouse-client", "-q", "SELECT 1"]
+      # The initialization server listens only on loopback and shuts down before the final
+      # server starts. Query this container's network address with migrate's credentials.
+      test: ["CMD-SHELL", "clickhouse-client --host \"$$HOSTNAME\" --user \"$$CLICKHOUSE_USER\" --password \"$$CLICKHOUSE_PASSWORD\" --database \"$$CLICKHOUSE_DB\" -q 'SELECT 1'"]
       interval: 2s
       retries: 30
 
