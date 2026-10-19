@@ -12,7 +12,7 @@
 #   VOICEGATEWAY_DIR      where the checkout goes (default ./voicegateway)
 set -euo pipefail
 
-DEFAULT_VERSION="1.0.0-preview.4"
+DEFAULT_VERSION="1.0.0-preview.5"
 REPO_URL="https://github.com/mahimailabs/voicegateway.git"
 IMAGE="ghcr.io/mahimailabs/voicegateway"
 GUIDE_URL="https://github.com/mahimailabs/voicegateway/blob/main/docs/self-hosting.md"
@@ -25,7 +25,7 @@ step() { printf '\n>> %s\n' "$*"; }
 
 # A release is a semantic version, so it is safe in a git ref and an image tag.
 check_version() {
-    [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]] || die "VOICEGATEWAY_VERSION must look like 1.0.0 or 1.0.0-preview.4, got: $VERSION"
+    [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]] || die "VOICEGATEWAY_VERSION must look like 1.0.0 or 1.0.0-preview.5, got: $VERSION"
 }
 
 check_tools() {

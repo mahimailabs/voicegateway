@@ -474,3 +474,12 @@ The full Docker-backed Go race suite passed. Scoped routing, webhook body-hash v
 The preview.4 installer pin aligns the published image with project-scoped ingestion. A fresh, isolated Docker installation exposed another ClickHouse readiness race: its temporary initialization server accepts localhost native queries, then shuts down before the externally reachable server starts. The healthcheck now queries the container network address using the migration user's database and credentials.
 
 With this Compose correction and the published preview.4 image, empty Postgres, ClickHouse, Redis and object-storage volumes start successfully and all four preflight checks pass. A separate 30-second SQL initialization fixture confirms localhost queries succeed while health stays `starting`, then health becomes `healthy` after initialization. ShellCheck and all ten installer behavior checks pass. This Compose correction still needs a published release and installer pin; a complete real-call rehearsal remains outstanding.
+
+
+### 2026-10-19: scoped fresh-install call and restart proof
+
+An isolated Compose project with empty volumes, the published preview.4 image and the corrected ClickHouse readiness check completed a real synthetic call through LiveKit server and LiveKit Agents 1.8.7. The documented admin and project commands succeeded. Native signed webhooks and observability uploads used `/ingest/default/fresh-local-proof`; no captured fixture was submitted.
+
+The authenticated API and rendered console show call `c4f15d11-1ec9-4c20-bf7b-64a89edba93c`: 44.488 seconds, two participants, three turns, observed start/end and response times of 981 ms and 1.40 s. The console displays both caller questions and agent replies. After stopping and starting the entire stack with volumes retained, the same call ID, three turns and observed end remained readable. The caller exited after closing its room with an ignored LiveKit RTC FFI cleanup assertion; this was outside the VoiceGateway process. Recording storage was not tested.
+
+Preview.5 carries the startup correction and optional Cloud quotas. Its image publication and a final installation using the unmodified release checkout remain the release gate; the previous proof does not substitute for that final check.
