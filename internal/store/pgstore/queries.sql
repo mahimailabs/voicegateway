@@ -428,20 +428,24 @@ UPDATE invitations SET revoked_at = now()
 WHERE kind = 'reset' AND user_id = @user_id AND accepted_at IS NULL AND revoked_at IS NULL;
 
 -- name: InsertInvitation :one
-INSERT INTO invitations (kind, organisation_id, email, role, user_id, token_sha256, invited_by, idempotency_key, expires_at)
-VALUES (@kind, @organisation_id, @email, sqlc.narg(role), sqlc.narg(user_id), @token_sha256, sqlc.narg(invited_by), sqlc.narg(idempotency_key), @expires_at)
+INSERT INTO invitations (kind, organisation_id, email, role, user_id, token_sha256, invited_by, idempotency_key, expires_at, email_started_at)
+VALUES (@kind, @organisation_id, @email, sqlc.narg(role), sqlc.narg(user_id), @token_sha256, sqlc.narg(invited_by), sqlc.narg(idempotency_key), @expires_at, sqlc.narg(email_started_at))
 RETURNING id, created_at;
 
 -- name: InvitationByIdempotencyKey :one
-SELECT i.id, i.kind, i.email, i.role, i.created_at, i.expires_at, i.emailed_at, i.accepted_at, i.revoked_at, u.email AS invited_by_email
+SELECT i.id, i.kind, i.email, i.role, i.created_at, i.expires_at, i.emailed_at, i.accepted_at, i.revoked_at, u.email AS invited_by_email, i.email_started_at, i.email_failed_at
 FROM invitations i LEFT JOIN users u ON u.id = i.invited_by
 WHERE i.organisation_id = @organisation_id AND i.idempotency_key = @idempotency_key;
 
 -- name: MarkInvitationEmailed :exec
 UPDATE invitations SET emailed_at = now() WHERE id = @id;
 
+-- name: MarkInvitationNotEmailed :exec
+-- The send failed. A recorded success is never overwritten.
+UPDATE invitations SET email_failed_at = now() WHERE id = @id AND emailed_at IS NULL;
+
 -- name: ListInvitations :many
-SELECT i.id, i.kind, i.email, i.role, i.created_at, i.expires_at, i.emailed_at, i.accepted_at, i.revoked_at, u.email AS invited_by_email
+SELECT i.id, i.kind, i.email, i.role, i.created_at, i.expires_at, i.emailed_at, i.accepted_at, i.revoked_at, u.email AS invited_by_email, i.email_started_at, i.email_failed_at
 FROM invitations i LEFT JOIN users u ON u.id = i.invited_by
 WHERE i.organisation_id = @organisation_id
 ORDER BY i.created_at DESC, i.id
