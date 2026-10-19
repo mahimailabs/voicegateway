@@ -5,20 +5,8 @@ import (
 	"testing"
 
 	"github.com/mahimailabs/voicegateway/internal/config"
+	"github.com/mahimailabs/voicegateway/internal/store/pgstore"
 )
-
-func TestSlugMatchesTheConsole(t *testing.T) {
-	tests := map[string]string{
-		"Default project": "default-project",
-		"  Production  ":  "production",
-		"EU / Staging #2": "eu-staging-2",
-	}
-	for in, want := range tests {
-		if got := Slug(in); got != want {
-			t.Errorf("Slug(%q) = %q, want %q", in, got, want)
-		}
-	}
-}
 
 func TestAddProjectNamesWhatIsMissing(t *testing.T) {
 	_, err := AddProject(context.Background(), config.Config{}, ProjectInput{Name: "Production"})
@@ -27,5 +15,31 @@ func TestAddProjectNamesWhatIsMissing(t *testing.T) {
 	}
 	if want := "missing --livekit-url, --livekit-api-key, LIVEKIT_API_SECRET"; err.Error() != want {
 		t.Errorf("error = %q, want %q in that order", err, want)
+	}
+}
+
+// The command line refuses what createProject refuses, under its own flag names (phase 06f).
+func TestAddProjectChecksLikeTheAPI(t *testing.T) {
+	for _, tt := range []struct {
+		in   ProjectInput
+		want string
+	}{
+		{ProjectInput{Name: "Production", LiveKitURL: "ftp://lk.example.com", LiveKitAPIKey: "APIkey", LiveKitAPISecret: "s"}, "--livekit-url must be a ws, wss, http or https URL with a host"},
+		{ProjectInput{Name: "!!!", LiveKitURL: "wss://lk.example.com", LiveKitAPIKey: "APIkey", LiveKitAPISecret: "s"}, "--name must be 1 to 64 characters, with no control characters and at least one letter or digit"},
+		{ProjectInput{Name: "Production", ID: "Not An Id", LiveKitURL: "wss://lk.example.com", LiveKitAPIKey: "APIkey", LiveKitAPISecret: "s"}, "--id must be 1 to 63 characters of a to z, 0 to 9 and -, starting with a letter or digit"},
+	} {
+		if _, err := AddProject(context.Background(), config.Config{}, tt.in); err == nil || err.Error() != tt.want {
+			t.Errorf("AddProject(%+v) = %v, want %q", tt.in, err, tt.want)
+		}
+	}
+}
+
+func TestConsoleProjectCreationDisabledOnCloud(t *testing.T) {
+	projects := &pgstore.Store{}
+	if consoleProjectCreator(config.Config{WorkerEndpointsPublicOnly: true}, projects) != nil {
+		t.Fatal("Cloud project creation enabled without guarded LiveKit reads")
+	}
+	if consoleProjectCreator(config.Config{}, projects) != projects {
+		t.Fatal("self-hosted project creation disabled")
 	}
 }

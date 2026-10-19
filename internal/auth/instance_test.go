@@ -164,8 +164,16 @@ func TestInstanceScopeIsItsOwn(t *testing.T) {
 		}
 		cases++
 	}
-	if cases != 19 {
-		t.Errorf("%d cases, want 19", cases)
+	before := f.count(`SELECT count(*) FROM projects`)
+	if status, body := f.send(w.h, call{method: http.MethodPost, path: "/api/v1/org/org-a/projects", body: projectBody("Blocked", "wss://blocked.example.com", "APIblocked", testLiveKitSecret), token: instanceToken}); status != http.StatusForbidden || !strings.Contains(string(body), `"forbidden"`) {
+		t.Errorf("createProject with the instance token = %d %s, want 403 forbidden", status, body)
+	}
+	if after := f.count(`SELECT count(*) FROM projects`); after != before {
+		t.Errorf("instance token created a project: before=%d after=%d", before, after)
+	}
+	cases++
+	if cases != 20 {
+		t.Errorf("%d cases, want 20", cases)
 	}
 	if n := f.count(`SELECT count(*) FROM organisations WHERE id = 'acme'`); n != 0 {
 		t.Errorf("%d acme organisations after refused calls, want 0", n)

@@ -17,6 +17,17 @@ type Project struct {
 	CreatedAt      time.Time
 }
 
+// NewProject is what creating a project needs: voicegateway project add and createProject give the
+// same fields. The secret is sealed before it is written.
+type NewProject struct {
+	OrganisationID   string
+	ID               string
+	Name             string
+	LiveKitURL       string
+	LiveKitAPIKey    string
+	LiveKitAPISecret string
+}
+
 // ErrLiveKitKeyInUse means another project already uses the LiveKit API key, which ingest relies on
 // to find the project an event belongs to.
 var ErrLiveKitKeyInUse = errors.New("LiveKit API key is already used by another project")

@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"regexp"
 	"strings"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -50,33 +49,26 @@ type ProjectInput struct {
 	LiveKitAPISecret string
 }
 
-var nonSlug = regexp.MustCompile(`[^a-z0-9]+`)
-
-// Slug turns a project name into its URL id, the same way the console does: "Default project"
-// becomes "default-project".
-func Slug(name string) string {
-	return strings.Trim(nonSlug.ReplaceAllString(strings.ToLower(name), "-"), "-")
+// projectFlags names each field of a new project as voicegateway project add asks for it.
+var projectFlags = map[string]string{
+	api.FieldName: "--name", api.FieldID: "--id", api.FieldLiveKitURL: "--livekit-url",
+	api.FieldLiveKitAPIKey: "--livekit-api-key", api.FieldLiveKitAPISecret: "LIVEKIT_API_SECRET",
 }
 
-// AddProject creates a project with its LiveKit secret sealed under the configured key.
+// AddProject creates a project with its LiveKit secret sealed under the configured key. The fields
+// are checked by api.CheckProject, the rule createProject applies too, and the id defaults to the
+// name's api.Slug.
 func AddProject(ctx context.Context, c config.Config, in ProjectInput) (store.Project, error) {
-	var missing []string
-	// In a fixed order, so the message reads the same on every run.
-	for _, f := range []struct{ name, value string }{
-		{"--name", in.Name}, {"--livekit-url", in.LiveKitURL}, {"--livekit-api-key", in.LiveKitAPIKey}, {"LIVEKIT_API_SECRET", in.LiveKitAPISecret},
-	} {
-		if strings.TrimSpace(f.value) == "" {
-			missing = append(missing, f.name)
-		}
+	p, err := api.CheckProject(store.NewProject{
+		OrganisationID: orgOrDefault(in.OrganisationID), ID: in.ID, Name: in.Name,
+		LiveKitURL: in.LiveKitURL, LiveKitAPIKey: in.LiveKitAPIKey, LiveKitAPISecret: in.LiveKitAPISecret,
+	})
+	var invalid *api.ProjectInputError
+	if errors.As(err, &invalid) {
+		return store.Project{}, errors.New(invalid.Describe(projectFlags))
 	}
-	if len(missing) > 0 {
-		return store.Project{}, fmt.Errorf("missing %s", strings.Join(missing, ", "))
-	}
-	if in.ID == "" {
-		in.ID = Slug(in.Name)
-	}
-	if in.OrganisationID == "" {
-		in.OrganisationID = "default"
+	if err != nil {
+		return store.Project{}, err
 	}
 
 	sealer, err := seal.New(c.SecretKey)
@@ -88,14 +80,7 @@ func AddProject(ctx context.Context, c config.Config, in ProjectInput) (store.Pr
 		return store.Project{}, fmt.Errorf("postgres: %w", redactErr(err, c.PostgresURL))
 	}
 	defer pool.Close()
-	return pgstore.NewStore(pool, sealer).CreateProject(ctx, pgstore.NewProject{
-		OrganisationID:   in.OrganisationID,
-		ID:               in.ID,
-		Name:             strings.TrimSpace(in.Name),
-		LiveKitURL:       strings.TrimSpace(in.LiveKitURL),
-		LiveKitAPIKey:    strings.TrimSpace(in.LiveKitAPIKey),
-		LiveKitAPISecret: in.LiveKitAPISecret,
-	})
+	return pgstore.NewStore(pool, sealer).CreateProject(ctx, p)
 }
 
 // AddUser gives an email a role in one organisation: admin for the first admin of an install
@@ -274,4 +259,12 @@ func orgOrDefault(org string) string {
 		return "default"
 	}
 	return org
+}
+
+// Disable Cloud project creation until the worker's LiveKit reads have an address guard.
+func consoleProjectCreator(c config.Config, projects api.ProjectCreator) api.ProjectCreator {
+	if c.WorkerEndpointsPublicOnly {
+		return nil
+	}
+	return projects
 }

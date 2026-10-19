@@ -41,6 +41,7 @@ var routeAccess = map[string]access{
 	"GET /api/v1/org/{orgId}/project/{projectId}/keys":            {"Admin", scopeProject},
 	"POST /api/v1/org/{orgId}/project/{projectId}/keys":           {"Admin", scopeProject},
 	"DELETE /api/v1/org/{orgId}/project/{projectId}/keys/{keyId}": {"Admin", scopeProject},
+	"POST /api/v1/org/{orgId}/projects":                           {"Admin", scopeOrganisation},
 	"GET /api/v1/org/{orgId}/members":                             {"Viewer", scopeOrganisation},
 	"PATCH /api/v1/org/{orgId}/members/{userId}":                  {"Admin", scopeOrganisation},
 	"DELETE /api/v1/org/{orgId}/members/{userId}":                 {"Admin", scopeOrganisation},
