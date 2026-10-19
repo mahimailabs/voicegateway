@@ -74,6 +74,10 @@ Plan agreed 2026-10-15: a team builds V1 with Cloud (decision 0024) over 30 days
 - Docker Desktop on the dev Mac stopped starting new containers during the spike; it needs a restart.
 - Project MCP servers (shadcn, magicui) need a one-time approval in Claude Code. The gopls MCP server was removed on 2026-10-17: its fsnotify watcher opened one file handle per file in the tree (about 61,000) and exhausted the system file table.
 
+### 2026-10-18: marketing site moved to a private repository
+
+`site/landing` and `site/web` moved to the private `voicegateway-web` repository, which the Pages project `voicegateway-web` builds for voicegateway.dev. This repository keeps `site/docs`, `site/theme.css`, `install.sh` and `collector.sh`; the private site downloads the two scripts from main on every build. The Site workflow now checks only the docs. See decision 0030, which supersedes 0025.
+
 ### 2026-10-15: landing consolidated into the product repository
 
 The current landing page is imported into `site/landing`, with its prebuilt controls, console visuals, Pages Functions and shared PostHog integration. `site/web` remains the existing D1/API Worker. Cloudflare Pages builds `site/landing` from this repository, and the separate landing repository is superseded. The Site workflow runs `make landing-check` for tests, static export and TypeScript. Installer assets are copied from the repository root before build/dev. See decision 0025.
