@@ -406,9 +406,18 @@ func TestUsageCountsEndedCallsOnly(t *testing.T) {
 		{"acme", "RM_open", "open", new(at(2 * time.Hour)), nil},
 		{"other", "RM_elsewhere", "observed", new(at(0)), new(at(600 * time.Second))},
 	} {
+		endedAt, lastActivity := c.end, c.end
+		// Distinct clocks ensure usage selects ended_at for observed calls and
+		// last_activity_at for inferred calls, including missing and reversed ends.
+		switch c.state {
+		case "observed":
+			lastActivity = new(at(12 * time.Hour))
+		case "inferred":
+			endedAt = new(at(12 * time.Hour))
+		}
 		if _, err := f.pool.Exec(context.Background(),
-			`INSERT INTO calls (organisation_id, project_id, room_sid, room_name, started_at, ended_at, last_activity_at, end_state) VALUES ($1, 'p', $2, 'r', $3, $4, $4, $5)`,
-			c.org, c.sid, c.start, c.end, c.state); err != nil {
+			`INSERT INTO calls (organisation_id, project_id, room_sid, room_name, started_at, ended_at, last_activity_at, end_state) VALUES ($1, 'p', $2, 'r', $3, $4, $5, $6)`,
+			c.org, c.sid, c.start, endedAt, lastActivity, c.state); err != nil {
 			t.Fatal(err)
 		}
 	}

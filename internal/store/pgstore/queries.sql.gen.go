@@ -1389,10 +1389,11 @@ type OrganisationUsageRow struct {
 }
 
 // An organisation's profiled call time in [from, to) (phase 06e, decision 0029). An observed call
-// ends at ended_at; an inferred one at its last activity, a lower bound. A call counts in the
-// period that holds its end, when its start is known. Exact durations are summed first and the sum
-// is rounded down to whole seconds once, never per call. A call with no end yet is counted apart
-// and never summed.
+// ends at ended_at; an inferred one at its last activity, a lower bound. A call is measured when
+// its start and end are known and the end is not before the start, and counts in the period that
+// holds its end. Exact durations are summed first and the sum is rounded down to whole seconds
+// once, never per call. Open calls, and closed calls with no end or an end before their start,
+// are counted apart by their start and never summed.
 func (q *Queries) OrganisationUsage(ctx context.Context, arg OrganisationUsageParams) (OrganisationUsageRow, error) {
 	row := q.db.QueryRow(ctx, organisationUsage, arg.OrganisationID, arg.FromAt, arg.ToAt)
 	var i OrganisationUsageRow

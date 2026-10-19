@@ -429,9 +429,10 @@ type Organisation struct {
 }
 
 // Usage is an organisation's profiled call time in a period (phase 06e, decision 0029): the calls
-// whose end, or last activity when inferred, fell in it, with known starts, their exact durations
-// summed and then floored to whole seconds; and apart from them the calls that started in it and
-// are still open, whose time is unknown and never summed.
+// whose end, or last activity when inferred, fell in it, with known starts and an end not before
+// the start, their exact durations summed and then floored to whole seconds; and apart from them
+// the calls that started in it and are still open or closed with no measurable end, whose time is
+// unknown and never summed.
 type Usage struct {
 	CallSeconds, Calls, InferredCalls, InferredCallSeconds, UnendedCalls, UnmeasuredCalls int64
 }
