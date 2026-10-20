@@ -79,7 +79,7 @@ func TestKeyCommands(t *testing.T) {
 	secure, plain := auth.NewSessions(memstore.New())
 	quiet := slog.New(slog.NewTextHandler(io.Discard, nil))
 	gate := (&auth.Service{Users: pg, Secure: secure, Plain: plain, Log: quiet, Now: time.Now}).Gate
-	routes := (&api.API{Projects: pg, Calls: pg, Log: quiet, Now: time.Now, Gate: gate}).Routes()
+	routes := (&api.API{Projects: pg, Settings: pg, Calls: pg, Log: quiet, Now: time.Now, Gate: gate}).Routes()
 	read := func() int {
 		req := httptest.NewRequest(http.MethodGet, "/api/v1/org/org-a/project/p/calls", nil)
 		req.TLS = &tls.ConnectionState{}

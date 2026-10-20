@@ -22,23 +22,21 @@ import { NewProjectDialog } from "@/components/new-project-dialog"
 import { currentOrg, currentScope, scopePrefix, useUrlState } from "@/lib/url-state"
 import { type WidgetId, widgets } from "@/features/embed/widgets"
 import { DEFAULTS, type Thresholds as T } from "@/lib/thresholds"
-import { ApiError, callTotalsQuery, createInvitation, createPasswordReset, createProjectKey, projectKeysQuery, revokeInvitation, revokeProjectKey, invitationsQuery, latestMatchingCallQuery, mediaServerQuery, membersQuery, projectSettingsQuery, removeMember, updateMember } from "@/lib/api"
+import { ApiError, callTotalsQuery, createInvitation, createPasswordReset, createProjectKey, projectKeysQuery, revokeInvitation, revokeProjectKey, invitationsQuery, latestMatchingCallQuery, mediaServerQuery, membersQuery, projectSettingsQuery, saveProjectSettings, removeMember, updateMember } from "@/lib/api"
 import type { Invitation, Member, ProjectKey, ProjectSettings } from "@/lib/api-types"
 import { DataTable, type Columns, type Field as FilterField } from "@/components/data-table"
 import { DataGridColumnHeader } from "@/components/reui/data-grid/data-grid-column-header"
 import { mod } from "@/components/command-palette"
 import { CopyCommand } from "@/components/copy-command"
 import { refreshSession, roleIn, useSession } from "@/lib/session"
-import { useLocalSave } from "@/lib/local-store"
 import { UsageAllowance } from "@/components/usage-allowance"
 import { errorText } from "@/components/page-state"
 
 // Settings as a modal over the page you are on (layout from shadcn's sidebar-13 block). Three groups,
 // as in ShipVoice Pro's settings: the project picked at the top of the sidebar (integrations, data,
 // thresholds), the organisation (its projects, Enterprise shown locked per decision 0018, and Access:
-// people, API keys, MCP and the audit log as tabs) and you. What the Phase 1 console can change
-// (thresholds, tags, appearance) works and is kept in this browser, with undo; what the Phase 2
-// server will own is read from the captured project or says "Not set".
+// people, API keys, MCP and the audit log as tabs) and you. Thresholds persist per project
+// through the API; unavailable deployment policies remain explicitly unknown.
 
 // The organisation and its projects as getWorkspaces named them (lib/workspaces.ts). When it named
 // none, the scope's id stands in and no project is listed.
@@ -858,7 +856,7 @@ function DataPane({ s }: { s: ProjectSettings }) {
       </Group>
       <Group label="Retention" footer="The server deletes what is older. Until it runs, nothing is deleted.">
         <Row title="Transcripts" value={days(s.transcriptRetentionDays)} />
-        <Row title="Traces and metrics" value={days(s.traceRetentionDays)} />
+        <Row title="Raw traces and metrics" value={days(s.traceRetentionDays)} />
         <Row title="Recordings" value={days(s.recordingRetentionDays)} last />
       </Group>
     </>
@@ -881,22 +879,41 @@ function WithSettings({ title, children }: { title: string; children: (s: Projec
   )
 }
 
-const Thresholds = () => <WithSettings title="Thresholds">{(s) => <ThresholdsForm t={s.thresholds} />}</WithSettings>
+export const Thresholds = () => <WithSettings title="Thresholds">{(s) => <ThresholdsForm key={`${currentScope().org}/${currentScope().project}`} settings={s} />}</WithSettings>
 
-function ThresholdsForm({ t }: { t: T }) {
-  // Every page's checks and the server's judgements use these, so a save asks every read again.
-  const setThresholds = useLocalSave<T>("vg.thresholds", [])
+function ThresholdsForm({ settings }: { settings: ProjectSettings }) {
+  const t = settings.thresholds
+  const selected = currentScope()
+  const qc = useQueryClient()
+  const role = roleIn(selected.org, useSession())
+  const canEdit = role === "Member" || role === "Admin"
   const asDraft = (x: T) => ({ answer: String(x.answerMs / 1000), join: String(x.joinMs / 1000), tts: String(x.ttsStartMs / 1000) })
-  const [draft, setDraft] = useState(asDraft(t))
+  const [edit, setEdit] = useState<{ revision: number; values: ReturnType<typeof asDraft> } | null>(null)
+  const draft = edit?.values ?? asDraft(t)
   const n = (v: string) => Number(v)
-  const valid = [draft.answer, draft.join, draft.tts].every((v) => v.trim() !== "" && Number.isFinite(n(v)) && n(v) > 0 && n(v) <= 60)
+  const valid = [draft.answer, draft.join, draft.tts].every((v) => v.trim() !== "" && Number.isFinite(n(v)) && n(v) >= 0.1 && n(v) <= 60)
   const changed = n(draft.answer) * 1000 !== t.answerMs || n(draft.join) * 1000 !== t.joinMs || n(draft.tts) * 1000 !== t.ttsStartMs
-  const apply = (next: T, message: string) => {
-    const before = t
-    setThresholds(next)
-    setDraft(asDraft(next))
-    toast(message, { action: { label: "Undo", onClick: () => (setThresholds(before), setDraft(asDraft(before))) } })
-  }
+  const save = useMutation({
+    mutationFn: (v: { thresholds: T; revision: number; message: string; undo?: T }) => saveProjectSettings(selected, { thresholds: v.thresholds, revision: v.revision }),
+    onSuccess: async (saved, variables) => {
+      setEdit(null)
+      await qc.cancelQueries({ queryKey: ["settings", selected], exact: true })
+      qc.setQueryData<ProjectSettings>(["settings", selected], (prior) => prior && prior.revision > saved.revision ? prior : saved)
+      await qc.invalidateQueries({ predicate: (query) => {
+        const scope = query.queryKey[1] as { org?: string; project?: string } | undefined
+        return query.queryKey[0] !== "settings" && scope?.org === selected.org && scope?.project === selected.project
+      } })
+      toast(variables.message, variables.undo ? { action: { label: "Undo", onClick: () => save.mutate({ thresholds: variables.undo!, revision: saved.revision, message: "Thresholds restored" }) } } : undefined)
+    },
+    onError: (error) => {
+      if (error instanceof ApiError && (error.status === 401 || error.status === 403)) {
+        qc.getQueryCache().find({ queryKey: ["settings", selected], exact: true })?.setState({ data: undefined, dataUpdatedAt: 0, error, status: "error" })
+        void refreshSession().catch(() => toast.error("Could not refresh your session."))
+      }
+      toast.error(errorText(error))
+    },
+  })
+  const apply = (next: T, message: string) => save.mutate({ thresholds: next, revision: edit?.revision ?? settings.revision, message, undo: t })
   const field = (key: keyof typeof draft, label: string, hint: string) => (
     <Field orientation="horizontal" className="grid grid-cols-1 items-start gap-3 sm:grid-cols-[minmax(0,220px)_minmax(0,1fr)] sm:gap-8 py-4">
       <div className="space-y-0.5">
@@ -906,26 +923,31 @@ function ThresholdsForm({ t }: { t: T }) {
         <FieldDescription className="text-[13px]">{hint}</FieldDescription>
       </div>
       <InputGroup className="w-28">
-        <InputGroupInput id={`th-${key}`} type="number" min={0.1} max={60} step={0.1} value={draft[key]} onChange={(e) => setDraft({ ...draft, [key]: e.target.value })} className="tnum" />
+        <InputGroupInput id={`th-${key}`} disabled={!canEdit || save.isPending} type="number" min={0.1} max={60} step={0.1} value={draft[key]} onChange={(e) => setEdit({ revision: edit?.revision ?? settings.revision, values: { ...draft, [key]: e.target.value } })} className="tnum" />
         <InputGroupAddon align="inline-end">s</InputGroupAddon>
       </InputGroup>
     </Field>
   )
   return (
     <>
-      <Header title="Thresholds" description="The numbers this project's checks judge calls against. Settings, not measurements; every page uses the same ones." badge="This browser" />
+      <Header title="Thresholds" description="The numbers this project's checks judge calls against. Settings, not measurements; every page uses the same ones." badge="Project" />
       <FieldGroup className="gap-0 pt-2 [&>[data-slot=field]+[data-slot=field]]:border-t">
         {field("answer", "Answer time", "Caller finishing to the agent's first audio.")}
         {field("join", "Agent join", "Dispatch to the agent joining the room.")}
         {field("tts", "Speech start", "Text to speech's time to first audio.")}
       </FieldGroup>
+      {!canEdit && <p className="py-3 text-[13px] text-muted-foreground">A Member or Admin can change project thresholds.</p>}
+      {save.isError && <p role="alert" className="py-3 text-[13px] text-destructive">
+        {errorText(save.error)}
+        {save.error instanceof ApiError && save.error.status === 409 && <Button variant="link" onClick={() => { setEdit(null); void qc.invalidateQueries({ queryKey: ["settings", selected], exact: true }) }}>Reload settings</Button>}
+      </p>}
       <div className="flex items-center justify-end gap-3 border-t pt-5">
         {!valid && <span className="mr-auto text-[13px] text-destructive">Use a number between 0.1 and 60.</span>}
-        <Button variant="outline" onClick={() => apply(DEFAULTS, "Thresholds reset to defaults")}>
+        <Button variant="outline" disabled={!canEdit || save.isPending} onClick={() => apply(DEFAULTS, "Thresholds reset to defaults")}>
           Reset to defaults
         </Button>
-        <Button disabled={!valid || !changed} onClick={() => apply({ answerMs: n(draft.answer) * 1000, joinMs: n(draft.join) * 1000, ttsStartMs: n(draft.tts) * 1000 }, "Thresholds saved")}>
-          Save changes
+        <Button disabled={!canEdit || save.isPending || !valid || !changed} onClick={() => apply({ answerMs: n(draft.answer) * 1000, joinMs: n(draft.join) * 1000, ttsStartMs: n(draft.tts) * 1000 }, "Thresholds saved")}>
+          {save.isPending ? "Saving…" : "Save changes"}
         </Button>
       </div>
     </>

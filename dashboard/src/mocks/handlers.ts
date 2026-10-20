@@ -7,7 +7,7 @@ import { capacity, cloudAgents, egress, ingress, mediaServer, projectSnapshot, p
 import { summarize } from "./summaries"
 import { matchesFilters, parseFilters, sortCalls, totals } from "./calls-query"
 import { playbackUrl, recordingMedia } from "./recordings"
-import { alertSetup, changeMember, createKey, invitations, invite, issueDispositions, members, passwordReset, projectKeys, projectSettings, revokeInvitation, revokeKey } from "./settings"
+import { alertSetup, changeMember, createKey, invitations, invite, issueDispositions, members, passwordReset, projectKeys, projectSettings, updateSettings, revokeInvitation, revokeKey } from "./settings"
 import { addProject, knownOrg, knownProject, workspaces } from "./workspaces"
 
 // Everything but the paging parameters, in a stable order, so a cursor can name what it was issued for.
@@ -27,6 +27,7 @@ const project = "*/api/v1/org/:orgId/project/:projectId"
 const fail = (status: number, code: ApiErrorBody["code"], message: string) =>
   HttpResponse.json<ApiErrorBody>({ code, message, requestId: `mock-${crypto.randomUUID()}` }, { status })
 
+const settingsScope = (params: PathParams) => `${params.orgId}/${params.projectId}`
 const known = (params: PathParams) => knownProject(params.orgId, params.projectId)
 
 // Playback goes through the API in the project that was asked for, never to the captured file.
@@ -74,7 +75,7 @@ export const handlers = [
     const matching = sortCalls(capturedCalls().map(summarize).filter((c) => matchesFilters(c, filters)), filters)
     const items = matching.slice(start, start + limit)
     const next = start + limit < matching.length ? `${start + limit}:${bound}` : null
-    return HttpResponse.json<CallPage>({ items, page: { nextCursor: next, snapshot: SNAPSHOT }, totals: totals(matching) })
+    return HttpResponse.json<CallPage>({ items, page: { nextCursor: next, snapshot: SNAPSHOT }, totals: totals(matching, projectSettings(settingsScope(params)).thresholds.answerMs) })
   }),
 
   http.get<PathParams, never, Call | ApiErrorBody>(`${project}/calls/:callId`, ({ params }) => {
@@ -87,7 +88,7 @@ export const handlers = [
   http.get<PathParams, never, CallStats | ApiErrorBody>(`${project}/call-stats`, ({ params, request }) => {
     if (!known(params)) return fail(404, "not_found", "No such project.")
     const r = range(new URL(request.url).searchParams)
-    return typeof r === "string" ? fail(400, "invalid_request", r) : HttpResponse.json(callStats(r.from, r.to))
+    return typeof r === "string" ? fail(400, "invalid_request", r) : HttpResponse.json(callStats(r.from, r.to, projectSettings(settingsScope(params)).thresholds.answerMs))
   }),
   http.get<PathParams, never, IssueList | ApiErrorBody>(`${project}/issues`, ({ params, request }) => {
     if (!known(params)) return fail(404, "not_found", "No such project.")
@@ -113,7 +114,14 @@ export const handlers = [
   http.get<PathParams, never, Sip | ApiErrorBody>(`${project}/sip`, ({ params }) => (known(params) ? HttpResponse.json(sip()) : fail(404, "not_found", "No such project."))),
 
   // Settings, saved in this browser until web stores them (settings.ts). Writes stay in the console.
-  http.get<PathParams, never, ProjectSettings | ApiErrorBody>(`${project}/settings`, ({ params }) => (known(params) ? HttpResponse.json(projectSettings()) : fail(404, "not_found", "No such project."))),
+  http.get<PathParams, never, ProjectSettings | ApiErrorBody>(`${project}/settings`, ({ params }) => (known(params) ? HttpResponse.json(projectSettings(settingsScope(params))) : fail(404, "not_found", "No such project."))),
+  http.put(`${project}/settings`, async ({ params, request }) => {
+    if (!known(params)) return fail(404, "not_found", "No such project.")
+    let body: unknown
+    try { body = await request.json() } catch { return fail(400, "invalid_request", "Expected JSON settings.") }
+    const saved = updateSettings(settingsScope(params), body)
+    return typeof saved === "string" ? fail(saved === "revision_conflict" ? 409 : 400, saved, saved === "revision_conflict" ? "Settings changed; reload before saving." : "Invalid thresholds or revision.") : HttpResponse.json(saved)
+  }),
   http.get<PathParams, never, IssueDispositions | ApiErrorBody>(`${project}/issue-dispositions`, ({ params }) => (known(params) ? HttpResponse.json(issueDispositions()) : fail(404, "not_found", "No such project."))),
   http.get<PathParams, never, AlertSetup | ApiErrorBody>(`${project}/alert-setup`, ({ params }) => (known(params) ? HttpResponse.json(alertSetup()) : fail(404, "not_found", "No such project."))),
   http.get<PathParams, never, Workspaces>("*/api/v1/workspaces", () => HttpResponse.json(workspaces())),

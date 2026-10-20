@@ -128,7 +128,7 @@ function providers(calls: Call[]): ProviderUse[] {
   return [...by].map(([provider, v]) => ({ provider, callCount: v.calls.size, roles: roles.filter((r) => v.roles.has(r)).map((role) => ({ role, medianMs: median(v.roles.get(role)!), turns: v.roles.get(role)!.length })) }))
 }
 
-export function callStats(from: Date, to: Date): CallStats {
+export function callStats(from: Date, to: Date, budget = storedThresholds().answerMs): CallStats {
   const calls = capturedCalls()
     .filter((c) => !c.recording?.preview)
     .filter((c) => Date.parse(c.startedAt) >= +from && Date.parse(c.startedAt) < +to)
@@ -193,7 +193,6 @@ export function callStats(from: Date, to: Date): CallStats {
     })
     .sort((a, b) => (b.callCount ?? 0) - (a.callCount ?? 0))
 
-  const budget = storedThresholds().answerMs
   return {
     from: from.toISOString(),
     to: to.toISOString(),

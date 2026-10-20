@@ -373,7 +373,7 @@ func TestListCallsTotals(t *testing.T) {
 	p, _ := f.list(nil)
 	a := p.Totals.Answers
 	if *a.Turns != 4 || *a.OverBudget != 2 || a.BudgetMs != 1500 || a.P50Ms == nil || *a.P50Ms != 1600 || len(a.ValuesMs) != 4 || a.ValuesTruncated {
-		t.Errorf("answers = turns %d, over %d, budget %d, p50 %v, values %v, truncated %v", *a.Turns, *a.OverBudget, a.BudgetMs, a.P50Ms, a.ValuesMs, a.ValuesTruncated)
+		t.Errorf("answers = turns %d, over %d, budget %g, p50 %v, values %v, truncated %v", *a.Turns, *a.OverBudget, a.BudgetMs, a.P50Ms, a.ValuesMs, a.ValuesTruncated)
 	}
 	// Newest call first: RM_3 (2000) was created last.
 	if a.ValuesMs[0] != 2000 {

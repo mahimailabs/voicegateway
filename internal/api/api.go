@@ -16,6 +16,8 @@ import (
 
 // API serves the console's /api/v1 reads and its member writes.
 type API struct {
+	Settings          ProjectSettingsStore
+	StorageBucket     string
 	ResourceEndpoints ResourceEndpoints
 	ResourceSamples   ResourceSamples
 	Live              LiveChanges
@@ -44,10 +46,7 @@ type API struct {
 	// (auth.NewKey).
 	NewKey func() (keyID string, secretSHA256 []byte, full string, err error)
 	Log    *slog.Logger
-	// AnswerBudgetMs is the answer budget listCalls' totals count against; 0 is the console's
-	// default, 1500 ms. Interim, until thresholds are stored per project.
-	AnswerBudgetMs int
-	Now            func() time.Time
+	Now    func() time.Time
 	// Instance serves the instance API (phase 06e), from ee/instance; with no handler set it is
 	// off, and every /api/v1/instance path answers 404 as if it did not exist.
 	Instance InstanceHandlers
@@ -79,6 +78,8 @@ func (a *API) Routes() http.Handler {
 	// Every route goes through handle, which puts it behind its minimum role in routeAccess.
 	const project = "/api/v1/org/{orgId}/project/{projectId}"
 	handle(r, http.MethodGet, "/api/v1/workspaces", a.getWorkspaces)
+	handle(r, http.MethodGet, project+"/settings", a.getProjectSettings)
+	handle(r, http.MethodPut, project+"/settings", a.updateProjectSettings)
 	handle(r, http.MethodGet, project+"/calls", a.listCalls)
 	handle(r, http.MethodGet, project+"/calls/{callId}", a.getCall)
 	handle(r, http.MethodGet, project+"/call-stats", a.getCallStats)

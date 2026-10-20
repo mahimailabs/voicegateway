@@ -548,6 +548,21 @@ func (q *Queries) DeleteWorkerEndpoint(ctx context.Context, arg DeleteWorkerEndp
 	return result.RowsAffected(), nil
 }
 
+const ensureProjectSettings = `-- name: EnsureProjectSettings :exec
+INSERT INTO project_settings(organisation_id, project_id) VALUES ($1, $2)
+ON CONFLICT (organisation_id, project_id) DO NOTHING
+`
+
+type EnsureProjectSettingsParams struct {
+	OrganisationID string
+	ProjectID      string
+}
+
+func (q *Queries) EnsureProjectSettings(ctx context.Context, arg EnsureProjectSettingsParams) error {
+	_, err := q.db.Exec(ctx, ensureProjectSettings, arg.OrganisationID, arg.ProjectID)
+	return err
+}
+
 const failedSignIns = `-- name: FailedSignIns :one
 SELECT count(*) AS failures, min(at)::timestamptz AS oldest
 FROM sign_in_attempts WHERE kind = $1 AND key = $2 AND at >= $3
@@ -1155,6 +1170,22 @@ func (q *Queries) LockOrganisation(ctx context.Context, id string) (string, erro
 	return id_2, err
 }
 
+const lockSettingsProject = `-- name: LockSettingsProject :one
+SELECT id FROM projects WHERE organisation_id= $1 AND id= $2 FOR KEY SHARE
+`
+
+type LockSettingsProjectParams struct {
+	OrganisationID string
+	ProjectID      string
+}
+
+func (q *Queries) LockSettingsProject(ctx context.Context, arg LockSettingsProjectParams) (string, error) {
+	row := q.db.QueryRow(ctx, lockSettingsProject, arg.OrganisationID, arg.ProjectID)
+	var id string
+	err := row.Scan(&id)
+	return id, err
+}
+
 const lockSignInKey = `-- name: LockSignInKey :exec
 SELECT pg_advisory_xact_lock(hashtext(concat($1::text, '/', $2::text)))
 `
@@ -1716,6 +1747,39 @@ func (q *Queries) PutSummary(ctx context.Context, arg PutSummaryParams) error {
 	return err
 }
 
+const readProjectSettings = `-- name: ReadProjectSettings :one
+SELECT COALESCE(s.answer_ms, 1500::double precision) AS answer_ms,
+       COALESCE(s.join_ms, 2000::double precision) AS join_ms,
+       COALESCE(s.tts_start_ms, 1000::double precision) AS tts_start_ms,
+       COALESCE(s.revision, 0::bigint) AS revision
+FROM projects p LEFT JOIN project_settings s ON s.organisation_id = p.organisation_id AND s.project_id = p.id
+WHERE p.organisation_id= $1 AND p.id= $2
+`
+
+type ReadProjectSettingsParams struct {
+	OrganisationID string
+	ProjectID      string
+}
+
+type ReadProjectSettingsRow struct {
+	AnswerMs   float64
+	JoinMs     float64
+	TtsStartMs float64
+	Revision   int64
+}
+
+func (q *Queries) ReadProjectSettings(ctx context.Context, arg ReadProjectSettingsParams) (ReadProjectSettingsRow, error) {
+	row := q.db.QueryRow(ctx, readProjectSettings, arg.OrganisationID, arg.ProjectID)
+	var i ReadProjectSettingsRow
+	err := row.Scan(
+		&i.AnswerMs,
+		&i.JoinMs,
+		&i.TtsStartMs,
+		&i.Revision,
+	)
+	return i, err
+}
+
 const recordSignInAttempt = `-- name: RecordSignInAttempt :one
 INSERT INTO sign_in_attempts (kind, key) VALUES ($1, $2) RETURNING id
 `
@@ -2126,6 +2190,47 @@ func (q *Queries) UpdatePasswordHash(ctx context.Context, arg UpdatePasswordHash
 		return 0, err
 	}
 	return result.RowsAffected(), nil
+}
+
+const updateProjectSettings = `-- name: UpdateProjectSettings :one
+UPDATE project_settings SET answer_ms= $1, join_ms= $2, tts_start_ms= $3, revision = revision + 1
+WHERE organisation_id= $4 AND project_id= $5 AND revision= $6
+RETURNING answer_ms, join_ms, tts_start_ms, revision
+`
+
+type UpdateProjectSettingsParams struct {
+	AnswerMs         float64
+	JoinMs           float64
+	TtsStartMs       float64
+	OrganisationID   string
+	ProjectID        string
+	ExpectedRevision int64
+}
+
+type UpdateProjectSettingsRow struct {
+	AnswerMs   float64
+	JoinMs     float64
+	TtsStartMs float64
+	Revision   int64
+}
+
+func (q *Queries) UpdateProjectSettings(ctx context.Context, arg UpdateProjectSettingsParams) (UpdateProjectSettingsRow, error) {
+	row := q.db.QueryRow(ctx, updateProjectSettings,
+		arg.AnswerMs,
+		arg.JoinMs,
+		arg.TtsStartMs,
+		arg.OrganisationID,
+		arg.ProjectID,
+		arg.ExpectedRevision,
+	)
+	var i UpdateProjectSettingsRow
+	err := row.Scan(
+		&i.AnswerMs,
+		&i.JoinMs,
+		&i.TtsStartMs,
+		&i.Revision,
+	)
+	return i, err
 }
 
 const upsertCallByJobID = `-- name: UpsertCallByJobID :one

@@ -98,7 +98,7 @@ func (f *fixture) membersAPI(s *auth.Service) http.Handler {
 // membersAPIWith is membersAPI with v proving each new project's LiveKit secret.
 func (f *fixture) membersAPIWith(s *auth.Service, v api.LiveKitVerifier) http.Handler {
 	return (&api.API{
-		Projects: f.pg, NewProjects: f.sealed(), VerifyLiveKit: v, Calls: f.pg, Traces: emptyTraces{}, Layers: quietLayers{}, Endpoints: f.pg, Accounts: f.pg, Keys: f.pg, NewKey: auth.NewKey,
+		Projects: f.pg, Settings: f.pg, NewProjects: f.sealed(), VerifyLiveKit: v, Calls: f.pg, Traces: emptyTraces{}, Layers: quietLayers{}, Endpoints: f.pg, Accounts: f.pg, Keys: f.pg, NewKey: auth.NewKey,
 		Log: slog.New(slog.NewJSONHandler(f.logs, nil)), Now: time.Now, Gate: s.Gate,
 	}).Routes()
 }
@@ -217,6 +217,7 @@ func TestRolesGateEveryRoute(t *testing.T) {
 	reads := []string{
 		"/api/v1/workspaces",
 		"/api/v1/org/org-a/project/p/calls",
+		"/api/v1/org/org-a/project/p/settings",
 		"/api/v1/org/org-a/project/p/calls/" + callID,
 		"/api/v1/org/org-a/project/p/media-server",
 		"/api/v1/org/org-a/project/p/sip",
@@ -541,4 +542,37 @@ func (f *fixture) legacySession(email string) *http.Cookie {
 		f.t.Fatal("no legacy session cookie")
 	}
 	return cookie
+}
+
+// Settings writes use actual signed-in sessions and the same role gate as other
+// project actions. A member can save; viewer and unrelated organisation cannot.
+func TestProjectSettingsSessionWrites(t *testing.T) {
+	f := newFixture(t)
+	f.addProjectCall("org-a")
+	f.addUser("member@example.com", "org-a", "member")
+	f.addUser("viewer@example.com", "org-a", "viewer")
+	f.addUser("outside@example.com", "org-b", "admin")
+	s := f.service()
+	web := f.membersAPI(s)
+	path := "/api/v1/org/org-a/project/p/settings"
+	body := `{"thresholds":{"answerMs":2500,"joinMs":3000,"ttsStartMs":1200},"revision":0}`
+	for _, tc := range []struct {
+		email string
+		want  int
+	}{
+		{"viewer@example.com", http.StatusForbidden},
+		{"outside@example.com", http.StatusForbidden},
+		{"member@example.com", http.StatusOK},
+		{"member@example.com", http.StatusConflict},
+	} {
+		cookie := f.signedIn(s, tc.email)
+		status, response := f.send(web, call{method: http.MethodPut, path: path, body: body, cookie: cookie})
+		if status != tc.want {
+			t.Fatalf("settings as %s: %d %s, want %d", tc.email, status, response, tc.want)
+		}
+	}
+	settings, err := f.pg.ProjectSettings(context.Background(), "org-a", "p")
+	if err != nil || settings.Revision != 1 || settings.Thresholds.AnswerMs != 2500 {
+		t.Fatalf("stored settings %+v %v", settings, err)
+	}
 }

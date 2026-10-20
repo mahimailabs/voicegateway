@@ -88,7 +88,7 @@ type channelCount struct {
 type answerTotals struct {
 	Turns           *int64    `json:"turns"`
 	OverBudget      *int64    `json:"overBudget"`
-	BudgetMs        int       `json:"budgetMs"`
+	BudgetMs        float64   `json:"budgetMs"`
 	P50Ms           *float64  `json:"p50Ms"`
 	ValuesMs        []float64 `json:"valuesMs"`
 	ValuesTruncated bool      `json:"valuesTruncated"`
@@ -135,9 +135,15 @@ func (a *API) listCalls(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	settings, ok := a.readSettings(w, r)
+	if !ok {
+		return
+	}
+	f.BudgetMs = settings.Thresholds.AnswerMs
+
 	// The snapshot is kept server-side under a short id, so the token the console carries in its
 	// URL stays small; it is bound to the scope and filters it was taken for.
-	filters := fingerprint(org, project, q, "")
+	filters := fingerprint(org, project, q, "", settings.Revision)
 	var (
 		snap   store.ListSnapshot
 		totals callTotals
@@ -165,7 +171,7 @@ func (a *API) listCalls(w http.ResponseWriter, r *http.Request) {
 	}
 	if cursorToken != "" {
 		var c cursor
-		if err := decode(cursorToken, &c); err != nil || c.Bound != fingerprint(org, project, q, token) {
+		if err := decode(cursorToken, &c); err != nil || c.Bound != fingerprint(org, project, q, token, settings.Revision) {
 			writeError(w, r, http.StatusBadRequest, codeInvalidRequest, "cursor was issued for other filters, sort, order or snapshot")
 			return
 		}
@@ -192,7 +198,7 @@ func (a *API) listCalls(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	bound := fingerprint(org, project, q, token)
+	bound := fingerprint(org, project, q, token, settings.Revision)
 
 	out := callPage{Items: make([]callSummary, 0, min(len(rows), limit)), Page: page{Snapshot: token}, Totals: totals}
 	for i, row := range rows {
@@ -213,7 +219,7 @@ func (a *API) listCalls(w http.ResponseWriter, r *http.Request) {
 // parseList reads the operation's query parameters into a filter. Any value outside its schema
 // is errBadRequest.
 func (a *API) parseList(org, project string, q url.Values) (store.CallFilter, int, error) {
-	f := store.CallFilter{OrganisationID: org, ProjectID: project, SortBy: "startedAt", Descending: true, BudgetMs: float64(a.budget())}
+	f := store.CallFilter{OrganisationID: org, ProjectID: project, SortBy: "startedAt", Descending: true}
 	bad := func(format string, args ...any) (store.CallFilter, int, error) {
 		return store.CallFilter{}, 0, fmt.Errorf("%w: "+format, append([]any{errBadRequest}, args...)...)
 	}
@@ -313,16 +319,6 @@ func (a *API) parseList(org, project string, q url.Values) (store.CallFilter, in
 	return f, limit, nil
 }
 
-func (a *API) budget() int {
-	if a.AnswerBudgetMs > 0 {
-		return a.AnswerBudgetMs
-	}
-	return defaultAnswerBudgetMs
-}
-
-// defaultAnswerBudgetMs is the console's own default answer budget (dashboard/src/lib/thresholds.ts).
-const defaultAnswerBudgetMs = 1500
-
 func enums(q url.Values, name string, allowed []string) ([]string, error) {
 	vs := q[name]
 	for _, v := range vs {
@@ -347,7 +343,7 @@ func optionalBool(q url.Values, name string) (*bool, error) {
 
 // fingerprint binds a snapshot to the scope and filters it was taken for, and a cursor to those
 // plus its snapshot id: every query parameter except the paging ones, in a canonical order.
-func fingerprint(org, project string, q url.Values, snapshotID string) string {
+func fingerprint(org, project string, q url.Values, snapshotID string, settingsRevision int64) string {
 	keys := make([]string, 0, len(q))
 	for k := range q {
 		if k != "cursor" && k != "snapshot" && k != "limit" {
@@ -362,7 +358,7 @@ func fingerprint(org, project string, q url.Values, snapshotID string) string {
 		slices.Sort(vs)
 		_, _ = fmt.Fprintf(h, "%s=%s\n", k, strings.Join(vs, "\x00"))
 	}
-	_, _ = fmt.Fprintf(h, "snapshot=%s\n", snapshotID)
+	_, _ = fmt.Fprintf(h, "snapshot=%s\nsettingsRevision=%d\n", snapshotID, settingsRevision)
 	return hex.EncodeToString(h.Sum(nil))[:24]
 }
 
@@ -419,7 +415,7 @@ func toTotals(t *store.CallTotals, budget float64) callTotals {
 		// same rule getCallStats follows.
 		ByChannel: channelCount{Phone: n(t.Phone), Web: n(t.Web), Unknown: n(t.Unknown)},
 		Answers: answerTotals{
-			Turns: n(t.AnswerTurns), OverBudget: n(t.OverBudget), BudgetMs: int(budget), P50Ms: t.P50Ms,
+			Turns: n(t.AnswerTurns), OverBudget: n(t.OverBudget), BudgetMs: budget, P50Ms: t.P50Ms,
 			ValuesMs: t.ValuesMs, ValuesTruncated: t.ValuesTruncated,
 		},
 	}

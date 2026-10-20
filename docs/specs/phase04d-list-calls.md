@@ -55,7 +55,7 @@ The console's Calls page reads real stored calls through web's API: `listCalls` 
 - **`CallTotals`,** over every call matching the range and filters as of the snapshot:
   - `callCount` and `byChannel`.
   - `answers`: the turns with a measured answer, how many exceed `budgetMs`, their median, and `valuesMs` (at most 1000 values, oldest calls dropped first, with `valuesTruncated`).
-  - `budgetMs` is 1500, the console's own default (`dashboard/src/lib/thresholds.ts`), unless `VOICEGATEWAY_ANSWER_BUDGET_MS` sets it. The variable is interim, until thresholds are stored per project.
+  - `budgetMs` comes from persisted project thresholds (default 1500 ms). Operational settings replace the interim global environment variable. Snapshots bind the settings revision and must be refreshed after a threshold change.
   - The `issues` counts and `recorded` are null.
 
 ## Out of Scope

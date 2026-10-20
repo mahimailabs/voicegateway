@@ -539,3 +539,9 @@ suite, all 202 dashboard tests, lint/TypeScript, API checks and 72 browser/acces
 See live-event-feed.md for numbered acceptance evidence and the initial UI-only timeout qualification.
 Resource CPU/memory instrumentation, settings persistence, issue workflows and webhook delivery
 remain open; this change does not mark the broader live-operations outcome complete.
+
+### 2026-10-20: operational project thresholds (verification in progress)
+
+Project thresholds now persist in Postgres with revision-checked writes, Member write access and Viewer/project-key reads. Call lists and statistics read the saved answer budget, and old snapshots are rejected after a settings revision changes. The approved settings form uses API saves, explicit failure/conflict states and revision-safe Undo. Reads refresh across clients without discarding unsaved drafts; permission loss clears retained settings. Storage and raw trace retention are read-only deployment facts, while unavailable policies remain null.
+
+Native persistence and HTTP regressions, fractional-budget effects, frontend failure/permission tests and the original 72 browser checks have passed. After incorporating merged resource telemetry (#431), the full Go race suite and expanded Save/Undo browser checks are running. This is not a completed roadmap task: final checks and review are pending; channels belong to the following alert-delivery work, and disabled embed controls remain outside this slice.
