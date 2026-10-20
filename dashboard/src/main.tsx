@@ -1,17 +1,18 @@
 import { StrictMode } from "react"
 import { createRoot } from "react-dom/client"
 import { RouterProvider } from "@tanstack/react-router"
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
+import { QueryClientProvider } from "@tanstack/react-query"
 import { IconContext } from "@phosphor-icons/react"
 import { ThemeProvider } from "@/components/theme"
 import { TooltipProvider } from "@/components/ui/tooltip"
-import { fetchWorkspaces, shouldRetry } from "@/lib/api"
+import { fetchWorkspaces } from "@/lib/api"
+import { createQueryClient } from "@/lib/query-client"
 import { setWorkspaces } from "@/lib/workspaces"
 import { fetchSession, setCurrentSession, setMockApi } from "@/lib/session"
 import "./index.css"
 
 // Captured data never changes while the page is open; refetching on focus would only flicker.
-const queryClient = new QueryClient({ defaultOptions: { queries: { staleTime: Infinity, refetchOnWindowFocus: false, retry: shouldRetry } } })
+const queryClient = createQueryClient()
 
 // The mock API answers in development until web serves the console's reads: VITE_MOCK_API=off turns
 // it off, so every page shows what it shows when the API does not answer. A production build runs it

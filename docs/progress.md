@@ -514,3 +514,8 @@ lint, TypeScript and API contract/source/type checks passed. All 72 browser/acce
 passed on the full rerun after two initial call-detail startup timeouts. The final native SFU/worker
 success, disappearance and failure tests passed with the no-store assertions. Pre-commit hooks
 passed. No hosted-onboarding or SES approval completion is claimed.
+
+PR #429 review follow-up: a shared QueryCache error handler clears denied SFU, worker and Cloud
+agent data for every observer, including the overview and command palette. It retains the error
+and refresh lifecycle so restored permission recovers without a reload. Regression tests cover
+401/403/404 across all three sources, another project's cache isolation, and restored access.
