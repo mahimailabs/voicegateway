@@ -209,4 +209,6 @@ type User struct {
 	PasswordHash    string
 	CreatedAt       pgtype.Timestamptz
 	PasswordVersion int32
+	DisplayName     pgtype.Text
+	ProfileRevision int64
 }

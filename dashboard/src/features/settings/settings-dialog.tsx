@@ -28,7 +28,7 @@ import { DataTable, type Columns, type Field as FilterField } from "@/components
 import { DataGridColumnHeader } from "@/components/reui/data-grid/data-grid-column-header"
 import { mod } from "@/components/command-palette"
 import { CopyCommand } from "@/components/copy-command"
-import { refreshSession, roleIn, useSession } from "@/lib/session"
+import { type AccountProfile, ProfileError, readAccountProfile, saveAccountProfile, refreshSession, roleIn, useSession } from "@/lib/session"
 import { UsageAllowance } from "@/components/usage-allowance"
 import { errorText } from "@/components/page-state"
 
@@ -130,6 +130,42 @@ function ServerUrl() {
 
 // --- Pages ---
 
+function AccountName() {
+  const session = useSession()
+  const client = useQueryClient()
+  const key = ["account-profile", session?.email]
+  const read = useQuery({ queryKey: key, queryFn: ({ signal }) => readAccountProfile(signal), enabled: !!session, staleTime: 15_000, retry: false })
+  const [edit, setEdit] = useState<{ name: string; revision: number } | null>(null)
+  const name = edit?.name ?? read.data?.name ?? ""
+  const valid = Array.from(name.trim()).length <= 100 && !/\p{Cc}/u.test(name)
+  const save = useMutation({
+    mutationFn: () => saveAccountProfile(name, edit?.revision ?? read.data!.revision),
+    onSuccess: async (profile) => {
+      await client.cancelQueries({ queryKey: key, exact: true })
+      client.setQueryData<AccountProfile>(key, (prior) => prior && prior.revision > profile.revision ? prior : profile)
+      setEdit(null)
+      toast("Profile saved")
+    },
+    onError: async (error) => {
+      if (error instanceof ProfileError && error.status === 401) {
+        await client.cancelQueries({ queryKey: key, exact: true })
+        client.getQueryCache().find({ queryKey: key, exact: true })?.setState({ data: undefined, error, status: "error" })
+      }
+      toast.error(errorText(error))
+    },
+  })
+  if (!session) return <Row title="Name" value={<NotSet />} />
+  if (!read.data || (read.isError && read.error instanceof ProfileError && read.error.status === 401)) return <Row title="Name" value={read.isError ? <Button variant="outline" size="sm" onClick={() => void read.refetch()}>Retry profile</Button> : <Muted>Loading</Muted>} />
+  return <Row title="Name" value={<div className="space-y-2">
+    <div className="flex items-center gap-2">
+      <InputGroup><InputGroupInput aria-label="Name" autoComplete="name" value={name} disabled={save.isPending} onChange={(e) => setEdit({ name: e.target.value, revision: edit?.revision ?? read.data!.revision })} /></InputGroup>
+      <Button size="sm" disabled={save.isPending || !valid || name.trim() === (read.data.name ?? "")} onClick={() => save.mutate()}>{save.isPending ? "Saving…" : "Save"}</Button>
+    </div>
+    {!valid && <p className="text-xs text-destructive">Use at most 100 characters without control characters.</p>}
+    {save.isError && <p role="alert" className="text-xs text-destructive">{errorText(save.error)}{save.error instanceof ProfileError && save.error.status === 409 && <Button variant="link" size="sm" onClick={() => { setEdit(null); void client.invalidateQueries({ queryKey: key, exact: true }) }}>Reload profile</Button>}</p>}
+  </div>} />
+}
+
 export function Account() {
   const { theme, set } = useTheme()
   const session = useSession()
@@ -139,7 +175,7 @@ export function Account() {
     <>
       <Header title="Account" description="You, and how the console looks for you." />
       <Group label="Profile">
-        <Row title="Name" value={<NotSet />} />
+        <AccountName key={session?.email} />
         <Row title="Email" value={email ?? <NotSet />} />
         <Row title="Role" description={`Your role across ${org().name}.`} value={role ?? <Muted>Not a member</Muted>} last />
       </Group>

@@ -3,7 +3,9 @@
 
 import { useSyncExternalStore } from "react"
 
-export type Session = { email: string; organisations: { id: string; role: string }[] }
+export type AccountProfile = { name: string | null; revision: number }
+
+export type Session = { email: string; profile?: AccountProfile; organisations: { id: string; role: string }[] }
 
 export type SessionRead = { signedIn: true; session: Session } | { signedIn: false; needsAdmin: boolean }
 
@@ -104,4 +106,26 @@ export async function signIn(email: string, password: string): Promise<SignInRes
 /** Signs out, ending the session on the server. */
 export async function signOut(): Promise<void> {
   await fetch("/auth/sign-out", { method: "POST", credentials: "same-origin" })
+}
+
+
+export class ProfileError extends Error {
+  readonly status: number
+  constructor(status: number, message: string) { super(message); this.status = status }
+}
+
+async function profileResponse(response: Response): Promise<AccountProfile> {
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({})) as { message?: string }
+    throw new ProfileError(response.status, body.message ?? "Profile request failed.")
+  }
+  return response.json() as Promise<AccountProfile>
+}
+
+export async function readAccountProfile(signal?: AbortSignal): Promise<AccountProfile> {
+  return profileResponse(await fetch("/auth/profile", { credentials: "same-origin", signal }))
+}
+
+export async function saveAccountProfile(name: string, revision: number): Promise<AccountProfile> {
+  return profileResponse(await fetch("/auth/profile", { method: "PUT", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name, revision }) }))
 }

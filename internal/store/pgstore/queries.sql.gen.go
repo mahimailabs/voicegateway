@@ -1747,6 +1747,22 @@ func (q *Queries) PutSummary(ctx context.Context, arg PutSummaryParams) error {
 	return err
 }
 
+const readAccountProfile = `-- name: ReadAccountProfile :one
+SELECT display_name, profile_revision FROM users WHERE id = $1
+`
+
+type ReadAccountProfileRow struct {
+	DisplayName     pgtype.Text
+	ProfileRevision int64
+}
+
+func (q *Queries) ReadAccountProfile(ctx context.Context, userID pgtype.UUID) (ReadAccountProfileRow, error) {
+	row := q.db.QueryRow(ctx, readAccountProfile, userID)
+	var i ReadAccountProfileRow
+	err := row.Scan(&i.DisplayName, &i.ProfileRevision)
+	return i, err
+}
+
 const readProjectSettings = `-- name: ReadProjectSettings :one
 SELECT COALESCE(s.answer_ms, 1500::double precision) AS answer_ms,
        COALESCE(s.join_ms, 2000::double precision) AS join_ms,
@@ -2169,6 +2185,30 @@ func (q *Queries) TransactionTime(ctx context.Context) (pgtype.Timestamptz, erro
 	var at pgtype.Timestamptz
 	err := row.Scan(&at)
 	return at, err
+}
+
+const updateAccountProfile = `-- name: UpdateAccountProfile :one
+UPDATE users SET display_name = $1, profile_revision = profile_revision + 1
+WHERE id = $2 AND profile_revision = $3
+RETURNING display_name, profile_revision
+`
+
+type UpdateAccountProfileParams struct {
+	DisplayName      pgtype.Text
+	UserID           pgtype.UUID
+	ExpectedRevision int64
+}
+
+type UpdateAccountProfileRow struct {
+	DisplayName     pgtype.Text
+	ProfileRevision int64
+}
+
+func (q *Queries) UpdateAccountProfile(ctx context.Context, arg UpdateAccountProfileParams) (UpdateAccountProfileRow, error) {
+	row := q.db.QueryRow(ctx, updateAccountProfile, arg.DisplayName, arg.UserID, arg.ExpectedRevision)
+	var i UpdateAccountProfileRow
+	err := row.Scan(&i.DisplayName, &i.ProfileRevision)
+	return i, err
 }
 
 const updatePasswordHash = `-- name: UpdatePasswordHash :execrows
