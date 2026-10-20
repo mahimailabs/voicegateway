@@ -542,3 +542,18 @@ SELECT
     count(*) FILTER (WHERE end_state IN ('observed', 'inferred') AND started_in_period
         AND (effective_end IS NULL OR effective_end < started_at)) AS unmeasured_calls
 FROM classified;
+
+-- name: CreateResourceEndpoint :one
+INSERT INTO project_resource_endpoints
+(organisation_id, project_id, id, host, url_sealed, kind, target, container_id)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+RETURNING *;
+
+-- name: ResourceEndpoints :many
+SELECT * FROM project_resource_endpoints
+WHERE organisation_id = $1 AND project_id = $2
+ORDER BY created_at, id;
+
+-- name: DeleteResourceEndpoint :execrows
+DELETE FROM project_resource_endpoints
+WHERE organisation_id = $1 AND project_id = $2 AND id = $3;

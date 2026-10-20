@@ -16,11 +16,13 @@ import (
 
 // API serves the console's /api/v1 reads and its member writes.
 type API struct {
-	Live     LiveChanges
-	Projects Projects
-	Calls    Calls
-	Traces   Traces
-	Layers   Layers
+	ResourceEndpoints ResourceEndpoints
+	ResourceSamples   ResourceSamples
+	Live              LiveChanges
+	Projects          Projects
+	Calls             Calls
+	Traces            Traces
+	Layers            Layers
 	// Endpoints lists each project's worker metrics endpoints, from Postgres.
 	Endpoints WorkerEndpoints
 	Accounts  Accounts
@@ -86,6 +88,7 @@ func (a *API) Routes() http.Handler {
 	handle(r, http.MethodGet, project+"/ingress", a.ingress)
 	handle(r, http.MethodGet, project+"/agents", a.cloudAgents)
 	handle(r, http.MethodGet, project+"/workers", a.workers)
+	handle(r, http.MethodGet, project+"/resources", a.resources)
 	handle(r, http.MethodGet, project+"/live-events", a.liveEvents)
 	handle(r, http.MethodGet, project+"/keys", a.listProjectKeys)
 	handle(r, http.MethodPost, project+"/keys", a.createProjectKey)

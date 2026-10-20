@@ -2,7 +2,7 @@
 import { act, cleanup, renderHook } from "@testing-library/react"
 import { QueryClient, QueryClientProvider, useQuery, onlineManager, focusManager } from "@tanstack/react-query"
 import { afterEach, expect, test, vi } from "vitest"
-import { mediaServerQuery, workersQuery, cloudAgentsQuery, accessDenied, ApiError } from "../src/lib/api.ts"
+import { mediaServerQuery, workersQuery, cloudAgentsQuery, resourcesQuery, accessDenied, ApiError } from "../src/lib/api.ts"
 import { createQueryClient } from "../src/lib/query-client.ts"
 import { scopeRewrite } from "../src/lib/url-state.ts"
 import { SourceStatus } from "../src/components/source-status.tsx"
@@ -12,7 +12,7 @@ const open = (project: string) => scopeRewrite.input({ url: new URL(`http://loca
 const answer = (value: unknown) => new Response(JSON.stringify(value), { headers: { "Content-Type": "application/json" } })
 afterEach(() => { cleanup(); onlineManager.setOnline(true); focusManager.setFocused(undefined); vi.useRealTimers(); vi.unstubAllGlobals() })
 
-test.each([mediaServerQuery, workersQuery, cloudAgentsQuery])("queries bind request scope when constructed", async (query) => {
+test.each([mediaServerQuery, workersQuery, cloudAgentsQuery, resourcesQuery])("queries bind request scope when constructed", async (query) => {
   open("first")
   const options = query()
   open("second")
@@ -87,7 +87,7 @@ test.each([401, 403, 404])("denial %s clears telemetry for every observer and re
   const other = ["media-server", { org: "test", project: "other" }]
   client.setQueryData(other, { rooms: ["other-project"] })
   const wrapper = ({ children }: { children: React.ReactNode }) => <QueryClientProvider client={client}>{children}</QueryClientProvider>
-  for (const source of [mediaServerQuery, workersQuery, cloudAgentsQuery]) {
+  for (const source of [mediaServerQuery, workersQuery, cloudAgentsQuery, resourcesQuery]) {
     let denied = false
     vi.stubGlobal("fetch", async () => denied
       ? new Response(JSON.stringify({ code: "denied", message: "Access denied" }), { status, headers: { "Content-Type": "application/json" } })

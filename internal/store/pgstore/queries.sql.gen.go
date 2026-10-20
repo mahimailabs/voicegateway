@@ -374,6 +374,50 @@ func (q *Queries) CreateProjectKey(ctx context.Context, arg CreateProjectKeyPara
 	return created_at, err
 }
 
+const createResourceEndpoint = `-- name: CreateResourceEndpoint :one
+INSERT INTO project_resource_endpoints
+(organisation_id, project_id, id, host, url_sealed, kind, target, container_id)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+RETURNING organisation_id, project_id, id, host, url_sealed, kind, target, container_id, created_at
+`
+
+type CreateResourceEndpointParams struct {
+	OrganisationID string
+	ProjectID      string
+	ID             string
+	Host           string
+	UrlSealed      []byte
+	Kind           string
+	Target         string
+	ContainerID    string
+}
+
+func (q *Queries) CreateResourceEndpoint(ctx context.Context, arg CreateResourceEndpointParams) (ProjectResourceEndpoint, error) {
+	row := q.db.QueryRow(ctx, createResourceEndpoint,
+		arg.OrganisationID,
+		arg.ProjectID,
+		arg.ID,
+		arg.Host,
+		arg.UrlSealed,
+		arg.Kind,
+		arg.Target,
+		arg.ContainerID,
+	)
+	var i ProjectResourceEndpoint
+	err := row.Scan(
+		&i.OrganisationID,
+		&i.ProjectID,
+		&i.ID,
+		&i.Host,
+		&i.UrlSealed,
+		&i.Kind,
+		&i.Target,
+		&i.ContainerID,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const createUser = `-- name: CreateUser :one
 INSERT INTO users (email, password_hash) VALUES ($1, $2) RETURNING id
 `
@@ -464,6 +508,25 @@ WHERE id = $1 AND summary_stale_at IS NOT NULL
 func (q *Queries) DeferStale(ctx context.Context, id pgtype.UUID) error {
 	_, err := q.db.Exec(ctx, deferStale, id)
 	return err
+}
+
+const deleteResourceEndpoint = `-- name: DeleteResourceEndpoint :execrows
+DELETE FROM project_resource_endpoints
+WHERE organisation_id = $1 AND project_id = $2 AND id = $3
+`
+
+type DeleteResourceEndpointParams struct {
+	OrganisationID string
+	ProjectID      string
+	ID             string
+}
+
+func (q *Queries) DeleteResourceEndpoint(ctx context.Context, arg DeleteResourceEndpointParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteResourceEndpoint, arg.OrganisationID, arg.ProjectID, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const deleteWorkerEndpoint = `-- name: DeleteWorkerEndpoint :execrows
@@ -1684,6 +1747,47 @@ func (q *Queries) RemoveMembership(ctx context.Context, arg RemoveMembershipPara
 		return 0, err
 	}
 	return result.RowsAffected(), nil
+}
+
+const resourceEndpoints = `-- name: ResourceEndpoints :many
+SELECT organisation_id, project_id, id, host, url_sealed, kind, target, container_id, created_at FROM project_resource_endpoints
+WHERE organisation_id = $1 AND project_id = $2
+ORDER BY created_at, id
+`
+
+type ResourceEndpointsParams struct {
+	OrganisationID string
+	ProjectID      string
+}
+
+func (q *Queries) ResourceEndpoints(ctx context.Context, arg ResourceEndpointsParams) ([]ProjectResourceEndpoint, error) {
+	rows, err := q.db.Query(ctx, resourceEndpoints, arg.OrganisationID, arg.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ProjectResourceEndpoint
+	for rows.Next() {
+		var i ProjectResourceEndpoint
+		if err := rows.Scan(
+			&i.OrganisationID,
+			&i.ProjectID,
+			&i.ID,
+			&i.Host,
+			&i.UrlSealed,
+			&i.Kind,
+			&i.Target,
+			&i.ContainerID,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const revokeInvitation = `-- name: RevokeInvitation :execrows

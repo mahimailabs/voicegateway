@@ -80,3 +80,14 @@ Go's net/http ResponseController for bounded SSE writes, the pinned go-redis v9.
 ReceiveMessage / Publish methods for Redis pub/sub (decision 0007), and hey-api/openapi-ts 0.99.0's
 generated SSE client in the browser. Redis hints are not durable; snapshot refetch on reconnect
 and existing polling recover missed hints. Source metrics retain their original provenance above.
+
+## Container resource collection (2026-10-20)
+
+cAdvisor v0.60.6, lib/metrics/prometheus.go, supplies container CPU counters, memory working set,
+quota/period, memory limit and start identity. CPU is either a total or unique per-CPU series;
+never add both. Resource metrics carry the underlying stats timestamp. container_last_seen uses
+exporter time, so it cannot establish measurement freshness. specMemoryValue exports unlimited
+memory as zero; the API preserves the allocation as null. The pinned image and setup are recorded
+in docs/container-resources.md. LiveKit Agents 1.8.7 telemetry/metrics.py and http_server.py do not
+provide equivalent process-tree CPU and memory in the native multiprocess endpoint. Its worker
+load remains a separate metric. Prometheus common v0.70.1 expfmt parses the exporter text.

@@ -121,7 +121,7 @@ func projectCommand() *cobra.Command {
 	f.BoolVar(&in.SkipVerify, "skip-verify", false, "store the project without first checking its key and secret against LiveKit, for a server not reachable yet")
 
 	cmd := &cobra.Command{Use: "project", Short: "Manage LiveKit projects"}
-	cmd.AddCommand(add, workersCommand())
+	cmd.AddCommand(add, workersCommand(), resourcesCommand())
 	return cmd
 }
 
@@ -205,6 +205,90 @@ func workersCommand() *cobra.Command {
 	f := cmd.PersistentFlags()
 	f.StringVar(&in.ProjectID, "project", "", "project id")
 	f.StringVar(&in.OrganisationID, "org", "default", "organisation id")
+	cmd.AddCommand(add, remove, list)
+	return cmd
+}
+
+func resourcesCommand() *cobra.Command {
+	var in app.WorkerEndpointCommand
+	var kind, target, containerID string
+	load := func() (config.Config, error) {
+		c, err := config.Load(os.Getenv)
+		if err != nil {
+			return c, fmt.Errorf("configuration:\n%w", err)
+		}
+		return c, nil
+	}
+	add := &cobra.Command{
+		Use:   "add [url]",
+		Short: "List a resource's metrics URL (or from VOICEGATEWAY_RESOURCE_METRICS_URL)",
+		Args:  cobra.MaximumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			c, err := load()
+			if err != nil {
+				return err
+			}
+			raw := os.Getenv("VOICEGATEWAY_RESOURCE_METRICS_URL")
+			if len(args) == 1 {
+				raw = args[0]
+			}
+			e, err := app.AddResourceEndpoint(cmd.Context(), c, in, raw, kind, target, containerID)
+			if err != nil {
+				return fmt.Errorf("add resource endpoint: %w", err)
+			}
+			_, err = fmt.Fprintf(cmd.OutOrStdout(), "added resource endpoint %s (%s) to project %s/%s\n", e.ID, e.Host, e.OrganisationID, e.ProjectID)
+			return err
+		},
+	}
+	remove := &cobra.Command{
+		Use:   "remove <id>",
+		Short: "Stop reading a resource metrics endpoint",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			c, err := load()
+			if err != nil {
+				return err
+			}
+			if err := app.RemoveResourceEndpoint(cmd.Context(), c, in, args[0]); err != nil {
+				return fmt.Errorf("remove resource endpoint: %w", err)
+			}
+			_, err = fmt.Fprintf(cmd.OutOrStdout(), "removed resource endpoint %s\n", args[0])
+			return err
+		},
+	}
+	list := &cobra.Command{
+		Use:   "list",
+		Short: "List a project's resource metrics endpoints",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			c, err := load()
+			if err != nil {
+				return err
+			}
+			endpoints, err := app.ListResourceEndpoints(cmd.Context(), c, in)
+			if err != nil {
+				return fmt.Errorf("list resource endpoints: %w", err)
+			}
+			out := cmd.OutOrStdout()
+			if len(endpoints) == 0 {
+				_, err = fmt.Fprintln(out, "no resource endpoints listed")
+				return err
+			}
+			for _, e := range endpoints {
+				if _, err := fmt.Fprintf(out, "%s\t%s\t%s\t%s\t%s\tadded %s\n", e.ID, e.Kind, e.Target, e.ContainerID, e.Host, e.CreatedAt.UTC().Format(time.RFC3339)); err != nil {
+					return err
+				}
+			}
+			return nil
+		},
+	}
+	cmd := &cobra.Command{Use: "resources", Short: "Manage a project's SFU and worker resource metrics endpoints"}
+	f := cmd.PersistentFlags()
+	f.StringVar(&in.ProjectID, "project", "", "project id")
+	f.StringVar(&in.OrganisationID, "org", "default", "organisation id")
+	add.Flags().StringVar(&kind, "kind", "", "component kind: sfu or worker")
+	add.Flags().StringVar(&target, "target", "", "component identifier")
+	add.Flags().StringVar(&containerID, "container", "", "exact cAdvisor container id")
 	cmd.AddCommand(add, remove, list)
 	return cmd
 }

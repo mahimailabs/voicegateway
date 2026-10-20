@@ -7,7 +7,8 @@ import { TooltipProvider } from "../src/components/ui/tooltip.tsx"
 import { LivePage } from "../src/features/live/live-page.tsx"
 import { WorkerMetrics } from "../src/features/agents/worker-metrics.tsx"
 import { mediaServer } from "../src/mocks/livekit.ts"
-import type { Workers } from "../src/lib/api-types"
+import { ResourceMetrics } from "../src/components/resource-metrics.tsx"
+import type { Resources, Workers } from "../src/lib/api-types"
 
 vi.hoisted(() => {
   window.scrollTo = () => {}
@@ -77,4 +78,36 @@ test("worker values keep missing distinct from zero and show partial endpoint fa
   await client.invalidateQueries({ queryKey: ["workers"] })
   expect(await screen.findByText("Access revoked")).toBeTruthy()
   expect(screen.queryByText("idle-worker")).toBeNull()
+})
+
+
+test("container resources preserve zero, unknown and failed-source observations", async () => {
+  const t = new Date().toISOString()
+  const status = {lastReadAt:t,lastGoodReadAt:t,errorClass:null}
+  const data: Resources = {source:"test",resources:[
+    {id:"r1",kind:"worker",target:"measured-container",containerId:"/docker/a",host:"exporter",sourceStatus:status,samples:[{t,observedAt:t,cpuUsed:0,cpuCores:2,memoryBytes:1048576,memoryLimitBytes:null}]},
+    {id:"r2",kind:"worker",target:"unknown-container",containerId:"/docker/b",host:"exporter",sourceStatus:{...status,errorClass:"unreachable"},samples:[{t,observedAt:t,cpuUsed:null,cpuCores:null,memoryBytes:null,memoryLimitBytes:null}]},
+    {id:"r3",kind:"sfu",target:"separate-sfu",containerId:"/docker/c",host:"exporter",sourceStatus:status,samples:[]},
+  ]}
+  vi.stubGlobal("fetch", async () => answer(data))
+  const client = show(() => <ResourceMetrics kind="worker" />)
+  const measured = (await screen.findByText("measured-container")).closest("tr")!
+  expect(within(measured).getByText("0.00 cores")).toBeTruthy()
+  expect(within(measured).getByText("1.0 MiB")).toBeTruthy()
+  const unknown = screen.getByText("unknown-container").closest("tr")!
+  expect(within(unknown).getAllByText("Unknown")).toHaveLength(2)
+  expect(within(unknown).getByText("Last observed")).toBeTruthy()
+  expect(screen.queryByText("separate-sfu")).toBeNull()
+  data.resources[0].sourceStatus.errorClass = "unreachable"
+  await client.invalidateQueries({queryKey:["resources"]})
+  await waitFor(() => expect(within(measured).getByText("Last observed")).toBeTruthy())
+  expect(within(measured).getByText("1.0 MiB")).toBeTruthy()
+  // A newly reachable exporter must not make an old measurement current.
+  data.resources[0].sourceStatus.errorClass = null
+  data.resources[0].samples[0].observedAt = new Date(Date.now() - 60000).toISOString()
+  await client.invalidateQueries({ queryKey: ["resources"] })
+  await waitFor(() => expect(within(measured).getByText("Last observed")).toBeTruthy())
+  data.resources[0].samples[0].observedAt = new Date().toISOString()
+  await client.invalidateQueries({ queryKey: ["resources"] })
+  await waitFor(() => expect(within(measured).getByText("Current sample")).toBeTruthy())
 })

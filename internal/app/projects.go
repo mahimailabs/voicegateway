@@ -266,6 +266,44 @@ func ListWorkerEndpoints(ctx context.Context, c config.Config, in WorkerEndpoint
 	return s.WorkerEndpoints(ctx, org, in.ProjectID)
 }
 
+// AddResourceEndpoint lists a self-hosted container's Prometheus metrics URL for a project. The URL is
+// sealed under the configured key; only its scheme and host are stored in the clear.
+func AddResourceEndpoint(ctx context.Context, c config.Config, in WorkerEndpointCommand, rawURL, kind, target, containerID string) (store.ResourceEndpoint, error) {
+	if strings.TrimSpace(rawURL) == "" {
+		return store.ResourceEndpoint{}, errors.New("missing the resource metrics URL")
+	}
+	s, done, err := workerEndpoints(ctx, c, in)
+	if err != nil {
+		return store.ResourceEndpoint{}, err
+	}
+	defer done()
+	return s.AddResourceEndpoint(ctx, orgOrDefault(in.OrganisationID), in.ProjectID, rawURL, kind, target, containerID)
+}
+
+// RemoveResourceEndpoint drops one of a project's listed endpoints by id.
+func RemoveResourceEndpoint(ctx context.Context, c config.Config, in WorkerEndpointCommand, id string) error {
+	s, done, err := workerEndpoints(ctx, c, in)
+	if err != nil {
+		return err
+	}
+	defer done()
+	return s.RemoveResourceEndpoint(ctx, orgOrDefault(in.OrganisationID), in.ProjectID, strings.TrimSpace(id))
+}
+
+// ListResourceEndpoints lists a project's endpoints by id and host, never their URLs.
+func ListResourceEndpoints(ctx context.Context, c config.Config, in WorkerEndpointCommand) ([]store.ResourceEndpoint, error) {
+	s, done, err := workerEndpoints(ctx, c, in)
+	if err != nil {
+		return nil, err
+	}
+	defer done()
+	org := orgOrDefault(in.OrganisationID)
+	if _, err := s.Project(ctx, org, in.ProjectID); err != nil {
+		return nil, err
+	}
+	return s.ResourceEndpoints(ctx, org, in.ProjectID)
+}
+
 func orgOrDefault(org string) string {
 	if org == "" {
 		return "default"

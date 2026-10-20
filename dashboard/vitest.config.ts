@@ -6,5 +6,7 @@ export default defineConfig({
   test: {
     include: ["tests/**/*.test.ts", "tests/**/*.test.tsx"],
     environment: "node",
+    // Bound concurrent jsdom/module transforms while Docker-backed checks share the host.
+    maxWorkers: 4,
   },
 })
