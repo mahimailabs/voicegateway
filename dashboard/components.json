@@ -26,6 +26,7 @@
     "@magicui": "https://magicui.design/r/{name}",
     "@reui": "https://reui.io/r/{style}/{name}.json",
     "@ai-elements": "https://registry.ai-sdk.dev/{name}.json",
-    "@prompt-kit": "https://www.prompt-kit.com/c/{name}.json"
+    "@prompt-kit": "https://www.prompt-kit.com/c/{name}.json",
+    "@aceternity": "https://ui.aceternity.com/registry/{name}.json"
   }
 }

@@ -20,6 +20,8 @@ export type Call = {
         llmOutputTokens: number | null;
         ttsCharacters: number | null;
         sttSeconds: number | null;
+        llmCachedTokens?: number | null;
+        ttsSeconds?: number | null;
         note: string;
     } | null;
     recording?: {
@@ -92,6 +94,7 @@ export type Span = {
 };
 
 export type Turn = {
+    spanId?: string | null;
     userText: string | null;
     agentText: string | null;
     model: string | null;

@@ -1814,6 +1814,16 @@ components:
               x-null-reason: Session usage not reported; never sum missing values as zero.
               x-source: { kind: agent_upload, file: dashboard/src/mocks/capture-session.json, pointer: /call/usage/sttSeconds, detail: Normalised captured call data; consult fixture source note and upstream-source inventory for conversions }
               x-unit: seconds
+            llmCachedTokens:
+              type: [ integer, "null" ]
+              x-unit: tokens
+              x-null-reason: No cached-token usage or at least one request did not report it.
+              x-source: { kind: computed, file: internal/turn/turn.go, pointer: null, detail: Sum of llm_request gen_ai.usage.cache_read.input_tokens else lk.llm_metrics.prompt_cached_tokens. A subset of input tokens, not additional tokens. }
+            ttsSeconds:
+              type: [ number, "null" ]
+              x-unit: seconds
+              x-null-reason: No TTS audio duration or at least one request did not report it; native zero means unavailable.
+              x-source: { kind: computed, file: internal/turn/turn.go, pointer: null, detail: Sum of tts_request lk.tts_metrics.audio_duration; zero normalizes to unknown. }
             note:
               type: string
               x-source: { kind: computed, file: dashboard/src/mocks/capture-session.json, pointer: /call/usage/note, detail: Capture annotation describing the recorded source and its limits; not a LiveKit API response field. }
@@ -1947,6 +1957,10 @@ components:
       type: object
       additionalProperties: false
       properties:
+        spanId:
+          type: [ string, "null" ]
+          x-null-reason: No source agent_turn span is available.
+          x-source: { kind: computed, file: internal/turn/turn.go, pointer: null, detail: Source agent_turn SpanID; matches Call.spans without relying on array position. }
         userText:
           type: [ string, "null" ]
           x-null-reason: The capture or source did not report this value. Preserve null rather than a protobuf default or guessed zero.

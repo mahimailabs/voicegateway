@@ -1,3 +1,4 @@
+import { CapacityPreview } from "./capacity-preview"
 import { useState } from "react"
 import { Bar, CartesianGrid, ComposedChart, Line, LineChart, ReferenceLine, XAxis, YAxis } from "recharts"
 import { type ChartConfig, ChartContainer, ChartLegend, ChartLegendContent, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart"
@@ -95,7 +96,7 @@ function demoRun(name: string, max: number): Run {
   return { source: "", agent: name, ranAt: new Date().toISOString(), limitedBy: "agent", workerLog: "", steps }
 }
 
-export function CapacityDialog({ agent: a, ms, onOpenChange }: { agent: Agent | null; ms: MediaServerData; onOpenChange: (o: boolean) => void }) {
+function CapacitySetupDialog({ agent: a, ms, onOpenChange }: { agent: Agent | null; ms: MediaServerData; onOpenChange: (o: boolean) => void }) {
   const [max, setMax] = useState("32")
   const [ok, setOk] = useState(false)
   const [phase, setPhase] = useState<"setup" | "running" | "done">("setup")
@@ -344,4 +345,10 @@ export function CapacityResult({ run: r, bare }: { run: Run; bare?: boolean }) {
       {r.source && <p className="text-[11px] leading-relaxed text-muted-foreground">{`${r.source} The worker logged: ${r.workerLog}.`}</p>}
     </div>
   )
+}
+
+// Local UI preview is isolated from the real run and never submits a test.
+export function CapacityDialog(props: { agent: Agent | null; ms: MediaServerData; onOpenChange: (o: boolean) => void }) {
+  if (import.meta.env.DEV) return props.agent ? <CapacityPreview key={props.agent.key} name={props.agent.name ?? "Unnamed agent"} onClose={() => props.onOpenChange(false)} /> : <Dialog open={false} />
+  return <CapacitySetupDialog {...props} />
 }

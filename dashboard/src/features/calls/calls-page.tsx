@@ -23,6 +23,7 @@ import { PageState, errorText } from "@/components/page-state"
 import { Spinner } from "@/components/ui/spinner"
 import { CallMeta } from "@/features/call/call-meta"
 import { CallTags, TagChip, useCallTags } from "@/features/call/call-tags"
+import { CallTurnControls } from "@/features/call/call-turn-controls"
 import { CallView } from "@/features/call/call-view"
 import { fmtMs, pipelineLabel } from "@/features/call/call-model"
 import { BUDGET_MS } from "@/features/call/call-steps"
@@ -522,19 +523,20 @@ function CallDrawer({ callId, preview, archived, archive }: { callId: string; pr
   const isArchived = archived.includes(keyOf(call))
   return (
     <>
-      <SheetHeader className="border-b px-5 py-4 pr-14">
+      <SheetHeader className="shrink-0 border-b px-5 py-4 pr-14">
         <SheetTitle className="text-lg">{call.room}</SheetTitle>
         <SheetDescription asChild>
           <div>
             <CallMeta call={call} />
           </div>
         </SheetDescription>
-        <div className="flex items-center gap-2 pt-1.5">
+        <div className="flex flex-wrap items-center gap-2 pt-1.5">
           <CallTags room={call.room} />
           <Button size="sm" variant="ghost" className="ml-auto text-muted-foreground" onClick={() => archive([call], !isArchived)}>
             {isArchived ? <ArrowCounterClockwise /> : <Archive />}
             {isArchived ? "Unarchive" : "Archive"}
           </Button>
+          <CallTurnControls call={call} />
         </div>
       </SheetHeader>
       <div className="min-h-0 flex-1">

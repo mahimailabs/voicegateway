@@ -45,6 +45,7 @@ type span struct {
 }
 
 type callTurn struct {
+	SpanID               *string  `json:"spanId"`
 	UserText             *string  `json:"userText"`
 	AgentText            *string  `json:"agentText"`
 	Model                *string  `json:"model"`
@@ -66,6 +67,8 @@ type callTurn struct {
 }
 
 type usage struct {
+	LLMCachedTokens *int64   `json:"llmCachedTokens"`
+	TTSSeconds      *float64 `json:"ttsSeconds"`
 	LLMInputTokens  *int64   `json:"llmInputTokens"`
 	LLMOutputTokens *int64   `json:"llmOutputTokens"`
 	TTSCharacters   *float64 `json:"ttsCharacters"`
@@ -240,6 +243,7 @@ func toTurns(turns []turn.Turn) []callTurn {
 	out := make([]callTurn, 0, len(turns))
 	for _, t := range turns {
 		out = append(out, callTurn{
+			SpanID:               text(t.SpanID),
 			UserText:             t.UserText,
 			AgentText:            t.AgentText,
 			Model:                t.LLMModel,
@@ -261,10 +265,12 @@ func toTurns(turns []turn.Turn) []callTurn {
 // toUsage maps the call's usage; nil when nothing reported any of it. A total some requests did
 // not report is null, and the note says how many.
 func toUsage(u turn.CallUsage) *usage {
-	if u.InputTokens.Sum == nil && u.OutputTokens.Sum == nil && u.TTSCharacters.Sum == nil && u.STTAudioSeconds.Sum == nil {
+	if u.InputTokens.Sum == nil && u.OutputTokens.Sum == nil && u.TTSCharacters.Sum == nil && u.STTAudioSeconds.Sum == nil && u.CachedTokens.Sum == nil && u.TTSAudioSeconds.Sum == nil {
 		return nil
 	}
 	out := &usage{
+		LLMCachedTokens: complete(u.CachedTokens),
+		TTSSeconds:      complete(u.TTSAudioSeconds),
 		LLMInputTokens:  complete(u.InputTokens),
 		LLMOutputTokens: complete(u.OutputTokens),
 		TTSCharacters:   asFloat(complete(u.TTSCharacters)),
@@ -272,7 +278,8 @@ func toUsage(u turn.CallUsage) *usage {
 	}
 	notes := []string{
 		"LLM tokens summed from the llm_request spans (gen_ai.usage, else lk.llm_metrics).",
-		"TTS characters summed from the tts_request spans (lk.tts_metrics).",
+		"Cached tokens are a subset of input tokens, summed from cache_read.input_tokens else prompt_cached_tokens.",
+		"TTS characters and audio seconds summed from the tts_request spans (lk.tts_metrics).",
 		"STT seconds summed from the agent's lk.agents.usage.stt_audio_duration counter.",
 	}
 	for _, m := range []struct {
@@ -282,6 +289,8 @@ func toUsage(u turn.CallUsage) *usage {
 		{"LLM input tokens", u.InputTokens.Missing},
 		{"LLM output tokens", u.OutputTokens.Missing},
 		{"TTS characters", u.TTSCharacters.Missing},
+		{"LLM cached tokens", u.CachedTokens.Missing},
+		{"TTS audio seconds", u.TTSAudioSeconds.Missing},
 	} {
 		if m.missing > 0 {
 			notes = append(notes, fmt.Sprintf("%s left null: %d %s did not report them.", m.what, m.missing, plural(m.missing, "request", "requests")))

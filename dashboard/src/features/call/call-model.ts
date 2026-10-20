@@ -1,3 +1,4 @@
+import { orderedSpans, turnSpans, userTurnFor, numericAttr } from "./call-trace"
 import type { Call, RecordingSegment, SessionEvent, Span } from "@/lib/api"
 
 // One shape for every call, whatever its source: agent session events (the observability upload or the console),
@@ -162,25 +163,38 @@ function fromRecording(call: Call): Omit<CallModel, "pipeline" | "models" | "sou
 function fromSpans(call: Call): Omit<CallModel, "pipeline" | "models" | "source"> {
   const spans = call.spans ?? []
   const s = (x: Placed): Iv => ({ start: x.startMs / 1000, end: (x.startMs + x.durationMs) / 1000 })
-  const agentTurns = spans.filter((x) => x.name === "agent_turn")
-  // Kept per span (null when unplaced) so the i-th agent turn still pairs with the i-th speaking span and turn.
-  const speakingAt = spans.filter((x) => x.name === "agent_speaking").map((x) => (placed(x) ? s(x) : null))
-  const thinkingAt = agentTurns.map((t, k) => (placed(t) ? { start: t.startMs / 1000, end: speakingAt[k]?.start ?? s(t).end } : null))
-  const speaking = speakingAt.filter((x): x is Iv => x !== null)
-  const thinking = thinkingAt.filter((x): x is Iv => x !== null)
-  const tools = spans.filter(placed).filter((x) => x.name === "function_tool")
-  const turns: TurnModel[] = agentTurns.flatMap((at, i) => {
+  const agentTurns = orderedSpans(spans.filter((x) => x.name === "agent_turn"))
+  const caller: Iv[] = []
+  const speaking: Iv[] = []
+  const thinking: Iv[] = []
+  const turns: TurnModel[] = agentTurns.flatMap((_, i) => {
+    const { root: at, children } = turnSpans(call, i)
     const t = call.turns?.[i]
-    if (!placed(at)) return []
-    return {
-      i, userText: t?.userText ?? null, agentText: t?.agentText ?? null, interrupted: !!t?.interrupted, utterance: null, eot: null, wait: null,
-      thinking: thinkingAt[i] ?? null, speaking: speakingAt[i] ?? null, ttftMs: t?.ttftMs ?? null, ttsMs: t?.ttsMs ?? null, eotMs: t?.endOfTurnMs ?? null,
-      e2eMs: t?.e2eMs ?? null, responseMs: t?.e2eMs ?? null, responseDerived: false, window: pad(s(at), 0.3, 0.3),
-    }
+    if (!at || !placed(at)) return []
+    const speech = children.filter(placed).filter((x) => x.name === "agent_speaking").map(s)
+    speaking.push(...speech)
+    const speak = speech.length ? { start: speech[0].start, end: speech[speech.length - 1].end } : null
+    const user = userTurnFor(call, at)
+    const runs = user.children.filter(placed).filter((x) => x.name === "user_speaking").map(s)
+    caller.push(...runs)
+    const utterance = runs.length ? { start: runs[0].start, end: runs[runs.length - 1].end } : null
+    const think = { start: at.startMs / 1000, end: speak?.start ?? s(at).end }
+    thinking.push(think)
+    const detector = user.children.filter((x) => x.name === "eou_detection").at(-1)
+    const probability = numericAttr(detector, "lk.eou.probability")
+    const threshold = numericAttr(detector, "lk.eou.unlikely_threshold")
+    const derived = utterance && speak && speak.start >= utterance.end ? Math.round((speak.start - utterance.end) * 1000) : null
+    return [{
+      i, userText: t?.userText ?? null, agentText: t?.agentText ?? null, interrupted: !!t?.interrupted,
+      utterance, eot: detector?.startMs != null ? { t: detector.startMs / 1000, probability, threshold } : null, wait: null,
+      thinking: think, speaking: speak, ttftMs: t?.ttftMs ?? null, ttsMs: t?.ttsMs ?? null, eotMs: t?.endOfTurnMs ?? null,
+      e2eMs: t?.e2eMs ?? null, responseMs: t?.e2eMs ?? derived, responseDerived: t?.e2eMs == null && derived !== null, window: pad(s(at), 0.3, 0.3),
+    }]
   })
+  const tools = spans.filter(placed).filter((x) => x.name === "function_tool")
   const ends = spans.filter(placed).map((x) => (x.startMs + x.durationMs) / 1000)
   const duration = ends.length ? Math.max(0, ...ends) : null
-  return { duration, caller: [], thinking, speaking, turns, moments: tools.map((x) => ({ kind: "tool" as const, at: s(x), name: x.attrs?.["lk.function_tool.name"] ?? x.name })) }
+  return { duration, caller, thinking, speaking, turns, moments: tools.map((x) => ({ kind: "tool" as const, at: s(x), name: x.attrs?.["lk.function_tool.name"] ?? x.name })) }
 }
 
 export function buildModel(call: Call): CallModel {
@@ -195,7 +209,7 @@ export function buildModel(call: Call): CallModel {
   }
   const models = [...new Set((call.turns ?? []).map((t) => t.model).filter((m): m is string => !!m))]
   const turns = call.turns ?? []
-  const pipeline: Pipeline = models.some((m) => m.includes("realtime"))
+  const pipeline: Pipeline = (call.spans ?? []).some((s) => s.name === "realtime_inference") || models.some((m) => m.includes("realtime"))
     ? "realtime"
     : turns.some((t) => t.ttsMs !== null || t.endOfTurnMs !== null)
       ? "cascaded"

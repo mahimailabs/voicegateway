@@ -18,6 +18,7 @@ const pages = [
   ["settings", "Settings"],
   ["docs", "VoiceGateway API"],
   ["calls/" + encodeURIComponent(capture.call.room), capture.call.room],
+  ["calls/" + encodeURIComponent(capture.call.room) + "?callView=diagnosis", capture.call.room],
 ] as const
 
 for (const [path, heading] of pages) {
@@ -28,9 +29,10 @@ for (const [path, heading] of pages) {
     await page.addInitScript((theme) => localStorage.setItem("vg-theme", theme), testInfo.project.use.colorScheme ?? "light")
     const response = await page.goto(scope + path)
     expect(response?.status()).toBe(200)
-    await expect(page).toHaveURL((url) => url.pathname === scope + path)
-    await expect(page.locator("html")).toHaveClass(testInfo.project.use.colorScheme === "dark" ? /dark/ : /^(?!.*\bdark\b)/)
-    if (heading) await expect(page.getByRole("heading", { name: heading, exact: true })).toBeVisible()
+    await expect(page).toHaveURL((url) => url.pathname + url.search === scope + path)
+    await expect(page.locator("html")).toHaveClass(testInfo.project.use.colorScheme === "dark" ? /dark/ : /^(?!.*\bdark\b)/, { timeout: 15_000 })
+    // Allow the mock worker and lazy route to finish cold startup on a busy host.
+    if (heading) await expect(page.getByRole("heading", { name: heading, exact: true })).toBeVisible({ timeout: 15_000 })
     else await expect(page.getByRole("textbox", { name: "Filter rooms", exact: true })).toBeVisible()
     await expect(page.getByText("Loading calls", { exact: true })).toHaveCount(0)
     // The desktop sidebar provides the complete route inventory; phones collapse it.

@@ -7,6 +7,10 @@ A fresh session reads this to know where the project stands.
 
 ## Current Phase
 
+Call diagnosis (2026-10-19): turn-level latency comparison, trace-clock response breakdown, source-linked speech/tools and reported usage are implemented. Turn navigation stays in the fixed header and bounds comparison to six turns. Realtime calls show speech intervals, derived response gaps and interruptions without inventing STT/TTS stages. SIP termination remains separate evidence. The generic per-call architecture flow and topology were removed.
+
+Capacity UI (2026-10-19): an explicit setup/start/results preview includes generated load, SFU and worker impact, component metrics and a zoomable topology with unknown regions kept separate. Data is synthetic and the preview places no calls. Real runners, attempt/concurrency instrumentation, cancellation and cleanup remain unfinished. See docs/specs/capacity-telemetry-audit.md.
+
 Phases 01 to 06f are on main (06f, adding a project from the console, merged in #419). The next phase has no spec yet.
 
 ## Done
