@@ -589,6 +589,44 @@ paths:
           $ref: "#/components/responses/InternalError"
         "503":
           $ref: "#/components/responses/SourceUnavailable"
+  /api/v1/org/{orgId}/project/{projectId}/resources:
+    get:
+      operationId: getResources
+      security:
+        - consoleSession: []
+        - projectKey: []
+      summary: Read measured container resource samples
+      tags:
+        - Console reads
+      x-access:
+        principal: organisation_member
+        minimumRole: Viewer
+        projectIsolation: required
+        browserSessionTransport: session_cookie
+        scope: project
+      description: "Requires authenticated organisation membership and permission to read the named project. A browser signs in with the session cookie (decision 0027); the role gate admits the minimumRole and above. Credential absence is 401, denied membership is 403, cross-project resource ids are not_found. Server-side LiveKit credentials must never reach the browser."
+      parameters:
+        - $ref: "#/components/parameters/OrganisationId"
+        - $ref: "#/components/parameters/ProjectId"
+      responses:
+        "200":
+          description: Authorised read result. Null means unreported, never zero. Source-specific coverage limits remain visible.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Resources"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/SourceUnavailable"
   /api/v1/org/{orgId}/project/{projectId}/sip:
     get:
       operationId: getSip
@@ -3583,6 +3621,76 @@ components:
           x-null-reason: Observation is off by default. Null when not opted in, no agent session was observed, or RemoteSession data was unavailable; never fabricate a framework, tools or model list.
       required: [ readAt, url, rooms, sip, egress, ingress, source, observed ]
       x-source: { kind: livekit_api, file: dashboard/src/mocks/project-snapshot.json, pointer: "", detail: RoomService/SIP/Egress/Ingress snapshot; observed subtree is an opt-in RemoteSession read }
+    Resources:
+      type: object
+      required: [source, resources]
+      x-source: { kind: computed, file: internal/api/resources.go, pointer: null, detail: "Project-scoped cAdvisor container measurement and explicit endpoint mapping; missing data stays null." }
+      properties:
+        source:
+          type: string
+          x-source: { kind: computed, file: internal/api/resources.go, pointer: null, detail: "Project-scoped cAdvisor container measurement and explicit endpoint mapping; missing data stays null." }
+        resources:
+          type: array
+          x-source: { kind: computed, file: internal/api/resources.go, pointer: null, detail: "Project-scoped cAdvisor container measurement and explicit endpoint mapping; missing data stays null." }
+          items:
+            type: object
+            required: [id, kind, target, containerId, host, sourceStatus, samples]
+            x-source: { kind: computed, file: internal/api/resources.go, pointer: null, detail: "Project-scoped cAdvisor container measurement and explicit endpoint mapping; missing data stays null." }
+            properties:
+              id:
+                type: string
+                x-source: { kind: computed, file: internal/api/resources.go, pointer: null, detail: "Project-scoped cAdvisor container measurement and explicit endpoint mapping; missing data stays null." }
+              kind:
+                type: string
+                x-source: { kind: computed, file: internal/api/resources.go, pointer: null, detail: "Project-scoped cAdvisor container measurement and explicit endpoint mapping; missing data stays null." }
+              target:
+                type: string
+                x-source: { kind: computed, file: internal/api/resources.go, pointer: null, detail: "Project-scoped cAdvisor container measurement and explicit endpoint mapping; missing data stays null." }
+              containerId:
+                type: string
+                x-source: { kind: computed, file: internal/api/resources.go, pointer: null, detail: "Project-scoped cAdvisor container measurement and explicit endpoint mapping; missing data stays null." }
+              host:
+                type: string
+                x-source: { kind: computed, file: internal/api/resources.go, pointer: null, detail: "Project-scoped cAdvisor container measurement and explicit endpoint mapping; missing data stays null." }
+              sourceStatus:
+                $ref: "#/components/schemas/SourceStatus"
+                x-source: { kind: computed, file: internal/api/resources.go, pointer: null, detail: "Project-scoped cAdvisor container measurement and explicit endpoint mapping; missing data stays null." }
+              samples:
+                type: array
+                x-source: { kind: computed, file: internal/api/resources.go, pointer: null, detail: "Project-scoped cAdvisor container measurement and explicit endpoint mapping; missing data stays null." }
+                items:
+                  type: object
+                  required: [t, observedAt, cpuUsed, cpuCores, memoryBytes, memoryLimitBytes]
+                  x-source: { kind: computed, file: internal/api/resources.go, pointer: null, detail: "Project-scoped cAdvisor container measurement and explicit endpoint mapping; missing data stays null." }
+                  properties:
+                    t:
+                      type: string
+                      format: date-time
+                      x-source: { kind: computed, file: internal/api/resources.go, pointer: null, detail: "Project-scoped cAdvisor container measurement and explicit endpoint mapping; missing data stays null." }
+                    observedAt:
+                      type: string
+                      format: date-time
+                      x-source: { kind: computed, file: internal/api/resources.go, pointer: null, detail: "Project-scoped cAdvisor container measurement and explicit endpoint mapping; missing data stays null." }
+                    cpuUsed:
+                      type: [number, "null"]
+                      x-unit: cores
+                      x-null-reason: "No measurement, no finite allocation, or insufficient counter history."
+                      x-source: { kind: computed, file: internal/api/resources.go, pointer: null, detail: "Project-scoped cAdvisor container measurement and explicit endpoint mapping; missing data stays null." }
+                    cpuCores:
+                      type: [number, "null"]
+                      x-unit: cores
+                      x-null-reason: "No measurement, no finite allocation, or insufficient counter history."
+                      x-source: { kind: computed, file: internal/api/resources.go, pointer: null, detail: "Project-scoped cAdvisor container measurement and explicit endpoint mapping; missing data stays null." }
+                    memoryBytes:
+                      type: [number, "null"]
+                      x-unit: bytes
+                      x-null-reason: "No measurement, no finite allocation, or insufficient counter history."
+                      x-source: { kind: computed, file: internal/api/resources.go, pointer: null, detail: "Project-scoped cAdvisor container measurement and explicit endpoint mapping; missing data stays null." }
+                    memoryLimitBytes:
+                      type: [number, "null"]
+                      x-unit: bytes
+                      x-null-reason: "No measurement, no finite allocation, or insufficient counter history."
+                      x-source: { kind: computed, file: internal/api/resources.go, pointer: null, detail: "Project-scoped cAdvisor container measurement and explicit endpoint mapping; missing data stays null." }
     Workers:
       type: object
       additionalProperties: false

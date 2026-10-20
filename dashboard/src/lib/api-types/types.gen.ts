@@ -565,6 +565,26 @@ export type ProjectSnapshot = {
     } | null;
 };
 
+export type Resources = {
+    source: string;
+    resources: Array<{
+        id: string;
+        kind: string;
+        target: string;
+        containerId: string;
+        host: string;
+        sourceStatus: SourceStatus;
+        samples: Array<{
+            t: string;
+            observedAt: string;
+            cpuUsed: number | null;
+            cpuCores: number | null;
+            memoryBytes: number | null;
+            memoryLimitBytes: number | null;
+        }>;
+    }>;
+};
+
 export type Workers = {
     source: string;
     workers: Array<{
@@ -2473,6 +2493,60 @@ export type GetWorkersResponses = {
 };
 
 export type GetWorkersResponse = GetWorkersResponses[keyof GetWorkersResponses];
+
+export type GetResourcesData = {
+    body?: never;
+    path: {
+        /**
+         * Authorised orgId; the server must verify organisation/project ownership before any read.
+         */
+        orgId: string;
+        /**
+         * Authorised projectId; the server must verify organisation/project ownership before any read.
+         */
+        projectId: string;
+    };
+    query?: never;
+    url: '/api/v1/org/{orgId}/project/{projectId}/resources';
+};
+
+export type GetResourcesErrors = {
+    /**
+     * invalid_request; never return an empty success result for this failure.
+     */
+    400: Error;
+    /**
+     * unauthenticated; never return an empty success result for this failure.
+     */
+    401: Error;
+    /**
+     * forbidden; never return an empty success result for this failure.
+     */
+    403: Error;
+    /**
+     * not_found; never return an empty success result for this failure.
+     */
+    404: Error;
+    /**
+     * internal_error; never return an empty success result for this failure.
+     */
+    500: Error;
+    /**
+     * source_unavailable; never return an empty success result for this failure.
+     */
+    503: Error;
+};
+
+export type GetResourcesError = GetResourcesErrors[keyof GetResourcesErrors];
+
+export type GetResourcesResponses = {
+    /**
+     * Authorised read result. Null means unreported, never zero. Source-specific coverage limits remain visible.
+     */
+    200: Resources;
+};
+
+export type GetResourcesResponse = GetResourcesResponses[keyof GetResourcesResponses];
 
 export type GetSipData = {
     body?: never;

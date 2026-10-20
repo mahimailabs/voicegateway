@@ -23,6 +23,7 @@ import {
   getProviderProbes,
   getSip,
   getWorkers,
+  getResources,
   getWorkspaces,
   listAlertEvents,
   listCalls,
@@ -206,6 +207,19 @@ export function workersQuery() {
   return {
     queryKey: ["workers", selected],
     queryFn: ({ signal }: { signal: AbortSignal }) => data(getWorkers({ ...thrown, path: { orgId: selected.org, projectId: selected.project }, cache: "no-store", signal: AbortSignal.any([signal, AbortSignal.timeout(10000)]) })),
+    staleTime: 0,
+    refetchInterval: 15000,
+    refetchOnWindowFocus: true,
+    refetchOnReconnect: true,
+    retry: false,
+  }
+}
+export function resourcesQuery() {
+  // Capture the scope with the key; retries must never read a newly selected project.
+  const selected = currentScope()
+  return {
+    queryKey: ["resources", selected],
+    queryFn: ({ signal }: { signal: AbortSignal }) => data(getResources({ ...thrown, path: { orgId: selected.org, projectId: selected.project }, cache: "no-store", signal: AbortSignal.any([signal, AbortSignal.timeout(10000)]) })),
     staleTime: 0,
     refetchInterval: 15000,
     refetchOnWindowFocus: true,

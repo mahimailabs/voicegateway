@@ -1,3 +1,4 @@
+import { ResourceMetrics } from "@/components/resource-metrics"
 import { useMemo, useState } from "react"
 import { CaretRight, CircleHalf, Cloud, HardDrives, Info, Robot, ShieldWarning, Timer, WarningCircle } from "@phosphor-icons/react"
 import type { Icon } from "@phosphor-icons/react"
@@ -180,7 +181,7 @@ const agentFields: Field<Agent>[] = [
 ]
 
 export function AgentsPage() {
-  return <div className="space-y-8"><AgentFleet /><WorkerMetrics /></div>
+  return <div className="space-y-8"><AgentFleet /><WorkerMetrics /><ResourceMetrics kind="worker" /></div>
 }
 
 function AgentFleet() {

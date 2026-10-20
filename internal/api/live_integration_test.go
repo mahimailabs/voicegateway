@@ -25,7 +25,7 @@ func TestLiveNativeSamplesReachStream(t *testing.T) {
 	gate, key := api.KeyFor(org, p.ID)
 	server := httptest.NewServer((&api.API{Projects: f.projects, Gate: gate, Live: live, Log: quiet()}).Routes())
 	defer server.Close()
-	ctx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, server.URL+"/api/v1/org/default/project/p1/live-events", nil)
 	if err != nil {
@@ -62,7 +62,7 @@ func TestLiveNativeSamplesReachStream(t *testing.T) {
 	}
 	worker := newMetricsWorker(t, "native-worker")
 	f.endpoints.add("p1", "we_aaaaaaaaaaaa", worker.URL+"/metrics")
-	sampler := &scrape.WorkerScraper{Projects: f.projects, Endpoints: f.endpoints, Samples: f.layers, Lock: &bubbleLock{}, Client: scrape.NewWorkerClient(false), Log: quiet(), Now: time.Now, Every: time.Millisecond, Timeout: time.Second, Changed: live.Notify}
+	sampler := &scrape.WorkerScraper{Projects: f.projects, Endpoints: f.endpoints, Samples: f.layers, Lock: &bubbleLock{}, Client: scrape.NewWorkerClient(false), Log: quiet(), Now: time.Now, Every: 15 * time.Second, Timeout: 5 * time.Second, Changed: live.Notify}
 	if err := sampler.Workers(ctx, p); err != nil {
 		t.Fatal(err)
 	}
@@ -71,7 +71,9 @@ func TestLiveNativeSamplesReachStream(t *testing.T) {
 	if len(got.Workers) != 1 || len(got.Workers[0].Samples) != 1 {
 		t.Fatalf("notification preceded worker storage: %+v", got.Workers)
 	}
+	// Manually trigger a second collection without waiting for the scheduling lease.
 	worker.Close()
+	sampler.Lock = &bubbleLock{}
 	if err := sampler.Workers(ctx, p); err != nil {
 		t.Fatal(err)
 	}

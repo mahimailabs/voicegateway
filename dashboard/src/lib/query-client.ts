@@ -5,7 +5,7 @@ export function createQueryClient() {
   return new QueryClient({
     queryCache: new QueryCache({
       onError: (error, query) => {
-        if (accessDenied(error) && ["media-server", "agents", "workers"].includes(String(query.queryKey[0]))) {
+        if (accessDenied(error) && ["media-server", "agents", "workers", "resources"].includes(String(query.queryKey[0]))) {
           // Notify every mounted observer, including consumers that read only data.
           // Keep the denial and polling lifecycle so restored access can recover.
           query.setState({ data: undefined, dataUpdatedAt: 0 })

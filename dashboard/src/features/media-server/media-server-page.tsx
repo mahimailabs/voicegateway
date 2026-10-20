@@ -1,3 +1,4 @@
+import { ResourceMetrics } from "@/components/resource-metrics"
 import { Headset, Info, Phone, Robot } from "@phosphor-icons/react"
 import { TimeRangePicker, useUrlRange } from "@/components/time-range-picker"
 import { useUrlPick } from "@/lib/url-state"
@@ -46,7 +47,7 @@ export function MediaServerPage() {
   const read = useQuery(mediaServerQuery())
   const ms = useMemo(() => (read.data ? fromContract(read.data) : null), [read.data])
   if (!ms || accessDenied(read.error)) return <QueryState icon={HardDrives} what="the media server" query={read} />
-  return <div className="space-y-4"><SourceStatus name="LiveKit SFU" source={read.data?.sourceStatus} interval={10000} query={read} /><MediaServerView data={ms} /></div>
+  return <div className="space-y-4"><SourceStatus name="LiveKit SFU" source={read.data?.sourceStatus} interval={10000} query={read} /><MediaServerView data={ms} /><ResourceMetrics kind="sfu" /></div>
 }
 
 function MediaServerView({ data }: { data: MediaServerData }) {

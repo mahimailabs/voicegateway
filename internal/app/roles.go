@@ -123,8 +123,8 @@ func Web(ctx context.Context, c config.Config, log *slog.Logger) error {
 	mountIngestion(mux, projects, producer, quota, log, time.Now)
 	mux.Handle("/auth/", accounts.Routes())
 	mux.Handle("/api/v1/", (&api.API{
-		Live:     live,
-		Projects: projects, NewProjects: projects, VerifyLiveKit: scrape.NewVerifier(c.WorkerEndpointsPublicOnly), Calls: projects, Traces: events, Layers: events, Endpoints: projects, Accounts: projects, Stats: projects, Keys: projects, NewKey: auth.NewKey, Log: log, Now: time.Now, Gate: accounts.Gate,
+		Live:              live,
+		ResourceEndpoints: projects, ResourceSamples: events, Projects: projects, NewProjects: projects, VerifyLiveKit: scrape.NewVerifier(c.WorkerEndpointsPublicOnly), Calls: projects, Traces: events, Layers: events, Endpoints: projects, Accounts: projects, Stats: projects, Keys: projects, NewKey: auth.NewKey, Log: log, Now: time.Now, Gate: accounts.Gate,
 		Invitations: projects, Inviter: NewInviter(links), LinkBase: accounts.LinkBase,
 		Instance:       instanceAPI,
 		AnswerBudgetMs: c.AnswerBudgetMs,
@@ -288,6 +288,14 @@ func Worker(ctx context.Context, c config.Config, log *slog.Logger) error {
 			Now:       time.Now,
 			Every:     15 * time.Second,
 			Timeout:   10 * time.Second,
+		}).Run(gctx)
+	})
+	g.Go(func() error {
+		endpoints := pgstore.NewStore(pool, sealer)
+		return (&scrape.ResourceScraper{
+			Changed: live.Notify, Projects: endpoints, Endpoints: endpoints, Samples: events,
+			Lock: &scrape.RedisLock{Client: rdb}, Client: scrape.NewWorkerClient(c.WorkerEndpointsPublicOnly),
+			Log: log, Now: time.Now, Every: 15 * time.Second, Timeout: 10 * time.Second,
 		}).Run(gctx)
 	})
 	g.Go(func() error {

@@ -10,6 +10,7 @@ const (
 	LayerIngress     = "ingress"
 	LayerCloudAgents = "cloud_agents"
 	LayerWorkers     = "workers"
+	LayerResources   = "resources"
 )
 
 // Error classes a failed layer read is recorded with. They name the cause the console shows; the

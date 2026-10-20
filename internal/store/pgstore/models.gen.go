@@ -151,6 +151,18 @@ type ProjectKey struct {
 	RevokedAt      pgtype.Timestamptz
 }
 
+type ProjectResourceEndpoint struct {
+	OrganisationID string
+	ProjectID      string
+	ID             string
+	Host           string
+	UrlSealed      []byte
+	Kind           string
+	Target         string
+	ContainerID    string
+	CreatedAt      pgtype.Timestamptz
+}
+
 type ProjectWorkerEndpoint struct {
 	OrganisationID string
 	ProjectID      string
