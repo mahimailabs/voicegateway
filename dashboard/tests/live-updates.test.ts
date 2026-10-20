@@ -84,3 +84,28 @@ test("a late snapshot cannot repopulate telemetry after stream access is denied"
     expect(client.getQueryData(key)).toBeUndefined()
   } finally { controller.abort(); await running; client.clear() }
 })
+
+
+test("an unavailable stream reconnects and refreshes the durable snapshot", async () => {
+  const client = new QueryClient(), stream = source()
+  const key = ["workers", scope]
+  const observer = new QueryObserver(client, {
+    queryKey: key, queryFn: async () => ({ generation: 2 }),
+    initialData: { generation: 1 }, staleTime: Infinity,
+  })
+  const unsubscribe = observer.subscribe(() => {})
+  const fetcher = vi.fn()
+    .mockResolvedValueOnce(new Response("unavailable", { status: 503 }))
+    .mockResolvedValueOnce(stream.response)
+  vi.stubGlobal("fetch", fetcher)
+  const controller = new AbortController(), state = vi.fn()
+  const running = watchLiveUpdates(scope, client, state, controller.signal)
+  try {
+    await vi.waitFor(() => expect(state).toHaveBeenCalledWith("disconnected"))
+    expect(client.getQueryData(key)).toEqual({ generation: 1 })
+    await vi.waitFor(() => expect(fetcher).toHaveBeenCalledTimes(2), { timeout: 4500 })
+    stream.event("refresh")
+    await vi.waitFor(() => expect(client.getQueryData(key)).toEqual({ generation: 2 }))
+    expect(state).toHaveBeenLastCalledWith("connected")
+  } finally { controller.abort(); await running; unsubscribe(); client.clear() }
+}, 6000)
