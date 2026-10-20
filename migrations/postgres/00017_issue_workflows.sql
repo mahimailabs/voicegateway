@@ -80,3 +80,17 @@ CREATE TABLE issue_job_observations (
     FOREIGN KEY (organisation_id, project_id) REFERENCES projects (organisation_id, id) ON DELETE CASCADE
 );
 CREATE INDEX issue_job_observations_room ON issue_job_observations (organisation_id, project_id, room_sid);
+
+-- Nanosecond cursor matches ClickHouse DateTime64(9), without Postgres timestamp truncation.
+CREATE TABLE issue_recording_backfills (
+ organisation_id text NOT NULL,
+ project_id text NOT NULL,
+ cursor_ns bigint NOT NULL DEFAULT 0,
+ cursor_key text NOT NULL DEFAULT '',
+ revision bigint NOT NULL DEFAULT 0,
+ done boolean NOT NULL DEFAULT false,
+ retry_at timestamptz NOT NULL DEFAULT now(),
+ failures integer NOT NULL DEFAULT 0,
+ PRIMARY KEY (organisation_id, project_id),
+ FOREIGN KEY (organisation_id, project_id) REFERENCES projects (organisation_id, id) ON DELETE CASCADE
+);

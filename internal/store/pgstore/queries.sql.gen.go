@@ -73,6 +73,36 @@ func (q *Queries) AdvanceIssueRevision(ctx context.Context, arg AdvanceIssueRevi
 	return err
 }
 
+const advanceRecordingBackfill = `-- name: AdvanceRecordingBackfill :execrows
+UPDATE issue_recording_backfills SET cursor_ns= $1, cursor_key= $2,
+ done= $3, revision=revision+1, failures=0, retry_at=now()
+WHERE organisation_id= $4 AND project_id= $5 AND revision= $6
+`
+
+type AdvanceRecordingBackfillParams struct {
+	CursorNs         int64
+	CursorKey        string
+	Done             bool
+	OrganisationID   string
+	ProjectID        string
+	ExpectedRevision int64
+}
+
+func (q *Queries) AdvanceRecordingBackfill(ctx context.Context, arg AdvanceRecordingBackfillParams) (int64, error) {
+	result, err := q.db.Exec(ctx, advanceRecordingBackfill,
+		arg.CursorNs,
+		arg.CursorKey,
+		arg.Done,
+		arg.OrganisationID,
+		arg.ProjectID,
+		arg.ExpectedRevision,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const callByID = `-- name: CallByID :one
 SELECT l.id, l.room_name, l.room_sid, l.job_id, l.started_at, l.ended_at, l.end_state, l.first_seen_at,
        l.participants, l.servable, l.summarized::boolean AS summarized, c.tags, c.archived, c.metadata_revision
@@ -825,6 +855,23 @@ func (q *Queries) DeferCallFindings(ctx context.Context, arg DeferCallFindingsPa
 	return err
 }
 
+const deferRecordingBackfill = `-- name: DeferRecordingBackfill :exec
+UPDATE issue_recording_backfills SET failures=least(failures+1,12), revision=revision+1,
+ retry_at=now() + least(3600, 10 * power(2,least(failures,9))) * interval '1 second'
+WHERE organisation_id= $1 AND project_id= $2 AND revision= $3
+`
+
+type DeferRecordingBackfillParams struct {
+	OrganisationID   string
+	ProjectID        string
+	ExpectedRevision int64
+}
+
+func (q *Queries) DeferRecordingBackfill(ctx context.Context, arg DeferRecordingBackfillParams) error {
+	_, err := q.db.Exec(ctx, deferRecordingBackfill, arg.OrganisationID, arg.ProjectID, arg.ExpectedRevision)
+	return err
+}
+
 const deferStale = `-- name: DeferStale :exec
 UPDATE calls SET
     summary_failures = summary_failures + 1,
@@ -1076,6 +1123,17 @@ type HealCallParams struct {
 // time a span reported. A value already stored is kept.
 func (q *Queries) HealCall(ctx context.Context, arg HealCallParams) error {
 	_, err := q.db.Exec(ctx, healCall, arg.RoomName, arg.FirstSeenAt, arg.ID)
+	return err
+}
+
+const initRecordingBackfills = `-- name: InitRecordingBackfills :exec
+INSERT INTO issue_recording_backfills (organisation_id, project_id)
+SELECT organisation_id, id FROM projects
+ON CONFLICT DO NOTHING
+`
+
+func (q *Queries) InitRecordingBackfills(ctx context.Context) error {
+	_, err := q.db.Exec(ctx, initRecordingBackfills)
 	return err
 }
 
@@ -2267,6 +2325,41 @@ func (q *Queries) PendingJobFindings(ctx context.Context, maxJobs int32) ([]Pend
 			&i.EvaluatedJoinedAt,
 			&i.CallID,
 			&i.JoinedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const pendingRecordingBackfills = `-- name: PendingRecordingBackfills :many
+SELECT organisation_id, project_id, cursor_ns, cursor_key, revision, done, retry_at, failures FROM issue_recording_backfills
+WHERE NOT done AND retry_at <= now()
+ORDER BY retry_at, organisation_id, project_id LIMIT 10
+`
+
+func (q *Queries) PendingRecordingBackfills(ctx context.Context) ([]IssueRecordingBackfill, error) {
+	rows, err := q.db.Query(ctx, pendingRecordingBackfills)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []IssueRecordingBackfill
+	for rows.Next() {
+		var i IssueRecordingBackfill
+		if err := rows.Scan(
+			&i.OrganisationID,
+			&i.ProjectID,
+			&i.CursorNs,
+			&i.CursorKey,
+			&i.Revision,
+			&i.Done,
+			&i.RetryAt,
+			&i.Failures,
 		); err != nil {
 			return nil, err
 		}

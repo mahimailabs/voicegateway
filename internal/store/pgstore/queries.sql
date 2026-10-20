@@ -849,3 +849,24 @@ ON CONFLICT (organisation_id, project_id, issue_id, source_id) DO UPDATE
 SET call_id=EXCLUDED.call_id
 WHERE issue_occurrences.call_id IS NULL AND EXCLUDED.call_id IS NOT NULL
  AND issue_occurrences.detail = EXCLUDED.detail AND issue_occurrences.occurred_at IS NOT DISTINCT FROM EXCLUDED.occurred_at;
+
+
+-- name: InitRecordingBackfills :exec
+INSERT INTO issue_recording_backfills (organisation_id, project_id)
+SELECT organisation_id, id FROM projects
+ON CONFLICT DO NOTHING;
+
+-- name: PendingRecordingBackfills :many
+SELECT * FROM issue_recording_backfills
+WHERE NOT done AND retry_at <= now()
+ORDER BY retry_at, organisation_id, project_id LIMIT 10;
+
+-- name: AdvanceRecordingBackfill :execrows
+UPDATE issue_recording_backfills SET cursor_ns= @cursor_ns, cursor_key= @cursor_key,
+ done= @done, revision=revision+1, failures=0, retry_at=now()
+WHERE organisation_id= @organisation_id AND project_id= @project_id AND revision= @expected_revision;
+
+-- name: DeferRecordingBackfill :exec
+UPDATE issue_recording_backfills SET failures=least(failures+1,12), revision=revision+1,
+ retry_at=now() + least(3600, 10 * power(2,least(failures,9))) * interval '1 second'
+WHERE organisation_id= @organisation_id AND project_id= @project_id AND revision= @expected_revision;

@@ -224,3 +224,17 @@ The native Redis/ClickHouse/Postgres ingestion test and Postgres replay/scope/la
 regressions pass under the race detector. Historical recording backfill and ingress
 failure evaluation remain unfinished. Full native race checks passed on baseline
 117b7cd1 before this recording change; final full checks still apply to the final PR head.
+
+
+Historical recording evaluation now uses a per-project Postgres cursor and batches of
+100 retained egress_ended events. The cursor includes the exact ClickHouse nanosecond
+received timestamp and dedupe key. It advances only after every finding in the page is
+persisted, with revision checks against competing workers. Failed reads leave the cursor
+unchanged and use persisted exponential retry delays bounded at one hour. Restart resumes
+from the stored cursor. New events continue through the sink's pre-acknowledgement path.
+The native 101-event same-timestamp boundary test and failed-read recovery test pass.
+Ingress evaluation and source completeness integration remain unfinished; this does not
+advance the roadmap checkbox.
+Native recovery checks also pass for replay after findings commit but before checkpoint,
+and for a retained event after its linked call is deleted: the finding remains unlinked
+and no call is recreated. Go lint, format and SQL generation consistency checks pass.

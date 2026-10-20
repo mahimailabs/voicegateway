@@ -13,6 +13,9 @@ import (
 
 // Calls is the call index.
 type Calls interface {
+	PendingRecordingBackfills(context.Context) ([]store.RecordingBackfill, error)
+	AdvanceRecordingBackfill(context.Context, store.RecordingBackfill, int64, string, bool) error
+	DeferRecordingBackfill(context.Context, store.RecordingBackfill) error
 	PutRecordingFinding(context.Context, store.RecordingFinding) error
 	PendingCallFindings(context.Context, int) ([]store.PendingFindings, error)
 	PutCallFindings(context.Context, store.PendingFindings, []store.Finding, []string, int64, bool, time.Time) error
@@ -36,6 +39,7 @@ type Calls interface {
 // Traces counts traces that never linked to a call, and reads a call's spans and the turns built
 // from them, for its summary.
 type Traces interface {
+	RecordingEvents(context.Context, store.RecordingBackfill) ([]store.Event, error)
 	CountUnlinkedTraces(ctx context.Context, lastSpanBefore time.Time) (uint64, error)
 	CallTrace(ctx context.Context, organisationID, projectID, callID string) ([]store.Span, turn.Result, error)
 }
