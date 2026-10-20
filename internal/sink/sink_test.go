@@ -276,7 +276,15 @@ func TestSinkAcksOnlyAfterInsert(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
-	go func() { done <- f.sink("w1", outage).Run(ctx) }()
+	var hints atomic.Int64
+	s := f.sink("w1", outage)
+	s.Changed = func(_ context.Context, org, project string) {
+		if org != "default" || project != "production" {
+			t.Errorf("wrong notification scope: %s/%s", org, project)
+		}
+		hints.Add(1)
+	}
+	go func() { done <- s.Run(ctx) }()
 	time.Sleep(500 * time.Millisecond)
 	if n := f.streamLen(); n != 2 {
 		t.Fatalf("stream length during outage = %d, want 2", n)
@@ -284,14 +292,20 @@ func TestSinkAcksOnlyAfterInsert(t *testing.T) {
 	if n := f.rdb.XLen(ctx, stream.DeadLetters(stream.Ingest)).Val(); n != 0 {
 		t.Fatalf("dead letters during outage = %d, want 0", n)
 	}
+	if hints.Load() != 0 {
+		t.Fatal("notified before durable storage")
+	}
 	outage.failures.Store(0)
 	deadline := time.Now().Add(20 * time.Second)
-	for f.streamLen() != 0 && time.Now().Before(deadline) {
+	for (f.streamLen() != 0 || hints.Load() == 0) && time.Now().Before(deadline) {
 		time.Sleep(20 * time.Millisecond)
 	}
 	cancel()
 	if err := <-done; err != nil {
 		t.Errorf("Run = %v", err)
+	}
+	if hints.Load() != 1 {
+		t.Fatalf("got %d hints for one project batch", hints.Load())
 	}
 	if n := f.rows(t); n != 2 {
 		t.Fatalf("rows after recovery = %d, want 2", n)

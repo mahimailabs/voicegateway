@@ -46,6 +46,8 @@ const endpointReads = 8
 // workers on a timer and stores what each worker reported. An endpoint that does not answer is
 // recorded as an unreachable read, never as a worker with no load or no jobs.
 type WorkerScraper struct {
+	// Changed runs only after the read is durably stored, including failed source reads.
+	Changed   func(context.Context, string, string)
 	Projects  Projects
 	Endpoints WorkerEndpoints
 	Samples   WorkerSamples
@@ -234,6 +236,9 @@ func (s *WorkerScraper) Workers(ctx context.Context, p store.Project) error {
 	defer cancel()
 	if err := s.Samples.StoreWorkerRead(sctx, read, reads, samples); err != nil {
 		return fmt.Errorf("store worker read: %w", err)
+	}
+	if s.Changed != nil {
+		s.Changed(ctx, read.OrganisationID, read.ProjectID)
 	}
 	return nil
 }

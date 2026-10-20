@@ -380,5 +380,19 @@
       "/auth/sign-out": "Ends the session on the server (decision 0027); a write, not a console read."
     },
     "exclusion": "Sign-in and the session, from web's /auth routes (decision 0027, phase 06a); not part of the read contract."
+  },
+  {
+    "file": "dashboard/src/lib/live-updates.ts",
+    "fixtures": [],
+    "assets": [
+      "<dynamic>"
+    ],
+    "browserStorage": false,
+    "operations": [
+      "getLiveEvents"
+    ],
+    "assetNotes": {
+      "<dynamic>": "Delegates the generated getLiveEvents request to native fetch, checking status before streaming to clear denied scoped telemetry. URL and parameters come from the generated SDK."
+    }
   }
 ]

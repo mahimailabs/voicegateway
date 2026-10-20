@@ -47,10 +47,12 @@ type Joiner interface {
 
 // Sink moves envelopes from the stream into Events.
 type Sink struct {
-	Stream Stream
-	Events Events
-	Join   Joiner
-	Log    *slog.Logger
+	// Changed is a best-effort notification after durable storage and acknowledgement.
+	Changed func(context.Context, string, string)
+	Stream  Stream
+	Events  Events
+	Join    Joiner
+	Log     *slog.Logger
 	// Batch is the most entries read and stored at once.
 	Batch int64
 	// Block is how long a read waits for new entries; it must be positive.
@@ -174,6 +176,19 @@ func (s *Sink) store(ctx context.Context, msgs []stream.Message) {
 	}
 	if err := s.retry(ctx, "acknowledge", func(ctx context.Context) error { return s.Stream.Ack(ctx, ids...) }); err != nil {
 		return
+	}
+	if s.Changed != nil {
+		// A large batch still gets only one bounded notification budget, not one per project.
+		notifyCtx, cancel := context.WithTimeout(ctx, 250*time.Millisecond)
+		seen := make(map[[2]string]bool)
+		for _, row := range joined {
+			key := [2]string{row.OrganisationID, row.ProjectID}
+			if !seen[key] {
+				seen[key] = true
+				s.Changed(notifyCtx, key[0], key[1])
+			}
+		}
+		cancel()
 	}
 	s.Log.Debug("sink: stored batch", "entries", len(msgs), "inserted", len(fresh))
 }
