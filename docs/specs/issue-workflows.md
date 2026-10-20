@@ -50,3 +50,14 @@ bounded tags, reversible archive state and atomic revisions. Native verification
 identity isolation, wrong project/organisation, concurrent updates, stale Undo and worker retries.
 This foundation is not API/UI wiring or completed issue evaluation. All acceptance remains open
 until the full paths and checks above pass.
+
+The scoped GET/PUT call metadata API now passes native authenticated HTTP tests: Viewer and
+project-key reads; Member/Admin writes; denied Viewer, key, outsider and cross-origin writes;
+missing/wrong-scope IDs; malformed/oversized/invalid UTF-8 bodies; stale revisions; clear/unarchive;
+and reads from a second web instance. OpenAPI role/key alignment, generated types, source attribution
+and Go lint pass. The production web wiring uses the Postgres metadata store.
+
+Next: list/detail metadata and tag/archive filters must share a transactional read with their totals.
+Bind pagination to a project metadata revision so edits invalidate old snapshots instead of silently
+skipping or duplicating rows. This requires checking the revision inside the list transaction, not
+only before opening it. UI, issue findings/dispositions and webhook delivery remain unfinished.

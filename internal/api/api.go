@@ -16,6 +16,7 @@ import (
 
 // API serves the console's /api/v1 reads and its member writes.
 type API struct {
+	Metadata          CallMetadataStore
 	Settings          ProjectSettingsStore
 	StorageBucket     string
 	ResourceEndpoints ResourceEndpoints
@@ -82,6 +83,8 @@ func (a *API) Routes() http.Handler {
 	handle(r, http.MethodPut, project+"/settings", a.updateProjectSettings)
 	handle(r, http.MethodGet, project+"/calls", a.listCalls)
 	handle(r, http.MethodGet, project+"/calls/{callId}", a.getCall)
+	handle(r, http.MethodGet, project+"/calls/{callId}/metadata", a.getCallMetadata)
+	handle(r, http.MethodPut, project+"/calls/{callId}/metadata", a.updateCallMetadata)
 	handle(r, http.MethodGet, project+"/call-stats", a.getCallStats)
 	handle(r, http.MethodGet, project+"/media-server", a.mediaServer)
 	handle(r, http.MethodGet, project+"/sip", a.sip)

@@ -1349,6 +1349,23 @@ export type AlertSetup = {
     items: Array<AlertRuleSetup>;
 };
 
+export type CallMetadata = {
+    /**
+     * Normalized lowercase tags belonging to this immutable call ID.
+     */
+    tags: Array<string>;
+    /**
+     * Reversible archive state. Does not delete evidence or resolve findings.
+     */
+    archived: boolean;
+    revision: number;
+};
+
+/**
+ * Replace tags and archive state only when revision matches. Clear tags with an empty array. A stale revision returns 409 without changing persisted data.
+ */
+export type UpdateCallMetadata = CallMetadata;
+
 export type UpdateProjectSettings = {
     thresholds: Thresholds;
     /**
@@ -2888,6 +2905,126 @@ export type GetProviderProbesResponses = {
 };
 
 export type GetProviderProbesResponse = GetProviderProbesResponses[keyof GetProviderProbesResponses];
+
+export type GetCallMetadataData = {
+    body?: never;
+    path: {
+        /**
+         * Authorised orgId; the server must verify organisation/project ownership before any read.
+         */
+        orgId: string;
+        /**
+         * Authorised projectId; the server must verify organisation/project ownership before any read.
+         */
+        projectId: string;
+        /**
+         * Immutable call UUID within the named project.
+         */
+        callId: string;
+    };
+    query?: never;
+    url: '/api/v1/org/{orgId}/project/{projectId}/calls/{callId}/metadata';
+};
+
+export type GetCallMetadataErrors = {
+    /**
+     * invalid_request; never return an empty success result for this failure.
+     */
+    400: Error;
+    /**
+     * unauthenticated; never return an empty success result for this failure.
+     */
+    401: Error;
+    /**
+     * forbidden; never return an empty success result for this failure.
+     */
+    403: Error;
+    /**
+     * not_found; never return an empty success result for this failure.
+     */
+    404: Error;
+    /**
+     * internal_error; never return an empty success result for this failure.
+     */
+    500: Error;
+    /**
+     * source_unavailable; never return an empty success result for this failure.
+     */
+    503: Error;
+};
+
+export type GetCallMetadataError = GetCallMetadataErrors[keyof GetCallMetadataErrors];
+
+export type GetCallMetadataResponses = {
+    /**
+     * Authorised read result. Null means unreported, never zero. Source-specific coverage limits remain visible.
+     */
+    200: CallMetadata;
+};
+
+export type GetCallMetadataResponse = GetCallMetadataResponses[keyof GetCallMetadataResponses];
+
+export type UpdateCallMetadataData = {
+    body: UpdateCallMetadata;
+    path: {
+        /**
+         * Authorised orgId; the server must verify organisation/project ownership before any read.
+         */
+        orgId: string;
+        /**
+         * Authorised projectId; the server must verify organisation/project ownership before any read.
+         */
+        projectId: string;
+        /**
+         * Immutable call UUID within the named project.
+         */
+        callId: string;
+    };
+    query?: never;
+    url: '/api/v1/org/{orgId}/project/{projectId}/calls/{callId}/metadata';
+};
+
+export type UpdateCallMetadataErrors = {
+    /**
+     * invalid_request; never return an empty success result for this failure.
+     */
+    400: Error;
+    /**
+     * unauthenticated; never return an empty success result for this failure.
+     */
+    401: Error;
+    /**
+     * forbidden; never return an empty success result for this failure.
+     */
+    403: Error;
+    /**
+     * not_found; never return an empty success result for this failure.
+     */
+    404: Error;
+    /**
+     * revision_conflict, settings changed since they were read; last_admin, the change would leave the organisation without an admin; already_member, the invited email's account is a member already; member_of_other_organisations, a reset's member belongs to an organisation the requester does not administer; project_exists, the organisation already has a project with the new name's id.
+     */
+    409: Error;
+    /**
+     * internal_error; never return an empty success result for this failure.
+     */
+    500: Error;
+    /**
+     * source_unavailable; never return an empty success result for this failure.
+     */
+    503: Error;
+};
+
+export type UpdateCallMetadataError = UpdateCallMetadataErrors[keyof UpdateCallMetadataErrors];
+
+export type UpdateCallMetadataResponses = {
+    /**
+     * Persisted call metadata with the new revision.
+     */
+    200: CallMetadata;
+};
+
+export type UpdateCallMetadataResponse = UpdateCallMetadataResponses[keyof UpdateCallMetadataResponses];
 
 export type GetProjectSettingsData = {
     body?: never;

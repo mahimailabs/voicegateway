@@ -363,7 +363,7 @@ func (f *fixture) api(traces Traces) *API {
 	if traces == nil {
 		traces = f.events
 	}
-	return &API{Projects: f.pg, Settings: f.pg, Calls: f.pg, Traces: traces, Log: f.log, Now: time.Now, Gate: passThrough}
+	return &API{Projects: f.pg, Settings: f.pg, Metadata: f.pg, Calls: f.pg, Traces: traces, Log: f.log, Now: time.Now, Gate: passThrough}
 }
 
 // passThrough is a gate that lets every request in as an admin of the default organisation, for
