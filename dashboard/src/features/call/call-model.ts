@@ -183,11 +183,12 @@ function fromSpans(call: Call): Omit<CallModel, "pipeline" | "models" | "source"
     const detector = user.children.filter((x) => x.name === "eou_detection").at(-1)
     const probability = numericAttr(detector, "lk.eou.probability")
     const threshold = numericAttr(detector, "lk.eou.unlikely_threshold")
+    const derived = utterance && speak && speak.start >= utterance.end ? Math.round((speak.start - utterance.end) * 1000) : null
     return [{
       i, userText: t?.userText ?? null, agentText: t?.agentText ?? null, interrupted: !!t?.interrupted,
       utterance, eot: detector?.startMs != null ? { t: detector.startMs / 1000, probability, threshold } : null, wait: null,
       thinking: think, speaking: speak, ttftMs: t?.ttftMs ?? null, ttsMs: t?.ttsMs ?? null, eotMs: t?.endOfTurnMs ?? null,
-      e2eMs: t?.e2eMs ?? null, responseMs: t?.e2eMs ?? null, responseDerived: false, window: pad(s(at), 0.3, 0.3),
+      e2eMs: t?.e2eMs ?? null, responseMs: t?.e2eMs ?? derived, responseDerived: t?.e2eMs == null && derived !== null, window: pad(s(at), 0.3, 0.3),
     }]
   })
   const tools = spans.filter(placed).filter((x) => x.name === "function_tool")

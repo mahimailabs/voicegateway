@@ -9,12 +9,12 @@ export type MapNode = { id: string; label: string; color: string; icon?: "sfu"; 
 export type MapLink = { from: string; to: string; kind: "media" | "telemetry" }
 export default function WorldMap({ nodes, links, animate = true }: { nodes: MapNode[]; links: MapLink[]; animate?: boolean }) {
   const reduced = useReducedMotion()
-  const { svg, points, width, height } = useMemo(() => {
+  const { map, svg, width, height } = useMemo(() => {
     const map = new DottedMap({ height: 80, grid: "diagonal" })
     const svg = map.getSVG({ radius: 0.24, color: "#b0b0b0", backgroundColor: "transparent" })
-    const points = nodes.map((node) => ({ ...node, ...map.addPin({ lat: node.lat, lng: node.lng }) }))
-    return { svg, points, width: map.image.width, height: map.image.height }
-  }, [nodes])
+    return { map, svg, width: map.image.width, height: map.image.height }
+  }, [])
+  const points = useMemo(() => nodes.map((node) => ({ ...node, ...map.getPin({ lat: node.lat, lng: node.lng }) })).filter((point): point is typeof point & { x: number; y: number } => typeof point.x === "number" && typeof point.y === "number"), [map, nodes])
   return <div className="relative w-full overflow-hidden rounded-xl bg-muted/20" style={{ aspectRatio: `${width} / ${height}` }}>
     <img src={`data:image/svg+xml;utf8,${encodeURIComponent(svg)}`} alt="World map with illustrative deployment regions" className="absolute inset-0 h-full w-full opacity-60 dark:opacity-40" />
     <svg viewBox={`0 0 ${width} ${height}`} className="pointer-events-none absolute inset-0 h-full w-full" aria-hidden="true">

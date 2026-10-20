@@ -21,6 +21,7 @@ export function CapacityPreview({ name, onClose }: { name: string; onClose: () =
   const [view, setView] = useUrlState("capacityView", "capacity")
   const [mode, setMode] = useState("optimal")
   const [fixed, setFixed] = useState(16)
+  const [fixedDraft, setFixedDraft] = useState("16")
   const automaticStep = levels.includes(Number(stepParam) as typeof levels[number]) ? Number(stepParam) : 8
   const step = mode === "fixed" ? fixed : automaticStep
   const [scenario, setScenario] = useUrlState("capacityExample", "agent")
@@ -71,8 +72,8 @@ export function CapacityPreview({ name, onClose }: { name: string; onClose: () =
           <p className="text-sm text-muted-foreground">1 → 2 → 4 → 8 → 16 · Stop at threshold</p>
 
         </div> : <div className="flex items-center justify-between gap-6 rounded-2xl bg-muted/25 px-4 sm:px-6">
-          <div className="min-w-0 space-y-2"><label htmlFor="fixed-concurrency" className="block text-sm font-medium">Concurrent sessions</label><Input id="fixed-concurrency" type="number" min={1} max={64} value={fixed} onChange={(event) => { const n = Number(event.target.value); if (Number.isFinite(n)) setFixed(Math.min(64, Math.max(1, Math.floor(n)))) }} className="w-24 bg-background tabular-nums" /><p className="text-xs text-muted-foreground">1–64 sessions</p></div>
-          <div className="w-28 shrink-0" aria-label="Scroll to select concurrency"><WheelPickerWrapper><WheelPicker options={concurrencyOptions} value={fixed} onValueChange={setFixed} visibleCount={12} optionItemHeight={30} classNames={{ optionItem: "text-muted-foreground text-xl tabular-nums", highlightWrapper: "bg-accent rounded-xl", highlightItem: "text-foreground text-xl font-semibold tabular-nums" }} /></WheelPickerWrapper></div>
+          <div className="min-w-0 space-y-2"><label htmlFor="fixed-concurrency" className="block text-sm font-medium">Concurrent sessions</label><Input id="fixed-concurrency" type="number" min={1} max={64} value={fixedDraft} onChange={(event) => { const raw = event.target.value; setFixedDraft(raw); const n = Number(raw); if (raw !== "" && Number.isInteger(n) && n >= 1 && n <= 64) setFixed(n) }} onBlur={() => setFixedDraft(String(fixed))} className="w-24 bg-background tabular-nums" /><p className="text-xs text-muted-foreground">1–64 sessions</p></div>
+          <div className="w-28 shrink-0" aria-label="Scroll to select concurrency"><WheelPickerWrapper><WheelPicker options={concurrencyOptions} value={fixed} onValueChange={(value) => { setFixed(value); setFixedDraft(String(value)) }} visibleCount={12} optionItemHeight={30} classNames={{ optionItem: "text-muted-foreground text-xl tabular-nums", highlightWrapper: "bg-accent rounded-xl", highlightItem: "text-foreground text-xl font-semibold tabular-nums" }} /></WheelPickerWrapper></div>
         </div>}
 
         <div className="flex flex-wrap items-center justify-between gap-3 border-t pt-4"><p className="text-xs text-muted-foreground">Synthetic preview only. No calls or provider charges.</p><Button onClick={start}><Play />Start preview</Button></div>

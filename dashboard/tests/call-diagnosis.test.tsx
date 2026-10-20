@@ -75,3 +75,16 @@ test("checks require reported evidence instead of treating missing fields as hea
   a.attrs!["lk.transcript_confidence"] = "0.5"
   expect(evidenceCheck([a], "lk.transcript_confidence", (v) => Number(v) >= 0.8)).toBe(false)
 })
+
+
+test("span speech gaps are derived only on the same clock and reported latency wins", () => {
+  const c = base(); c.events = null; c.recording = null; c.turns = c.turns!.slice(0, 1)
+  c.turns[0].e2eMs = null
+  c.spans = [span("user", "user_turn", null, 0), span("speech", "user_speaking", "user", 0), span("turn", "agent_turn", null, 600), span("reply", "agent_speaking", "turn", 800)]
+  expect(buildModel(c).turns[0]).toMatchObject({ responseMs: 300, responseDerived: true })
+  c.turns[0].e2eMs = 250
+  expect(buildModel(c).turns[0]).toMatchObject({ responseMs: 250, responseDerived: false })
+  c.turns[0].e2eMs = null
+  c.spans[1].clockId = "foreign"
+  expect(buildModel(c).turns[0]).toMatchObject({ responseMs: null, responseDerived: false })
+})

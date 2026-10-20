@@ -27,7 +27,13 @@ func TestDiagnosisUsagePreservesUnknownAndCachedSubset(t *testing.T) {
 
 func TestDiagnosisTurnKeepsSourceSpanIdentity(t *testing.T) {
 	got := toTurns([]turn.Turn{{SpanID: "reported-turn"}})
-	if len(got) != 1 || got[0].SpanID != "reported-turn" {
+	if len(got) != 1 || got[0].SpanID == nil || *got[0].SpanID != "reported-turn" {
 		t.Fatalf("turn identity: %+v", got)
+	}
+}
+
+func TestDiagnosisMissingSpanIdentityIsNull(t *testing.T) {
+	if got := toTurns([]turn.Turn{{}}); got[0].SpanID != nil {
+		t.Fatal("missing span identity must be null")
 	}
 }

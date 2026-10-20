@@ -45,7 +45,7 @@ type span struct {
 }
 
 type callTurn struct {
-	SpanID               string   `json:"spanId"`
+	SpanID               *string  `json:"spanId"`
 	UserText             *string  `json:"userText"`
 	AgentText            *string  `json:"agentText"`
 	Model                *string  `json:"model"`
@@ -243,7 +243,7 @@ func toTurns(turns []turn.Turn) []callTurn {
 	out := make([]callTurn, 0, len(turns))
 	for _, t := range turns {
 		out = append(out, callTurn{
-			SpanID:               t.SpanID,
+			SpanID:               text(t.SpanID),
 			UserText:             t.UserText,
 			AgentText:            t.AgentText,
 			Model:                t.LLMModel,
