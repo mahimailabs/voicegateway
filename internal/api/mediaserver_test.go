@@ -210,6 +210,11 @@ func (f *fixture) getRead(t *testing.T, project, read string) (int, []byte) {
 		t.Fatal(err)
 	}
 	defer func() { _ = res.Body.Close() }()
+	if read == "media-server" || read == "workers" || read == "agents" {
+		if got := res.Header.Get("Cache-Control"); got != "no-store" {
+			t.Errorf("%s Cache-Control = %q, want no-store", read, got)
+		}
+	}
 	body, err := io.ReadAll(res.Body)
 	if err != nil {
 		t.Fatal(err)

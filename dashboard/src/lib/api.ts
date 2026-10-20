@@ -52,6 +52,9 @@ export class ApiError extends Error {
   }
 }
 
+// Never render cached telemetry after the API denies access.
+export const accessDenied = (error: unknown) => error instanceof ApiError && [401, 403, 404].includes(error.status)
+
 // The console reads only through web's API (CLAUDE.md Boundaries), with the SDK hey-api generates
 // from docs/api/openapi.yaml: paths, parameters and answers are typed by the contract. Every call
 // throws an ApiError on failure, so a query sees one error type.
@@ -168,12 +171,48 @@ export const callQuery = (id: string) => ({ queryKey: ["call", currentScope(), i
 export const egressQuery = () => ({ queryKey: ["egress", currentScope()], queryFn: () => data(getEgress({ ...thrown, path: scope() })) })
 export const ingressQuery = () => ({ queryKey: ["ingress", currentScope()], queryFn: () => data(getIngress({ ...thrown, path: scope() })) })
 export const sipQuery = () => ({ queryKey: ["sip", currentScope()], queryFn: () => data(getSip({ ...thrown, path: scope() })) })
-export const mediaServerQuery = () => ({ queryKey: ["media-server", currentScope()], queryFn: () => data(getMediaServer({ ...thrown, path: scope() })) })
-export const cloudAgentsQuery = () => ({ queryKey: ["agents", currentScope()], queryFn: () => data(getCloudAgents({ ...thrown, path: scope() })) })
+export function mediaServerQuery() {
+  // Capture the scope with the key; retries must never read a newly selected project.
+  const selected = currentScope()
+  return {
+    queryKey: ["media-server", selected],
+    queryFn: ({ signal }: { signal: AbortSignal }) => data(getMediaServer({ ...thrown, path: { orgId: selected.org, projectId: selected.project }, cache: "no-store", signal: AbortSignal.any([signal, AbortSignal.timeout(10000)]) })),
+    staleTime: 0,
+    refetchInterval: 10000,
+    refetchOnWindowFocus: true,
+    refetchOnReconnect: true,
+    retry: false,
+  }
+}
+export function cloudAgentsQuery() {
+  // Capture the scope with the key; retries must never read a newly selected project.
+  const selected = currentScope()
+  return {
+    queryKey: ["agents", selected],
+    queryFn: ({ signal }: { signal: AbortSignal }) => data(getCloudAgents({ ...thrown, path: { orgId: selected.org, projectId: selected.project }, cache: "no-store", signal: AbortSignal.any([signal, AbortSignal.timeout(10000)]) })),
+    staleTime: 0,
+    refetchInterval: 60000,
+    refetchOnWindowFocus: true,
+    refetchOnReconnect: true,
+    retry: false,
+  }
+}
 // The contract requires the agent whose run to read, and the console does not pass one yet: it
 // shows one run for every agent. The cast keeps that known gap in one visible place.
 export const capacityQuery = () => ({ queryKey: ["capacity", currentScope()], queryFn: () => data(getCapacity({ ...thrown, path: scope() } as Parameters<typeof getCapacity<true>>[0])) })
-export const workersQuery = () => ({ queryKey: ["workers", currentScope()], queryFn: () => data(getWorkers({ ...thrown, path: scope() })) })
+export function workersQuery() {
+  // Capture the scope with the key; retries must never read a newly selected project.
+  const selected = currentScope()
+  return {
+    queryKey: ["workers", selected],
+    queryFn: ({ signal }: { signal: AbortSignal }) => data(getWorkers({ ...thrown, path: { orgId: selected.org, projectId: selected.project }, cache: "no-store", signal: AbortSignal.any([signal, AbortSignal.timeout(10000)]) })),
+    staleTime: 0,
+    refetchInterval: 15000,
+    refetchOnWindowFocus: true,
+    refetchOnReconnect: true,
+    retry: false,
+  }
+}
 export const providerProbesQuery = () => ({ queryKey: ["provider-probes", currentScope()], queryFn: () => data(getProviderProbes({ ...thrown, path: scope() })) })
 export const snapshotQuery = () => ({ queryKey: ["snapshot", currentScope()], queryFn: () => data(getProjectSnapshot({ ...thrown, path: scope() })) })
 

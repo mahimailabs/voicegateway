@@ -8,8 +8,9 @@ import { cn } from "@/lib/utils"
 import { useMemo } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { HardDrives } from "@phosphor-icons/react"
+import { SourceStatus } from "@/components/source-status"
 import { QueryState } from "@/components/page-state"
-import { mediaServerQuery } from "@/lib/api"
+import { mediaServerQuery, accessDenied } from "@/lib/api"
 import { type MediaServerData, type Participant, type Room, RoomDrawer, fromContract, kindIcon, kindName, openAtWatchEnd, roomOrigin } from "./room-drawer"
 
 // The media server as the project's three keys see it (decision 0016): a few numbers, where people
@@ -44,8 +45,8 @@ const GAP = 4 // percent of the axis between two watched stretches
 export function MediaServerPage() {
   const read = useQuery(mediaServerQuery())
   const ms = useMemo(() => (read.data ? fromContract(read.data) : null), [read.data])
-  if (!ms) return <QueryState icon={HardDrives} what="the media server" query={read} />
-  return <MediaServerView data={ms} />
+  if (!ms || accessDenied(read.error)) return <QueryState icon={HardDrives} what="the media server" query={read} />
+  return <div className="space-y-4"><SourceStatus name="LiveKit SFU" source={read.data?.sourceStatus} interval={10000} query={read} /><MediaServerView data={ms} /></div>
 }
 
 function MediaServerView({ data }: { data: MediaServerData }) {
@@ -137,7 +138,7 @@ function MediaServerView({ data }: { data: MediaServerData }) {
         </div>
         <div className="grid grid-cols-2 gap-6 sm:grid-cols-4">
           <Stat value={covered ? rooms.length : "Unknown"} label="rooms" />
-          <Stat value={covered ? live : "Unknown"} label={atEnd ? "live now" : `open at ${hhmm(axisEnd)}`} />
+          <Stat value={covered ? live : "Unknown"} label={atEnd ? "listed at last observation" : `listed at ${hhmm(axisEnd)}`} />
           <Stat value={covered ? people : "Unknown"} label="people joined" />
           <Stat value={avg !== null ? dur(avg) : "Unknown"} label="average room" />
         </div>
