@@ -78,3 +78,36 @@ func TestMediaFindingReplayScopeAndTerminalEvidence(t *testing.T) {
 		t.Fatalf("occurrences %d: %v", count, err)
 	}
 }
+
+func TestMediaSourceReadsPreserveTerminalEvents(t *testing.T) {
+	s, pool := migrated(t)
+	ctx := context.Background()
+	const scope = "media-source-history"
+	if _, err := s.CreateProject(ctx, project(scope, "key-history")); err != nil {
+		t.Fatal(err)
+	}
+	at := time.Now().UTC()
+	for _, layer := range []string{"egress", "ingress"} {
+		status := "EGRESS_FAILED"
+		if layer == "ingress" {
+			status = "ENDPOINT_ERROR"
+		}
+		if err := s.PutMediaFinding(ctx, store.MediaFinding{OrganisationID: "default", ProjectID: scope, EventID: "EV_" + layer, ComponentID: "component-" + layer, Layer: layer, Status: status, At: &at}); err != nil {
+			t.Fatal(err)
+		}
+		read := store.LayerRead{OrganisationID: "default", ProjectID: scope, Layer: layer, ReadAt: at, Every: time.Minute, ErrorClass: store.ErrorUnreachable}
+		if err := s.ApplyStandingFindings(ctx, read, nil); err != nil {
+			t.Fatal(err)
+		}
+		read.ReadAt = at.Add(time.Second)
+		read.OK = true
+		read.ErrorClass = ""
+		if err := s.ApplyStandingFindings(ctx, read, &store.StandingEvaluation{}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var count int
+	if err := pool.QueryRow(ctx, "SELECT count(*) FROM issue_occurrences WHERE project_id=$1 AND active", scope).Scan(&count); err != nil || count != 2 {
+		t.Fatalf("poll erased terminal evidence: %d %v", count, err)
+	}
+}

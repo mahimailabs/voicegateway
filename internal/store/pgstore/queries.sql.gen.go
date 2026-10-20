@@ -1317,8 +1317,12 @@ func (q *Queries) IssueEvaluationCoverage(ctx context.Context, arg IssueEvaluati
 
 const issueSourceCoverage = `-- name: IssueSourceCoverage :many
 SELECT layer, read_at, good_at,
- CASE WHEN NOT ok THEN 'unavailable' WHEN fresh_until < now() THEN 'stale' WHEN NOT evaluation_complete THEN 'partial' ELSE 'current' END::text AS state
-FROM issue_sources WHERE organisation_id = $1 AND project_id = $2
+ CASE WHEN NOT ok THEN 'unavailable' WHEN fresh_until < now() THEN 'stale' WHEN NOT evaluation_complete THEN 'partial'
+ WHEN layer IN ('egress','ingress') AND NOT EXISTS (
+ SELECT 1 FROM issue_media_backfills b WHERE b.organisation_id=issue_sources.organisation_id
+ AND b.project_id=issue_sources.project_id AND b.done) THEN 'partial'
+ ELSE 'current' END::text AS state
+FROM issue_sources WHERE issue_sources.organisation_id = $1 AND issue_sources.project_id = $2
 ORDER BY layer
 `
 

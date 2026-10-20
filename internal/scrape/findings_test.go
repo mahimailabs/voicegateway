@@ -81,3 +81,28 @@ func TestCloudAgentFindingsUnknownDeploymentDoesNotMeanRecovery(t *testing.T) {
 		t.Fatalf("non-Cloud source evaluated: %+v", got)
 	}
 }
+
+func TestMediaCoverageRequiresKnownNativeState(t *testing.T) {
+	if egressCoverage(false, nil) != nil || ingressCoverage(false, nil) != nil {
+		t.Fatal("failed reads evaluated as empty success")
+	}
+	if egressCoverage(true, nil).Incomplete || ingressCoverage(true, nil).Incomplete {
+		t.Fatal("explicit empty successful snapshot is unknown")
+	}
+	for _, item := range []*livekit.IngressInfo{nil, {IngressId: "IN_missing"}, {IngressId: "IN_future", State: &livekit.IngressState{Status: livekit.IngressState_Status(999)}}} {
+		if !ingressCoverage(true, []*livekit.IngressInfo{item}).Incomplete {
+			t.Fatal("missing/future ingress state reported complete")
+		}
+	}
+	for _, item := range []*livekit.EgressInfo{nil, {EgressId: "EG_future", Status: livekit.EgressStatus(999)}} {
+		if !egressCoverage(true, []*livekit.EgressInfo{item}).Incomplete {
+			t.Fatal("unknown egress state reported complete")
+		}
+	}
+	for _, status := range []livekit.IngressState_Status{livekit.IngressState_ENDPOINT_ERROR, livekit.IngressState_ENDPOINT_INACTIVE, livekit.IngressState_ENDPOINT_PUBLISHING} {
+		got := ingressCoverage(true, []*livekit.IngressInfo{{IngressId: "IN_known", State: &livekit.IngressState{Status: status}}})
+		if got.Incomplete || len(got.Findings) != 0 || len(got.Covered) != 0 {
+			t.Fatal("poll fabricated or cleared event findings")
+		}
+	}
+}

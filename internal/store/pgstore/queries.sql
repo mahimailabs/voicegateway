@@ -832,8 +832,12 @@ SELECT
 
 -- name: IssueSourceCoverage :many
 SELECT layer, read_at, good_at,
- CASE WHEN NOT ok THEN 'unavailable' WHEN fresh_until < now() THEN 'stale' WHEN NOT evaluation_complete THEN 'partial' ELSE 'current' END::text AS state
-FROM issue_sources WHERE organisation_id = @organisation_id AND project_id = @project_id
+ CASE WHEN NOT ok THEN 'unavailable' WHEN fresh_until < now() THEN 'stale' WHEN NOT evaluation_complete THEN 'partial'
+ WHEN layer IN ('egress','ingress') AND NOT EXISTS (
+ SELECT 1 FROM issue_media_backfills b WHERE b.organisation_id=issue_sources.organisation_id
+ AND b.project_id=issue_sources.project_id AND b.done) THEN 'partial'
+ ELSE 'current' END::text AS state
+FROM issue_sources WHERE issue_sources.organisation_id = @organisation_id AND issue_sources.project_id = @project_id
 ORDER BY layer;
 
 

@@ -109,3 +109,39 @@ func cloudAgentFindings(cfg *store.CloudAgents) *store.StandingEvaluation {
 	}
 	return out
 }
+
+// Poll coverage reports availability of native component state. Terminal findings come from
+// stored webhooks; a later empty poll must never delete those event occurrences.
+func egressCoverage(ok bool, items []*livekit.EgressInfo) *store.StandingEvaluation {
+	if !ok {
+		return nil
+	}
+	out := &store.StandingEvaluation{}
+	for _, item := range items {
+		if item == nil || item.GetEgressId() == "" {
+			out.Incomplete = true
+			continue
+		}
+		if _, known := livekit.EgressStatus_name[int32(item.GetStatus())]; !known {
+			out.Incomplete = true
+		}
+	}
+	return out
+}
+
+func ingressCoverage(ok bool, items []*livekit.IngressInfo) *store.StandingEvaluation {
+	if !ok {
+		return nil
+	}
+	out := &store.StandingEvaluation{}
+	for _, item := range items {
+		if item == nil || item.GetIngressId() == "" || item.GetState() == nil {
+			out.Incomplete = true
+			continue
+		}
+		if _, known := livekit.IngressState_Status_name[int32(item.GetState().GetStatus())]; !known {
+			out.Incomplete = true
+		}
+	}
+	return out
+}

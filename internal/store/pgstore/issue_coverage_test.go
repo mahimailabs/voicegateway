@@ -89,6 +89,22 @@ func TestIssueCoverageRequiresFreshCompleteSources(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	pending := readList(false)
+	if pending.Coverage.Sources[3].State != "partial" || pending.Coverage.Sources[4].State != "partial" {
+		t.Fatal("uninitialized media backfill reported complete")
+	}
+	batches, err := s.PendingMediaBackfills(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	readList(false)
+	for _, b := range batches {
+		if b.ProjectID == scope {
+			if err := s.AdvanceMediaBackfill(ctx, b, 0, "", true); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
 	readList(true)
 	read := store.LayerRead{OrganisationID: "default", ProjectID: scope, Layer: store.LayerSIP, ReadAt: at.Add(time.Second), Every: time.Minute, OK: true}
 	if err := s.ApplyStandingFindings(ctx, read, &store.StandingEvaluation{Incomplete: true}); err != nil {

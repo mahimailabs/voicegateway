@@ -251,3 +251,12 @@ nanosecond timestamp and verifies restart/replay. Native ingestion tests cover e
 error gating, replay and retention of failure history after recovery. Source coverage
 integration and final whole-PR checks remain open; alert incident recovery remains part
 of the subsequent webhook implementation.
+
+
+Egress and ingress poll health is now wired into source coverage. Missing identities,
+absent ingress state and unknown native enum values remain partial. Failed reads remain
+unavailable; good empty snapshots do not clear terminal event findings. Both media sources
+remain partial until the scoped historical media checkpoint is complete, even after a
+successful poll. Native storage coverage and event-preservation regressions, native-state
+classification tests, Go lint and SQL generation consistency checks pass. The implementation
+is entering final whole-PR checks and review; the roadmap task stays unchecked until merge.
