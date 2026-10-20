@@ -12,7 +12,10 @@ import (
 	"github.com/mahimailabs/voicegateway/internal/store"
 )
 
-var ErrBadResourceTarget = errors.New("resource target requires kind sfu or worker, a target name, and an exact non-root container id")
+var (
+	ErrBadResourceTarget    = errors.New("resource target requires kind sfu or worker, a target name, and an exact non-root container id")
+	ErrResourceTargetExists = errors.New("the project already maps this kind and target; remove it first")
+)
 
 func (s *Store) AddResourceEndpoint(ctx context.Context, org, project, rawURL, kind, target, containerID string) (store.ResourceEndpoint, error) {
 	rawURL = strings.TrimSpace(rawURL)
@@ -36,7 +39,7 @@ func (s *Store) AddResourceEndpoint(ctx context.Context, org, project, rawURL, k
 				return store.ResourceEndpoint{}, store.ErrNotFound
 			}
 			if pgErr.Code == "23505" {
-				return store.ResourceEndpoint{}, store.ErrEndpointExists
+				return store.ResourceEndpoint{}, ErrResourceTargetExists
 			}
 		}
 		return store.ResourceEndpoint{}, fmt.Errorf("store resource endpoint: %w", err)

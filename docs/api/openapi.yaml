@@ -3623,6 +3623,7 @@ components:
       x-source: { kind: livekit_api, file: dashboard/src/mocks/project-snapshot.json, pointer: "", detail: RoomService/SIP/Egress/Ingress snapshot; observed subtree is an opt-in RemoteSession read }
     Resources:
       type: object
+      additionalProperties: false
       required: [source, resources]
       x-source: { kind: computed, file: internal/api/resources.go, pointer: null, detail: "Project-scoped cAdvisor container measurement and explicit endpoint mapping; missing data stays null." }
       properties:
@@ -3634,6 +3635,7 @@ components:
           x-source: { kind: computed, file: internal/api/resources.go, pointer: null, detail: "Project-scoped cAdvisor container measurement and explicit endpoint mapping; missing data stays null." }
           items:
             type: object
+            additionalProperties: false
             required: [id, kind, target, containerId, host, sourceStatus, samples]
             x-source: { kind: computed, file: internal/api/resources.go, pointer: null, detail: "Project-scoped cAdvisor container measurement and explicit endpoint mapping; missing data stays null." }
             properties:
@@ -3660,6 +3662,7 @@ components:
                 x-source: { kind: computed, file: internal/api/resources.go, pointer: null, detail: "Project-scoped cAdvisor container measurement and explicit endpoint mapping; missing data stays null." }
                 items:
                   type: object
+                  additionalProperties: false
                   required: [t, observedAt, cpuUsed, cpuCores, memoryBytes, memoryLimitBytes]
                   x-source: { kind: computed, file: internal/api/resources.go, pointer: null, detail: "Project-scoped cAdvisor container measurement and explicit endpoint mapping; missing data stays null." }
                   properties:

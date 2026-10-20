@@ -180,7 +180,7 @@ func (s *ResourceScraper) readResourceEndpoint(ctx context.Context, rawURL, cont
 	case res.StatusCode < 200 || res.StatusCode > 299:
 		return containerResource{}, store.ErrorOther
 	}
-	body, err := readCapped(res.Body, maxMetricsBody)
+	body, err := readCapped(res.Body, maxResourceMetricsBody)
 	if err != nil {
 		if cctx.Err() != nil {
 			return containerResource{}, store.ErrorUnreachable

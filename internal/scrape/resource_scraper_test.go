@@ -175,3 +175,38 @@ func TestResourceCollectionSharesLeaseBudget(t *testing.T) {
 		})
 	}
 }
+
+func TestResourceBodyCap(t *testing.T) {
+	now := time.Now().UTC().Truncate(time.Second)
+	for _, tc := range []struct {
+		name string
+		size int
+		want string
+	}{
+		{"larger than worker metrics", maxMetricsBody + 1, ""},
+		{"resource limit", maxResourceMetricsBody, ""},
+		{"over resource limit", maxResourceMetricsBody + 1, store.ErrorOther},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			fixture := resourceFixture(now)
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				remaining := tc.size - len(fixture)
+				for remaining > 1 {
+					n := min(remaining, 4096)
+					_, _ = fmt.Fprint(w, "#"+strings.Repeat(" ", n-2)+"\n")
+					remaining -= n
+				}
+				if remaining == 1 {
+					_, _ = fmt.Fprint(w, "\n")
+				}
+				_, _ = fmt.Fprint(w, fixture)
+			}))
+			defer server.Close()
+			s := &ResourceScraper{Client: NewWorkerClient(false), Timeout: 15 * time.Second, Now: func() time.Time { return now }}
+			_, class := s.readResourceEndpoint(t.Context(), server.URL, "/docker/worker")
+			if class != tc.want {
+				t.Fatalf("read class %q, want %q", class, tc.want)
+			}
+		})
+	}
+}

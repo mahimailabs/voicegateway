@@ -50,7 +50,7 @@ func TestResourceEndpointSealed(t *testing.T) {
 	if got, err := s.ResourceEndpoints(ctx, "default", "other"); err != nil || len(got) != 0 {
 		t.Fatal("cross-project read", err)
 	}
-	if _, err := s.AddResourceEndpoint(ctx, "default", "alpha", raw, "worker", "worker-a", "/docker/b"); !errors.Is(err, store.ErrEndpointExists) {
+	if _, err := s.AddResourceEndpoint(ctx, "default", "alpha", raw, "worker", "worker-a", "/docker/b"); !errors.Is(err, ErrResourceTargetExists) {
 		t.Fatal("ambiguous target mapping", err)
 	}
 	if _, err := s.AddResourceEndpoint(ctx, "default", "alpha", raw, "worker", "root", "/"); !errors.Is(err, ErrBadResourceTarget) {
