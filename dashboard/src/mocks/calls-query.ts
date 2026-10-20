@@ -151,13 +151,12 @@ const median = (xs: number[]) => {
 // The most answer times a response carries for the distribution strip.
 const MAX_VALUES = 1000
 
-export function totals(calls: CallSummary[]): CallTotals {
+export function totals(calls: CallSummary[], budget = storedThresholds().answerMs): CallTotals {
   const byChannel = Object.fromEntries(CHANNELS.map((ch) => [ch, calls.filter((c) => c.channel === ch).length])) as CallTotals["byChannel"]
   // Newest calls first, so a cut drops the oldest.
   const newest = [...calls].sort((a, b) => Date.parse(b.startedAt) - Date.parse(a.startedAt))
   const all = newest.flatMap((c) => c.answerMs ?? [])
   const sev = calls.map(severity)
-  const budget = storedThresholds().answerMs
   return {
     callCount: calls.length,
     byChannel,

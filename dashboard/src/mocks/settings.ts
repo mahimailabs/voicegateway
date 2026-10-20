@@ -9,28 +9,25 @@ import { readLocal } from "@/lib/local-store"
 export const DEFAULT_THRESHOLDS: Thresholds = { answerMs: 1500, joinMs: 2000, ttsStartMs: 1000 }
 
 const record = (v: unknown): Record<string, unknown> => (v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : {})
-const positive = (v: unknown, fallback: number) => (typeof v === "number" && Number.isFinite(v) && v > 0 ? v : fallback)
-
-// Each field falls back on its own, so one bad value does not discard the others.
-export function storedThresholds(): Thresholds {
-  const saved = record(readLocal("vg.thresholds"))
-  return {
-    answerMs: positive(saved.answerMs, DEFAULT_THRESHOLDS.answerMs),
-    joinMs: positive(saved.joinMs, DEFAULT_THRESHOLDS.joinMs),
-    ttsStartMs: positive(saved.ttsStartMs, DEFAULT_THRESHOLDS.ttsStartMs),
-  }
-}
-
-// No bucket, retention or embed origin can be configured yet, so each is null: not configured,
-// never a guessed default.
-export const projectSettings = (): ProjectSettings => ({
-  thresholds: storedThresholds(),
-  storageBucket: null,
-  transcriptRetentionDays: null,
-  traceRetentionDays: null,
-  recordingRetentionDays: null,
-  allowedOrigins: null,
+const settingsByProject = new Map<string, ProjectSettings>()
+const defaultScope = "default/default-project"
+export function resetProjectSettings() { settingsByProject.clear() }
+export const projectSettings = (scope = defaultScope): ProjectSettings => structuredClone(settingsByProject.get(scope) ?? {
+  thresholds: DEFAULT_THRESHOLDS, revision: 0, storageBucket: null,
+  transcriptRetentionDays: null, traceRetentionDays: null, recordingRetentionDays: null, allowedOrigins: null,
 })
+export const storedThresholds = (scope = defaultScope): Thresholds => projectSettings(scope).thresholds
+export function updateSettings(scope: string, input: unknown): ProjectSettings | "invalid_request" | "revision_conflict" {
+  const value = record(input)
+  const thresholds = record(value.thresholds)
+  if (Object.keys(value).some((k) => !["thresholds", "revision"].includes(k)) || Object.keys(thresholds).some((k) => !["answerMs", "joinMs", "ttsStartMs"].includes(k)) || !Number.isSafeInteger(value.revision) || Number(value.revision) < 0 || Number(value.revision) >= Number.MAX_SAFE_INTEGER ||
+      ![thresholds.answerMs, thresholds.joinMs, thresholds.ttsStartMs].every((v) => typeof v === "number" && Number.isFinite(v) && v >= 100 && v <= 60000)) return "invalid_request"
+  const prior = projectSettings(scope)
+  if (value.revision !== prior.revision) return "revision_conflict"
+  const saved = { ...prior, thresholds: thresholds as Thresholds, revision: prior.revision + 1 }
+  settingsByProject.set(scope, structuredClone(saved))
+  return saved
+}
 
 // Saved as { [issueId]: { state, at } } with at in milliseconds.
 export function issueDispositions(): IssueDispositions {

@@ -373,7 +373,7 @@ func (emptyTraces) CallTrace(context.Context, string, string, string) ([]store.S
 
 // apiWith returns the API behind the sign-in gate.
 func (f *fixture) apiWith(s *auth.Service) http.Handler {
-	return (&api.API{Projects: f.pg, Calls: f.pg, Traces: emptyTraces{}, Accounts: f.pg, Log: slog.New(slog.NewTextHandler(io.Discard, nil)), Now: time.Now, Gate: s.Gate}).Routes()
+	return (&api.API{Projects: f.pg, Settings: f.pg, Calls: f.pg, Traces: emptyTraces{}, Accounts: f.pg, Log: slog.New(slog.NewTextHandler(io.Discard, nil)), Now: time.Now, Gate: s.Gate}).Routes()
 }
 
 // Acceptance check 7.
@@ -553,7 +553,7 @@ func TestNoSecretInLogs(t *testing.T) {
 	created := f.createKey(web, c, "default", "logs").Secret
 	f.send(web, call{method: http.MethodGet, path: "/api/v1/org/default/project/logs/calls", token: created})
 	f.send(web, call{method: http.MethodGet, path: "/api/v1/org/default/project/logs/calls", token: created[:len(created)-2] + "xx"})
-	failing := (&api.API{Projects: f.pg, Calls: f.pg, Traces: emptyTraces{}, Accounts: failingAccounts{Accounts: f.pg}, Log: s.Log, Now: time.Now, Gate: s.Gate}).Routes()
+	failing := (&api.API{Projects: f.pg, Settings: f.pg, Calls: f.pg, Traces: emptyTraces{}, Accounts: failingAccounts{Accounts: f.pg}, Log: s.Log, Now: time.Now, Gate: s.Gate}).Routes()
 	f.send(failing, call{method: http.MethodGet, path: members, cookie: c})
 	// Phase 06d: links made, read, refused and used without SMTP, a reset, and a failed send whose
 	// SMTP URL holds a password.

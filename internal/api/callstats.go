@@ -121,12 +121,16 @@ func (a *API) getCallStats(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, http.StatusBadRequest, codeInvalidRequest, msg)
 		return
 	}
+	settings, ok := a.readSettings(w, r)
+	if !ok {
+		return
+	}
 	read, err := a.Stats.StatsCalls(r.Context(), chi.URLParam(r, "orgId"), chi.URLParam(r, "projectId"), from, to)
 	if err != nil {
 		a.fail(w, r, err, "project not found")
 		return
 	}
-	writeJSON(w, http.StatusOK, buildStats(read, from, to, float64(a.budget())))
+	writeJSON(w, http.StatusOK, buildStats(read, from, to, settings.Thresholds.AnswerMs))
 }
 
 // statsRange reads the required from and to, from before to and at most 400 days apart.

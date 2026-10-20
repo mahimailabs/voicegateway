@@ -30,9 +30,6 @@ type Config struct {
 	SecretKey []byte
 	// LogLevel is debug, info, warn or error.
 	LogLevel slog.Level
-	// AnswerBudgetMs is the answer budget listCalls counts against; 0 is the console's default.
-	// Interim, until thresholds are stored per project.
-	AnswerBudgetMs int
 	// PublicURL is the address people open the console at; https makes every session cookie
 	// Secure. Empty means unknown, and each request's own transport decides.
 	PublicURL string
@@ -112,13 +109,6 @@ func Load(getenv func(string) string) (Config, error) {
 		c.SecretKey = key
 	}
 
-	if v := optional("VOICEGATEWAY_ANSWER_BUDGET_MS", ""); v != "" {
-		n, err := strconv.Atoi(v)
-		if err != nil || n < 1 {
-			errs = append(errs, errors.New("VOICEGATEWAY_ANSWER_BUDGET_MS must be a whole number of milliseconds, at least 1"))
-		}
-		c.AnswerBudgetMs = n
-	}
 	ssl, err := strconv.ParseBool(optional("VOICEGATEWAY_S3_USE_SSL", "false"))
 	if err != nil {
 		errs = append(errs, errors.New("VOICEGATEWAY_S3_USE_SSL must be true or false"))

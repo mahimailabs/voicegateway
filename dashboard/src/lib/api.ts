@@ -33,8 +33,9 @@ import {
   revokeInvitation as revokeInvitationCall,
   revokeProjectKey as revokeProjectKeyCall,
   updateMember as updateMemberCall,
+  updateProjectSettings as updateProjectSettingsCall,
 } from "@/lib/api-types"
-import type { Call as GeneratedCall, CallPage, ProjectCreate, CallSummary, CallTotals, EndOfTurnEvent, ItemEvent, Member, OverlapEvent, RecordingSegment, Span, StateEvent, TranscriptEvent, Turn } from "@/lib/api-types"
+import type { Call as GeneratedCall, UpdateProjectSettings, CallPage, ProjectCreate, CallSummary, CallTotals, EndOfTurnEvent, ItemEvent, Member, OverlapEvent, RecordingSegment, Span, StateEvent, TranscriptEvent, Turn } from "@/lib/api-types"
 
 export type { CallSummary, CallTotals, RecordingSegment, Span, Turn }
 export type SessionEvent = StateEvent | TranscriptEvent | EndOfTurnEvent | OverlapEvent | ItemEvent
@@ -241,9 +242,19 @@ export const callStatsQuery = (from: Date, to: Date) => ({
   queryFn: () => data(getCallStats({ ...thrown, path: scope(), query: { from: from.toISOString(), to: to.toISOString() } })),
 })
 
-// Settings. Until web stores them the console saves them in this browser (lib/local-store.ts) and
-// these reads return them; after a save the console invalidates the read it changed.
-export const projectSettingsQuery = () => ({ queryKey: ["settings", currentScope()], queryFn: () => data(getProjectSettings({ ...thrown, path: scope() })) })
+// Bind each request to its query key, even if navigation happens before it executes.
+export const projectSettingsQuery = () => {
+  const selected = currentScope()
+  return {
+    queryKey: ["settings", selected],
+    queryFn: ({ signal }: { signal: AbortSignal }) => data(getProjectSettings({ ...thrown, path: { orgId: selected.org, projectId: selected.project }, signal })),
+    staleTime: 15_000,
+    refetchInterval: 15_000,
+    refetchOnWindowFocus: true,
+  }
+}
+export const saveProjectSettings = (selected: ReturnType<typeof currentScope>, body: UpdateProjectSettings) =>
+  data(updateProjectSettingsCall({ ...thrown, path: { orgId: selected.org, projectId: selected.project }, body }))
 export const issueDispositionsQuery = () => ({ queryKey: ["issue-dispositions", currentScope()], queryFn: () => data(getIssueDispositions({ ...thrown, path: scope() })) })
 export const alertSetupQuery = () => ({ queryKey: ["alert-setup", currentScope()], queryFn: () => data(getAlertSetup({ ...thrown, path: scope() })) })
 export const fetchWorkspaces = () => data(getWorkspaces(thrown))

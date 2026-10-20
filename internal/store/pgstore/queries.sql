@@ -557,3 +557,23 @@ ORDER BY created_at, id;
 -- name: DeleteResourceEndpoint :execrows
 DELETE FROM project_resource_endpoints
 WHERE organisation_id = $1 AND project_id = $2 AND id = $3;
+
+-- name: ReadProjectSettings :one
+SELECT COALESCE(s.answer_ms, 1500::double precision) AS answer_ms,
+       COALESCE(s.join_ms, 2000::double precision) AS join_ms,
+       COALESCE(s.tts_start_ms, 1000::double precision) AS tts_start_ms,
+       COALESCE(s.revision, 0::bigint) AS revision
+FROM projects p LEFT JOIN project_settings s ON s.organisation_id = p.organisation_id AND s.project_id = p.id
+WHERE p.organisation_id= @organisation_id AND p.id= @project_id;
+
+-- name: LockSettingsProject :one
+SELECT id FROM projects WHERE organisation_id= @organisation_id AND id= @project_id FOR KEY SHARE;
+
+-- name: EnsureProjectSettings :exec
+INSERT INTO project_settings(organisation_id, project_id) VALUES (@organisation_id, @project_id)
+ON CONFLICT (organisation_id, project_id) DO NOTHING;
+
+-- name: UpdateProjectSettings :one
+UPDATE project_settings SET answer_ms= @answer_ms, join_ms= @join_ms, tts_start_ms= @tts_start_ms, revision = revision + 1
+WHERE organisation_id= @organisation_id AND project_id= @project_id AND revision= @expected_revision
+RETURNING answer_ms, join_ms, tts_start_ms, revision;

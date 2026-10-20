@@ -1349,7 +1349,19 @@ export type AlertSetup = {
     items: Array<AlertRuleSetup>;
 };
 
+export type UpdateProjectSettings = {
+    thresholds: Thresholds;
+    /**
+     * Revision checked atomically on save to prevent lost updates.
+     */
+    revision: number;
+};
+
 export type ProjectSettings = {
+    /**
+     * Revision checked atomically on save to prevent lost updates.
+     */
+    revision: number;
     thresholds: Thresholds;
     /**
      * Configured storage destination label only, null when not configured. Never return access credentials.
@@ -2931,6 +2943,64 @@ export type GetProjectSettingsResponses = {
 
 export type GetProjectSettingsResponse = GetProjectSettingsResponses[keyof GetProjectSettingsResponses];
 
+export type UpdateProjectSettingsData = {
+    body: UpdateProjectSettings;
+    path: {
+        /**
+         * Authorised orgId; the server must verify organisation/project ownership before any read.
+         */
+        orgId: string;
+        /**
+         * Authorised projectId; the server must verify organisation/project ownership before any read.
+         */
+        projectId: string;
+    };
+    query?: never;
+    url: '/api/v1/org/{orgId}/project/{projectId}/settings';
+};
+
+export type UpdateProjectSettingsErrors = {
+    /**
+     * invalid_request; never return an empty success result for this failure.
+     */
+    400: Error;
+    /**
+     * unauthenticated; never return an empty success result for this failure.
+     */
+    401: Error;
+    /**
+     * forbidden; never return an empty success result for this failure.
+     */
+    403: Error;
+    /**
+     * not_found; never return an empty success result for this failure.
+     */
+    404: Error;
+    /**
+     * revision_conflict, settings changed since they were read; last_admin, the change would leave the organisation without an admin; already_member, the invited email's account is a member already; member_of_other_organisations, a reset's member belongs to an organisation the requester does not administer; project_exists, the organisation already has a project with the new name's id.
+     */
+    409: Error;
+    /**
+     * internal_error; never return an empty success result for this failure.
+     */
+    500: Error;
+    /**
+     * source_unavailable; never return an empty success result for this failure.
+     */
+    503: Error;
+};
+
+export type UpdateProjectSettingsError = UpdateProjectSettingsErrors[keyof UpdateProjectSettingsErrors];
+
+export type UpdateProjectSettingsResponses = {
+    /**
+     * Persisted settings with the new revision.
+     */
+    200: ProjectSettings;
+};
+
+export type UpdateProjectSettingsResponse = UpdateProjectSettingsResponses[keyof UpdateProjectSettingsResponses];
+
 export type GetIssueDispositionsData = {
     body?: never;
     path: {
@@ -3119,7 +3189,7 @@ export type CreateInvitationErrors = {
      */
     404: Error;
     /**
-     * last_admin, the change would leave the organisation without an admin; already_member, the invited email's account is a member already; member_of_other_organisations, a reset's member belongs to an organisation the requester does not administer; project_exists, the organisation already has a project with the new name's id.
+     * revision_conflict, settings changed since they were read; last_admin, the change would leave the organisation without an admin; already_member, the invited email's account is a member already; member_of_other_organisations, a reset's member belongs to an organisation the requester does not administer; project_exists, the organisation already has a project with the new name's id.
      */
     409: Error;
     /**
@@ -3227,7 +3297,7 @@ export type CreateProjectErrors = {
      */
     404: Error;
     /**
-     * last_admin, the change would leave the organisation without an admin; already_member, the invited email's account is a member already; member_of_other_organisations, a reset's member belongs to an organisation the requester does not administer; project_exists, the organisation already has a project with the new name's id.
+     * revision_conflict, settings changed since they were read; last_admin, the change would leave the organisation without an admin; already_member, the invited email's account is a member already; member_of_other_organisations, a reset's member belongs to an organisation the requester does not administer; project_exists, the organisation already has a project with the new name's id.
      */
     409: Error;
     /**
@@ -3339,7 +3409,7 @@ export type RemoveMemberErrors = {
      */
     404: Error;
     /**
-     * last_admin, the change would leave the organisation without an admin; already_member, the invited email's account is a member already; member_of_other_organisations, a reset's member belongs to an organisation the requester does not administer; project_exists, the organisation already has a project with the new name's id.
+     * revision_conflict, settings changed since they were read; last_admin, the change would leave the organisation without an admin; already_member, the invited email's account is a member already; member_of_other_organisations, a reset's member belongs to an organisation the requester does not administer; project_exists, the organisation already has a project with the new name's id.
      */
     409: Error;
     /**
@@ -3397,7 +3467,7 @@ export type UpdateMemberErrors = {
      */
     404: Error;
     /**
-     * last_admin, the change would leave the organisation without an admin; already_member, the invited email's account is a member already; member_of_other_organisations, a reset's member belongs to an organisation the requester does not administer; project_exists, the organisation already has a project with the new name's id.
+     * revision_conflict, settings changed since they were read; last_admin, the change would leave the organisation without an admin; already_member, the invited email's account is a member already; member_of_other_organisations, a reset's member belongs to an organisation the requester does not administer; project_exists, the organisation already has a project with the new name's id.
      */
     409: Error;
     /**
@@ -3455,7 +3525,7 @@ export type CreatePasswordResetErrors = {
      */
     404: Error;
     /**
-     * last_admin, the change would leave the organisation without an admin; already_member, the invited email's account is a member already; member_of_other_organisations, a reset's member belongs to an organisation the requester does not administer; project_exists, the organisation already has a project with the new name's id.
+     * revision_conflict, settings changed since they were read; last_admin, the change would leave the organisation without an admin; already_member, the invited email's account is a member already; member_of_other_organisations, a reset's member belongs to an organisation the requester does not administer; project_exists, the organisation already has a project with the new name's id.
      */
     409: Error;
     /**
@@ -3902,7 +3972,7 @@ export type CreateOrganisationInvitationErrors = {
      */
     404: Error;
     /**
-     * last_admin, the change would leave the organisation without an admin; already_member, the invited email's account is a member already; member_of_other_organisations, a reset's member belongs to an organisation the requester does not administer; project_exists, the organisation already has a project with the new name's id.
+     * revision_conflict, settings changed since they were read; last_admin, the change would leave the organisation without an admin; already_member, the invited email's account is a member already; member_of_other_organisations, a reset's member belongs to an organisation the requester does not administer; project_exists, the organisation already has a project with the new name's id.
      */
     409: Error;
     /**

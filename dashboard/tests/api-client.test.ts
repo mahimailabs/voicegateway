@@ -67,3 +67,32 @@ test("a room's call on a later page is found, and a search cut short is an error
   vi.stubGlobal("fetch", async () => new Response(JSON.stringify(pages.first), { status: 200, headers: { "Content-Type": "application/json" } }))
   await expect(callInRoomQuery("support", "RM_absent").queryFn()).rejects.toBeInstanceOf(ApiError)
 })
+
+test("settings requests retain their selected scope through navigation and carry cancellation", async () => {
+  const { projectSettingsQuery } = await import("../src/lib/api.ts")
+  const { scopeRewrite } = await import("../src/lib/url-state.ts")
+  scopeRewrite.input({ url: new URL("http://localhost/org/one/project/first/overview") })
+  const query = projectSettingsQuery()
+  scopeRewrite.input({ url: new URL("http://localhost/org/two/project/second/overview") })
+  const controller = new AbortController()
+  let sent: Request | undefined
+  vi.stubGlobal("fetch", async (request: Request) => { sent = request; return new Response("{}", { headers: { "Content-Type": "application/json" } }) })
+  await query.queryFn({ signal: controller.signal })
+  expect(sent?.url).toContain("/org/one/project/first/settings")
+  expect(query.queryKey).toEqual(["settings", { org: "one", project: "first" }])
+  controller.abort()
+  expect(sent?.signal.aborted).toBe(true)
+  scopeRewrite.input({ url: new URL("http://localhost/org/default/project/default-project/overview") })
+})
+
+test("permission loss clears retained project settings", async () => {
+  const { projectSettingsQuery } = await import("../src/lib/api.ts")
+  const { createQueryClient } = await import("../src/lib/query-client.ts")
+  const client = createQueryClient()
+  const query = projectSettingsQuery()
+  client.setQueryData(query.queryKey, { thresholds: { answerMs: 2500 }, revision: 4 })
+  answer('{"code":"forbidden","message":"Access removed","requestId":"r"}', 403, "application/json")
+  await expect(client.fetchQuery({ ...query, staleTime: 0 })).rejects.toBeInstanceOf(ApiError)
+  expect(client.getQueryData(query.queryKey)).toBeUndefined()
+  client.clear()
+})

@@ -149,7 +149,9 @@ func TestCallStatsAnswers(t *testing.T) {
 	f.statsCall(statsDay0.Add(time.Hour), "web", "alpha", 100, 200)
 	f.statsCall(statsDay0.Add(2*time.Hour), "web", "beta", 300, 400)
 	a := f.statsAPI()
-	a.AnswerBudgetMs = 250
+	if _, err := f.pg.UpdateProjectSettings(context.Background(), "default", f.project, 0, store.Thresholds{AnswerMs: 250, JoinMs: 2000, TTSStartMs: 1000}); err != nil {
+		t.Fatal(err)
+	}
 	var s statsBody
 	if code := f.get(a, statsPath(f.project, statsDay0, statsDay0.Add(24*time.Hour)), &s); code != http.StatusOK {
 		t.Fatalf("status %d", code)

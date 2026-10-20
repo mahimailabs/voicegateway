@@ -7,12 +7,13 @@ import { Ajv2020 } from "ajv/dist/2020.js"
 import { setupServer } from "msw/node"
 import { afterAll, afterEach, beforeAll, describe, expect, test, vi } from "vitest"
 import { parse } from "yaml"
+import { resetProjectSettings } from "../src/mocks/settings.ts"
 import { handlers } from "../src/mocks/handlers.ts"
 import { capturedCalls } from "../src/mocks/fixtures.ts"
 import { buildModel, turnCount } from "../src/features/call/call-model.ts"
 import { QueryClient } from "@tanstack/react-query"
 import type { AlertSetup } from "../src/lib/api-types"
-import { localSave, writeLocal } from "../src/lib/local-store.ts"
+import { localSave } from "../src/lib/local-store.ts"
 import { type Setup, setupFrom } from "../src/features/alerts/alerts-model.ts"
 import { agentsFrom, checks as agentChecks } from "../src/features/agents/agents-model.ts"
 import { fromContract } from "../src/features/media-server/room-drawer.tsx"
@@ -444,6 +445,7 @@ const get = async (url: string) => {
 
 describe("settings reads", () => {
   afterEach(() => {
+    resetProjectSettings()
     vi.unstubAllGlobals()
   })
 
@@ -452,35 +454,25 @@ describe("settings reads", () => {
     const { status, body } = await get(`${base}/settings`)
     expect(status).toBe(200)
     expect(valid("ProjectSettings", body)).toBe("")
-    expect(body).toEqual({ thresholds: { answerMs: 1500, joinMs: 2000, ttsStartMs: 1000 }, storageBucket: null, transcriptRetentionDays: null, traceRetentionDays: null, recordingRetentionDays: null, allowedOrigins: null })
+    expect(body).toEqual({ revision: 0, thresholds: { answerMs: 1500, joinMs: 2000, ttsStartMs: 1000 }, storageBucket: null, transcriptRetentionDays: null, traceRetentionDays: null, recordingRetentionDays: null, allowedOrigins: null })
   })
 
-  test.each([
-    ["valid values are served as saved", { answerMs: 1200, joinMs: 2500, ttsStartMs: 500 }, [1200, 2500, 500]],
-    ["each invalid field falls back on its own", { answerMs: "1500", joinMs: 3000, ttsStartMs: -1 }, [1500, 3000, 1000]],
-    ["zero and NaN are not thresholds", { answerMs: 0, joinMs: null, ttsStartMs: {} }, [1500, 2000, 1000]],
-    ["malformed storage serves the defaults", "{broken", [1500, 2000, 1000]],
-    ["a non-object serves the defaults", "[]", [1500, 2000, 1000]],
-  ])("thresholds: %s", async (_name, saved, expected) => {
-    storage({ "vg.thresholds": saved })
-    const { body } = await get(`${base}/settings`)
-    expect(valid("ProjectSettings", body)).toBe("")
-    expect([body.thresholds.answerMs, body.thresholds.joinMs, body.thresholds.ttsStartMs]).toEqual(expected)
-  })
-
-  test("blocked storage serves the defaults", async () => {
-    storage({}, true)
-    expect((await get(`${base}/settings`)).body.thresholds).toEqual({ answerMs: 1500, joinMs: 2000, ttsStartMs: 1000 })
-  })
-
-  test("a saved answer threshold is the budget the server judges calls by", async () => {
-    storage({ "vg.thresholds": { answerMs: 900 } })
+  test("saved settings use the API, preserve revision conflicts and ignore browser storage", async () => {
+    storage({ "vg.thresholds": { answerMs: 100 } })
+    expect((await get(`${base}/settings`)).body.thresholds.answerMs).toBe(1500)
+    const body = { thresholds: { answerMs: 900, joinMs: 2000, ttsStartMs: 1000 }, revision: 0 }
+    const put = () => fetch(`${base}/settings`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })
+    const saved = await put()
+    expect(saved.status).toBe(200)
+    expect(valid("ProjectSettings", await saved.json())).toBe("")
+    expect((await put()).status).toBe(409)
     const range = "from=2000-01-01T00:00:00Z&to=2100-01-01T00:00:00Z"
     const stats = (await get(`${base}/call-stats?${range}`)).body
     const page = (await get(`${base}/calls?limit=1`)).body
     expect(stats.answers.budgetMs).toBe(900)
     expect(stats.answers.overBudget).toBe(stats.answers.values.filter((v: { ms: number }) => v.ms > 900).length)
     expect(page.totals.answers.budgetMs).toBe(900)
+    expect((await get(`${base}/settings`)).body.revision).toBe(1)
   })
 
   test("issue decisions come back as saved, in RFC 3339, and a malformed one is left out", async () => {
@@ -502,15 +494,6 @@ describe("settings reads", () => {
     expect(body.items).toHaveLength(7)
     expect(body.items.find((r: { ruleId: string }) => r.ruleId === "slow-join")).toEqual({ ruleId: "slow-join", on: false, to: ["email"] })
     expect(body.items.find((r: { ruleId: string }) => r.ruleId === "cut-off")).toEqual({ ruleId: "cut-off", on: true, to: [] })
-  })
-
-  test("when storage reads but refuses writes, a save still comes back for this page view", async () => {
-    storage({ "vg.thresholds": { answerMs: 900 } }, "writes")
-    writeLocal("vg.thresholds", { answerMs: 2500, joinMs: 2000, ttsStartMs: 1000 })
-    expect((await get(`${base}/settings`)).body.thresholds.answerMs).toBe(2500)
-    // A write storage takes again ends the memory-only value.
-    storage({})
-    writeLocal("vg.thresholds", null)
   })
 
   test("two saves made before the read is answered again both land", async () => {
