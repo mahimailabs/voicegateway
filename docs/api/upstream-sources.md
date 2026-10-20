@@ -72,3 +72,11 @@ Source-unit conversions, nullable observations/media, dynamic maps, saved config
 
 - Cloud agents: `AgentClient.ListAgents` and `ListAgentVersions` in server-sdk-go v2.19.0 `agent_client.go`, both signed with `withAgentGrant{Admin: true}`; messages `AgentInfo`, `AgentDeployment` and `AgentVersion` in protocol v1.52.1 `protobufs/livekit_cloud_agent.proto`. `NewAgentClient` derives the agents host from any URL (or `LK_AGENTS_URL`), so the worker decides Cloud from the project URL itself: a host ending in `.livekit.cloud`. Any other URL is recorded as a good read where Cloud agents do not apply, with no Cloud API call. `AgentInfo.secrets`, `AgentVersion.attributes` and `owner`, and `AgentDeployment.events` are not kept. Timestamps are `google.protobuf.Timestamp`; absent, the epoch or earlier (lk's `0001-01-01`) is null. `version` of `---` or empty is null. proto3 `int32` replica counts cannot tell 0 from unset, so 0 is null; booleans are kept as reported.
 - Agent workers: livekit-agents `livekit-agents/livekit/agents/telemetry/metrics.py` (default branch commit `01fb91f3e16407db6e2dbb4922014eeff8454b1c`, read through the LiveKit Docs MCP `code_search` on 2026-10-18) defines `lk_agents_worker_load` (`CPU_LOAD_GAUGE`, "Worker load percentage", a 0 to 1 ratio) and `lk_agents_active_job_count` (`RUNNING_JOB_GAUGE`, multiprocess `livesum`), both labelled `nodename`. They are parsed with `github.com/prometheus/common` v0.70.1 `expfmt.NewDecoder` and `dto.MetricFamily` from `prometheus/client_model`. `load_threshold` is a `WorkerOptions` value with no metric, so `loadThreshold` stays null.
+
+### Project live invalidations (2026-10-20)
+
+The live-events endpoint carries internal invalidation hints, not native LiveKit metrics. It uses
+Go's net/http ResponseController for bounded SSE writes, the pinned go-redis v9.23.0 Subscribe /
+ReceiveMessage / Publish methods for Redis pub/sub (decision 0007), and hey-api/openapi-ts 0.99.0's
+generated SSE client in the browser. Redis hints are not durable; snapshot refetch on reconnect
+and existing polling recover missed hints. Source metrics retain their original provenance above.

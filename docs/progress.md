@@ -519,3 +519,21 @@ PR #429 review follow-up: a shared QueryCache error handler clears denied SFU, w
 agent data for every observer, including the overview and command palette. It retains the error
 and refresh lifecycle so restored permission recovers without a reload. Regression tests cover
 401/403/404 across all three sources, another project's cache isolation, and restored access.
+
+### 2026-10-20: worker-pushed live invalidation feed (in review)
+
+Sampled monitoring PR #429 merged as e114d064 after all hosted checks passed. Its review fix
+339d1742 clears denied data for every query observer and preserves permission recovery.
+
+The next change publishes project-scoped Redis hints after durable call storage, rebuilt summaries
+and SFU/worker/Cloud-agent samples. The authenticated SSE endpoint renews every 15 seconds and
+sends no telemetry payloads. The generated SDK client refetches authoritative snapshots, closes
+old subscriptions on project changes/hidden tabs and exposes connection state separately from
+source freshness. Denial cancels in-flight reads before clearing retained data, preventing late
+answers from restoring denied telemetry. Polling continues as the fallback for dropped hints.
+
+Native Redis tests, a LiveKit/ClickHouse/Redis/SSE integration proof, the full Docker-backed Go race
+suite, all 202 dashboard tests, lint/TypeScript, API checks and 72 browser/accessibility checks pass.
+See live-event-feed.md for numbered acceptance evidence and the initial UI-only timeout qualification.
+Resource CPU/memory instrumentation, settings persistence, issue workflows and webhook delivery
+remain open; this change does not mark the broader live-operations outcome complete.

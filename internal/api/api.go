@@ -16,6 +16,7 @@ import (
 
 // API serves the console's /api/v1 reads and its member writes.
 type API struct {
+	Live     LiveChanges
 	Projects Projects
 	Calls    Calls
 	Traces   Traces
@@ -85,6 +86,7 @@ func (a *API) Routes() http.Handler {
 	handle(r, http.MethodGet, project+"/ingress", a.ingress)
 	handle(r, http.MethodGet, project+"/agents", a.cloudAgents)
 	handle(r, http.MethodGet, project+"/workers", a.workers)
+	handle(r, http.MethodGet, project+"/live-events", a.liveEvents)
 	handle(r, http.MethodGet, project+"/keys", a.listProjectKeys)
 	handle(r, http.MethodPost, project+"/keys", a.createProjectKey)
 	handle(r, http.MethodDelete, project+"/keys/{keyId}", a.revokeProjectKey)

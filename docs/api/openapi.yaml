@@ -28,6 +28,50 @@ tags:
   - name: Instance
     description: The instance API for an operator's program, behind VOICEGATEWAY_INSTANCE_TOKEN (phase 06e, Enterprise code under ee/).
 paths:
+  /api/v1/org/{orgId}/project/{projectId}/live-events:
+    get:
+      operationId: getLiveEvents
+      summary: Stream project change notifications
+      description: >-
+        SSE invalidation hints after worker storage. Events refresh and renew carry only an empty
+        JSON object, never telemetry. Refresh authoritative reads on connection and refresh events.
+        Connections expire within 15 seconds; reconnect rechecks credentials and project membership.
+        Redis loss closes the stream. Notifications are best effort, not a replay log. Every snapshot
+        read independently checks permissions; source freshness is separate from stream connectivity.
+      tags: [Console reads]
+      security:
+        - consoleSession: []
+        - projectKey: []
+      x-access:
+        principal: organisation_member
+        minimumRole: Viewer
+        projectIsolation: required
+        browserSessionTransport: session_cookie
+        scope: project
+      parameters:
+        - $ref: "#/components/parameters/OrganisationId"
+        - $ref: "#/components/parameters/ProjectId"
+      responses:
+        "200":
+          description: SSE refresh or renew events with an empty JSON object as data.
+          content:
+            text/event-stream:
+              schema:
+                type: string
+                description: Project-scoped invalidation hints, not a telemetry or event history API.
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "503":
+          $ref: "#/components/responses/SourceUnavailable"
+
   /api/v1/org/{orgId}/project/{projectId}/calls:
     get:
       operationId: listCalls

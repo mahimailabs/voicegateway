@@ -9,6 +9,7 @@ export type SessionRead = { signedIn: true; session: Session } | { signedIn: fal
 
 let current: Session | null = null
 let mockApi = false
+export const isMockApi = () => mockApi
 const listeners = new Set<() => void>()
 
 /** The session read at start, for the account menu; null with the mock or when signed out. */

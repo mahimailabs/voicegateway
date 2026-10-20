@@ -58,6 +58,8 @@ func Web(ctx context.Context, c config.Config, log *slog.Logger) error {
 	}
 	rdb := redis.NewClient(opts)
 	defer func() { _ = rdb.Close() }()
+	live := stream.NewLive(opts, log)
+	defer func() { _ = live.Close() }()
 
 	// The API reads what the worker stored; web never writes ClickHouse (CLAUDE.md Boundaries).
 	events, err := chstore.OpenReadOnly(c.ClickHouseURL)
@@ -121,6 +123,7 @@ func Web(ctx context.Context, c config.Config, log *slog.Logger) error {
 	mountIngestion(mux, projects, producer, quota, log, time.Now)
 	mux.Handle("/auth/", accounts.Routes())
 	mux.Handle("/api/v1/", (&api.API{
+		Live:     live,
 		Projects: projects, NewProjects: projects, VerifyLiveKit: scrape.NewVerifier(c.WorkerEndpointsPublicOnly), Calls: projects, Traces: events, Layers: events, Endpoints: projects, Accounts: projects, Stats: projects, Keys: projects, NewKey: auth.NewKey, Log: log, Now: time.Now, Gate: accounts.Gate,
 		Invitations: projects, Inviter: NewInviter(links), LinkBase: accounts.LinkBase,
 		Instance:       instanceAPI,
@@ -188,13 +191,15 @@ func Worker(ctx context.Context, c config.Config, log *slog.Logger) error {
 	}
 	rdb := redis.NewClient(opts)
 	defer func() { _ = rdb.Close() }()
+	live := stream.NewLive(opts, log)
+	defer func() { _ = live.Close() }()
 	events, err := chstore.Open(c.ClickHouseURL)
 	if err != nil {
 		return redactErr(err, c.ClickHouseURL)
 	}
 	defer func() { _ = events.Close() }()
 	// The call index needs no sealer: it never reads a LiveKit secret.
-	joiner := &join.Joiner{Calls: pgstore.NewStore(pool, nil), Traces: events, Log: log, Timeout: 30 * time.Second}
+	joiner := &join.Joiner{Changed: live.Notify, Calls: pgstore.NewStore(pool, nil), Traces: events, Log: log, Timeout: 30 * time.Second}
 	// One consumer per worker process; a worker that dies leaves its entries to be claimed.
 	name, err := os.Hostname()
 	if err != nil {
@@ -208,6 +213,7 @@ func Worker(ctx context.Context, c config.Config, log *slog.Logger) error {
 	g, gctx := errgroup.WithContext(ctx)
 	g.Go(func() error {
 		return (&scrape.Scraper{
+			Changed:   live.Notify,
 			Projects:  pgstore.NewStore(pool, sealer),
 			Samples:   events,
 			Lock:      &scrape.RedisLock{Client: rdb},
@@ -258,6 +264,7 @@ func Worker(ctx context.Context, c config.Config, log *slog.Logger) error {
 	})
 	g.Go(func() error {
 		return (&scrape.CloudAgentScraper{
+			Changed:  live.Notify,
 			Projects: pgstore.NewStore(pool, sealer),
 			Samples:  events,
 			Lock:     &scrape.RedisLock{Client: rdb},
@@ -271,6 +278,7 @@ func Worker(ctx context.Context, c config.Config, log *slog.Logger) error {
 	g.Go(func() error {
 		endpoints := pgstore.NewStore(pool, sealer)
 		return (&scrape.WorkerScraper{
+			Changed:   live.Notify,
 			Projects:  endpoints,
 			Endpoints: endpoints,
 			Samples:   events,
@@ -292,6 +300,7 @@ func Worker(ctx context.Context, c config.Config, log *slog.Logger) error {
 	})
 	g.Go(func() error {
 		return (&sink.Sink{
+			Changed:   live.Notify,
 			Stream:    stream.NewConsumer(rdb, stream.Ingest, workerGroup, name),
 			Events:    events,
 			Join:      joiner,

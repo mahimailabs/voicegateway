@@ -37,9 +37,11 @@ type Traces interface {
 
 // Joiner joins events to calls.
 type Joiner struct {
-	Calls  Calls
-	Traces Traces
-	Log    *slog.Logger
+	// Changed invalidates console reads only after a rebuilt summary is stored.
+	Changed func(context.Context, string, string)
+	Calls   Calls
+	Traces  Traces
+	Log     *slog.Logger
 	// Timeout bounds the call-index writes for one row, so a large batch is not held to one
 	// deadline and a hung Postgres is retried, not waited on.
 	Timeout time.Duration
@@ -152,6 +154,7 @@ func (j *Joiner) Summarize(ctx context.Context, now time.Time) error {
 		return err
 	}
 	failed := 0
+	changed := make(map[[2]string]bool)
 	for _, c := range stale {
 		if err := j.summarizeOne(ctx, c, now); err != nil {
 			failed++
@@ -159,7 +162,16 @@ func (j *Joiner) Summarize(ctx context.Context, now time.Time) error {
 			if err := j.Calls.DeferStale(ctx, c.ID); err != nil {
 				j.Log.Error("join: could not back off a failed summary", "call", c.ID, "err", err)
 			}
+		} else {
+			changed[[2]string{c.OrganisationID, c.ProjectID}] = true
 		}
+	}
+	if j.Changed != nil {
+		notifyCtx, cancel := context.WithTimeout(ctx, 250*time.Millisecond)
+		for scope := range changed {
+			j.Changed(notifyCtx, scope[0], scope[1])
+		}
+		cancel()
 	}
 	if len(stale) > 0 {
 		j.Log.Debug("join: rebuilt call summaries", "count", len(stale)-failed, "failed", failed)

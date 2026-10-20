@@ -1,3 +1,4 @@
+import { LiveUpdatesProvider } from "@/components/live-updates"
 import { NoProjectYet } from "@/components/no-project-yet"
 import { workspacesRead } from "@/lib/workspaces"
 import { Button } from "@/components/ui/button"
@@ -135,7 +136,7 @@ export function AppShell() {
   }
 
   return (
-    <SidebarProvider>
+    <LiveUpdatesProvider><SidebarProvider>
       <Sidebar collapsible="icon">
         <SidebarHeader className="px-3 pt-3.5 pb-2">
           <div className="flex h-8 min-w-0 items-center gap-2.5">
@@ -220,7 +221,7 @@ export function AppShell() {
       <CommandPalette open={palette} onOpenChange={setPalette} pages={pages} onSettings={() => openSettings()} onShortcuts={() => setShortcuts(true)} />
       <ShortcutsDialog open={shortcuts} onOpenChange={setShortcuts} pages={pages} />
       <Toaster position="bottom-right" duration={8000} />
-    </SidebarProvider>
+    </SidebarProvider></LiveUpdatesProvider>
   )
 }
 

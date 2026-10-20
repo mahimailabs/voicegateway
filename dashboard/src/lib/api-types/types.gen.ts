@@ -1876,6 +1876,60 @@ export type OrganisationId = string;
  */
 export type ProjectId = string;
 
+export type GetLiveEventsData = {
+    body?: never;
+    path: {
+        /**
+         * Authorised orgId; the server must verify organisation/project ownership before any read.
+         */
+        orgId: string;
+        /**
+         * Authorised projectId; the server must verify organisation/project ownership before any read.
+         */
+        projectId: string;
+    };
+    query?: never;
+    url: '/api/v1/org/{orgId}/project/{projectId}/live-events';
+};
+
+export type GetLiveEventsErrors = {
+    /**
+     * invalid_request; never return an empty success result for this failure.
+     */
+    400: Error;
+    /**
+     * unauthenticated; never return an empty success result for this failure.
+     */
+    401: Error;
+    /**
+     * forbidden; never return an empty success result for this failure.
+     */
+    403: Error;
+    /**
+     * not_found; never return an empty success result for this failure.
+     */
+    404: Error;
+    /**
+     * internal_error; never return an empty success result for this failure.
+     */
+    500: Error;
+    /**
+     * source_unavailable; never return an empty success result for this failure.
+     */
+    503: Error;
+};
+
+export type GetLiveEventsError = GetLiveEventsErrors[keyof GetLiveEventsErrors];
+
+export type GetLiveEventsResponses = {
+    /**
+     * Project-scoped invalidation hints, not a telemetry or event history API.
+     */
+    200: string;
+};
+
+export type GetLiveEventsResponse = GetLiveEventsResponses[keyof GetLiveEventsResponses];
+
 export type ListCallsData = {
     body?: never;
     path: {
