@@ -98,7 +98,7 @@ func (f *fixture) membersAPI(s *auth.Service) http.Handler {
 // membersAPIWith is membersAPI with v proving each new project's LiveKit secret.
 func (f *fixture) membersAPIWith(s *auth.Service, v api.LiveKitVerifier) http.Handler {
 	return (&api.API{
-		Projects: f.pg, Settings: f.pg, Metadata: f.pg, NewProjects: f.sealed(), VerifyLiveKit: v, Calls: f.pg, Traces: emptyTraces{}, Layers: quietLayers{}, Endpoints: f.pg, Accounts: f.pg, Keys: f.pg, NewKey: auth.NewKey,
+		Projects: f.pg, Settings: f.pg, Metadata: f.pg, Issues: f.pg, NewProjects: f.sealed(), VerifyLiveKit: v, Calls: f.pg, Traces: emptyTraces{}, Layers: quietLayers{}, Endpoints: f.pg, Accounts: f.pg, Keys: f.pg, NewKey: auth.NewKey,
 		Log: slog.New(slog.NewJSONHandler(f.logs, nil)), Now: time.Now, Gate: s.Gate,
 	}).Routes()
 }

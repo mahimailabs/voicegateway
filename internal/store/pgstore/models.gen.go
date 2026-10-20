@@ -94,6 +94,35 @@ type Invitation struct {
 	EmailFailedAt  pgtype.Timestamptz
 }
 
+type Issue struct {
+	OrganisationID           string
+	ProjectID                string
+	ID                       string
+	Title                    string
+	Kind                     string
+	Source                   string
+	Severity                 string
+	EvidenceRevision         int64
+	MetadataRevision         int64
+	State                    string
+	ReviewedEvidenceRevision int64
+	DecidedAt                pgtype.Timestamptz
+	Tags                     []string
+	Archived                 bool
+}
+
+type IssueOccurrence struct {
+	OrganisationID string
+	ProjectID      string
+	IssueID        string
+	SourceID       string
+	CallID         pgtype.UUID
+	OccurredAt     pgtype.Timestamptz
+	Detail         []byte
+	Active         bool
+	ObservedAt     pgtype.Timestamptz
+}
+
 type ListSnapshot struct {
 	ID             string
 	OrganisationID string
@@ -141,6 +170,7 @@ type Project struct {
 	LivekitApiSecretSealed []byte
 	CreatedAt              pgtype.Timestamptz
 	CallMetadataRevision   int64
+	IssueRevision          int64
 }
 
 type ProjectKey struct {

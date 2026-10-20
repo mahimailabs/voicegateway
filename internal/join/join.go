@@ -13,6 +13,7 @@ import (
 
 // Calls is the call index.
 type Calls interface {
+	ProjectSettings(context.Context, string, string) (store.ProjectSettings, error)
 	UpsertCall(ctx context.Context, c store.CallUpsert) (string, error)
 	UpsertCallByJob(ctx context.Context, organisationID, projectID, jobID string, activityAt, firstSeenAt *time.Time) (string, error)
 	CallByRoom(ctx context.Context, organisationID, projectID, roomSID string) (store.CallRef, error)
@@ -185,8 +186,19 @@ func (j *Joiner) summarizeOne(ctx context.Context, c store.StaleCall, now time.T
 		return err
 	}
 	s := turn.Summarize(spans, res)
+	var findings []store.Finding
+	if len(spans) > 0 || res.NoReply {
+		settings, err := j.Calls.ProjectSettings(ctx, c.OrganisationID, c.ProjectID)
+		if err != nil {
+			return fmt.Errorf("read finding thresholds: %w", err)
+		}
+		observed := turn.Findings(spans, res, settings.Thresholds)
+		if len(observed) > 0 || len(res.Turns) > 0 || res.NoReply {
+			findings = observed
+		}
+	}
 	return j.Calls.PutSummary(ctx, c, store.CallSummary{
-		TurnCount: s.TurnCount, AnswerMs: s.AnswerMs, AnswerMsMedian: s.AnswerMsMedian,
+		Findings: findings, EvaluatedFindingIDs: turn.FindingCoverage(res), TurnCount: s.TurnCount, AnswerMs: s.AnswerMs, AnswerMsMedian: s.AnswerMsMedian,
 		Models: s.Models, Pipeline: s.Pipeline, AgentKey: s.AgentKey,
 		RoomName: s.RoomName, FirstSeenAt: s.FirstSeenAt,
 	}, now)

@@ -79,3 +79,13 @@ permission loss hides retained metadata. The scoped tag catalogue reads real ser
 All 217 dashboard tests and lint/type checks passed in a serial run; the full browser rerun and
 native race gates are still being verified. Issue evaluation/dispositions and webhook delivery
 remain unfinished, so the roadmap task remains unchecked.
+
+The next implementation adds native call finding evaluation and a project-scoped occurrence store.
+Worker summary writes and findings share one transaction. Replayed evidence does not create a new
+occurrence; a newly observed occurrence regresses a resolved issue even when its event timestamp is
+older. Tags and archive edits never acknowledge unseen evidence. Per-rule coverage prevents missing
+metrics from clearing previous findings. The issue metadata API compares both metadata and evidence
+revisions, permits Member/Admin writes and Viewer/project-key reads, and rejects cross-origin writes.
+Native storage, worker and HTTP checks are being verified. Issue listing, standing source evaluation,
+UI integration, historical backfill and webhook delivery are still unfinished. Do not check off the
+roadmap task based on this foundation.

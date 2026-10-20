@@ -608,3 +608,47 @@ SELECT DISTINCT unnest(c.tags)::text AS tag
 FROM calls c JOIN call_list l ON l.id = c.id
 WHERE c.organisation_id = @organisation_id AND c.project_id = @project_id AND l.servable
 ORDER BY tag;
+
+-- name: EnsureCallIssue :exec
+INSERT INTO issues (organisation_id, project_id, id, title, kind, source, severity)
+VALUES (@organisation_id, @project_id, @id, @title, 'event', 'calls', @severity)
+ON CONFLICT (organisation_id, project_id, id) DO UPDATE SET title = EXCLUDED.title, severity = EXCLUDED.severity;
+
+-- name: UpsertIssueOccurrence :execrows
+INSERT INTO issue_occurrences (organisation_id, project_id, issue_id, source_id, call_id, occurred_at, detail, observed_at)
+VALUES (@organisation_id, @project_id, @issue_id, @source_id, sqlc.narg(call_id), sqlc.narg(occurred_at), @detail, now())
+ON CONFLICT (organisation_id, project_id, issue_id, source_id) DO UPDATE
+SET detail = EXCLUDED.detail, occurred_at = EXCLUDED.occurred_at, active = true, observed_at = now()
+WHERE NOT issue_occurrences.active OR issue_occurrences.detail IS DISTINCT FROM EXCLUDED.detail
+   OR issue_occurrences.occurred_at IS DISTINCT FROM EXCLUDED.occurred_at;
+
+-- name: AdvanceIssueEvidence :exec
+UPDATE issues SET evidence_revision = evidence_revision + 1
+WHERE organisation_id = @organisation_id AND project_id = @project_id AND id = @id;
+
+-- name: DeactivateCallFindings :execrows
+UPDATE issue_occurrences SET active = false
+WHERE organisation_id = @organisation_id AND project_id = @project_id AND call_id = @call_id
+AND active AND NOT (issue_id = ANY(@issue_ids::text[]))
+AND (sqlc.narg(evaluated_ids)::text[] IS NULL OR issue_id = ANY(sqlc.narg(evaluated_ids)::text[]));
+
+-- name: ReadIssueMetadata :one
+SELECT id, state, decided_at, evidence_revision, reviewed_evidence_revision, metadata_revision, tags, archived
+FROM issues WHERE organisation_id = @organisation_id AND project_id = @project_id AND id = @id;
+
+-- name: UpdateIssueMetadata :one
+UPDATE issues SET state = COALESCE(sqlc.narg(new_state)::text, state),
+    decided_at = CASE WHEN sqlc.narg(new_state)::text IS NULL THEN decided_at ELSE now() END,
+    reviewed_evidence_revision = CASE WHEN sqlc.narg(new_state)::text IS NULL THEN reviewed_evidence_revision ELSE @seen_evidence_revision END,
+    tags = @tags, archived = @archived, metadata_revision = metadata_revision + 1
+WHERE organisation_id = @organisation_id AND project_id = @project_id AND id = @id
+AND metadata_revision = @expected_revision AND evidence_revision = @seen_evidence_revision
+RETURNING id, state, decided_at, evidence_revision, reviewed_evidence_revision, metadata_revision, tags, archived;
+
+-- name: AdvanceIssueRevision :exec
+UPDATE projects SET issue_revision = issue_revision + 1 WHERE organisation_id = @organisation_id AND id = @project_id;
+
+-- name: ReadCallFindingIdentity :one
+SELECT room_name, COALESCE(started_at, first_seen_at) AS occurred_at
+FROM calls WHERE organisation_id = @organisation_id AND project_id = @project_id AND id = @id
+FOR UPDATE;

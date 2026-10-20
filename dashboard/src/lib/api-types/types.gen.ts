@@ -1353,6 +1353,47 @@ export type CallTags = {
     tags: Array<string>;
 };
 
+export type IssueMetadata = {
+    issueId: string;
+    state: 'open' | 'resolved' | 'ignored';
+    regressed: boolean;
+    /**
+     * Null when no explicit decision has been saved.
+     */
+    decidedAt: string | null;
+    evidenceRevision: number;
+    reviewedEvidenceRevision: number;
+    /**
+     * Normalized lowercase tags belonging to this immutable issue ID.
+     */
+    tags: Array<string>;
+    /**
+     * Reversible archive state. Does not delete evidence or resolve findings.
+     */
+    archived: boolean;
+    revision: number;
+};
+
+/**
+ * Compare metadata and evidence revisions atomically. Omitted or null state preserves the decision, including regression; setting state explicitly acknowledges current evidence.
+ */
+export type UpdateIssueMetadata = {
+    /**
+     * Normalized lowercase tags belonging to this immutable issue ID.
+     */
+    tags: Array<string>;
+    /**
+     * Reversible archive state. Does not delete evidence or resolve findings.
+     */
+    archived: boolean;
+    revision: number;
+    evidenceRevision: number;
+    /**
+     * Null or omitted preserves the existing decision without acknowledging new evidence.
+     */
+    state?: 'open' | 'resolved' | 'ignored' | null;
+};
+
 export type CallMetadata = {
     /**
      * Normalized lowercase tags belonging to this immutable call ID.
@@ -3083,6 +3124,126 @@ export type UpdateCallMetadataResponses = {
 };
 
 export type UpdateCallMetadataResponse = UpdateCallMetadataResponses[keyof UpdateCallMetadataResponses];
+
+export type GetIssueMetadataData = {
+    body?: never;
+    path: {
+        /**
+         * Authorised orgId; the server must verify organisation/project ownership before any read.
+         */
+        orgId: string;
+        /**
+         * Authorised projectId; the server must verify organisation/project ownership before any read.
+         */
+        projectId: string;
+        /**
+         * Stable issue rule identity within the named project.
+         */
+        issueId: string;
+    };
+    query?: never;
+    url: '/api/v1/org/{orgId}/project/{projectId}/issues/{issueId}/metadata';
+};
+
+export type GetIssueMetadataErrors = {
+    /**
+     * invalid_request; never return an empty success result for this failure.
+     */
+    400: Error;
+    /**
+     * unauthenticated; never return an empty success result for this failure.
+     */
+    401: Error;
+    /**
+     * forbidden; never return an empty success result for this failure.
+     */
+    403: Error;
+    /**
+     * not_found; never return an empty success result for this failure.
+     */
+    404: Error;
+    /**
+     * internal_error; never return an empty success result for this failure.
+     */
+    500: Error;
+    /**
+     * source_unavailable; never return an empty success result for this failure.
+     */
+    503: Error;
+};
+
+export type GetIssueMetadataError = GetIssueMetadataErrors[keyof GetIssueMetadataErrors];
+
+export type GetIssueMetadataResponses = {
+    /**
+     * Authorised read result. Null means unreported, never zero. Source-specific coverage limits remain visible.
+     */
+    200: IssueMetadata;
+};
+
+export type GetIssueMetadataResponse = GetIssueMetadataResponses[keyof GetIssueMetadataResponses];
+
+export type UpdateIssueMetadataData = {
+    body: UpdateIssueMetadata;
+    path: {
+        /**
+         * Authorised orgId; the server must verify organisation/project ownership before any read.
+         */
+        orgId: string;
+        /**
+         * Authorised projectId; the server must verify organisation/project ownership before any read.
+         */
+        projectId: string;
+        /**
+         * Stable issue rule identity within the named project.
+         */
+        issueId: string;
+    };
+    query?: never;
+    url: '/api/v1/org/{orgId}/project/{projectId}/issues/{issueId}/metadata';
+};
+
+export type UpdateIssueMetadataErrors = {
+    /**
+     * invalid_request; never return an empty success result for this failure.
+     */
+    400: Error;
+    /**
+     * unauthenticated; never return an empty success result for this failure.
+     */
+    401: Error;
+    /**
+     * forbidden; never return an empty success result for this failure.
+     */
+    403: Error;
+    /**
+     * not_found; never return an empty success result for this failure.
+     */
+    404: Error;
+    /**
+     * revision_conflict, settings changed since they were read; last_admin, the change would leave the organisation without an admin; already_member, the invited email's account is a member already; member_of_other_organisations, a reset's member belongs to an organisation the requester does not administer; project_exists, the organisation already has a project with the new name's id.
+     */
+    409: Error;
+    /**
+     * internal_error; never return an empty success result for this failure.
+     */
+    500: Error;
+    /**
+     * source_unavailable; never return an empty success result for this failure.
+     */
+    503: Error;
+};
+
+export type UpdateIssueMetadataError = UpdateIssueMetadataErrors[keyof UpdateIssueMetadataErrors];
+
+export type UpdateIssueMetadataResponses = {
+    /**
+     * Persisted issue metadata with the new revision.
+     */
+    200: IssueMetadata;
+};
+
+export type UpdateIssueMetadataResponse = UpdateIssueMetadataResponses[keyof UpdateIssueMetadataResponses];
 
 export type GetProjectSettingsData = {
     body?: never;

@@ -43,6 +43,36 @@ func (q *Queries) AddMembershipIfAbsent(ctx context.Context, arg AddMembershipIf
 	return err
 }
 
+const advanceIssueEvidence = `-- name: AdvanceIssueEvidence :exec
+UPDATE issues SET evidence_revision = evidence_revision + 1
+WHERE organisation_id = $1 AND project_id = $2 AND id = $3
+`
+
+type AdvanceIssueEvidenceParams struct {
+	OrganisationID string
+	ProjectID      string
+	ID             string
+}
+
+func (q *Queries) AdvanceIssueEvidence(ctx context.Context, arg AdvanceIssueEvidenceParams) error {
+	_, err := q.db.Exec(ctx, advanceIssueEvidence, arg.OrganisationID, arg.ProjectID, arg.ID)
+	return err
+}
+
+const advanceIssueRevision = `-- name: AdvanceIssueRevision :exec
+UPDATE projects SET issue_revision = issue_revision + 1 WHERE organisation_id = $1 AND id = $2
+`
+
+type AdvanceIssueRevisionParams struct {
+	OrganisationID string
+	ProjectID      string
+}
+
+func (q *Queries) AdvanceIssueRevision(ctx context.Context, arg AdvanceIssueRevisionParams) error {
+	_, err := q.db.Exec(ctx, advanceIssueRevision, arg.OrganisationID, arg.ProjectID)
+	return err
+}
+
 const callByID = `-- name: CallByID :one
 SELECT l.id, l.room_name, l.room_sid, l.job_id, l.started_at, l.ended_at, l.end_state, l.first_seen_at,
        l.participants, l.servable, l.summarized::boolean AS summarized, c.tags, c.archived, c.metadata_revision
@@ -555,6 +585,35 @@ func (q *Queries) CreateWorkerEndpoint(ctx context.Context, arg CreateWorkerEndp
 	return i, err
 }
 
+const deactivateCallFindings = `-- name: DeactivateCallFindings :execrows
+UPDATE issue_occurrences SET active = false
+WHERE organisation_id = $1 AND project_id = $2 AND call_id = $3
+AND active AND NOT (issue_id = ANY($4::text[]))
+AND ($5::text[] IS NULL OR issue_id = ANY($5::text[]))
+`
+
+type DeactivateCallFindingsParams struct {
+	OrganisationID string
+	ProjectID      string
+	CallID         pgtype.UUID
+	IssueIds       []string
+	EvaluatedIds   []string
+}
+
+func (q *Queries) DeactivateCallFindings(ctx context.Context, arg DeactivateCallFindingsParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deactivateCallFindings,
+		arg.OrganisationID,
+		arg.ProjectID,
+		arg.CallID,
+		arg.IssueIds,
+		arg.EvaluatedIds,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const deferStale = `-- name: DeferStale :exec
 UPDATE calls SET
     summary_failures = summary_failures + 1,
@@ -606,6 +665,31 @@ func (q *Queries) DeleteWorkerEndpoint(ctx context.Context, arg DeleteWorkerEndp
 		return 0, err
 	}
 	return result.RowsAffected(), nil
+}
+
+const ensureCallIssue = `-- name: EnsureCallIssue :exec
+INSERT INTO issues (organisation_id, project_id, id, title, kind, source, severity)
+VALUES ($1, $2, $3, $4, 'event', 'calls', $5)
+ON CONFLICT (organisation_id, project_id, id) DO UPDATE SET title = EXCLUDED.title, severity = EXCLUDED.severity
+`
+
+type EnsureCallIssueParams struct {
+	OrganisationID string
+	ProjectID      string
+	ID             string
+	Title          string
+	Severity       string
+}
+
+func (q *Queries) EnsureCallIssue(ctx context.Context, arg EnsureCallIssueParams) error {
+	_, err := q.db.Exec(ctx, ensureCallIssue,
+		arg.OrganisationID,
+		arg.ProjectID,
+		arg.ID,
+		arg.Title,
+		arg.Severity,
+	)
+	return err
 }
 
 const ensureProjectSettings = `-- name: EnsureProjectSettings :exec
@@ -1835,6 +1919,30 @@ func (q *Queries) ReadAccountProfile(ctx context.Context, userID pgtype.UUID) (R
 	return i, err
 }
 
+const readCallFindingIdentity = `-- name: ReadCallFindingIdentity :one
+SELECT room_name, COALESCE(started_at, first_seen_at) AS occurred_at
+FROM calls WHERE organisation_id = $1 AND project_id = $2 AND id = $3
+FOR UPDATE
+`
+
+type ReadCallFindingIdentityParams struct {
+	OrganisationID string
+	ProjectID      string
+	ID             pgtype.UUID
+}
+
+type ReadCallFindingIdentityRow struct {
+	RoomName   pgtype.Text
+	OccurredAt pgtype.Timestamptz
+}
+
+func (q *Queries) ReadCallFindingIdentity(ctx context.Context, arg ReadCallFindingIdentityParams) (ReadCallFindingIdentityRow, error) {
+	row := q.db.QueryRow(ctx, readCallFindingIdentity, arg.OrganisationID, arg.ProjectID, arg.ID)
+	var i ReadCallFindingIdentityRow
+	err := row.Scan(&i.RoomName, &i.OccurredAt)
+	return i, err
+}
+
 const readCallMetadata = `-- name: ReadCallMetadata :one
 SELECT tags, archived, metadata_revision FROM calls
 WHERE organisation_id = $1 AND project_id = $2 AND id = $3
@@ -1856,6 +1964,44 @@ func (q *Queries) ReadCallMetadata(ctx context.Context, arg ReadCallMetadataPara
 	row := q.db.QueryRow(ctx, readCallMetadata, arg.OrganisationID, arg.ProjectID, arg.CallID)
 	var i ReadCallMetadataRow
 	err := row.Scan(&i.Tags, &i.Archived, &i.MetadataRevision)
+	return i, err
+}
+
+const readIssueMetadata = `-- name: ReadIssueMetadata :one
+SELECT id, state, decided_at, evidence_revision, reviewed_evidence_revision, metadata_revision, tags, archived
+FROM issues WHERE organisation_id = $1 AND project_id = $2 AND id = $3
+`
+
+type ReadIssueMetadataParams struct {
+	OrganisationID string
+	ProjectID      string
+	ID             string
+}
+
+type ReadIssueMetadataRow struct {
+	ID                       string
+	State                    string
+	DecidedAt                pgtype.Timestamptz
+	EvidenceRevision         int64
+	ReviewedEvidenceRevision int64
+	MetadataRevision         int64
+	Tags                     []string
+	Archived                 bool
+}
+
+func (q *Queries) ReadIssueMetadata(ctx context.Context, arg ReadIssueMetadataParams) (ReadIssueMetadataRow, error) {
+	row := q.db.QueryRow(ctx, readIssueMetadata, arg.OrganisationID, arg.ProjectID, arg.ID)
+	var i ReadIssueMetadataRow
+	err := row.Scan(
+		&i.ID,
+		&i.State,
+		&i.DecidedAt,
+		&i.EvidenceRevision,
+		&i.ReviewedEvidenceRevision,
+		&i.MetadataRevision,
+		&i.Tags,
+		&i.Archived,
+	)
 	return i, err
 }
 
@@ -2343,6 +2489,63 @@ func (q *Queries) UpdateCallMetadata(ctx context.Context, arg UpdateCallMetadata
 	return i, err
 }
 
+const updateIssueMetadata = `-- name: UpdateIssueMetadata :one
+UPDATE issues SET state = COALESCE($1::text, state),
+    decided_at = CASE WHEN $1::text IS NULL THEN decided_at ELSE now() END,
+    reviewed_evidence_revision = CASE WHEN $1::text IS NULL THEN reviewed_evidence_revision ELSE $2 END,
+    tags = $3, archived = $4, metadata_revision = metadata_revision + 1
+WHERE organisation_id = $5 AND project_id = $6 AND id = $7
+AND metadata_revision = $8 AND evidence_revision = $2
+RETURNING id, state, decided_at, evidence_revision, reviewed_evidence_revision, metadata_revision, tags, archived
+`
+
+type UpdateIssueMetadataParams struct {
+	NewState             pgtype.Text
+	SeenEvidenceRevision int64
+	Tags                 []string
+	Archived             bool
+	OrganisationID       string
+	ProjectID            string
+	ID                   string
+	ExpectedRevision     int64
+}
+
+type UpdateIssueMetadataRow struct {
+	ID                       string
+	State                    string
+	DecidedAt                pgtype.Timestamptz
+	EvidenceRevision         int64
+	ReviewedEvidenceRevision int64
+	MetadataRevision         int64
+	Tags                     []string
+	Archived                 bool
+}
+
+func (q *Queries) UpdateIssueMetadata(ctx context.Context, arg UpdateIssueMetadataParams) (UpdateIssueMetadataRow, error) {
+	row := q.db.QueryRow(ctx, updateIssueMetadata,
+		arg.NewState,
+		arg.SeenEvidenceRevision,
+		arg.Tags,
+		arg.Archived,
+		arg.OrganisationID,
+		arg.ProjectID,
+		arg.ID,
+		arg.ExpectedRevision,
+	)
+	var i UpdateIssueMetadataRow
+	err := row.Scan(
+		&i.ID,
+		&i.State,
+		&i.DecidedAt,
+		&i.EvidenceRevision,
+		&i.ReviewedEvidenceRevision,
+		&i.MetadataRevision,
+		&i.Tags,
+		&i.Archived,
+	)
+	return i, err
+}
+
 const updatePasswordHash = `-- name: UpdatePasswordHash :execrows
 UPDATE users SET password_hash = $1 WHERE id = $2 AND password_hash = $3
 `
@@ -2477,6 +2680,41 @@ func (q *Queries) UpsertCallByRoomSID(ctx context.Context, arg UpsertCallByRoomS
 	var id pgtype.UUID
 	err := row.Scan(&id)
 	return id, err
+}
+
+const upsertIssueOccurrence = `-- name: UpsertIssueOccurrence :execrows
+INSERT INTO issue_occurrences (organisation_id, project_id, issue_id, source_id, call_id, occurred_at, detail, observed_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7, now())
+ON CONFLICT (organisation_id, project_id, issue_id, source_id) DO UPDATE
+SET detail = EXCLUDED.detail, occurred_at = EXCLUDED.occurred_at, active = true, observed_at = now()
+WHERE NOT issue_occurrences.active OR issue_occurrences.detail IS DISTINCT FROM EXCLUDED.detail
+   OR issue_occurrences.occurred_at IS DISTINCT FROM EXCLUDED.occurred_at
+`
+
+type UpsertIssueOccurrenceParams struct {
+	OrganisationID string
+	ProjectID      string
+	IssueID        string
+	SourceID       string
+	CallID         pgtype.UUID
+	OccurredAt     pgtype.Timestamptz
+	Detail         []byte
+}
+
+func (q *Queries) UpsertIssueOccurrence(ctx context.Context, arg UpsertIssueOccurrenceParams) (int64, error) {
+	result, err := q.db.Exec(ctx, upsertIssueOccurrence,
+		arg.OrganisationID,
+		arg.ProjectID,
+		arg.IssueID,
+		arg.SourceID,
+		arg.CallID,
+		arg.OccurredAt,
+		arg.Detail,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const upsertParticipant = `-- name: UpsertParticipant :exec
