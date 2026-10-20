@@ -91,3 +91,20 @@ memory as zero; the API preserves the allocation as null. The pinned image and s
 in docs/container-resources.md. LiveKit Agents 1.8.7 telemetry/metrics.py and http_server.py do not
 provide equivalent process-tree CPU and memory in the native multiprocess endpoint. Its worker
 load remains a separate metric. Prometheus common v0.70.1 expfmt parses the exporter text.
+
+
+## Recording and ingress issue evidence (2026-10-20)
+
+LiveKit Docs MCP verified the pinned server v1.13.3 source at
+https://github.com/livekit/livekit/blob/v1.13.3/pkg/service/ioservice_ingress.go:
+UpdateIngressState invokes IngressEnded when the reported status changes to
+ENDPOINT_ERROR, ENDPOINT_INACTIVE or ENDPOINT_COMPLETE. It invokes IngressStarted
+on ENDPOINT_PUBLISHING. Therefore ingress_ended alone is not an error signal;
+the nested state status must explicitly report ENDPOINT_ERROR. An absent state
+cannot establish either failure or recovery. Native emitted-webhook verification
+remains required; source inspection does not replace that check.
+
+For terminal recording evidence, use protocol v1.52.1 EgressStatus and native
+WebhookEvent identity. FAILED/ABORTED mean lost; LIMIT_REACHED means cut short.
+Do not persist raw error text or output URLs in issue descriptions. Event identity
+is scoped by organisation and project, independently of whether a call is linked.

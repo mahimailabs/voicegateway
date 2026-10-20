@@ -189,3 +189,38 @@ LiveKit poll remains partial for job failure detection because ListDispatch does
 report failures there under the verified V1 capability contract. Positive native failures are
 still stored wherever observed. Native race regressions pass for partial, unavailable, recovered
 and out-of-order source reads, including that self-hosted capability boundary.
+
+
+### Recording and ingress evidence audit (2026-10-20)
+
+The sink already invokes Joiner.Stored after ClickHouse insertion and before Redis
+acknowledgement, including redeliveries. This is the durable processing boundary for
+new webhook findings. Issue persistence there must be idempotent by scoped webhook
+identity and must retain component findings even when no call can be correlated.
+Historical retained events also need evaluation; wiring only new ingestion is insufficient.
+
+The existing EgressWebhooks and IngressWebhooks history readers filter by supplied
+component IDs and return status/timestamps without webhook event IDs. They cannot
+serve as an exhaustive issue backfill or the event-ID deduplication contract unchanged.
+Recording findings must preserve FAILED/ABORTED versus LIMIT_REACHED (cut short),
+and absence from a later poll must not resolve a terminal recording occurrence.
+
+Upstream telemetry/events.go at LiveKit commit
+7c73bcc0c7045ece57948da1581d239cc6b33954 forwards IngressInfo in IngressEnded
+and EgressInfo in EgressEnded. Source:
+https://github.com/livekit/livekit/blob/7c73bcc0c7045ece57948da1581d239cc6b33954/pkg/telemetry/events.go
+This proves payload forwarding, not that a real ingress failure emits ENDPOINT_ERROR.
+The native failure verification required by alerts-behaviour.md remains outstanding.
+No recording/ingress rule or roadmap completion is claimed by this audit.
+
+
+Recording terminal events are now evaluated in Joiner.Stored after durable ClickHouse
+insertion and before Redis acknowledgement. Native protobuf decoding accepts only
+EGRESS_FAILED, EGRESS_ABORTED and EGRESS_LIMIT_REACHED on egress_ended. Postgres
+stores scoped webhook occurrences, including events without a call, rejects cross-project
+call links, and deduplicates replay. Call-finding refresh cannot clear recording evidence.
+Descriptions retain status and egress identity, never raw provider errors or output URLs.
+The native Redis/ClickHouse/Postgres ingestion test and Postgres replay/scope/late-link
+regressions pass under the race detector. Historical recording backfill and ingress
+failure evaluation remain unfinished. Full native race checks passed on baseline
+117b7cd1 before this recording change; final full checks still apply to the final PR head.

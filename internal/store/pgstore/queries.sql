@@ -835,3 +835,17 @@ SELECT layer, read_at, good_at,
  CASE WHEN NOT ok THEN 'unavailable' WHEN fresh_until < now() THEN 'stale' WHEN NOT evaluation_complete THEN 'partial' ELSE 'current' END::text AS state
 FROM issue_sources WHERE organisation_id = @organisation_id AND project_id = @project_id
 ORDER BY layer;
+
+
+-- name: EnsureRecordingIssue :exec
+INSERT INTO issues (organisation_id, project_id, id, title, kind, source, severity)
+VALUES (@organisation_id, @project_id, 'recording-lost', 'Recording lost or cut short', 'event', 'delivery', 'high')
+ON CONFLICT (organisation_id, project_id, id) DO UPDATE SET title=EXCLUDED.title;
+
+-- name: UpsertRecordingOccurrence :execrows
+INSERT INTO issue_occurrences (organisation_id, project_id, issue_id, source_id, source_layer, call_id, occurred_at, detail)
+VALUES (@organisation_id, @project_id, 'recording-lost', @source_id, 'egress_events', sqlc.narg(call_id), sqlc.narg(occurred_at), @detail)
+ON CONFLICT (organisation_id, project_id, issue_id, source_id) DO UPDATE
+SET call_id=EXCLUDED.call_id
+WHERE issue_occurrences.call_id IS NULL AND EXCLUDED.call_id IS NOT NULL
+ AND issue_occurrences.detail = EXCLUDED.detail AND issue_occurrences.occurred_at IS NOT DISTINCT FROM EXCLUDED.occurred_at;

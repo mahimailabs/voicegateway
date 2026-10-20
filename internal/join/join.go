@@ -13,6 +13,7 @@ import (
 
 // Calls is the call index.
 type Calls interface {
+	PutRecordingFinding(context.Context, store.RecordingFinding) error
 	PendingCallFindings(context.Context, int) ([]store.PendingFindings, error)
 	PutCallFindings(context.Context, store.PendingFindings, []store.Finding, []string, int64, bool, time.Time) error
 	DeferCallFindings(context.Context, store.PendingFindings) error
@@ -128,6 +129,9 @@ const SummaryBatch = 200
 
 // Stored marks the summaries of every call the rows joined stale, once the rows are in ClickHouse.
 func (j *Joiner) Stored(ctx context.Context, rows []store.Event) error {
+	if err := j.recordingFindings(ctx, rows); err != nil {
+		return err
+	}
 	seen := map[string]bool{}
 	var ids []string
 	add := func(id string) {

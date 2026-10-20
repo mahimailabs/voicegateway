@@ -943,6 +943,22 @@ func (q *Queries) EnsureProjectSettings(ctx context.Context, arg EnsureProjectSe
 	return err
 }
 
+const ensureRecordingIssue = `-- name: EnsureRecordingIssue :exec
+INSERT INTO issues (organisation_id, project_id, id, title, kind, source, severity)
+VALUES ($1, $2, 'recording-lost', 'Recording lost or cut short', 'event', 'delivery', 'high')
+ON CONFLICT (organisation_id, project_id, id) DO UPDATE SET title=EXCLUDED.title
+`
+
+type EnsureRecordingIssueParams struct {
+	OrganisationID string
+	ProjectID      string
+}
+
+func (q *Queries) EnsureRecordingIssue(ctx context.Context, arg EnsureRecordingIssueParams) error {
+	_, err := q.db.Exec(ctx, ensureRecordingIssue, arg.OrganisationID, arg.ProjectID)
+	return err
+}
+
 const ensureStandingIssue = `-- name: EnsureStandingIssue :exec
 INSERT INTO issues (organisation_id, project_id, id, title, kind, source, severity)
 VALUES ($1, $2, $3, $4, 'standing', $5, $6)
@@ -3449,6 +3465,39 @@ func (q *Queries) UpsertParticipant(ctx context.Context, arg UpsertParticipantPa
 		arg.LeftAt,
 	)
 	return err
+}
+
+const upsertRecordingOccurrence = `-- name: UpsertRecordingOccurrence :execrows
+INSERT INTO issue_occurrences (organisation_id, project_id, issue_id, source_id, source_layer, call_id, occurred_at, detail)
+VALUES ($1, $2, 'recording-lost', $3, 'egress_events', $4, $5, $6)
+ON CONFLICT (organisation_id, project_id, issue_id, source_id) DO UPDATE
+SET call_id=EXCLUDED.call_id
+WHERE issue_occurrences.call_id IS NULL AND EXCLUDED.call_id IS NOT NULL
+ AND issue_occurrences.detail = EXCLUDED.detail AND issue_occurrences.occurred_at IS NOT DISTINCT FROM EXCLUDED.occurred_at
+`
+
+type UpsertRecordingOccurrenceParams struct {
+	OrganisationID string
+	ProjectID      string
+	SourceID       string
+	CallID         pgtype.UUID
+	OccurredAt     pgtype.Timestamptz
+	Detail         []byte
+}
+
+func (q *Queries) UpsertRecordingOccurrence(ctx context.Context, arg UpsertRecordingOccurrenceParams) (int64, error) {
+	result, err := q.db.Exec(ctx, upsertRecordingOccurrence,
+		arg.OrganisationID,
+		arg.ProjectID,
+		arg.SourceID,
+		arg.CallID,
+		arg.OccurredAt,
+		arg.Detail,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const upsertStandingOccurrence = `-- name: UpsertStandingOccurrence :execrows
