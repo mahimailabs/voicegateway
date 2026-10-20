@@ -2,10 +2,10 @@
 
 ## Current evidence
 
-Issues already groups call findings and standing component checks with source links. Its dispositions
-use local browser storage, keyed by issue ID. Call tags use room names and archive state uses browser
-storage. Production listCalls deliberately rejects tag/archived queries because metadata is absent.
-These are UI previews, not shared workflows.
+Issues groups call findings and standing component checks with source links in the preview. Its
+resolve/ignore dispositions still use browser storage keyed by issue ID and are not a shared
+workflow. Call tags and archive state now persist per immutable call ID in Postgres (migration
+00016), and listCalls applies persisted tag/archive filters with consistent totals.
 
 ## Required end state
 
@@ -45,40 +45,35 @@ issue-workflow task, and completed issue persistence does not prove webhook deli
 
 ## Implementation progress
 
-Call metadata storage is being implemented in migration 00016 with immutable call IDs, normalized
-bounded tags, reversible archive state and atomic revisions. Native verification covers same-room
-identity isolation, wrong project/organisation, concurrent updates, stale Undo and worker retries.
-This foundation is not API/UI wiring or completed issue evaluation. All acceptance remains open
-until the full paths and checks above pass.
+Call metadata is implemented through scoped GET/PUT APIs and a scoped tag catalogue. Member/Admin
+writes compare revisions atomically; Viewer and project keys read only. Stale saves and Undo fail
+with 409. Tags/archive are independent of worker retries and reused room names. List/detail reads
+agree, and project metadata revisions invalidate pagination after edits. The approved UI waits
+for confirmed saves, reports partial bulk failures, and clears denied/deleted data across query
+observers. Project changes prevent retained actions from mutating the previous project.
 
-The scoped GET/PUT call metadata API now passes native authenticated HTTP tests: Viewer and
-project-key reads; Member/Admin writes; denied Viewer, key, outsider and cross-origin writes;
-missing/wrong-scope IDs; malformed/oversized/invalid UTF-8 bodies; stale revisions; clear/unarchive;
-and reads from a second web instance. OpenAPI role/key alignment, generated types, source attribution
-and Go lint pass. The production web wiring uses the Postgres metadata store.
+Validation on PR #435's implementation head 23e97377: full Docker-backed Go race suite, Go lint and
+SQL generation checks, API schema/provenance/generated-type checks, 225 frontend tests, TypeScript
+and all 84 browser/accessibility checks passed. Browser tests cover HTTP tag/archive writes and
+reload in desktop/mobile light/dark. Native tests cover independent web instances, scope,
+permissions, cross-origin refusal, malformed input, concurrent revisions, stale Undo, filters and
+snapshot invalidation. The CLI-key integration fixture now includes the metadata dependency,
+matching production wiring. Automated review found stale documentation, corrected here.
 
-Next: list/detail metadata and tag/archive filters must share a transactional read with their totals.
-Bind pagination to a project metadata revision so edits invalidate old snapshots instead of silently
-skipping or duplicating rows. This requires checking the revision inside the list transaction, not
-only before opening it. UI, issue findings/dispositions and webhook delivery remain unfinished.
+Issue findings/dispositions and webhook delivery remain unfinished. Completing call metadata does
+not complete the issue-workflow roadmap task, which remains unchecked.
 
-List/detail integration now reads persisted tags/archive from the same immutable call row. Tag filters
-match any supplied normalized tag; archived true/false and totals share the list transaction. A
-transactional project metadata revision changes on metadata writes and binds snapshot/cursor
-fingerprints. The list transaction rejects a generation changed after the API read, while subsequent
-pages reject tokens created before an edit. Native Postgres tests passed for rows/totals, isolation,
-rejected-write stability and stale-generation refusal. Native HTTP tests passed for tag/archive
-queries, detail agreement and old snapshot rejection, alongside authenticated metadata permissions.
-Go lint, SQL generation checks and API schema/provenance/type checks passed. UI wiring and issue
-findings/dispositions remain open, so this is not a completed issue workflow.
+## Deployment
 
-The call metadata UI now reads and writes the scoped API. Tags, archives and revision-safe Undo
-no longer use browser storage outside the explicit preview adapter. Member/Admin controls wait
-for confirmed writes; Viewer controls are read-only. Bulk archives report per-item failures, and
-permission loss hides retained metadata. The scoped tag catalogue reads real servable calls.
-All 217 dashboard tests and lint/type checks passed in a serial run; the full browser rerun and
-native race gates are still being verified. Issue evaluation/dispositions and webhook delivery
-remain unfinished, so the roadmap task remains unchecked.
+Migration 00016 takes schema locks while adding checked columns and building call metadata indexes.
+For large installations, schedule a maintenance window and stop the web and worker processes before
+running migrations, then start them after migration success. This migration is transactional; it
+does not claim a zero-downtime upgrade. Concurrent index construction alone would not remove the
+column/constraint locking, so the atomic migration is retained with this explicit operating rule.
+
+The tag catalogue scans servable calls within one project to collect distinct tags. Its query does
+not use the tag GIN index. Observe its query duration as projects grow; the index supports membership
+filters, not catalogue aggregation.
 
 The next implementation adds native call finding evaluation and a project-scoped occurrence store.
 Worker summary writes and findings share one transaction. Replayed evidence does not create a new
@@ -86,6 +81,6 @@ occurrence; a newly observed occurrence regresses a resolved issue even when its
 older. Tags and archive edits never acknowledge unseen evidence. Per-rule coverage prevents missing
 metrics from clearing previous findings. The issue metadata API compares both metadata and evidence
 revisions, permits Member/Admin writes and Viewer/project-key reads, and rejects cross-origin writes.
-Native storage, worker and HTTP checks are being verified. Issue listing, standing source evaluation,
+Native storage, worker, authenticated HTTP and role/contract checks pass under the race detector. Go lint, SQL generation, schema/source attribution and frontend type checks pass. Issue listing, standing source evaluation,
 UI integration, historical backfill and webhook delivery are still unfinished. Do not check off the
 roadmap task based on this foundation.
