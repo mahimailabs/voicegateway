@@ -160,3 +160,11 @@ Call finding replacement is constrained to its own source and cannot erase job e
 Targeted root race checks pass for exact and cross-project correlation, late call/participant
 arrival, threshold effects, stale evaluation rejection, persistence through room closure, private
 identity projection and notification ordering. Final full-suite checks and review remain pending.
+
+Call-diagnosis rule audit: exact model finish-reason matching now agrees with persisted findings
+(including rejecting no_error and malformed/non-string reason arrays). Endpointing evidence no
+longer claims the configured delay caused the observation; backchannel-to-turn matching is labeled
+as a timing-based interpretation. Endpointing evidence no longer hides a measured slow-response
+finding. These local interpretations are not promoted to persisted issues without equivalent
+source correlation. All 243 frontend tests and dashboard lint/TypeScript checks pass for this audit.
+The outstanding work remains source coverage reporting, final native/browser gates and review.

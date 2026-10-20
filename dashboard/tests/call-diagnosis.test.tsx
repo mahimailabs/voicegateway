@@ -103,3 +103,25 @@ test.each([
   c.spans = [span("request", "llm_request", null, 1000, { "gen_ai.response.finish_reasons": reason })]
   expect(findingsFor(c, buildModel(c)).some((finding) => finding.id === "discard")).toBe(expected)
 })
+
+test("endpointing evidence does not invent a configured delay or hide the slow-response finding", () => {
+  const c = base()
+  const model = buildModel(c)
+  model.turns = [{ ...model.turns[0], eot: { t: 1, probability: 0.1, threshold: 0.5 }, eotMs: 2000, e2eMs: 3000, responseMs: 3000 }]
+  model.moments = []
+  const findings = findingsFor(c, model)
+  expect(findings.find((f) => f.id === "eot")?.detail).toContain("do not establish")
+  expect(findings.some((f) => f.id === "slow")).toBe(true)
+  expect(JSON.stringify(findings)).not.toContain("sat out its full delay")
+})
+
+test("backchannel-to-turn correlation is labeled as a timing-based interpretation", () => {
+  const c = base()
+  const model = buildModel(c)
+  model.turns = [{ ...model.turns[0], i: 0, userText: "okay", utterance: { start: 2, end: 3 } }]
+  model.moments = [{ kind: "backchannel", at: { start: 2, end: 2.1 }, detectionMs: 100 }]
+  const finding = findingsFor(c, model).find((f) => f.id === "bc0")
+  expect(finding?.title).toContain("Possible")
+  expect(finding?.detail).toContain("timing-based")
+  expect(finding?.detail).toContain("does not establish the cause")
+})
