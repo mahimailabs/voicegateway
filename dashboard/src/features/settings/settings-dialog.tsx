@@ -121,8 +121,8 @@ const NotSet = () => <span className="text-muted-foreground">Not set</span>
 const Muted = ({ children }: { children: React.ReactNode }) => <span className="text-muted-foreground">{children}</span>
 
 // The project's LiveKit server as getMediaServer reports it.
-function ServerUrl() {
-  const read = useQuery(mediaServerQuery())
+function ServerUrl({ projectId }: { projectId: string }) {
+  const read = useQuery(mediaServerQuery({ ...currentScope(), project: projectId }))
   if (read.isPending) return <Muted>Loading</Muted>
   if (read.isError) return <Muted>Could not be read</Muted>
   return read.data.server ? <span className="font-mono text-[13px]">{read.data.server.url}</span> : <Muted>not reported</Muted>
@@ -171,15 +171,15 @@ const enterpriseRows = [
   { title: "License", description: "A key that turns Enterprise on, checked on this install.", oss: "No key needed." },
 ]
 
-function Organisation() {
+export function Organisation() {
   const [adding, setAdding] = useState(false)
   return (
     <>
       <Header title={org().name} description="The organisation that owns your projects. The open-source edition is one organisation with any number of projects and no usage limits." />
       <UsageAllowance />
       <Group label="Projects">
-        {org().projects.map(({ name: p }, k) => (
-          <Row key={p} icon={TreeStructure} title={p} description="Current project" value={<ServerUrl />} last={k === org().projects.length - 1} />
+        {org().projects.map(({ id, name: p }, k) => (
+          <Row key={id} icon={TreeStructure} title={p} description={id === currentScope().project ? "Current project" : "LiveKit project"} value={<ServerUrl projectId={id} />} last={k === org().projects.length - 1} />
         ))}
       </Group>
       <div className="pt-3">

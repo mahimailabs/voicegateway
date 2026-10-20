@@ -173,9 +173,9 @@ export const callQuery = (id: string) => ({ queryKey: ["call", currentScope(), i
 export const egressQuery = () => ({ queryKey: ["egress", currentScope()], queryFn: () => data(getEgress({ ...thrown, path: scope() })) })
 export const ingressQuery = () => ({ queryKey: ["ingress", currentScope()], queryFn: () => data(getIngress({ ...thrown, path: scope() })) })
 export const sipQuery = () => ({ queryKey: ["sip", currentScope()], queryFn: () => data(getSip({ ...thrown, path: scope() })) })
-export function mediaServerQuery() {
+export function mediaServerQuery(selectedScope = currentScope()) {
   // Capture the scope with the key; retries must never read a newly selected project.
-  const selected = currentScope()
+  const selected = { ...selectedScope }
   return {
     queryKey: ["media-server", selected],
     queryFn: ({ signal }: { signal: AbortSignal }) => data(getMediaServer({ ...thrown, path: { orgId: selected.org, projectId: selected.project }, cache: "no-store", signal: AbortSignal.any([signal, AbortSignal.timeout(10000)]) })),
