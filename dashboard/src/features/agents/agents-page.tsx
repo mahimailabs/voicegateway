@@ -198,8 +198,8 @@ function AgentsView({ cloud, ms, run, runNote }: { cloud: CloudAgents; ms: Media
   const [openRoom, setOpenRoom] = useState<Room | null>(null)
   // The open agent is in the URL (?agent=<key>), which is also how the command palette opens one.
   const [openAgent, setOpenAgent] = useUrlPick<Agent>("agent", list, (a) => a.key)
-  const [testing, setTesting] = useState<Agent | null>(null)
-  const columns = useMemo(() => agentColumns(setTesting), [])
+  const [testing, setTesting] = useUrlPick<Agent>("capacityAgent", list, (a) => a.key)
+  const columns = useMemo(() => agentColumns(setTesting), [setTesting])
   const jobs = list.flatMap((a) => a.jobs)
   const timed = jobs.filter((j) => Number.isFinite(j.dispatchedMs) && j.joinedMs !== null)
   const untimed = jobs.length - timed.length

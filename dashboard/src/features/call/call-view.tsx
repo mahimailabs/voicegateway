@@ -1,3 +1,5 @@
+import { CallDiagnosis } from "./call-diagnosis"
+import { Button } from "@/components/ui/button"
 import { useMemo, useState } from "react"
 import { AudioPlayerProvider } from "@/components/elevenlabs/audio-player"
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable"
@@ -53,6 +55,7 @@ function Verdict({ call, model }: { call: Call; model: CallModel }) {
 
 export function CallView({ call }: { call: Call }) {
   const phone = useIsPhone()
+  const [view, setView] = useUrlState("callView", "conversation")
   const model = useMemo(() => buildModel(call), [call])
   // The selected turn is in the URL as ?turn=3 or ?turn=3-agent (turns count from 1 there).
   const [turnParam, setTurnParam] = useUrlState<string | number | null>("turn", null)
@@ -77,7 +80,8 @@ export function CallView({ call }: { call: Call }) {
     <AudioPlayerProvider>
       <div className="flex h-full min-h-0 flex-col">
         {call.recording?.preview && <p className="border-b bg-accent px-6 py-2 text-xs text-accent-foreground">{call.recording.preview}</p>}
-        <Verdict call={call} model={model} />
+        <div className="flex flex-wrap items-center justify-between gap-2 pr-6"><Verdict call={call} model={model} /><div className="flex gap-1 px-6 pt-4"><Button size="sm" variant={view !== "conversation" ? "secondary" : "ghost"} onClick={() => setView("diagnosis")}>Diagnosis</Button><Button size="sm" variant={view === "conversation" ? "secondary" : "ghost"} onClick={() => setView("conversation")}>Conversation</Button></div></div>
+        {view !== "conversation" ? <CallDiagnosis call={call} model={model} onConversation={(i) => { select(i); setView("conversation") }} /> : <>
         <ResizablePanelGroup orientation="vertical" className="mt-4 min-h-0 flex-1 border-t">
           <ResizablePanel defaultSize="68%" minSize="30%">
             {/* On a phone the transcript sits above its reading instead of beside it. */}
@@ -128,6 +132,7 @@ export function CallView({ call }: { call: Call }) {
             </div>
           </ResizablePanel>
         </ResizablePanelGroup>
+        </>}
       </div>
     </AudioPlayerProvider>
   )

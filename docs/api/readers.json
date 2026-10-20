@@ -140,7 +140,6 @@
     "fixtures": [
       "fixtures",
       "insights",
-      "livekit",
       "settings",
       "summaries"
     ],
@@ -150,7 +149,7 @@
       "getCallStats"
     ],
     "assetNotes": {},
-    "exclusion": "Server-side CallStats computation inside the mock API; the answer budget is the stored threshold (settings.ts) and the network hops come from the provider probes (livekit.ts)."
+    "exclusion": "Server-side CallStats computation inside the mock API; the answer budget is the stored threshold (settings.ts) and stage timings come only from captured trace evidence."
   },
   {
     "file": "dashboard/src/mocks/calls-query.ts",

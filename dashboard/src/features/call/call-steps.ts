@@ -1,6 +1,7 @@
+import { turnSpans, userTurnFor, numericAttr } from "./call-trace"
 import { BUDGET_MS, TTS_START_MS } from "@/lib/thresholds"
 import type { Call, Span } from "@/lib/api"
-import { type CallModel, type TurnModel, fmtMs, fmtSec, placed } from "./call-model"
+import { type CallModel, type TurnModel, fmtMs, fmtSec } from "./call-model"
 
 // What happened inside one turn, step by step, from whatever the call carries: OTLP span attributes
 // (prompt, reply, tokens, tools) and agent session events (speech, turn detection, overlap).
@@ -22,17 +23,6 @@ export type Step = {
 
 const spanSec = (s: Span) => (s.startMs !== null ? s.startMs / 1000 : null)
 const attr = (s: Span | undefined, k: string) => s?.attrs?.[k] ?? null
-
-function turnSpans(call: Call, i: number) {
-  const spans = call.spans ?? []
-  const turns = spans.filter((s) => s.name === "agent_turn")
-  const root = turns[i]
-  if (!root) return { root: undefined, children: [] as Span[] }
-  const ids = new Set([root.spanId])
-  const children: Span[] = []
-  for (const s of spans) if (s.parentId && ids.has(s.parentId)) { ids.add(s.spanId); children.push(s) }
-  return { root, children }
-}
 
 // gen_ai messages are JSON arrays of {role, parts}; show them as "role: text" lines, or raw if they do not parse.
 function messages(json: string | null): string | null {
@@ -59,17 +49,7 @@ function instructions(json: string | null): string | null {
     return json
   }
 }
-const sec = (v: string | null) => (v === null ? null : fmtMs(Number(v) * 1000))
-
-// The caller turn that a given agent turn answers: the last user_turn span ending before it starts.
-function userTurnFor(call: Call, agentTurn: Span | undefined) {
-  if (!agentTurn || !placed(agentTurn)) return { turn: undefined, children: [] as Span[] }
-  const spans = call.spans ?? []
-  const turn = spans.filter(placed).filter((s) => s.name === "user_turn" && s.startMs <= agentTurn.startMs).at(-1)
-  const prev = spans.filter(placed).filter((s) => s.name === "agent_turn" && s.startMs < agentTurn.startMs).at(-1)
-  if (!turn || (prev && turn.startMs < prev.startMs)) return { turn: undefined, children: [] as Span[] }
-  return { turn, children: spans.filter((s) => s.parentId === turn.spanId || spans.some((p) => p.parentId === turn.spanId && s.parentId === p.spanId)) }
-}
+const sec = (v: string | null) => (v === null || !Number.isFinite(Number(v)) || Number(v) < 0 ? null : fmtMs(Number(v) * 1000))
 
 export function stepsFor(call: Call, model: CallModel, t: TurnModel): Step[] {
   const out: Step[] = []
@@ -100,8 +80,8 @@ export function stepsFor(call: Call, model: CallModel, t: TurnModel): Step[] {
   }
 
   if (t.eot || t.eotMs !== null || eouDet) {
-    const p = eouDet ? Number(attr(eouDet, "lk.eou.probability")) : (t.eot?.probability ?? undefined)
-    const th = eouDet ? Number(attr(eouDet, "lk.eou.unlikely_threshold")) : (t.eot?.threshold ?? undefined)
+    const p = numericAttr(eouDet, "lk.eou.probability") ?? t.eot?.probability ?? undefined
+    const th = numericAttr(eouDet, "lk.eou.unlikely_threshold") ?? t.eot?.threshold ?? undefined
     const unsure = p !== undefined && th !== undefined && p < th
     const long = (t.eotMs ?? 0) >= 1500
     const outcome = attr(eouWait, "lk.eou.outcome")
@@ -151,10 +131,10 @@ export function stepsFor(call: Call, model: CallModel, t: TurnModel): Step[] {
       const tokOut = attr(req, "gen_ai.usage.output_tokens")
       const ttft = attr(req, "gen_ai.response.time_to_first_chunk") ?? attr(n, "lk.response.ttft")
       out.push({
-        id: `llm${k}`, kind: "llm", title: `Model call${llmNodes.length > 1 ? ` ${k + 1}` : ""}${failed ? " · discarded" : toolCall ? " · tool call" : ""}`, at: spanSec(n),
+        id: `llm${k}`, kind: "llm", title: `Model call${llmNodes.length > 1 ? ` ${k + 1}` : ""}${failed ? " · error" : toolCall ? " · tool call" : ""}`, at: spanSec(n),
         status: failed ? "warn" : "ok",
         summary: failed
-          ? `Ended with finish reason "error"${n.durationMs !== null ? ` after ${fmtMs(n.durationMs)}` : ""}: a reply started early and was thrown away, ${tokIn ?? "unknown"} tokens reported`
+          ? `Ended with finish reason "error"${n.durationMs !== null ? ` after ${fmtMs(n.durationMs)}` : ""}: the source does not identify why it ended, ${tokIn ?? "unknown"} tokens reported`
           : `${attr(n, "gen_ai.request.model") ?? "model"} ${toolCall ? "asked for a tool" : "answered"}${n.durationMs !== null ? ` in ${fmtMs(n.durationMs)}` : ""}, first token ${ttft !== null ? sec(ttft) : "unknown"}${tokIn !== null ? `, ${tokIn} in / ${tokOut} out tokens` : ""}`,
         input: [
           { label: "System instructions", value: instructions(attr(req, "gen_ai.system_instructions")), why: "Not sent" },
@@ -208,11 +188,11 @@ export function stepsFor(call: Call, model: CallModel, t: TurnModel): Step[] {
     const playout = attr(root, "lk.playout.position")
     const interrupted = t.interrupted || attr(root, "lk.interrupted") === "true"
     out.push({
-      id: "speech", kind: "speech", title: "Agent spoke", at: t.speaking?.start ?? (ttsNode ? spanSec(ttsNode) : null),
+      id: "speech", kind: "speech", title: t.speaking ? "Agent spoke" : "Agent reply", at: t.speaking?.start ?? (ttsNode ? spanSec(ttsNode) : null),
       status: interrupted ? "error" : (ttsMs ?? 0) > TTS_START_MS ? "warn" : "ok",
       summary: interrupted
         ? `Cut off by the caller${playout ? ` after ${sec(playout)} of audio` : ""}`
-        : `${t.speaking ? `Spoke for ${fmtSec(t.speaking.end - t.speaking.start)}` : "Spoke"}${ttsMs !== null ? `, first audio after ${fmtMs(ttsMs)}` : ""}`,
+        : `${t.speaking ? `Spoke for ${fmtSec(t.speaking.end - t.speaking.start)}` : "Reply generated; playback not observed"}${ttsMs !== null ? `, first audio after ${fmtMs(ttsMs)}` : ""}`,
       input: [{ label: "Text to speak", value: ttsReqs.length ? ttsReqs.map((r) => attr(r, "lk.pii.input_text")).filter(Boolean).join("\n") : t.agentText, why: "Not sent" }],
       output: [
         { label: "Heard by the caller", value: interrupted ? (playout ? `${sec(playout)} of audio played, then cut off` : null) : t.agentText, why: interrupted ? "Cut off: the played position (lk.playout.position) is on the agent_turn span, not in this capture" : "Not sent" },
@@ -281,10 +261,10 @@ export function findingsFor(call: Call, model: CallModel): Finding[] {
   const reqs = (call.spans ?? []).filter((s) => s.name === "llm_request")
   const discarded = reqs.filter((s) => s.attrs?.["gen_ai.response.finish_reasons"]?.includes("error"))
   if (discarded.length) {
-    f.push({ id: "discard", severity: "medium", title: `${discarded.length} of ${reqs.length} model calls were started and thrown away`, detail: `They ended with finish reason "error" before a reply was spoken, usually a reply started early on a partial transcript and replaced when the caller kept talking. They cost time on the model and, when the provider bills them, tokens.`, turns: [] })
+    f.push({ id: "discard", severity: "medium", title: `${discarded.length} of ${reqs.length} model calls reported an error`, detail: `They reported finish reason "error". Inspect the request and its parent turn to distinguish provider failure from canceled preemptive generation. This flag alone does not establish the cause.`, turns: model.turns.filter((t) => turnSpans(call, t.i).children.some((s) => discarded.some((r) => r.spanId === s.spanId))).map((t) => t.i) })
   }
   if (reqs.length && reqs.every((s) => s.attrs?.["gen_ai.usage.input_tokens"] === "0")) {
-    f.push({ id: "zero", severity: "info", title: "The model reported 0 tokens", detail: `All ${reqs.length} model calls reported zero input and output tokens. Usage from this provider cannot be trusted; it is shown as reported.`, turns: [] })
+    f.push({ id: "zero", severity: "info", title: "The model reported 0 tokens", detail: `All ${reqs.length} model calls reported zero input tokens. Output usage is independent; zero alone does not establish a provider failure.`, turns: [] })
   }
   const slowTts = model.turns.filter((t) => (t.ttsMs ?? 0) > TTS_START_MS)
   if (slowTts.length) {
@@ -296,7 +276,14 @@ export function findingsFor(call: Call, model: CallModel): Finding[] {
     f.push({ id: "stall", severity: "medium", title: `The agent's process stalled ${stalls.length} times, up to ${fmtMs(max * 1000)}`, detail: "LiveKit flagged its event loop as blocked. While it is blocked the agent cannot hear, think or speak; the stack is on each event_loop_blocked span.", turns: [] })
   }
   if (model.pipeline === "realtime") {
-    f.push({ id: "rt", severity: "info", title: "This realtime model reports no stage timings", detail: "Response times here are derived from the agent's VAD and state events. There is no separate STT, LLM or TTS stage to break down.", turns: [] })
+    f.push({ id: "rt", severity: "info", title: "This call uses a realtime model", detail: "Realtime inference combines speech and language processing. Inspect its reported metrics; separate STT, LLM and TTS stages may not exist.", turns: [] })
   }
   return f
+}
+
+// A successful check requires complete evidence. Missing flags never imply success.
+export function evidenceCheck(spans: Span[], key: string, passes: (value: string) => boolean): boolean | null {
+  const values = spans.map((s) => s.attrs?.[key])
+  if (values.some((v) => v != null && v !== "" && !passes(v))) return false
+  return values.length && values.every((v) => v != null && v !== "") ? true : null
 }

@@ -1,3 +1,4 @@
+import { CallUsage } from "./call-usage"
 import { useState } from "react"
 import { ArrowLeft, CaretRight, ChatCircleText, CheckCircle, Ear, Hourglass, Info, Microphone, Sparkle, Warning, WarningCircle, Wrench, XCircle } from "@phosphor-icons/react"
 import type { Icon } from "@phosphor-icons/react"
@@ -9,7 +10,7 @@ import type { Call } from "@/lib/api"
 import { cn } from "@/lib/utils"
 import { type CallModel, type TurnModel, fmtMs } from "./call-model"
 import { TtfaWaterfall } from "@/features/profile/ttfa-waterfall"
-import { BUDGET_MS, type Field, type Finding, type Step, findingsFor, stepsFor } from "./call-steps"
+import { BUDGET_MS, type Field, type Finding, type Step, findingsFor, stepsFor, evidenceCheck } from "./call-steps"
 
 // The right-hand panel: with no turn picked, what in this call deserves attention, ranked; with a turn
 // picked, how that turn's time was spent and every step it took, with what went in and what came out.
@@ -23,15 +24,16 @@ const sevIcon: Record<Finding["severity"], { icon: Icon; tone: string }> = {
 export function FindingsList({ call, model, onTurn }: { call: Call; model: CallModel; onTurn: (i: number) => void }) {
   const findings = findingsFor(call, model)
   const spans = call.spans ?? []
-  const hasSpans = spans.length > 0
   const checks: { label: string; ok: boolean | null; why: string }[] = [
-    { label: "Tools returned without error", ok: hasSpans ? !spans.some((s) => s.name === "function_tool" && s.attrs?.["lk.function_tool.is_error"]?.toLowerCase() === "true") : null, why: "Needs the agent's spans (decision 0014)" },
-    { label: "No model or voice retries", ok: hasSpans ? !spans.some((s) => Number(s.attrs?.["lk.retry_count"] ?? 0) > 0) : null, why: "Needs the agent's spans (decision 0014)" },
-    { label: "Transcripts heard clearly", ok: hasSpans && spans.some((s) => s.name === "user_turn") ? !spans.some((s) => s.name === "user_turn" && Number(s.attrs?.["lk.transcript_confidence"] ?? 1) < 0.8) : null, why: "Transcript confidence is on the user_turn span" },
-    { label: "Every turn ended cleanly", ok: hasSpans && spans.some((s) => s.name === "eou_wait") ? !spans.some((s) => s.name === "eou_wait" && s.attrs?.["lk.eou.outcome"] !== "committed") : null, why: "The end-of-turn outcome is on the eou_wait span" },
+    { label: "Tools returned without error", ok: evidenceCheck(spans.filter((s) => s.name === "function_tool"), "lk.function_tool.is_error", (v) => v === "false"), why: "Needs an explicit error flag for every tool span" },
+    { label: "No model or voice retries", ok: evidenceCheck(spans.filter((s) => s.name === "llm_request_run" || s.name === "tts_request_run"), "lk.retry_count", (v) => Number(v) === 0), why: "Needs a reported retry count for every request attempt" },
+    { label: "Transcripts heard clearly", ok: evidenceCheck(spans.filter((s) => s.name === "user_turn"), "lk.transcript_confidence", (v) => Number(v) >= 0.8), why: "Needs transcript confidence on every user_turn span" },
+    { label: "Every turn ended cleanly", ok: evidenceCheck(spans.filter((s) => s.name === "eou_wait"), "lk.eou.outcome", (v) => v === "committed"), why: "Needs a reported end-of-turn outcome" },
   ]
+
   return (
     <div className="space-y-7">
+      <CallUsage call={call} />
       <section>
         <h3 className="text-[15px] font-semibold">What to look at</h3>
         {findings.length === 0 ? (
@@ -179,7 +181,7 @@ function StepRow({ s }: { s: Step }) {
 }
 
 export function TurnDetail({ call, model, turn, speaker = null, onBack }: { call: Call; model: CallModel; turn: number; speaker?: "caller" | "agent" | null; onBack: () => void }) {
-  const t = model.turns[turn]
+  const t = model.turns.find((item) => item.i === turn)
   if (!t) return null
   // The caller's side is their speech and the end-of-turn wait; everything after is the agent's.
   const callerSide = (k: string) => k === "caller" || k === "eot"
