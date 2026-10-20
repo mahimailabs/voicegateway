@@ -39,7 +39,6 @@
       "getInvitations",
       "getWorkspaces",
       "getAlertSetup",
-      "getIssueDispositions",
       "getCall",
       "getCallStats",
       "listIssues"
@@ -90,7 +89,6 @@
       "getCloudAgents",
       "getSip",
       "getProjectSettings",
-      "getIssueDispositions",
       "listIssues"
     ],
     "/alerts": [
@@ -98,7 +96,6 @@
       "getCloudAgents",
       "getSip",
       "getProjectSettings",
-      "getIssueDispositions",
       "getEgress",
       "getIngress",
       "getAlertSetup",
@@ -115,7 +112,6 @@
       "getCloudAgents",
       "getEgress",
       "getIngress",
-      "getIssueDispositions",
       "getMediaServer",
       "getProjectSettings",
       "getProviderProbes",
@@ -136,7 +132,6 @@
       "getEgress",
       "getIngress",
       "getInvitations",
-      "getIssueDispositions",
       "getMediaServer",
       "getMembers",
       "getProjectSettings",
@@ -165,7 +160,6 @@
     "getProjectSettings",
     "getInvitations",
     "getAlertSetup",
-    "getIssueDispositions",
     "getCallStats",
     "listIssues"
   ],

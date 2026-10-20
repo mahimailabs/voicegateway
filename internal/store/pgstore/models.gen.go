@@ -9,24 +9,30 @@ import (
 )
 
 type Call struct {
-	ID               pgtype.UUID
-	OrganisationID   string
-	ProjectID        string
-	RoomName         pgtype.Text
-	RoomSid          pgtype.Text
-	JobID            pgtype.Text
-	StartedAt        pgtype.Timestamptz
-	EndedAt          pgtype.Timestamptz
-	EndState         string
-	LastActivityAt   pgtype.Timestamptz
-	UpdatedAt        pgtype.Timestamptz
-	FirstSeenAt      pgtype.Timestamptz
-	CreatedAt        pgtype.Timestamptz
-	SummaryStaleAt   pgtype.Timestamptz
-	SummaryFailures  int32
-	Tags             []string
-	Archived         bool
-	MetadataRevision int64
+	ID                      pgtype.UUID
+	OrganisationID          string
+	ProjectID               string
+	RoomName                pgtype.Text
+	RoomSid                 pgtype.Text
+	JobID                   pgtype.Text
+	StartedAt               pgtype.Timestamptz
+	EndedAt                 pgtype.Timestamptz
+	EndState                string
+	LastActivityAt          pgtype.Timestamptz
+	UpdatedAt               pgtype.Timestamptz
+	FirstSeenAt             pgtype.Timestamptz
+	CreatedAt               pgtype.Timestamptz
+	SummaryStaleAt          pgtype.Timestamptz
+	SummaryFailures         int32
+	Tags                    []string
+	Archived                bool
+	MetadataRevision        int64
+	IssueEvaluatedAt        pgtype.Timestamptz
+	IssueSettingsRevision   int64
+	IssueSourceAvailable    bool
+	IssueRetryAt            pgtype.Timestamptz
+	IssueFailures           int32
+	IssueEvaluationRevision int64
 }
 
 type CallList struct {

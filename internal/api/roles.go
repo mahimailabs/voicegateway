@@ -28,6 +28,7 @@ const (
 // only through this table, and TestEveryRouteHasAMinimumRole compares it with the contract's
 // x-access.minimumRole.
 var routeAccess = map[string]access{
+	"GET /api/v1/org/{orgId}/project/{projectId}/issues":                    {"Viewer", scopeProject},
 	"GET /api/v1/org/{orgId}/project/{projectId}/issues/{issueId}/metadata": {"Viewer", scopeProject},
 	"PUT /api/v1/org/{orgId}/project/{projectId}/issues/{issueId}/metadata": {"Member", scopeProject},
 	"GET /api/v1/org/{orgId}/project/{projectId}/call-tags":                 {"Viewer", scopeProject},

@@ -652,3 +652,50 @@ UPDATE projects SET issue_revision = issue_revision + 1 WHERE organisation_id = 
 SELECT room_name, COALESCE(started_at, first_seen_at) AS occurred_at
 FROM calls WHERE organisation_id = @organisation_id AND project_id = @project_id AND id = @id
 FOR UPDATE;
+
+-- name: ListIssueOccurrences :many
+SELECT i.id, i.title, i.kind, i.source, i.severity,
+       i.state, i.decided_at, i.evidence_revision, i.reviewed_evidence_revision,
+       i.metadata_revision, i.tags, i.archived,
+       o.occurred_at, o.detail, o.call_id
+FROM issues i
+JOIN issue_occurrences o ON o.organisation_id = i.organisation_id
+    AND o.project_id = i.project_id AND o.issue_id = i.id
+LEFT JOIN call_list c ON c.id = o.call_id AND c.organisation_id = i.organisation_id AND c.project_id = i.project_id
+WHERE i.organisation_id = @organisation_id AND i.project_id = @project_id
+  AND o.active AND (o.call_id IS NULL OR c.servable)
+  AND (i.kind = 'standing' OR (o.occurred_at >= @from_at AND o.occurred_at < @to_at))
+  AND (sqlc.narg(archived)::boolean IS NULL OR i.archived = sqlc.narg(archived))
+  AND (cardinality(@tags::text[]) = 0 OR i.tags && @tags::text[])
+  AND (@search::text = '' OR strpos(lower(i.title), lower(@search)) > 0
+       OR strpos(lower(o.detail->>'where'), lower(@search)) > 0
+       OR strpos(lower(o.detail->>'detail'), lower(@search)) > 0)
+ORDER BY CASE i.severity WHEN 'high' THEN 0 WHEN 'medium' THEN 1 WHEN 'low' THEN 2 ELSE 3 END,
+         i.id, o.occurred_at DESC NULLS LAST, o.source_id;
+
+-- name: PendingCallFindings :many
+SELECT c.organisation_id, c.project_id, c.id, c.issue_evaluation_revision
+FROM calls c
+JOIN call_list l ON l.id = c.id
+LEFT JOIN project_settings s ON s.organisation_id = c.organisation_id AND s.project_id = c.project_id
+WHERE l.servable AND c.summary_stale_at IS NULL
+  AND (c.issue_evaluated_at IS NULL OR c.issue_settings_revision <> COALESCE(s.revision, 0))
+  AND (c.issue_retry_at IS NULL OR c.issue_retry_at <= now())
+ORDER BY c.issue_retry_at NULLS FIRST, c.id
+LIMIT @max_calls;
+
+-- name: RecordSummaryFindings :exec
+UPDATE calls SET issue_evaluated_at = @evaluated_at, issue_settings_revision = @settings_revision,
+ issue_source_available = @source_available, issue_retry_at = NULL, issue_failures = 0, issue_evaluation_revision = issue_evaluation_revision + 1
+WHERE id = @id;
+
+-- name: ClaimBackfillFindings :execrows
+UPDATE calls SET issue_evaluated_at = @evaluated_at, issue_settings_revision = @settings_revision,
+ issue_source_available = @source_available, issue_retry_at = NULL, issue_failures = 0, issue_evaluation_revision = issue_evaluation_revision + 1
+WHERE id = @id AND organisation_id = @organisation_id AND project_id = @project_id
+ AND summary_stale_at IS NULL AND issue_evaluation_revision = @expected_revision;
+
+-- name: DeferCallFindings :exec
+UPDATE calls SET issue_failures = LEAST(issue_failures + 1, 10),
+ issue_retry_at = now() + LEAST(interval '10 seconds' * power(2, LEAST(issue_failures, 9)), interval '1 hour')
+WHERE id = @id AND issue_evaluation_revision = @expected_revision;

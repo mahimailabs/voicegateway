@@ -24,3 +24,41 @@ type IssueMetadata struct {
 	Tags             []string   `json:"tags"`
 	Archived         bool       `json:"archived"`
 }
+
+// IssueList is read from a single snapshot. It returns every matching occurrence, so table
+// filtering and totals do not depend on a partially loaded call list.
+type IssueList struct {
+	From     time.Time `json:"from"`
+	To       time.Time `json:"to"`
+	Complete bool      `json:"complete"`
+	Items    []Issue   `json:"items"`
+}
+type Issue struct {
+	ID         string        `json:"id"`
+	Title      string        `json:"title"`
+	Kind       string        `json:"kind"`
+	Source     string        `json:"source"`
+	Severity   string        `json:"severity"`
+	LastSeenAt *time.Time    `json:"lastSeenAt"`
+	Hits       []IssueHit    `json:"hits"`
+	Metadata   IssueMetadata `json:"metadata"`
+}
+type IssueHit struct {
+	At     *time.Time `json:"at"`
+	Where  string     `json:"where"`
+	Detail string     `json:"detail"`
+	CallID *string    `json:"callId"`
+}
+type IssueFilter struct {
+	From, To time.Time
+	Search   string
+	Tags     []string
+	Archived *bool
+}
+
+// PendingFindings identifies a historical call and the evaluation version observed by the worker.
+// A newer evaluation wins over a stale backfill attempt.
+type PendingFindings struct {
+	OrganisationID, ProjectID, ID string
+	Revision                      int64
+}

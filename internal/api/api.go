@@ -84,6 +84,7 @@ func (a *API) Routes() http.Handler {
 	handle(r, http.MethodPut, project+"/settings", a.updateProjectSettings)
 	handle(r, http.MethodGet, project+"/calls", a.listCalls)
 	handle(r, http.MethodGet, project+"/call-tags", a.getCallTags)
+	handle(r, http.MethodGet, project+"/issues", a.listIssues)
 	handle(r, http.MethodGet, project+"/issues/{issueId}/metadata", a.getIssueMetadata)
 	handle(r, http.MethodPut, project+"/issues/{issueId}/metadata", a.updateIssueMetadata)
 	handle(r, http.MethodGet, project+"/calls/{callId}", a.getCall)

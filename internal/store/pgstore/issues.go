@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 
@@ -165,4 +166,96 @@ func issueMetadata(row ReadIssueMetadataRow) store.IssueMetadata {
 		ReviewedRevision: row.ReviewedEvidenceRevision, Revision: row.MetadataRevision,
 		Tags: nonNilStrings(row.Tags), Archived: row.Archived,
 	}
+}
+
+func (s *Store) ListIssues(ctx context.Context, org, project string, filter store.IssueFilter) (store.IssueList, error) {
+	tx, err := s.pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly})
+	if err != nil {
+		return store.IssueList{}, err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	q := s.q.WithTx(tx)
+	if _, err := q.ProjectConnected(ctx, ProjectConnectedParams{OrganisationID: org, ProjectID: project}); errors.Is(err, pgx.ErrNoRows) {
+		return store.IssueList{}, store.ErrNotFound
+	} else if err != nil {
+		return store.IssueList{}, err
+	}
+	rows, err := q.ListIssueOccurrences(ctx, ListIssueOccurrencesParams{OrganisationID: org, ProjectID: project, FromAt: timestamp(&filter.From), ToAt: timestamp(&filter.To), Archived: optionalBool(filter.Archived), Tags: nonNilStrings(filter.Tags), Search: filter.Search})
+	if err != nil {
+		return store.IssueList{}, err
+	}
+	// Call rules are persisted, but standing-source evaluation and historical coverage are not
+	// complete yet. Do not present an empty list as proof that all sources are healthy.
+	out := store.IssueList{From: filter.From, To: filter.To, Complete: false, Items: []store.Issue{}}
+	positions := map[string]int{}
+	for _, row := range rows {
+		pos, ok := positions[row.ID]
+		if !ok {
+			pos = len(out.Items)
+			positions[row.ID] = pos
+			metadata := issueMetadata(ReadIssueMetadataRow{ID: row.ID, State: row.State, DecidedAt: row.DecidedAt, EvidenceRevision: row.EvidenceRevision, ReviewedEvidenceRevision: row.ReviewedEvidenceRevision, MetadataRevision: row.MetadataRevision, Tags: row.Tags, Archived: row.Archived})
+			out.Items = append(out.Items, store.Issue{ID: row.ID, Title: row.Title, Kind: row.Kind, Source: row.Source, Severity: row.Severity, LastSeenAt: timeOf(row.OccurredAt), Hits: []store.IssueHit{}, Metadata: metadata})
+		}
+		var detail struct {
+			Where  string `json:"where"`
+			Detail string `json:"detail"`
+		}
+		if err := json.Unmarshal(row.Detail, &detail); err != nil {
+			return store.IssueList{}, fmt.Errorf("decode issue occurrence: %w", err)
+		}
+		hit := store.IssueHit{At: timeOf(row.OccurredAt), Where: detail.Where, Detail: detail.Detail}
+		if row.CallID.Valid {
+			id := row.CallID.String()
+			hit.CallID = &id
+		}
+		out.Items[pos].Hits = append(out.Items[pos].Hits, hit)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return store.IssueList{}, err
+	}
+	return out, nil
+}
+
+func (s *Store) PendingCallFindings(ctx context.Context, limit int) ([]store.PendingFindings, error) {
+	rows, err := s.q.PendingCallFindings(ctx, int32(min(max(limit, 1), 1000)))
+	if err != nil {
+		return nil, err
+	}
+	out := make([]store.PendingFindings, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, store.PendingFindings{OrganisationID: row.OrganisationID, ProjectID: row.ProjectID, ID: row.ID.String(), Revision: row.IssueEvaluationRevision})
+	}
+	return out, nil
+}
+
+func (s *Store) PutCallFindings(ctx context.Context, call store.PendingFindings, findings []store.Finding, covered []string, settingsRevision int64, available bool, at time.Time) error {
+	id, err := uuid(call.ID)
+	if err != nil {
+		return store.ErrNotFound
+	}
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	q := s.q.WithTx(tx)
+	n, err := q.ClaimBackfillFindings(ctx, ClaimBackfillFindingsParams{ID: id, OrganisationID: call.OrganisationID, ProjectID: call.ProjectID, EvaluatedAt: timestamp(&at), ExpectedRevision: call.Revision, SettingsRevision: settingsRevision, SourceAvailable: available})
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return nil
+	}
+	if err := applyCallFindings(ctx, q, call.OrganisationID, call.ProjectID, call.ID, findings, covered); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
+func (s *Store) DeferCallFindings(ctx context.Context, call store.PendingFindings) error {
+	uid, err := uuid(call.ID)
+	if err != nil {
+		return store.ErrNotFound
+	}
+	return s.q.DeferCallFindings(ctx, DeferCallFindingsParams{ID: uid, ExpectedRevision: call.Revision})
 }

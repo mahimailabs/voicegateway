@@ -335,6 +335,39 @@ func (q *Queries) CallTotals(ctx context.Context, arg CallTotalsParams) (CallTot
 	return i, err
 }
 
+const claimBackfillFindings = `-- name: ClaimBackfillFindings :execrows
+UPDATE calls SET issue_evaluated_at = $1, issue_settings_revision = $2,
+ issue_source_available = $3, issue_retry_at = NULL, issue_failures = 0, issue_evaluation_revision = issue_evaluation_revision + 1
+WHERE id = $4 AND organisation_id = $5 AND project_id = $6
+ AND summary_stale_at IS NULL AND issue_evaluation_revision = $7
+`
+
+type ClaimBackfillFindingsParams struct {
+	EvaluatedAt      pgtype.Timestamptz
+	SettingsRevision int64
+	SourceAvailable  bool
+	ID               pgtype.UUID
+	OrganisationID   string
+	ProjectID        string
+	ExpectedRevision int64
+}
+
+func (q *Queries) ClaimBackfillFindings(ctx context.Context, arg ClaimBackfillFindingsParams) (int64, error) {
+	result, err := q.db.Exec(ctx, claimBackfillFindings,
+		arg.EvaluatedAt,
+		arg.SettingsRevision,
+		arg.SourceAvailable,
+		arg.ID,
+		arg.OrganisationID,
+		arg.ProjectID,
+		arg.ExpectedRevision,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const clearStale = `-- name: ClearStale :exec
 UPDATE calls SET summary_stale_at = NULL, summary_failures = 0
 WHERE id = $1 AND summary_stale_at = $2
@@ -612,6 +645,22 @@ func (q *Queries) DeactivateCallFindings(ctx context.Context, arg DeactivateCall
 		return 0, err
 	}
 	return result.RowsAffected(), nil
+}
+
+const deferCallFindings = `-- name: DeferCallFindings :exec
+UPDATE calls SET issue_failures = LEAST(issue_failures + 1, 10),
+ issue_retry_at = now() + LEAST(interval '10 seconds' * power(2, LEAST(issue_failures, 9)), interval '1 hour')
+WHERE id = $1 AND issue_evaluation_revision = $2
+`
+
+type DeferCallFindingsParams struct {
+	ID               pgtype.UUID
+	ExpectedRevision int64
+}
+
+func (q *Queries) DeferCallFindings(ctx context.Context, arg DeferCallFindingsParams) error {
+	_, err := q.db.Exec(ctx, deferCallFindings, arg.ID, arg.ExpectedRevision)
+	return err
 }
 
 const deferStale = `-- name: DeferStale :exec
@@ -1196,6 +1245,99 @@ func (q *Queries) ListInvitations(ctx context.Context, organisationID string) ([
 	return items, nil
 }
 
+const listIssueOccurrences = `-- name: ListIssueOccurrences :many
+SELECT i.id, i.title, i.kind, i.source, i.severity,
+       i.state, i.decided_at, i.evidence_revision, i.reviewed_evidence_revision,
+       i.metadata_revision, i.tags, i.archived,
+       o.occurred_at, o.detail, o.call_id
+FROM issues i
+JOIN issue_occurrences o ON o.organisation_id = i.organisation_id
+    AND o.project_id = i.project_id AND o.issue_id = i.id
+LEFT JOIN call_list c ON c.id = o.call_id AND c.organisation_id = i.organisation_id AND c.project_id = i.project_id
+WHERE i.organisation_id = $1 AND i.project_id = $2
+  AND o.active AND (o.call_id IS NULL OR c.servable)
+  AND (i.kind = 'standing' OR (o.occurred_at >= $3 AND o.occurred_at < $4))
+  AND ($5::boolean IS NULL OR i.archived = $5)
+  AND (cardinality($6::text[]) = 0 OR i.tags && $6::text[])
+  AND ($7::text = '' OR strpos(lower(i.title), lower($7)) > 0
+       OR strpos(lower(o.detail->>'where'), lower($7)) > 0
+       OR strpos(lower(o.detail->>'detail'), lower($7)) > 0)
+ORDER BY CASE i.severity WHEN 'high' THEN 0 WHEN 'medium' THEN 1 WHEN 'low' THEN 2 ELSE 3 END,
+         i.id, o.occurred_at DESC NULLS LAST, o.source_id
+`
+
+type ListIssueOccurrencesParams struct {
+	OrganisationID string
+	ProjectID      string
+	FromAt         pgtype.Timestamptz
+	ToAt           pgtype.Timestamptz
+	Archived       pgtype.Bool
+	Tags           []string
+	Search         string
+}
+
+type ListIssueOccurrencesRow struct {
+	ID                       string
+	Title                    string
+	Kind                     string
+	Source                   string
+	Severity                 string
+	State                    string
+	DecidedAt                pgtype.Timestamptz
+	EvidenceRevision         int64
+	ReviewedEvidenceRevision int64
+	MetadataRevision         int64
+	Tags                     []string
+	Archived                 bool
+	OccurredAt               pgtype.Timestamptz
+	Detail                   []byte
+	CallID                   pgtype.UUID
+}
+
+func (q *Queries) ListIssueOccurrences(ctx context.Context, arg ListIssueOccurrencesParams) ([]ListIssueOccurrencesRow, error) {
+	rows, err := q.db.Query(ctx, listIssueOccurrences,
+		arg.OrganisationID,
+		arg.ProjectID,
+		arg.FromAt,
+		arg.ToAt,
+		arg.Archived,
+		arg.Tags,
+		arg.Search,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListIssueOccurrencesRow
+	for rows.Next() {
+		var i ListIssueOccurrencesRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Title,
+			&i.Kind,
+			&i.Source,
+			&i.Severity,
+			&i.State,
+			&i.DecidedAt,
+			&i.EvidenceRevision,
+			&i.ReviewedEvidenceRevision,
+			&i.MetadataRevision,
+			&i.Tags,
+			&i.Archived,
+			&i.OccurredAt,
+			&i.Detail,
+			&i.CallID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listProjectKeys = `-- name: ListProjectKeys :many
 SELECT k.key_id, k.name, k.created_at, u.email AS created_by, k.last_used_at, k.revoked_at
 FROM project_keys k LEFT JOIN users u ON u.id = k.created_by
@@ -1678,6 +1820,50 @@ func (q *Queries) OrganisationUsage(ctx context.Context, arg OrganisationUsagePa
 	return i, err
 }
 
+const pendingCallFindings = `-- name: PendingCallFindings :many
+SELECT c.organisation_id, c.project_id, c.id, c.issue_evaluation_revision
+FROM calls c
+JOIN call_list l ON l.id = c.id
+LEFT JOIN project_settings s ON s.organisation_id = c.organisation_id AND s.project_id = c.project_id
+WHERE l.servable AND c.summary_stale_at IS NULL
+  AND (c.issue_evaluated_at IS NULL OR c.issue_settings_revision <> COALESCE(s.revision, 0))
+  AND (c.issue_retry_at IS NULL OR c.issue_retry_at <= now())
+ORDER BY c.issue_retry_at NULLS FIRST, c.id
+LIMIT $1
+`
+
+type PendingCallFindingsRow struct {
+	OrganisationID          string
+	ProjectID               string
+	ID                      pgtype.UUID
+	IssueEvaluationRevision int64
+}
+
+func (q *Queries) PendingCallFindings(ctx context.Context, maxCalls int32) ([]PendingCallFindingsRow, error) {
+	rows, err := q.db.Query(ctx, pendingCallFindings, maxCalls)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []PendingCallFindingsRow
+	for rows.Next() {
+		var i PendingCallFindingsRow
+		if err := rows.Scan(
+			&i.OrganisationID,
+			&i.ProjectID,
+			&i.ID,
+			&i.IssueEvaluationRevision,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const principalRows = `-- name: PrincipalRows :many
 SELECT u.id, u.email, u.password_version, m.organisation_id, m.role
 FROM users u LEFT JOIN memberships m ON m.user_id = u.id
@@ -2052,6 +2238,29 @@ func (q *Queries) RecordSignInAttempt(ctx context.Context, arg RecordSignInAttem
 	var id int64
 	err := row.Scan(&id)
 	return id, err
+}
+
+const recordSummaryFindings = `-- name: RecordSummaryFindings :exec
+UPDATE calls SET issue_evaluated_at = $1, issue_settings_revision = $2,
+ issue_source_available = $3, issue_retry_at = NULL, issue_failures = 0, issue_evaluation_revision = issue_evaluation_revision + 1
+WHERE id = $4
+`
+
+type RecordSummaryFindingsParams struct {
+	EvaluatedAt      pgtype.Timestamptz
+	SettingsRevision int64
+	SourceAvailable  bool
+	ID               pgtype.UUID
+}
+
+func (q *Queries) RecordSummaryFindings(ctx context.Context, arg RecordSummaryFindingsParams) error {
+	_, err := q.db.Exec(ctx, recordSummaryFindings,
+		arg.EvaluatedAt,
+		arg.SettingsRevision,
+		arg.SourceAvailable,
+		arg.ID,
+	)
+	return err
 }
 
 const removeMembership = `-- name: RemoveMembership :execrows

@@ -201,13 +201,15 @@ type CallSummary struct {
 	// Findings is nil when no source was evaluated; an empty slice is an evaluated empty result.
 	Findings []Finding
 	// EvaluatedFindingIDs limits which absent findings may be cleared. Empty preserves all absent evidence; nil means all rules were evaluated.
-	EvaluatedFindingIDs []string
-	TurnCount           *int
-	AnswerMs            []float64
-	AnswerMsMedian      *float64
-	Models              []string
-	Pipeline            string
-	AgentKey            *string
+	EvaluatedFindingIDs     []string
+	FindingSettingsRevision int64
+	FindingSourceAvailable  bool
+	TurnCount               *int
+	AnswerMs                []float64
+	AnswerMsMedian          *float64
+	Models                  []string
+	Pipeline                string
+	AgentKey                *string
 	// RoomName and FirstSeenAt are what the spans report, to fill a call stored before 04d.
 	RoomName    string
 	FirstSeenAt *time.Time

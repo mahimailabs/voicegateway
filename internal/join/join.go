@@ -13,6 +13,9 @@ import (
 
 // Calls is the call index.
 type Calls interface {
+	PendingCallFindings(context.Context, int) ([]store.PendingFindings, error)
+	PutCallFindings(context.Context, store.PendingFindings, []store.Finding, []string, int64, bool, time.Time) error
+	DeferCallFindings(context.Context, store.PendingFindings) error
 	ProjectSettings(context.Context, string, string) (store.ProjectSettings, error)
 	UpsertCall(ctx context.Context, c store.CallUpsert) (string, error)
 	UpsertCallByJob(ctx context.Context, organisationID, projectID, jobID string, activityAt, firstSeenAt *time.Time) (string, error)
@@ -187,18 +190,20 @@ func (j *Joiner) summarizeOne(ctx context.Context, c store.StaleCall, now time.T
 	}
 	s := turn.Summarize(spans, res)
 	var findings []store.Finding
+	var settingsRevision int64
 	if len(spans) > 0 || res.NoReply {
 		settings, err := j.Calls.ProjectSettings(ctx, c.OrganisationID, c.ProjectID)
 		if err != nil {
 			return fmt.Errorf("read finding thresholds: %w", err)
 		}
+		settingsRevision = settings.Revision
 		observed := turn.Findings(spans, res, settings.Thresholds)
 		if len(observed) > 0 || len(res.Turns) > 0 || res.NoReply {
 			findings = observed
 		}
 	}
 	return j.Calls.PutSummary(ctx, c, store.CallSummary{
-		Findings: findings, EvaluatedFindingIDs: turn.FindingCoverage(res), TurnCount: s.TurnCount, AnswerMs: s.AnswerMs, AnswerMsMedian: s.AnswerMsMedian,
+		Findings: findings, EvaluatedFindingIDs: turn.FindingCoverage(res), FindingSettingsRevision: settingsRevision, FindingSourceAvailable: len(spans) > 0 || res.NoReply, TurnCount: s.TurnCount, AnswerMs: s.AnswerMs, AnswerMsMedian: s.AnswerMsMedian,
 		Models: s.Models, Pipeline: s.Pipeline, AgentKey: s.AgentKey,
 		RoomName: s.RoomName, FirstSeenAt: s.FirstSeenAt,
 	}, now)

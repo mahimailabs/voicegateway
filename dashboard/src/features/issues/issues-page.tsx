@@ -1,19 +1,20 @@
+import { IssueTags } from "./issue-tags"
 import { useMemo } from "react"
 import { Link } from "@tanstack/react-router"
-import { ArrowCounterClockwise, ArrowSquareOut, CaretRight, CheckCircle, Clock, DotsThree, EyeSlash, Phone, PhoneCall, Robot, Shapes, Warning, WarningCircle } from "@phosphor-icons/react"
+import { Archive, Tag, ArrowCounterClockwise, ArrowSquareOut, CaretRight, CheckCircle, Clock, DotsThree, EyeSlash, Phone, PhoneCall, Robot, Shapes, Warning, WarningCircle } from "@phosphor-icons/react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
-import { type Store, statusOf, storeFrom, useSaveIssueStates } from "./issue-state"
+import { useIssueMetadata } from "./issue-state"
 import { type Columns, DataTable, type Field } from "@/components/data-table"
 import { DataGridColumnHeader } from "@/components/reui/data-grid/data-grid-column-header"
 import { cn } from "@/lib/utils"
 import { type Issue, type Severity, issuesFrom, lastSeen, lastSortKey } from "./issues-model"
 import { useQuery } from "@tanstack/react-query"
 import { QueryState } from "@/components/page-state"
-import { issueDispositionsQuery, issuesQuery } from "@/lib/api"
+import { issuesQuery } from "@/lib/api"
 import { useUrlState } from "@/lib/url-state"
 
 // Issues: every finding the console computes, grouped so a pattern across calls reads as one row
@@ -99,6 +100,7 @@ const columns: Columns<Issue> = [
     meta: {
       expandedContent: (i: Issue) => (
         <div className="bg-muted/30 px-10 py-1">
+          <IssueTags issue={i} />
           <Hits issue={i} />
         </div>
       ),
@@ -151,6 +153,7 @@ const columns: Columns<Issue> = [
 
 const severityOptions = (["high", "medium", "low", "info"] as const).map((v) => ({ value: v, label: v[0].toUpperCase() + v.slice(1) }))
 const fields: Field<Issue>[] = [
+ { id:"tags",label:"Tags",type:"text",icon:<Tag/>,get:(i)=>i.metadata.tags.length?i.metadata.tags.join(" "):null },
   { id: "severity", label: "Severity", type: "select", icon: <Warning />, options: severityOptions, get: (i) => i.severity },
   {
     id: "source",
@@ -174,27 +177,24 @@ const fields: Field<Issue>[] = [
   { id: "seen", label: "Seen", type: "number", icon: <PhoneCall />, get: (i) => i.hits.length },
 ]
 
-type View = "open" | "resolved" | "ignored"
-const viewLabel: Record<View, string> = { open: "Open", resolved: "Resolved", ignored: "Ignored" }
+type View = "open" | "resolved" | "ignored" | "archived"
+const viewLabel: Record<View, string> = { open: "Open", resolved: "Resolved", ignored: "Ignored", archived: "Archived" }
 
 export function IssuesPage() {
   const read = useQuery(issuesQuery())
-  const decided = useQuery(issueDispositionsQuery())
   const all = useMemo(() => (read.data ? issuesFrom(read.data) : null), [read.data])
-  const states = useMemo(() => (decided.data ? storeFrom(decided.data) : null), [decided.data])
-  if (!all) return <QueryState icon={WarningCircle} what="issues" query={read} />
-  if (!states) return <QueryState icon={WarningCircle} what="issue decisions" query={decided} />
-  return <IssuesView all={all} states={states} />
+  if (!all || read.isError) return <QueryState icon={WarningCircle} what="issues" query={read} />
+  return <IssuesView all={all} complete={read.data?.complete ?? false} />
 }
 
-function IssuesView({ all, states }: { all: Issue[]; states: Store }) {
-  const setIssueStates = useSaveIssueStates()
+function IssuesView({ all, complete }: { all: Issue[]; complete: boolean }) {
+  const metadata = useIssueMetadata()
   const [view, setView] = useUrlState<View>("view", "open")
-  const withStatus = all.map((i) => ({ i, st: statusOf(states, i.id, lastSeen(i)) }))
-  const count = (v: View) => withStatus.filter((x) => x.st.status === v).length
-  const shown = withStatus.filter((x) => x.st.status === view).map((x) => x.i)
+  const withStatus = all.map((i) => ({ i, st: { status: i.metadata.state, regressed: i.metadata.regressed } }))
+  const count = (v: View) => withStatus.filter((x) => v === "archived" ? x.i.metadata.archived : !x.i.metadata.archived && x.st.status === v).length
+  const shown = withStatus.filter((x) => view === "archived" ? x.i.metadata.archived : !x.i.metadata.archived && x.st.status === view).map((x) => x.i)
   const regressed = new Set(withStatus.filter((x) => x.st.regressed).map((x) => x.i.id))
-  const openAll = withStatus.filter((x) => x.st.status === "open").map((x) => x.i)
+  const openAll = withStatus.filter((x) => !x.i.metadata.archived && x.st.status === "open").map((x) => x.i)
   // The headline counts what happened; standing issues are current state and counted apart.
   const open = openAll.filter((i) => i.kind === "event")
   const current = openAll.filter((i) => i.kind === "standing")
@@ -202,21 +202,23 @@ function IssuesView({ all, states }: { all: Issue[]; states: Store }) {
   const high = open.filter((i) => i.severity === "high").length
   const currentHigh = current.filter((i) => i.severity === "high").length
 
-  // Every change can be undone from its toast; the store keeps the state from before.
-  const apply = (list: Issue[], state: "resolved" | "ignored" | "open", done?: () => void) => {
-    let before: Store = {}
-    setIssueStates((current) => {
-      before = current
-      const next = { ...current }
-      for (const i of list) {
-        if (state === "open") delete next[i.id]
-        else next[i.id] = { state, at: Date.now() }
-      }
-      return next
+  const apply = async (list: Issue[], state: "resolved" | "ignored" | "open" | "archive" | "restore", done?: () => void) => {
+    const saved: Awaited<ReturnType<typeof metadata.mutateAsync>>[] = []
+    let failed = 0
+    for (const issue of list) {
+      try { saved.push(await metadata.mutateAsync({id:issue.id,before:issue.metadata,...(state === "archive" || state === "restore" ? {archived:state === "archive"} : {state})})) }
+      catch (error) { failed++; toast.error(error instanceof Error ? error.message : "Issue save failed.") }
+    }
+    if (failed === 0) done?.()
+    if (!saved.length) return
+    toast(`${saved.length} ${saved.length === 1 ? "issue" : "issues"} ${state === "open" ? "reopened" : state === "archive" ? "archived" : state === "restore" ? "restored" : state}${failed ? `; ${failed} failed` : ""}`, {
+      action: {label:"Undo",onClick:async()=>{
+        for (const edit of saved) {
+          try {await metadata.mutateAsync({id:edit.id,before:edit.saved,undo:edit})}
+          catch (error) {toast.error(error instanceof Error ? error.message : "Undo failed.")}
+        }
+      }},
     })
-    done?.()
-    const what = list.length === 1 ? `"${list[0].title}"` : `${list.length} issues`
-    toast(state === "open" ? `Reopened ${what}` : state === "resolved" ? `Resolved ${what}` : `Ignored ${what}`, { action: { label: "Undo", onClick: () => setIssueStates(before) } })
   }
 
   const rowMenu: Columns<Issue>[number] = {
@@ -231,21 +233,22 @@ function IssuesView({ all, states }: { all: Issue[]; states: Store }) {
             <DotsThree size={18} weight="bold" />
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="min-w-44">
-            {view !== "resolved" && (
-              <DropdownMenuItem onSelect={() => apply([row.original], "resolved")}>
+            {metadata.canEdit && view !== "resolved" && (
+              <DropdownMenuItem disabled={metadata.isPending} onSelect={() => void apply([row.original], "resolved")}>
                 <CheckCircle /> Resolve
               </DropdownMenuItem>
             )}
-            {view !== "ignored" && (
-              <DropdownMenuItem onSelect={() => apply([row.original], "ignored")}>
+            {metadata.canEdit && view !== "ignored" && (
+              <DropdownMenuItem disabled={metadata.isPending} onSelect={() => void apply([row.original], "ignored")}>
                 <EyeSlash /> Ignore
               </DropdownMenuItem>
             )}
-            {view !== "open" && (
-              <DropdownMenuItem onSelect={() => apply([row.original], "open")}>
+            {metadata.canEdit && view !== "open" && (
+              <DropdownMenuItem disabled={metadata.isPending} onSelect={() => void apply([row.original], "open")}>
                 <ArrowCounterClockwise /> Reopen
               </DropdownMenuItem>
             )}
+            {metadata.canEdit && <DropdownMenuItem disabled={metadata.isPending} onSelect={()=>void apply([row.original],row.original.metadata.archived?"restore":"archive")}><Archive/>{row.original.metadata.archived?"Restore":"Archive"}</DropdownMenuItem>}
             <DropdownMenuItem asChild>
               <Link to={row.original.to}>
                 <ArrowSquareOut /> Open {row.original.source}
@@ -277,12 +280,13 @@ function IssuesView({ all, states }: { all: Issue[]; states: Store }) {
         <p className="text-[13px] text-muted-foreground">
           {current.length
             ? `Plus ${current.length} current ${current.length === 1 ? "state" : "states"}${currentHigh ? `, ${currentHigh} high,` : ""} on agent workers and the phone bridge, true now whatever the range.`
-            : "No open current state on agent workers or the phone bridge."}
+            : complete ? "No open current state on agent workers or the phone bridge." : "Standing-source coverage is incomplete."}
         </p>
       </header>
+      {!complete && <p role="status" className="text-[13px] text-muted-foreground">Source coverage is incomplete. Listed findings are recorded evidence; missing findings do not establish recovery.</p>}
       <Tabs value={view} onValueChange={(v) => setView(v as View)}>
         <TabsList>
-          {(["open", "resolved", "ignored"] as View[]).map((v) => (
+          {(["open", "resolved", "ignored", "archived"] as View[]).map((v) => (
             <TabsTrigger key={v} value={v}>
               {viewLabel[v]} <span className="ml-1 text-[11px] text-muted-foreground tnum">{count(v)}</span>
             </TabsTrigger>
@@ -300,18 +304,19 @@ function IssuesView({ all, states }: { all: Issue[]; states: Store }) {
             empty={view === "open" ? "No open issue matches these filters." : `No ${view} issues.`}
             bulk={(sel, clear) => (
               <>
-                {view !== "resolved" && (
-                  <Button size="sm" variant="outline" onClick={() => apply(sel, "resolved", clear)}>
+                {metadata.canEdit && <Button size="sm" variant="outline" disabled={metadata.isPending} onClick={()=>void apply(sel,view === "archived"?"restore":"archive",clear)}><Archive/>{view === "archived"?"Restore":"Archive"}</Button>}
+                {metadata.canEdit && view !== "resolved" && (
+                  <Button size="sm" variant="outline" disabled={metadata.isPending} onClick={() => void apply(sel, "resolved", clear)}>
                     <CheckCircle /> Resolve
                   </Button>
                 )}
-                {view !== "ignored" && (
-                  <Button size="sm" variant="outline" onClick={() => apply(sel, "ignored", clear)}>
+                {metadata.canEdit && view !== "ignored" && (
+                  <Button size="sm" variant="outline" disabled={metadata.isPending} onClick={() => void apply(sel, "ignored", clear)}>
                     <EyeSlash /> Ignore
                   </Button>
                 )}
-                {view !== "open" && (
-                  <Button size="sm" variant="outline" onClick={() => apply(sel, "open", clear)}>
+                {metadata.canEdit && view !== "open" && (
+                  <Button size="sm" variant="outline" disabled={metadata.isPending} onClick={() => void apply(sel, "open", clear)}>
                     <ArrowCounterClockwise /> Reopen
                   </Button>
                 )}
@@ -320,7 +325,7 @@ function IssuesView({ all, states }: { all: Issue[]; states: Store }) {
           />
         </TabsContent>
       </Tabs>
-      <p className="text-[12px] text-muted-foreground">Resolved and ignored are kept in this browser until the server stores them. A resolved issue reopens as regressed when it is seen again. "Current" is a check on the latest read of agents or the phone bridge, not an event with a time.</p>
+      <p className="text-[12px] text-muted-foreground">Decisions are shared across the project. A resolved issue regresses when new evidence is observed. "Current" is a check on the latest read of agents or the phone bridge, not an event with a time.</p>
     </div>
   )
 }

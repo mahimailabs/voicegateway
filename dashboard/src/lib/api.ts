@@ -10,6 +10,7 @@ import {
   getCallMetadata,
   getCallTags,
   updateCallMetadata,
+  updateIssueMetadata,
   getCall,
   getCallStats,
   getCapacity,
@@ -17,7 +18,6 @@ import {
   getEgress,
   getIngress,
   getInvitations,
-  getIssueDispositions,
   getMediaServer,
   getMembers,
   getMyOrganisationEntitlement,
@@ -258,7 +258,6 @@ export const projectSettingsQuery = () => {
 }
 export const saveProjectSettings = (selected: ReturnType<typeof currentScope>, body: UpdateProjectSettings) =>
   data(updateProjectSettingsCall({ ...thrown, path: { orgId: selected.org, projectId: selected.project }, body }))
-export const issueDispositionsQuery = () => ({ queryKey: ["issue-dispositions", currentScope()], queryFn: () => data(getIssueDispositions({ ...thrown, path: scope() })) })
 export const alertSetupQuery = () => ({ queryKey: ["alert-setup", currentScope()], queryFn: () => data(getAlertSetup({ ...thrown, path: scope() })) })
 export const fetchWorkspaces = () => data(getWorkspaces(thrown))
 
@@ -296,3 +295,5 @@ export const callTagsQuery = (selected = currentScope()) => ({
  staleTime:0, retry:false,
 })
 export const saveCallMetadata = (id: string, body: import("@/lib/api-types").CallMetadata, selected = currentScope()) => data(updateCallMetadata({...thrown,path:{orgId:selected.org,projectId:selected.project,callId:id},body}))
+
+export const saveIssueMetadata = (id: string, body: import("@/lib/api-types").UpdateIssueMetadata, selected = currentScope()) => data(updateIssueMetadata({...thrown,path:{orgId:selected.org,projectId:selected.project,issueId:id},body}))

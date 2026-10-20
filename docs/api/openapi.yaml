@@ -386,7 +386,7 @@ paths:
         projectIsolation: required
         originAllowList: required
         readOnly: true
-      description: "The Issues page, the issues widget, issue counts and the command palette. Dispositions stay in getIssueDispositions. Requires authenticated organisation membership and permission to read the named project. Credential absence is 401, denied membership is 403. Computed on the server over every stored record in the range; the console never totals pages of listCalls itself."
+      description: "The Issues page, the issues widget, issue counts and the command palette. Decisions and metadata are included in each issue from the same database snapshot. Requires authenticated organisation membership and permission to read the named project. Credential absence is 401, denied membership is 403. Computed on the server over every stored record in the range; the console never totals pages of listCalls itself."
       parameters:
         - $ref: "#/components/parameters/OrganisationId"
         - $ref: "#/components/parameters/ProjectId"
@@ -404,6 +404,21 @@ paths:
           schema:
             type: string
             format: date-time
+        - name: q
+          in: query
+          description: Literal case-insensitive search over issue titles and occurrence details.
+          schema: { type: string, maxLength: 512 }
+        - name: tag
+          in: query
+          description: Match any persisted normalized issue tag.
+          schema:
+            type: array
+            maxItems: 32
+            items: { type: string, maxLength: 64 }
+        - name: archived
+          in: query
+          description: Filter persisted issue archive state. Omit to include both.
+          schema: { type: boolean }
       responses:
         "200":
           description: Authorised read result. Null means unreported or incomplete, never zero.
@@ -1171,44 +1186,7 @@ paths:
           $ref: "#/components/responses/InternalError"
         "503":
           $ref: "#/components/responses/SourceUnavailable"
-  /api/v1/org/{orgId}/project/{projectId}/issue-dispositions:
-    get:
-      operationId: getIssueDispositions
-      security:
-        - consoleSession: []
-        - projectKey: []
-      summary: Read saved issue decisions
-      tags:
-        - Console reads
-      x-access:
-        principal: organisation_member
-        minimumRole: Viewer
-        projectIsolation: required
-        browserSessionTransport: session_cookie
-        scope: project
-      description: "Requires authenticated organisation membership and permission to read the named project. A browser signs in with the session cookie (decision 0027); the role gate admits the minimumRole and above. Credential absence is 401, denied membership is 403, cross-project resource ids are not_found. Server-side LiveKit credentials must never reach the browser."
-      parameters:
-        - $ref: "#/components/parameters/OrganisationId"
-        - $ref: "#/components/parameters/ProjectId"
-      responses:
-        "200":
-          description: Authorised read result. Null means unreported, never zero. Source-specific coverage limits remain visible.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/IssueDispositions"
-        "400":
-          $ref: "#/components/responses/BadRequest"
-        "401":
-          $ref: "#/components/responses/Unauthenticated"
-        "403":
-          $ref: "#/components/responses/Forbidden"
-        "404":
-          $ref: "#/components/responses/NotFound"
-        "500":
-          $ref: "#/components/responses/InternalError"
-        "503":
-          $ref: "#/components/responses/SourceUnavailable"
+
   /api/v1/org/{orgId}/project/{projectId}/alert-setup:
     get:
       operationId: getAlertSetup
@@ -5018,8 +4996,11 @@ components:
           items:
             type: object
             additionalProperties: false
-            required: [ id, title, kind, severity, source, lastSeenAt, hits ]
+            required: [ id, title, kind, severity, source, lastSeenAt, hits, metadata ]
             properties:
+              metadata:
+                $ref: "#/components/schemas/IssueMetadata"
+                x-source: { kind: configuration, file: internal/store/issues.go, pointer: null, detail: Issue decision and metadata from the same snapshot as occurrences. }
               id:
                 type: string
                 description: "Stable grouping key; the issueId dispositions refer to."
@@ -5194,36 +5175,6 @@ components:
           minimum: 100
           maximum: 60000
           default: 1000
-    IssueDisposition:
-      type: object
-      additionalProperties: false
-      required: [ issueId, state, at ]
-      properties:
-        issueId:
-          type: string
-          description: Stable issue grouping key from issues-model.ts; disposition belongs to this project.
-          x-source: { kind: configuration, file: dashboard/src/features/issues/issue-state.ts, pointer: null, detail: Stable issue grouping key from issues-model.ts; disposition belongs to this project. }
-        state:
-          type: string
-          description: Explicit user disposition. No disposition means open, not resolved.
-          x-source: { kind: configuration, file: dashboard/src/features/issues/issue-state.ts, pointer: null, detail: "Explicit user disposition. No disposition means open, not resolved." }
-          enum: [ resolved, ignored ]
-        at:
-          type: string
-          format: date-time
-          description: User decision time, UTC. Compare with the issue's lastSeenAt to mark it regressed.
-          x-source: { kind: configuration, file: dashboard/src/features/issues/issue-state.ts, pointer: null, detail: "User decision time, UTC. Compare with the issue's lastSeenAt to mark it regressed." }
-          x-configuration: true
-    IssueDispositions:
-      type: object
-      additionalProperties: false
-      required: [ items ]
-      properties:
-        items:
-          type: array
-          items:
-            $ref: "#/components/schemas/IssueDisposition"
-          x-source: { kind: configuration, file: dashboard/src/features/issues/issue-state.ts, pointer: null, detail: "All saved dispositions for this project. Empty means none saved, not no issues." }
     AlertRuleSetup:
       type: object
       additionalProperties: false
@@ -5268,6 +5219,7 @@ components:
             type: string
           x-source: { kind: configuration, file: migrations/postgres/00016_call_metadata.sql, pointer: null, detail: Distinct persisted tags of readable calls in the named project. }
     IssueMetadata:
+      x-source: { kind: configuration, file: internal/store/issues.go, pointer: null, detail: Persisted issue metadata and evidence revisions. }
       type: object
       additionalProperties: false
       required: [ issueId, state, regressed, decidedAt, evidenceRevision, reviewedEvidenceRevision, tags, archived, revision ]

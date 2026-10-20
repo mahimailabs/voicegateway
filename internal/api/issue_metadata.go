@@ -15,6 +15,7 @@ import (
 )
 
 type IssueMetadataStore interface {
+	ListIssues(context.Context, string, string, store.IssueFilter) (store.IssueList, error)
 	IssueMetadata(context.Context, string, string, string) (store.IssueMetadata, error)
 	UpdateIssueMetadata(context.Context, string, string, string, int64, int64, *string, []string, bool) (store.IssueMetadata, error)
 }

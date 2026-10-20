@@ -251,6 +251,9 @@ func (s *Store) PutSummary(ctx context.Context, c store.StaleCall, sum store.Cal
 	if err := applyCallFindings(ctx, q, c.OrganisationID, c.ProjectID, c.ID, sum.Findings, sum.EvaluatedFindingIDs); err != nil {
 		return fmt.Errorf("put call findings: %w", err)
 	}
+	if err := q.RecordSummaryFindings(ctx, RecordSummaryFindingsParams{ID: id, EvaluatedAt: timestamp(&computedAt), SettingsRevision: sum.FindingSettingsRevision, SourceAvailable: sum.FindingSourceAvailable}); err != nil {
+		return err
+	}
 	return tx.Commit(ctx)
 }
 

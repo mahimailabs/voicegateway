@@ -3,6 +3,7 @@ package pgstore
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 	"testing"
 	"time"
@@ -167,5 +168,140 @@ func TestIssuePartialCoveragePreservesUnreportedEvidence(t *testing.T) {
 		if count != tc.want {
 			t.Fatalf("coverage %v: %d active, want %d", tc.covered, count, tc.want)
 		}
+	}
+}
+
+func TestIssueListFiltersPersistedEvidenceAndMetadata(t *testing.T) {
+	s, _ := migrated(t)
+	ctx := context.Background()
+	for _, p := range []string{"one", "two"} {
+		if _, err := s.CreateProject(ctx, project(p, "key-"+p)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	now := time.Now().UTC().Truncate(time.Second)
+	for n, p := range []string{"one", "one", "two"} {
+		at := now.Add(time.Duration(n) * time.Minute)
+		id, err := s.UpsertCall(ctx, store.CallUpsert{OrganisationID: "default", ProjectID: p, RoomSID: fmt.Sprintf("room-%d", n), RoomName: fmt.Sprintf("room-%d", n), StartedAt: &at})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := s.ApplyCallFindings(ctx, "default", p, id, []store.Finding{{ID: "slow", Title: "Slow answers", Severity: "medium", Detail: "response exceeded budget"}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	base := store.IssueFilter{From: now, To: now.Add(2 * time.Minute)}
+	got, err := s.ListIssues(ctx, "default", "one", base)
+	if err != nil || len(got.Items) != 1 || len(got.Items[0].Hits) != 2 || got.Complete {
+		t.Fatalf("scoped list: %+v %v", got, err)
+	}
+	if got.Items[0].Metadata.EvidenceRevision != 2 || got.Items[0].Hits[0].Where != "room-1" {
+		t.Fatalf("metadata or ordering: %+v", got)
+	}
+	state := "resolved"
+	if _, err := s.UpdateIssueMetadata(ctx, "default", "one", "slow", 0, 2, &state, []string{"support"}, true); err != nil {
+		t.Fatal(err)
+	}
+	archived := true
+	filter := base
+	filter.Archived = &archived
+	filter.Tags = []string{"support"}
+	filter.Search = "ROOM-0"
+	got, err = s.ListIssues(ctx, "default", "one", filter)
+	if err != nil || len(got.Items) != 1 || len(got.Items[0].Hits) != 1 || got.Items[0].Metadata.State != "resolved" {
+		t.Fatalf("filtered list: %+v %v", got, err)
+	}
+	filter.Search = "%"
+	got, err = s.ListIssues(ctx, "default", "one", filter)
+	if err != nil || len(got.Items) != 0 {
+		t.Fatalf("search interpreted wildcard: %+v %v", got, err)
+	}
+	filter = base
+	filter.To = now.Add(time.Minute)
+	got, err = s.ListIssues(ctx, "default", "one", filter)
+	if err != nil || len(got.Items) != 1 || len(got.Items[0].Hits) != 1 {
+		t.Fatalf("exclusive upper range: %+v %v", got, err)
+	}
+	if _, err := s.ListIssues(ctx, "default", "missing", base); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("missing project: %v", err)
+	}
+}
+
+func TestIssueBackfillPreservesSummaryAndRejectsStaleEvaluation(t *testing.T) {
+	s, pool := migrated(t)
+	ctx := context.Background()
+	at := time.Now().UTC()
+	if _, err := s.CreateProject(ctx, project("history", "key-history")); err != nil {
+		t.Fatal(err)
+	}
+	id, err := s.UpsertCall(ctx, store.CallUpsert{OrganisationID: "default", ProjectID: "history", RoomSID: "old", RoomName: "historical-room", StartedAt: &at})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, "INSERT INTO call_summaries (call_id,turn_count,answer_ms,models,computed_at) VALUES ($1::uuid,9,ARRAY[123.0]::double precision[],'{}',now())", id); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, "UPDATE calls SET summary_stale_at=NULL WHERE id=$1::uuid", id); err != nil {
+		t.Fatal(err)
+	}
+	pending, err := s.PendingCallFindings(ctx, 100)
+	if err != nil || len(pending) != 1 {
+		t.Fatalf("pending history: %+v %v", pending, err)
+	}
+	first := pending[0]
+	slow := []store.Finding{{ID: "slow", Title: "Slow answers", Severity: "medium", Detail: "captured response"}}
+	if err := s.PutCallFindings(ctx, first, slow, []string{"slow"}, 0, true, at); err != nil {
+		t.Fatal(err)
+	}
+	// A competing worker read the same version. Even identical timestamps cannot allow its write.
+	if err := s.PutCallFindings(ctx, first, []store.Finding{{ID: "tts", Title: "Slow speech", Severity: "medium"}}, nil, 0, true, at); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.IssueMetadata(ctx, "default", "history", "tts"); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("stale backfill replaced evidence: %v", err)
+	}
+	var count int
+	var answers []float64
+	if err := pool.QueryRow(ctx, "SELECT turn_count,answer_ms FROM call_summaries WHERE call_id=$1::uuid", id).Scan(&count, &answers); err != nil {
+		t.Fatal(err)
+	}
+	if count != 9 || len(answers) != 1 || answers[0] != 123 {
+		t.Fatalf("historical summary changed: %d %v", count, answers)
+	}
+	if _, err := s.UpdateProjectSettings(ctx, "default", "history", 0, store.Thresholds{AnswerMs: 2000, JoinMs: 2000, TTSStartMs: 1000}); err != nil {
+		t.Fatal(err)
+	}
+	pending, err = s.PendingCallFindings(ctx, 100)
+	if err != nil || len(pending) != 1 || pending[0].Revision != 1 {
+		t.Fatalf("settings did not requeue: %+v %v", pending, err)
+	}
+	if err := s.DeferCallFindings(ctx, pending[0]); err != nil {
+		t.Fatal(err)
+	}
+	deferred, err := s.PendingCallFindings(ctx, 100)
+	if err != nil || len(deferred) != 0 {
+		t.Fatalf("retry backoff missing: %+v %v", deferred, err)
+	}
+	// An unavailable retained source records coverage but must not clear a known finding.
+	if err := s.PutCallFindings(ctx, pending[0], nil, []string{}, 1, false, at); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.IssueMetadata(ctx, "default", "history", "slow"); err != nil {
+		t.Fatalf("missing source erased evidence: %v", err)
+	}
+	var available bool
+	var active int
+	if err := pool.QueryRow(ctx, "SELECT issue_source_available FROM calls WHERE id=$1::uuid", id).Scan(&available); err != nil {
+		t.Fatal(err)
+	}
+	if err := pool.QueryRow(ctx, "SELECT count(*) FROM issue_occurrences WHERE call_id=$1::uuid AND active", id).Scan(&active); err != nil {
+		t.Fatal(err)
+	}
+	if available || active != 1 {
+		t.Fatalf("coverage %v active %d", available, active)
+	}
+	pending, err = s.PendingCallFindings(ctx, 100)
+	if err != nil || len(pending) != 0 {
+		t.Fatalf("backfill never finishes: %+v %v", pending, err)
 	}
 }

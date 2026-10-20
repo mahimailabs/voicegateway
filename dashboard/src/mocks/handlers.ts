@@ -1,6 +1,7 @@
+import { issueMetadataOf, saveIssueMetadata } from "./issue-metadata"
 import { metadataOf, saveMetadata } from "./dispositions"
 import { http, HttpResponse, type PathParams } from "msw"
-import type { AlertEvents, AlertSetup, Call, CallPage, CallStats, CreatedInvitation, CreatedPasswordReset, CreatedProjectKey, Invitations, ProjectCreate, WorkspaceProject, IssueDispositions, Member, Members, ProjectKeys, IssueList, ProjectSettings, ProviderProbes, Resources, Workers, CapacityRun, CloudAgents, Egress, Error as ApiErrorBody, Ingress, MediaServer, ProjectSnapshot, Sip, Workspaces } from "@/lib/api-types"
+import type { AlertEvents, AlertSetup, Call, CallPage, CallStats, CreatedInvitation, CreatedPasswordReset, CreatedProjectKey, Invitations, ProjectCreate, WorkspaceProject, Member, Members, ProjectKeys, IssueList, ProjectSettings, ProviderProbes, Resources, Workers, CapacityRun, CloudAgents, Egress, Error as ApiErrorBody, Ingress, MediaServer, ProjectSnapshot, Sip, Workspaces } from "@/lib/api-types"
 import { callStats } from "./call-stats"
 import { capturedCalls } from "./fixtures"
 import { alertEvents, issueList } from "./insights"
@@ -8,7 +9,7 @@ import { capacity, cloudAgents, egress, ingress, mediaServer, projectSnapshot, p
 import { summarize } from "./summaries"
 import { matchesFilters, parseFilters, sortCalls, totals } from "./calls-query"
 import { playbackUrl, recordingMedia } from "./recordings"
-import { alertSetup, changeMember, createKey, invitations, invite, issueDispositions, members, passwordReset, projectKeys, projectSettings, updateSettings, revokeInvitation, revokeKey } from "./settings"
+import { alertSetup, changeMember, createKey, invitations, invite, members, passwordReset, projectKeys, projectSettings, updateSettings, revokeInvitation, revokeKey } from "./settings"
 import { addProject, knownOrg, knownProject, workspaces } from "./workspaces"
 
 // Everything but the paging parameters, in a stable order, so a cursor can name what it was issued for.
@@ -54,6 +55,20 @@ function range(q: URLSearchParams): { from: Date; to: Date } | string {
 const SNAPSHOT = "captured"
 
 export const handlers = [
+ http.put(`${project}/issues/:issueId/metadata`,async({params,request})=>{
+  if(!known(params)) return fail(404,"not_found","No such project.")
+  const selected=settingsScope(params), id=String(params.issueId)
+  const exists=issueList(new Date(0),new Date(Date.now()+60000),selected).items.some(i=>i.id===id)
+  if(!exists) return fail(404,"not_found","No such issue.")
+  const body=await request.json() as import("@/lib/api-types").UpdateIssueMetadata
+  const before=issueMetadataOf(selected,id)
+  if(!Array.isArray(body.tags)||typeof body.archived!=="boolean"||!Number.isSafeInteger(body.revision)||!Number.isSafeInteger(body.evidenceRevision)|| (body.state!=null&&!['open','resolved','ignored'].includes(body.state))) return fail(400,"invalid_request","Invalid issue metadata.")
+  if(body.revision!==before.revision||body.evidenceRevision!==before.evidenceRevision) return fail(409,"revision_conflict","Issue changed; reload before saving.")
+  const next={...before,tags:[...new Set(body.tags.map(t=>t.trim().toLowerCase()))],archived:body.archived,revision:before.revision+1,...(body.state==null?{}:{state:body.state,regressed:false,decidedAt:new Date().toISOString(),reviewedEvidenceRevision:before.evidenceRevision})}
+  saveIssueMetadata(selected,id,next)
+  return HttpResponse.json(next)
+ }),
+
  http.get(`${project}/call-tags`,({params})=>{
   if(!known(params)) return fail(404,"not_found","No such project.")
   return HttpResponse.json({tags:[...new Set(capturedCalls().flatMap(c=>metadataOf(settingsScope(params),c.id).tags))].sort()})
@@ -112,7 +127,7 @@ export const handlers = [
   http.get<PathParams, never, IssueList | ApiErrorBody>(`${project}/issues`, ({ params, request }) => {
     if (!known(params)) return fail(404, "not_found", "No such project.")
     const r = range(new URL(request.url).searchParams)
-    return typeof r === "string" ? fail(400, "invalid_request", r) : HttpResponse.json(issueList(r.from, r.to))
+    return typeof r === "string" ? fail(400, "invalid_request", r) : HttpResponse.json(issueList(r.from, r.to, settingsScope(params)))
   }),
   http.get<PathParams, never, AlertEvents | ApiErrorBody>(`${project}/alert-events`, ({ params, request }) => {
     if (!known(params)) return fail(404, "not_found", "No such project.")
@@ -141,7 +156,6 @@ export const handlers = [
     const saved = updateSettings(settingsScope(params), body)
     return typeof saved === "string" ? fail(saved === "revision_conflict" ? 409 : 400, saved, saved === "revision_conflict" ? "Settings changed; reload before saving." : "Invalid thresholds or revision.") : HttpResponse.json(saved)
   }),
-  http.get<PathParams, never, IssueDispositions | ApiErrorBody>(`${project}/issue-dispositions`, ({ params }) => (known(params) ? HttpResponse.json(issueDispositions()) : fail(404, "not_found", "No such project."))),
   http.get<PathParams, never, AlertSetup | ApiErrorBody>(`${project}/alert-setup`, ({ params }) => (known(params) ? HttpResponse.json(alertSetup()) : fail(404, "not_found", "No such project."))),
   http.get<PathParams, never, Workspaces>("*/api/v1/workspaces", () => HttpResponse.json(workspaces())),
 

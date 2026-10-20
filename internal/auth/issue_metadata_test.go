@@ -67,6 +67,22 @@ func TestIssueMetadataPermissionsAndPersistence(t *testing.T) {
 	}
 	check(call{method: http.MethodGet, path: strings.Replace(path, "/slow/", "/absent/", 1), cookie: member}, http.StatusNotFound)
 	check(call{method: http.MethodGet, path: strings.Replace(path, "/org-a/", "/org-b/", 1), token: key}, http.StatusForbidden)
+
+	listPath := "/api/v1/org/org-a/project/p/issues?from=1970-01-01T00:00:00Z&to=2100-01-01T00:00:00Z&archived=true&tag=follow-up&q=reported"
+	for _, c := range []call{{method: http.MethodGet, path: listPath, cookie: viewer}, {method: http.MethodGet, path: listPath, token: key}} {
+		var got store.IssueList
+		if err := json.Unmarshal(check(c, http.StatusOK), &got); err != nil {
+			t.Fatal(err)
+		}
+		if len(got.Items) != 1 || len(got.Items[0].Hits) != 1 || got.Items[0].Hits[0].CallID == nil || *got.Items[0].Hits[0].CallID != id || got.Items[0].Metadata.State != "resolved" {
+			t.Fatalf("list disagrees with metadata: %+v", got)
+		}
+	}
+	for _, query := range []string{"", "?from=bad&to=2100-01-01T00:00:00Z", "?from=2100-01-01T00:00:00Z&to=1970-01-01T00:00:00Z", "?from=1970-01-01T00:00:00Z&to=2100-01-01T00:00:00Z&archived=maybe"} {
+		check(call{method: http.MethodGet, path: "/api/v1/org/org-a/project/p/issues" + query, cookie: viewer}, http.StatusBadRequest)
+	}
+	check(call{method: http.MethodGet, path: listPath, cookie: outside}, http.StatusForbidden)
+	check(call{method: http.MethodGet, path: strings.Replace(listPath, "/org-a/", "/org-b/", 1), token: key}, http.StatusForbidden)
 	web = http.NewCrossOriginProtection().Handler(f.membersAPI(f.service()))
 	check(call{method: http.MethodGet, path: path, cookie: member}, http.StatusOK)
 }

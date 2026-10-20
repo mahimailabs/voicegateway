@@ -1184,6 +1184,7 @@ export type IssueList = {
      * Event issues with a hit in the range, and every standing issue whatever the range, high severity first, then by hits. Grouping, titles and severities are the ones in issues-model.ts.
      */
     items: Array<{
+        metadata: IssueMetadata;
         /**
          * Stable grouping key; the issueId dispositions refer to.
          */
@@ -1309,25 +1310,6 @@ export type Thresholds = {
      * ttsStartMs project configuration in milliseconds; not a measured latency.
      */
     ttsStartMs: number;
-};
-
-export type IssueDisposition = {
-    /**
-     * Stable issue grouping key from issues-model.ts; disposition belongs to this project.
-     */
-    issueId: string;
-    /**
-     * Explicit user disposition. No disposition means open, not resolved.
-     */
-    state: 'resolved' | 'ignored';
-    /**
-     * User decision time, UTC. Compare with the issue's lastSeenAt to mark it regressed.
-     */
-    at: string;
-};
-
-export type IssueDispositions = {
-    items: Array<IssueDisposition>;
 };
 
 export type AlertRuleSetup = {
@@ -2301,6 +2283,18 @@ export type ListIssuesData = {
          * Exclusive UTC end of the range.
          */
         to: string;
+        /**
+         * Literal case-insensitive search over issue titles and occurrence details.
+         */
+        q?: string;
+        /**
+         * Match any persisted normalized issue tag.
+         */
+        tag?: Array<string>;
+        /**
+         * Filter persisted issue archive state. Omit to include both.
+         */
+        archived?: boolean;
     };
     url: '/api/v1/org/{orgId}/project/{projectId}/issues';
 };
@@ -3356,60 +3350,6 @@ export type UpdateProjectSettingsResponses = {
 };
 
 export type UpdateProjectSettingsResponse = UpdateProjectSettingsResponses[keyof UpdateProjectSettingsResponses];
-
-export type GetIssueDispositionsData = {
-    body?: never;
-    path: {
-        /**
-         * Authorised orgId; the server must verify organisation/project ownership before any read.
-         */
-        orgId: string;
-        /**
-         * Authorised projectId; the server must verify organisation/project ownership before any read.
-         */
-        projectId: string;
-    };
-    query?: never;
-    url: '/api/v1/org/{orgId}/project/{projectId}/issue-dispositions';
-};
-
-export type GetIssueDispositionsErrors = {
-    /**
-     * invalid_request; never return an empty success result for this failure.
-     */
-    400: Error;
-    /**
-     * unauthenticated; never return an empty success result for this failure.
-     */
-    401: Error;
-    /**
-     * forbidden; never return an empty success result for this failure.
-     */
-    403: Error;
-    /**
-     * not_found; never return an empty success result for this failure.
-     */
-    404: Error;
-    /**
-     * internal_error; never return an empty success result for this failure.
-     */
-    500: Error;
-    /**
-     * source_unavailable; never return an empty success result for this failure.
-     */
-    503: Error;
-};
-
-export type GetIssueDispositionsError = GetIssueDispositionsErrors[keyof GetIssueDispositionsErrors];
-
-export type GetIssueDispositionsResponses = {
-    /**
-     * Authorised read result. Null means unreported, never zero. Source-specific coverage limits remain visible.
-     */
-    200: IssueDispositions;
-};
-
-export type GetIssueDispositionsResponse = GetIssueDispositionsResponses[keyof GetIssueDispositionsResponses];
 
 export type GetAlertSetupData = {
     body?: never;

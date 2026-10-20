@@ -1,4 +1,4 @@
-import type { IssueList } from "@/lib/api-types"
+import type { IssueList, IssueMetadata } from "@/lib/api-types"
 
 // Issues are the findings the console already computes, grouped across calls and components
 // (decision 0021). Nothing new is measured: the server groups the same checks the call drawer, the
@@ -13,7 +13,7 @@ import type { IssueList } from "@/lib/api-types"
 export type Severity = "high" | "medium" | "low" | "info"
 export type Hit = { at: number | null; where: string; detail: string; callId?: string }
 export type Kind = "event" | "standing"
-export type Issue = { id: string; title: string; kind: Kind; severity: Severity; source: "Calls" | "Agent workers" | "Phone bridge"; to: "/calls" | "/agents" | "/sip"; hits: Hit[] }
+export type Issue = { id: string; title: string; kind: Kind; severity: Severity; source: "Calls" | "Agent workers" | "Phone bridge"; to: "/calls" | "/agents" | "/sip"; hits: Hit[]; metadata: IssueMetadata }
 
 // The page's view of listIssues: the source as its label and page, hit times as Unix seconds.
 const sourceView = {
@@ -24,6 +24,7 @@ const sourceView = {
 export function issuesFrom(list: IssueList): Issue[] {
   return list.items.map((i) => ({
     id: i.id,
+    metadata: i.metadata,
     title: i.title,
     kind: i.kind,
     severity: i.severity,

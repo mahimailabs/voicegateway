@@ -2,9 +2,9 @@
 
 ## Current evidence
 
-Issues groups call findings and standing component checks with source links in the preview. Its
-resolve/ignore dispositions still use browser storage keyed by issue ID and are not a shared
-workflow. Call tags and archive state now persist per immutable call ID in Postgres (migration
+Issues groups call findings and standing component checks with source links in the preview.
+The current branch replaces browser-local issue decisions with scoped Postgres persistence;
+standing component evaluation is still unfinished. Call tags and archive state now persist per immutable call ID in Postgres (migration
 00016), and listCalls applies persisted tag/archive filters with consistent totals.
 
 ## Required end state
@@ -84,3 +84,21 @@ revisions, permits Member/Admin writes and Viewer/project-key reads, and rejects
 Native storage, worker, authenticated HTTP and role/contract checks pass under the race detector. Go lint, SQL generation, schema/source attribution and frontend type checks pass. Issue listing, standing source evaluation,
 UI integration, historical backfill and webhook delivery are still unfinished. Do not check off the
 roadmap task based on this foundation.
+
+Issue list integration now reads persisted occurrences and their decision revisions in one
+repeatable-read snapshot. Literal search, normalized tags, archive state and source range filter
+those records. The list includes canonical call IDs for evidence links. It explicitly reports
+incomplete coverage until standing-source evaluation and historical backfill are implemented.
+The approved table now saves resolve/ignore/reopen, tags, archive/restore and revision-safe Undo
+through the API. Bulk actions report individual failures, Viewer controls are read-only, and
+retained actions cannot edit a different project after navigation. Only the explicit development
+adapter uses browser storage. List storage tests, 232 frontend tests and 88 browser/accessibility checks pass, including scoped
+resolve/archive writes and reload in desktop/mobile light/dark. The obsolete browser-local
+disposition API was removed. Authenticated list verification and native historical backfill checks pass under the race detector.
+Historical calls are evaluated without rewriting their summaries. Settings revisions requeue call
+findings; monotonic evaluation revisions reject stale attempts, and source failures use bounded
+persisted backoff. A native Redis/ClickHouse/Postgres test verifies failure, retry, deduplication
+and unchanged summaries. Go lint and SQL generation checks pass. The full native run exposed a first-batch assumption in the new backfill test. It now
+exercises a backlog larger than one sweep; targeted native checks pass. A clean full final run
+is still required before merge.
+Standing findings and webhook delivery remain open; the roadmap task stays unchecked.

@@ -1,3 +1,4 @@
+import { issueMetadataOf } from "./issue-metadata"
 import type { AlertEvents, IssueList } from "@/lib/api-types"
 import { BUDGET_MS, JOIN_MS } from "@/lib/thresholds"
 import { buildModel } from "@/features/call/call-model"
@@ -46,8 +47,8 @@ const rank: Record<Severity, number> = { high: 0, medium: 1, low: 2, info: 3 }
 
 // Every issue group with all its hits: the call drawer's findings by kind, then the Agent workers
 // and Phone bridge checks by title.
-export function issues(): Issue[] {
-  const byKind = new Map<string, Issue>()
+export function issues(): Omit<Issue, "metadata">[] {
+  const byKind = new Map<string, Omit<Issue, "metadata">>()
   for (const c of calls()) {
     const at = Date.parse(c.startedAt) / 1000
     for (const f of findingsFor(c, buildModel(c))) {
@@ -59,7 +60,7 @@ export function issues(): Issue[] {
     }
   }
   const fromChecks = (source: Issue["source"], to: Issue["to"], list: { severity: Severity; title: string; where: string; why: string }[]) => {
-    const m = new Map<string, Issue>()
+    const m = new Map<string, Omit<Issue, "metadata">>()
     for (const c of list) {
       const i = m.get(c.title) ?? { id: `${to}:${c.title}`, title: c.title, kind: "standing" as const, severity: c.severity, source, to, hits: [] }
       i.hits.push({ at: null, where: c.where, detail: c.why })
@@ -108,7 +109,7 @@ export function rules(): Rule[] {
   return RULE_IDS.map((id) => ({ id, ...meta(id), events: events[id], state: id === "plain-phone" && plain.length ? `${plain.length} ${plain.length === 1 ? "trunk" : "trunks"} now` : undefined }))
 }
 
-export function issueList(from: Date, to: Date): IssueList {
+export function issueList(from: Date, to: Date, scope = "default/default-project"): IssueList {
   const items = issues()
     .map((i) => {
       // Standing: every hit, undated, whatever the range. Event: the dated hits inside it.
@@ -117,6 +118,7 @@ export function issueList(from: Date, to: Date): IssueList {
       const times = standing ? [] : hits.flatMap((h) => (dated(h.at) ? [h.at] : []))
       return {
         id: i.id,
+        metadata: issueMetadataOf(scope, i.id),
         title: i.title,
         kind: i.kind,
         severity: i.severity,
