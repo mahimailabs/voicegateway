@@ -105,8 +105,8 @@ WHERE organisation_id = $1 AND id = $2;
 -- name: CallByID :one
 -- One call of a project as the API reads it, with the servable rule listCalls shares.
 SELECT l.id, l.room_name, l.room_sid, l.job_id, l.started_at, l.ended_at, l.end_state, l.first_seen_at,
-       l.participants, l.servable, l.summarized::boolean AS summarized
-FROM call_list l
+       l.participants, l.servable, l.summarized::boolean AS summarized, c.tags, c.archived, c.metadata_revision
+FROM call_list l JOIN calls c ON c.id = l.id
 WHERE l.organisation_id = @organisation_id AND l.project_id = @project_id AND l.id = @id;
 
 -- name: StaleCalls :many
@@ -149,14 +149,14 @@ WHERE id = @id AND summary_stale_at = @seen;
 -- descending order, so unknowns sort last and ties break by id in both orders; the cursor is the
 -- last row's (unknown, key, id).
 WITH f AS (
-    SELECT l.*,
+    SELECT l.*, c.tags, c.archived, c.metadata_revision,
         CASE @sort_by::text
             WHEN 'startedAt'       THEN EXTRACT(EPOCH FROM l.start_at)::double precision
             WHEN 'durationSeconds' THEN l.duration_seconds
             WHEN 'turnCount'       THEN l.turn_count::double precision
             WHEN 'answerMs'        THEN l.answer_ms_median
         END * CASE WHEN @descending::bool THEN -1 ELSE 1 END AS sort_key
-    FROM call_list l
+    FROM call_list l JOIN calls c ON c.id = l.id
     WHERE l.organisation_id = @organisation_id AND l.project_id = @project_id AND l.created_at <= @snapshot_at AND l.servable
       AND (sqlc.narg(from_at)::timestamptz IS NULL OR l.start_at >= sqlc.narg(from_at)::timestamptz)
       AND (sqlc.narg(to_at)::timestamptz IS NULL OR l.start_at < sqlc.narg(to_at)::timestamptz)
@@ -171,10 +171,12 @@ WITH f AS (
       AND (NOT @unknown_answer::bool OR l.answer_ms_median IS NULL)
       AND (NOT @unknown_duration::bool OR l.duration_seconds IS NULL)
       AND (NOT @unknown_turns::bool OR l.turn_count IS NULL)
+      AND (cardinality(@tags::text[]) = 0 OR c.tags && @tags::text[])
+      AND (sqlc.narg(archived)::boolean IS NULL OR c.archived = sqlc.narg(archived)::boolean)
       AND NOT @match_none::bool
 )
 SELECT f.id, f.room_name, f.room_sid, f.start_at, f.started_at, f.ended_at, f.end_state, f.duration_seconds,
-       f.participants, f.channel, f.turn_count, f.answer_ms, f.answer_ms_median, f.models, f.pipeline, f.agent_key,
+       f.participants, f.channel, f.turn_count, f.answer_ms, f.answer_ms_median, f.models, f.pipeline, f.agent_key, f.tags, f.archived, f.metadata_revision,
        (f.sort_key IS NULL) AS key_unknown, COALESCE(f.sort_key, 0)::double precision AS sort_value
 FROM f
 WHERE NOT @after_cursor::bool
@@ -188,7 +190,7 @@ LIMIT @max_rows;
 -- median is the console's, the upper middle value.
 WITH f AS (
     SELECT l.*
-    FROM call_list l
+    FROM call_list l JOIN calls c ON c.id = l.id
     WHERE l.organisation_id = @organisation_id AND l.project_id = @project_id AND l.created_at <= @snapshot_at AND l.servable
       AND (sqlc.narg(from_at)::timestamptz IS NULL OR l.start_at >= sqlc.narg(from_at)::timestamptz)
       AND (sqlc.narg(to_at)::timestamptz IS NULL OR l.start_at < sqlc.narg(to_at)::timestamptz)
@@ -203,6 +205,8 @@ WITH f AS (
       AND (NOT @unknown_answer::bool OR l.answer_ms_median IS NULL)
       AND (NOT @unknown_duration::bool OR l.duration_seconds IS NULL)
       AND (NOT @unknown_turns::bool OR l.turn_count IS NULL)
+      AND (cardinality(@tags::text[]) = 0 OR c.tags && @tags::text[])
+      AND (sqlc.narg(archived)::boolean IS NULL OR c.archived = sqlc.narg(archived)::boolean)
       AND NOT @match_none::bool
 ), a AS (
     SELECT u.v, f.start_at, f.id, u.ord
@@ -595,3 +599,6 @@ UPDATE calls SET tags = sqlc.arg(tags), archived = sqlc.arg(archived), metadata_
 WHERE organisation_id = sqlc.arg(organisation_id) AND project_id = sqlc.arg(project_id) AND id = sqlc.arg(call_id)
 AND metadata_revision = sqlc.arg(expected_revision)
 RETURNING tags, archived, metadata_revision;
+
+-- name: CallMetadataRevision :one
+SELECT call_metadata_revision FROM projects WHERE organisation_id = @organisation_id AND id = @project_id;

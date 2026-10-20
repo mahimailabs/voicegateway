@@ -15,6 +15,7 @@ import (
 )
 
 type CallMetadataStore interface {
+	CallMetadataRevision(context.Context, string, string) (int64, error)
 	CallMetadata(context.Context, string, string, string) (store.CallMetadata, error)
 	UpdateCallMetadata(context.Context, string, string, string, int64, []string, bool) (store.CallMetadata, error)
 }

@@ -140,6 +140,7 @@ type Project struct {
 	LivekitApiKey          string
 	LivekitApiSecretSealed []byte
 	CreatedAt              pgtype.Timestamptz
+	CallMetadataRevision   int64
 }
 
 type ProjectKey struct {

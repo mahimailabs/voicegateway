@@ -167,7 +167,8 @@ func buildCall(c store.Call, spans []store.Span, built turn.Result) (call, bool)
 		StartedAt: *started,
 		EndedAt:   c.EndedAt,
 		EndState:  c.EndState,
-		Tags:      []string{},
+		Tags:      append([]string{}, c.Metadata.Tags...),
+		Archived:  c.Metadata.Archived,
 		Clocks:    clocks(*started, startObserved, traceStart),
 	}
 	if c.EndedAt != nil && startObserved {

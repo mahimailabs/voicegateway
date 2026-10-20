@@ -49,3 +49,11 @@ func (s *Store) UpdateCallMetadata(ctx context.Context, org, project, callID str
 	}
 	return store.CallMetadata{Tags: row.Tags, Archived: row.Archived, Revision: row.MetadataRevision}, nil
 }
+
+func (s *Store) CallMetadataRevision(ctx context.Context, org, project string) (int64, error) {
+	revision, err := s.q.CallMetadataRevision(ctx, CallMetadataRevisionParams{OrganisationID: org, ProjectID: project})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return 0, store.ErrNotFound
+	}
+	return revision, err
+}

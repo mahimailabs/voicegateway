@@ -2119,13 +2119,13 @@ components:
         tags:
           type: array
           description: User-assigned labels. Empty means no assigned labels; canonical call id replaces the preview room-name key.
-          x-source: { kind: configuration, file: dashboard/src/features/call/call-tags.tsx, pointer: null, detail: User-assigned labels. Empty means no assigned labels; canonical call id replaces the preview room-name key. }
+          x-source: { kind: configuration, file: migrations/postgres/00016_call_metadata.sql, pointer: null, detail: User-assigned labels. Empty means no assigned labels; canonical call id replaces the preview room-name key. }
           items:
             type: string
         archived:
           type: boolean
           description: User archive disposition for this conversation. Archived records remain readable; nothing is deleted.
-          x-source: { kind: configuration, file: dashboard/src/features/calls/call-archive.ts, pointer: null, detail: User archive disposition for this conversation. Archived records remain readable; nothing is deleted. }
+          x-source: { kind: configuration, file: migrations/postgres/00016_call_metadata.sql, pointer: null, detail: User archive disposition for this conversation. Archived records remain readable; nothing is deleted. }
         clocks:
           type: array
           items:
@@ -4372,13 +4372,13 @@ components:
         tags:
           type: array
           description: "User-assigned labels. Empty means none."
-          x-source: { kind: configuration, file: dashboard/src/features/call/call-tags.tsx, pointer: null, detail: "User-assigned labels. Empty means none." }
+          x-source: { kind: configuration, file: migrations/postgres/00016_call_metadata.sql, pointer: null, detail: "User-assigned labels. Empty means none." }
           items:
             type: string
         archived:
           type: boolean
           description: "User archive disposition. Archived calls stay readable."
-          x-source: { kind: configuration, file: dashboard/src/features/calls/call-archive.ts, pointer: null, detail: "User archive disposition. Archived calls stay readable." }
+          x-source: { kind: configuration, file: migrations/postgres/00016_call_metadata.sql, pointer: null, detail: "User archive disposition. Archived calls stay readable." }
         recorded:
           type: boolean
           description: "A retained recording exists for this call."

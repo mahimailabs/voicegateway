@@ -10,6 +10,7 @@ import (
 
 var (
 	ErrInvalidMetadata  = errors.New("invalid metadata revision or tags: at most 32 tags of 1 to 64 characters without control characters")
+	ErrMetadataSnapshot = errors.New("call metadata changed; restart pagination")
 	ErrMetadataConflict = errors.New("metadata changed since it was read")
 )
 

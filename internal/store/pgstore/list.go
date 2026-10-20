@@ -25,6 +25,15 @@ func (s *Store) ListCalls(ctx context.Context, f store.CallFilter, after *store.
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 	q := s.q.WithTx(tx)
+	if f.MetadataRevision != nil {
+		revision, err := q.CallMetadataRevision(ctx, CallMetadataRevisionParams{OrganisationID: f.OrganisationID, ProjectID: f.ProjectID})
+		if err != nil {
+			return nil, nil, time.Time{}, err
+		}
+		if revision != *f.MetadataRevision {
+			return nil, nil, time.Time{}, store.ErrMetadataSnapshot
+		}
+	}
 	if f.SnapshotAt.IsZero() {
 		now, err := q.TransactionTime(ctx)
 		if err != nil {
@@ -34,6 +43,7 @@ func (s *Store) ListCalls(ctx context.Context, f store.CallFilter, after *store.
 	}
 
 	p := ListCallsParams{
+		Tags: nonNilStrings(f.Tags), Archived: optionalBool(f.Archived),
 		MaxRows: int32(min(limit, math.MaxInt32)), SortBy: f.SortBy, Descending: f.Descending, //nolint:gosec // bounded above
 		OrganisationID: f.OrganisationID, ProjectID: f.ProjectID, SnapshotAt: timestamp(&f.SnapshotAt),
 		FromAt: timestamp(f.From), ToAt: timestamp(f.To), Room: text(f.Room), Channels: nonNilStrings(f.Channels),
@@ -64,7 +74,7 @@ func (s *Store) ListCalls(ctx context.Context, f store.CallFilter, after *store.
 	var totals *store.CallTotals
 	if withTotals {
 		t, err := q.CallTotals(ctx, CallTotalsParams{
-			OrganisationID: p.OrganisationID, ProjectID: p.ProjectID, SnapshotAt: p.SnapshotAt,
+			OrganisationID: p.OrganisationID, ProjectID: p.ProjectID, SnapshotAt: p.SnapshotAt, Tags: p.Tags, Archived: p.Archived,
 			FromAt: p.FromAt, ToAt: p.ToAt, Room: p.Room, Channels: p.Channels,
 			AnswerMin: p.AnswerMin, AnswerMax: p.AnswerMax, DurationMin: p.DurationMin, DurationMax: p.DurationMax,
 			TurnsMin: p.TurnsMin, TurnsMax: p.TurnsMax,
@@ -100,7 +110,8 @@ func listRow(r ListCallsRow) (store.CallListRow, error) {
 		return store.CallListRow{}, fmt.Errorf("call %s sort key: unexpected %T", r.ID.String(), r.KeyUnknown)
 	}
 	row := store.CallListRow{
-		ID: r.ID.String(), RoomName: r.RoomName.String, RoomSID: r.RoomSid.String, StartAt: r.StartAt.Time.UTC(),
+		Metadata: store.CallMetadata{Tags: r.Tags, Archived: r.Archived, Revision: r.MetadataRevision},
+		ID:       r.ID.String(), RoomName: r.RoomName.String, RoomSID: r.RoomSid.String, StartAt: r.StartAt.Time.UTC(),
 		StartedAt: timeOf(r.StartedAt), EndedAt: timeOf(r.EndedAt), EndState: r.EndState, DurationSeconds: duration,
 		Participants: r.Participants, Channel: r.Channel, AnswerMs: r.AnswerMs, Models: r.Models, Pipeline: r.Pipeline,
 		Cursor: store.CallCursor{Unknown: unknown, Value: r.SortValue, ID: r.ID.String()},
@@ -183,4 +194,11 @@ func (s *Store) ListSnapshot(ctx context.Context, id string) (store.ListSnapshot
 		return store.ListSnapshot{}, fmt.Errorf("list snapshot: %w", err)
 	}
 	return store.ListSnapshot{ID: id, OrganisationID: row.OrganisationID, ProjectID: row.ProjectID, Filters: row.Filters, At: row.At.Time.UTC(), Totals: row.Totals}, nil
+}
+
+func optionalBool(v *bool) pgtype.Bool {
+	if v == nil {
+		return pgtype.Bool{}
+	}
+	return pgtype.Bool{Bool: *v, Valid: true}
 }

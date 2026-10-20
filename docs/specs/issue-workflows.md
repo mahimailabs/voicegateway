@@ -61,3 +61,13 @@ Next: list/detail metadata and tag/archive filters must share a transactional re
 Bind pagination to a project metadata revision so edits invalidate old snapshots instead of silently
 skipping or duplicating rows. This requires checking the revision inside the list transaction, not
 only before opening it. UI, issue findings/dispositions and webhook delivery remain unfinished.
+
+List/detail integration now reads persisted tags/archive from the same immutable call row. Tag filters
+match any supplied normalized tag; archived true/false and totals share the list transaction. A
+transactional project metadata revision changes on metadata writes and binds snapshot/cursor
+fingerprints. The list transaction rejects a generation changed after the API read, while subsequent
+pages reject tokens created before an edit. Native Postgres tests passed for rows/totals, isolation,
+rejected-write stability and stale-generation refusal. Native HTTP tests passed for tag/archive
+queries, detail agreement and old snapshot rejection, alongside authenticated metadata permissions.
+Go lint, SQL generation checks and API schema/provenance/type checks passed. UI wiring and issue
+findings/dispositions remain open, so this is not a completed issue workflow.

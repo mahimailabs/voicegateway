@@ -45,8 +45,8 @@ func (q *Queries) AddMembershipIfAbsent(ctx context.Context, arg AddMembershipIf
 
 const callByID = `-- name: CallByID :one
 SELECT l.id, l.room_name, l.room_sid, l.job_id, l.started_at, l.ended_at, l.end_state, l.first_seen_at,
-       l.participants, l.servable, l.summarized::boolean AS summarized
-FROM call_list l
+       l.participants, l.servable, l.summarized::boolean AS summarized, c.tags, c.archived, c.metadata_revision
+FROM call_list l JOIN calls c ON c.id = l.id
 WHERE l.organisation_id = $1 AND l.project_id = $2 AND l.id = $3
 `
 
@@ -57,17 +57,20 @@ type CallByIDParams struct {
 }
 
 type CallByIDRow struct {
-	ID           pgtype.UUID
-	RoomName     pgtype.Text
-	RoomSid      pgtype.Text
-	JobID        pgtype.Text
-	StartedAt    pgtype.Timestamptz
-	EndedAt      pgtype.Timestamptz
-	EndState     string
-	FirstSeenAt  pgtype.Timestamptz
-	Participants int64
-	Servable     pgtype.Bool
-	Summarized   bool
+	ID               pgtype.UUID
+	RoomName         pgtype.Text
+	RoomSid          pgtype.Text
+	JobID            pgtype.Text
+	StartedAt        pgtype.Timestamptz
+	EndedAt          pgtype.Timestamptz
+	EndState         string
+	FirstSeenAt      pgtype.Timestamptz
+	Participants     int64
+	Servable         pgtype.Bool
+	Summarized       bool
+	Tags             []string
+	Archived         bool
+	MetadataRevision int64
 }
 
 // One call of a project as the API reads it, with the servable rule listCalls shares.
@@ -86,6 +89,9 @@ func (q *Queries) CallByID(ctx context.Context, arg CallByIDParams) (CallByIDRow
 		&i.Participants,
 		&i.Servable,
 		&i.Summarized,
+		&i.Tags,
+		&i.Archived,
+		&i.MetadataRevision,
 	)
 	return i, err
 }
@@ -138,10 +144,26 @@ func (q *Queries) CallByRoomSID(ctx context.Context, arg CallByRoomSIDParams) (C
 	return i, err
 }
 
+const callMetadataRevision = `-- name: CallMetadataRevision :one
+SELECT call_metadata_revision FROM projects WHERE organisation_id = $1 AND id = $2
+`
+
+type CallMetadataRevisionParams struct {
+	OrganisationID string
+	ProjectID      string
+}
+
+func (q *Queries) CallMetadataRevision(ctx context.Context, arg CallMetadataRevisionParams) (int64, error) {
+	row := q.db.QueryRow(ctx, callMetadataRevision, arg.OrganisationID, arg.ProjectID)
+	var call_metadata_revision int64
+	err := row.Scan(&call_metadata_revision)
+	return call_metadata_revision, err
+}
+
 const callTotals = `-- name: CallTotals :one
 WITH f AS (
     SELECT l.organisation_id, l.project_id, l.id, l.room_name, l.room_sid, l.job_id, l.started_at, l.ended_at, l.end_state, l.created_at, l.first_seen_at, l.servable, l.summarized, l.start_at, l.duration_seconds, l.participants, l.channel, l.turn_count, l.answer_ms, l.answer_ms_median, l.models, l.pipeline, l.agent_key
-    FROM call_list l
+    FROM call_list l JOIN calls c ON c.id = l.id
     WHERE l.organisation_id = $3 AND l.project_id = $4 AND l.created_at <= $5 AND l.servable
       AND ($6::timestamptz IS NULL OR l.start_at >= $6::timestamptz)
       AND ($7::timestamptz IS NULL OR l.start_at < $7::timestamptz)
@@ -156,7 +178,9 @@ WITH f AS (
       AND (NOT $16::bool OR l.answer_ms_median IS NULL)
       AND (NOT $17::bool OR l.duration_seconds IS NULL)
       AND (NOT $18::bool OR l.turn_count IS NULL)
-      AND NOT $19::bool
+      AND (cardinality($19::text[]) = 0 OR c.tags && $19::text[])
+      AND ($20::boolean IS NULL OR c.archived = $20::boolean)
+      AND NOT $21::bool
 ), a AS (
     SELECT u.v, f.start_at, f.id, u.ord
     FROM f, unnest(f.answer_ms) WITH ORDINALITY AS u(v, ord)
@@ -192,6 +216,8 @@ type CallTotalsParams struct {
 	UnknownAnswer   bool
 	UnknownDuration bool
 	UnknownTurns    bool
+	Tags            []string
+	Archived        pgtype.Bool
 	MatchNone       bool
 }
 
@@ -229,6 +255,8 @@ func (q *Queries) CallTotals(ctx context.Context, arg CallTotalsParams) (CallTot
 		arg.UnknownAnswer,
 		arg.UnknownDuration,
 		arg.UnknownTurns,
+		arg.Tags,
+		arg.Archived,
 		arg.MatchNone,
 	)
 	var i CallTotalsRow
@@ -835,14 +863,14 @@ func (q *Queries) LimitingSignInAttempt(ctx context.Context, arg LimitingSignInA
 
 const listCalls = `-- name: ListCalls :many
 WITH f AS (
-    SELECT l.organisation_id, l.project_id, l.id, l.room_name, l.room_sid, l.job_id, l.started_at, l.ended_at, l.end_state, l.created_at, l.first_seen_at, l.servable, l.summarized, l.start_at, l.duration_seconds, l.participants, l.channel, l.turn_count, l.answer_ms, l.answer_ms_median, l.models, l.pipeline, l.agent_key,
+    SELECT l.organisation_id, l.project_id, l.id, l.room_name, l.room_sid, l.job_id, l.started_at, l.ended_at, l.end_state, l.created_at, l.first_seen_at, l.servable, l.summarized, l.start_at, l.duration_seconds, l.participants, l.channel, l.turn_count, l.answer_ms, l.answer_ms_median, l.models, l.pipeline, l.agent_key, c.tags, c.archived, c.metadata_revision,
         CASE $6::text
             WHEN 'startedAt'       THEN EXTRACT(EPOCH FROM l.start_at)::double precision
             WHEN 'durationSeconds' THEN l.duration_seconds
             WHEN 'turnCount'       THEN l.turn_count::double precision
             WHEN 'answerMs'        THEN l.answer_ms_median
         END * CASE WHEN $7::bool THEN -1 ELSE 1 END AS sort_key
-    FROM call_list l
+    FROM call_list l JOIN calls c ON c.id = l.id
     WHERE l.organisation_id = $8 AND l.project_id = $9 AND l.created_at <= $10 AND l.servable
       AND ($11::timestamptz IS NULL OR l.start_at >= $11::timestamptz)
       AND ($12::timestamptz IS NULL OR l.start_at < $12::timestamptz)
@@ -857,10 +885,12 @@ WITH f AS (
       AND (NOT $21::bool OR l.answer_ms_median IS NULL)
       AND (NOT $22::bool OR l.duration_seconds IS NULL)
       AND (NOT $23::bool OR l.turn_count IS NULL)
-      AND NOT $24::bool
+      AND (cardinality($24::text[]) = 0 OR c.tags && $24::text[])
+      AND ($25::boolean IS NULL OR c.archived = $25::boolean)
+      AND NOT $26::bool
 )
 SELECT f.id, f.room_name, f.room_sid, f.start_at, f.started_at, f.ended_at, f.end_state, f.duration_seconds,
-       f.participants, f.channel, f.turn_count, f.answer_ms, f.answer_ms_median, f.models, f.pipeline, f.agent_key,
+       f.participants, f.channel, f.turn_count, f.answer_ms, f.answer_ms_median, f.models, f.pipeline, f.agent_key, f.tags, f.archived, f.metadata_revision,
        (f.sort_key IS NULL) AS key_unknown, COALESCE(f.sort_key, 0)::double precision AS sort_value
 FROM f
 WHERE NOT $1::bool
@@ -893,28 +923,33 @@ type ListCallsParams struct {
 	UnknownAnswer   bool
 	UnknownDuration bool
 	UnknownTurns    bool
+	Tags            []string
+	Archived        pgtype.Bool
 	MatchNone       bool
 }
 
 type ListCallsRow struct {
-	ID              pgtype.UUID
-	RoomName        pgtype.Text
-	RoomSid         pgtype.Text
-	StartAt         pgtype.Timestamptz
-	StartedAt       pgtype.Timestamptz
-	EndedAt         pgtype.Timestamptz
-	EndState        string
-	DurationSeconds interface{}
-	Participants    int64
-	Channel         string
-	TurnCount       pgtype.Int4
-	AnswerMs        []float64
-	AnswerMsMedian  pgtype.Float8
-	Models          []string
-	Pipeline        string
-	AgentKey        pgtype.Text
-	KeyUnknown      interface{}
-	SortValue       float64
+	ID               pgtype.UUID
+	RoomName         pgtype.Text
+	RoomSid          pgtype.Text
+	StartAt          pgtype.Timestamptz
+	StartedAt        pgtype.Timestamptz
+	EndedAt          pgtype.Timestamptz
+	EndState         string
+	DurationSeconds  interface{}
+	Participants     int64
+	Channel          string
+	TurnCount        pgtype.Int4
+	AnswerMs         []float64
+	AnswerMsMedian   pgtype.Float8
+	Models           []string
+	Pipeline         string
+	AgentKey         pgtype.Text
+	Tags             []string
+	Archived         bool
+	MetadataRevision int64
+	KeyUnknown       interface{}
+	SortValue        float64
 }
 
 // One page of a project's calls as of a snapshot. The sort key is one number, negated for
@@ -945,6 +980,8 @@ func (q *Queries) ListCalls(ctx context.Context, arg ListCallsParams) ([]ListCal
 		arg.UnknownAnswer,
 		arg.UnknownDuration,
 		arg.UnknownTurns,
+		arg.Tags,
+		arg.Archived,
 		arg.MatchNone,
 	)
 	if err != nil {
@@ -971,6 +1008,9 @@ func (q *Queries) ListCalls(ctx context.Context, arg ListCallsParams) ([]ListCal
 			&i.Models,
 			&i.Pipeline,
 			&i.AgentKey,
+			&i.Tags,
+			&i.Archived,
+			&i.MetadataRevision,
 			&i.KeyUnknown,
 			&i.SortValue,
 		); err != nil {
