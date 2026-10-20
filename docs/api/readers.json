@@ -374,16 +374,19 @@
     "assets": [
       "/auth/session",
       "/auth/sign-in",
-      "/auth/sign-out"
+      "/auth/sign-out",
+      "/auth/profile",
+      "/auth/profile"
     ],
     "browserStorage": false,
     "operations": [],
     "assetNotes": {
       "/auth/session": "Who is signed in (decision 0027); not a console read.",
       "/auth/sign-in": "Signs in with email and password (decision 0027); a write, not a console read.",
-      "/auth/sign-out": "Ends the session on the server (decision 0027); a write, not a console read."
+      "/auth/sign-out": "Ends the session on the server (decision 0027); a write, not a console read.",
+      "/auth/profile": "Reads and updates only the signed-in account profile through the auth service (account-settings.md); project keys cannot identify a user."
     },
-    "exclusion": "Sign-in and the session, from web's /auth routes (decision 0027, phase 06a); not part of the read contract."
+    "exclusion": "Account profile, sign-in and session routes belong to the auth service (decision 0027); not project-scoped console reads."
   },
   {
     "file": "dashboard/src/lib/live-updates.ts",

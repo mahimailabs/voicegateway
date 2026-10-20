@@ -577,3 +577,11 @@ ON CONFLICT (organisation_id, project_id) DO NOTHING;
 UPDATE project_settings SET answer_ms= @answer_ms, join_ms= @join_ms, tts_start_ms= @tts_start_ms, revision = revision + 1
 WHERE organisation_id= @organisation_id AND project_id= @project_id AND revision= @expected_revision
 RETURNING answer_ms, join_ms, tts_start_ms, revision;
+
+-- name: ReadAccountProfile :one
+SELECT display_name, profile_revision FROM users WHERE id = @user_id;
+
+-- name: UpdateAccountProfile :one
+UPDATE users SET display_name = sqlc.narg(display_name), profile_revision = profile_revision + 1
+WHERE id = @user_id AND profile_revision = @expected_revision
+RETURNING display_name, profile_revision;
