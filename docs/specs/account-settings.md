@@ -44,6 +44,22 @@ item complete while integrations, recording/retention and embed dependencies rem
   the saved profile from both profile and session endpoints.
 - Acceptance 4: component tests prove deferred success, draft retention on conflict, explicit reload
   and cancellation of an in-flight read after session expiry. The profile API has no project selector;
-  its identity is exclusively the signed-in account. Authenticated browser proof remains pending.
+  its identity is exclusively the signed-in account. Authenticated browser proof passed as recorded below.
 - Acceptance 5: the full Go race suite and 210 dashboard tests passed. All 80 preview browser/accessibility checks and lint/types passed;
-  authenticated browser proof and PR review are pending. Existing preview browser tests do not prove authenticated profile editing.
+  PR review is pending. Existing preview browser tests do not prove authenticated profile editing.
+
+### Authenticated browser receipt
+
+A production-mode dashboard build (VITE_MOCK_API=off) was served with the real auth/profile routes,
+revisioned Postgres store and a disposable Viewer account on loopback. gstack browse verified:
+
+1. Sign in, edit Name, save, and reload: the saved name remains.
+2. Sign out and sign back in on a second project: the same account name remains.
+3. At 390 px mobile width, clear the name and save: reload shows empty; a direct database read
+   confirms a null name at revision 2.
+4. Select Dark and reload: the browser-local theme remains Dark.
+
+The harness used native Postgres and session middleware. Non-account telemetry services were not
+started, so overview requests returned unavailable errors; this proof makes no live-operations
+claim. The temporary harness exited successfully under the race detector and its container was
+cleaned up. Existing native tests retain the automated permission and persistence coverage.

@@ -558,5 +558,5 @@ cross-origin requests cannot. Session renewal retains the profile. Failed/confli
 the draft, and permission loss cancels pending reads before clearing retained data.
 
 Native persistence/auth tests and 210 dashboard tests pass. The full Go race suite, all 80 preview browser/accessibility checks and lint/types passed;
-authenticated browser proof and review remain pending. Preview browser coverage does not prove authenticated
-profile editing. This follows threshold PR #432 and does not complete the broader settings task.
+authenticated browser verification also passed for save/reload, fresh sign-in, a second project,
+mobile clearing and theme persistence. PR review remains pending. This follows threshold PR #432 and does not complete the broader settings task.
