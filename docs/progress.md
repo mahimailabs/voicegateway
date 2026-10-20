@@ -563,3 +563,16 @@ tests and frontend lint/types pass; browser verification and PR review are in pr
 
 Account profile PR #433 is separately in review. The broader settings task remains open through
 its remaining dependencies; neither these fixes nor metadata storage alone completes issue workflows.
+
+### 2026-10-20: account profile persistence (verification in progress)
+
+Account Name now uses the signed-in user's Postgres profile with bounded Unicode validation and
+revision-checked writes. Viewer, Member and Admin can edit only themselves; project keys and
+cross-origin requests cannot. Session renewal retains the profile. Failed/conflicting saves preserve
+the draft, and permission loss cancels pending reads before clearing retained data.
+
+Native persistence/auth tests and 210 dashboard tests pass. The full Go race suite, all 80 preview browser/accessibility checks and lint/types passed;
+authenticated browser verification also passed for save/reload, fresh sign-in, a second project,
+mobile clearing and theme persistence. PR review remains pending. This follows threshold PR #432 and does not complete the broader settings task.
+
+Account profile PR #433 merged as cbf8aadf after all hosted checks passed on 39920a12. Manual review verified ownership, validation and conflict handling; CodeRabbit was rate-limited and supplied no approval. Project connection PR #434 is being revalidated against that merged account form. The broader settings task remains incomplete.

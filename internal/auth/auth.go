@@ -23,6 +23,8 @@ import (
 
 // Users is the account store sign-in reads and writes.
 type Users interface {
+	AccountProfile(context.Context, string) (store.AccountProfile, error)
+	UpdateAccountProfile(context.Context, string, int64, string) (store.AccountProfile, error)
 	CountUsers(ctx context.Context) (int64, error)
 	UserByEmail(ctx context.Context, email string) (store.User, error)
 	Principal(ctx context.Context, userID string) (store.Principal, error)
@@ -148,6 +150,8 @@ func (s *Service) Routes() http.Handler {
 	mux.HandleFunc("POST /auth/sign-in", s.signIn)
 	mux.HandleFunc("POST /auth/sign-out", s.signOut)
 	mux.HandleFunc("GET /auth/session", s.session)
+	mux.HandleFunc("GET /auth/profile", s.profile)
+	mux.HandleFunc("PUT /auth/profile", s.updateProfile)
 	if s.Links != nil {
 		mux.Handle("GET /auth/invitation", LinkHeaders(http.HandlerFunc(s.invitation)))
 		mux.Handle("POST /auth/invitation/accept", LinkHeaders(http.HandlerFunc(s.acceptInvitation)))
@@ -274,8 +278,9 @@ func (s *Service) signOut(w http.ResponseWriter, r *http.Request) {
 }
 
 type sessionBody struct {
-	Email         string        `json:"email"`
-	Organisations []orgRoleBody `json:"organisations"`
+	Profile       store.AccountProfile `json:"profile"`
+	Email         string               `json:"email"`
+	Organisations []orgRoleBody        `json:"organisations"`
 }
 
 type orgRoleBody struct {
@@ -299,7 +304,12 @@ func (s *Service) session(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusUnauthorized, map[string]any{"code": "unauthenticated", "message": "not signed in", "needsAdmin": n == 0})
 		return
 	}
-	body := sessionBody{Email: p.Email, Organisations: []orgRoleBody{}}
+	profile, err := s.Users.AccountProfile(r.Context(), p.UserID)
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	body := sessionBody{Email: p.Email, Organisations: []orgRoleBody{}, Profile: profile}
 	for org, role := range p.Roles {
 		body.Organisations = append(body.Organisations, orgRoleBody{ID: org, Role: role})
 	}
