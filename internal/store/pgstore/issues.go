@@ -76,19 +76,19 @@ func applyCallFindings(ctx context.Context, q *Queries, org, project, callID str
 		if err := q.EnsureCallIssue(ctx, EnsureCallIssueParams{OrganisationID: org, ProjectID: project, ID: finding.ID, Title: finding.Title, Severity: finding.Severity}); err != nil {
 			return fmt.Errorf("ensure call issue: %w", err)
 		}
-		n, err := q.UpsertIssueOccurrence(ctx, UpsertIssueOccurrenceParams{
+		up, err := q.UpsertIssueOccurrence(ctx, UpsertIssueOccurrenceParams{
 			OrganisationID: org, ProjectID: project, IssueID: finding.ID, SourceID: callID,
 			CallID: id, OccurredAt: call.OccurredAt, Detail: detail,
 		})
 		if err != nil {
 			return err
 		}
-		if n > 0 {
+		if up.Fresh.Bool {
 			if err := q.AdvanceIssueEvidence(ctx, AdvanceIssueEvidenceParams{OrganisationID: org, ProjectID: project, ID: finding.ID}); err != nil {
 				return err
 			}
-			changed = true
 		}
+		changed = changed || up.Changed
 	}
 	n, err := q.DeactivateCallFindings(ctx, DeactivateCallFindingsParams{OrganisationID: org, ProjectID: project, CallID: id, IssueIds: ids, EvaluatedIds: evaluated})
 	if err != nil {

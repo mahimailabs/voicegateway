@@ -59,10 +59,17 @@ test("Viewer cannot mutate issue metadata",async()=>{
  await act(async()=>{await expect(result.current.mutateAsync({id:"slow",before,state:"ignored"})).rejects.toThrow("Member or Admin")})
  expect(fetch).not.toHaveBeenCalled()
 })
-test.each([401,403,404])("denied %s writes clear retained issue evidence",async(status)=>{
+test.each([401,403])("denied %s writes clear retained issue evidence",async(status)=>{
  const {wrapper,client}=setup();client.setQueryData(["issues",scope],{items:[{metadata:before}]})
  vi.stubGlobal("fetch",async()=>json(status,{code:"forbidden",message:"Denied",requestId:"test"}))
  const {result}=renderHook(()=>useIssueMetadata(),{wrapper})
  await act(async()=>{await expect(result.current.mutateAsync({id:"slow",before,state:"resolved"})).rejects.toMatchObject({status})})
  expect(client.getQueryData(["issues",scope])).toBeUndefined()
+})
+test("a 404 on one issue leaves the rest of the page",async()=>{
+ const {wrapper,client}=setup();const page={items:[{metadata:before}]};client.setQueryData(["issues",scope],page)
+ vi.stubGlobal("fetch",async()=>json(404,{code:"not_found",message:"Not found",requestId:"test"}))
+ const {result}=renderHook(()=>useIssueMetadata(),{wrapper})
+ await act(async()=>{await expect(result.current.mutateAsync({id:"slow",before,state:"resolved"})).rejects.toMatchObject({status:404})})
+ expect(client.getQueryData(["issues",scope])).toEqual(page)
 })

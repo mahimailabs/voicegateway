@@ -284,7 +284,7 @@ function IssuesView({ all, complete, coverage }: { all: Issue[]; complete: boole
             : complete ? "No open component findings." : "Standing-source coverage is incomplete."}
         </p>
       </header>
-      {!complete && <p role="status" className="text-[13px] text-muted-foreground">Source coverage is incomplete. {gaps ? `${gaps}. ` : ""}Listed findings are recorded evidence; missing findings do not establish recovery.</p>}
+      {!complete && <p role="status" className="text-[13px] text-muted-foreground">Issue coverage is incomplete. {gaps ? `${gaps}. ` : ""}Listed findings are recorded evidence; missing findings do not establish recovery.</p>}
       <Tabs value={view} onValueChange={(v) => setView(v as View)}>
         <TabsList>
           {(["open", "resolved", "ignored", "archived"] as View[]).map((v) => (

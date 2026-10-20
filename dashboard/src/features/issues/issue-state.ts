@@ -25,7 +25,7 @@ export function useIssueMetadata() {
    return {id:change.id,before,saved,decisionChanged:body.state != null}
   },
   onError: async (error) => {
-   if (!(error instanceof ApiError) || ![401,403,404].includes(error.status)) return
+   if (!(error instanceof ApiError) || ![401,403].includes(error.status)) return
    const key = ["issues",selected]
    await client.cancelQueries({queryKey:key})
    for (const query of client.getQueryCache().findAll({queryKey:key})) query.setState({data:undefined,error,status:"error"})

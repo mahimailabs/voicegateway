@@ -3223,7 +3223,8 @@ UPDATE issues SET state = COALESCE($1::text, state),
     reviewed_evidence_revision = CASE WHEN $1::text IS NULL THEN reviewed_evidence_revision ELSE $2 END,
     tags = $3, archived = $4, metadata_revision = metadata_revision + 1
 WHERE organisation_id = $5 AND project_id = $6 AND id = $7
-AND metadata_revision = $8 AND evidence_revision = $2
+AND metadata_revision = $8
+AND ($1::text IS NULL OR evidence_revision = $2)
 RETURNING id, state, decided_at, evidence_revision, reviewed_evidence_revision, metadata_revision, tags, archived
 `
 
@@ -3410,13 +3411,21 @@ func (q *Queries) UpsertCallByRoomSID(ctx context.Context, arg UpsertCallByRoomS
 	return id, err
 }
 
-const upsertIssueOccurrence = `-- name: UpsertIssueOccurrence :execrows
+const upsertIssueOccurrence = `-- name: UpsertIssueOccurrence :one
+WITH prior AS (
+    SELECT p.active FROM issue_occurrences p
+    WHERE p.organisation_id = $1 AND p.project_id = $2 AND p.issue_id = $3 AND p.source_id = $4
+), up AS (
 INSERT INTO issue_occurrences (organisation_id, project_id, issue_id, source_id, call_id, occurred_at, detail, observed_at)
 VALUES ($1, $2, $3, $4, $5, $6, $7, now())
 ON CONFLICT (organisation_id, project_id, issue_id, source_id) DO UPDATE
 SET detail = EXCLUDED.detail, occurred_at = EXCLUDED.occurred_at, active = true, observed_at = now()
 WHERE NOT issue_occurrences.active OR issue_occurrences.detail IS DISTINCT FROM EXCLUDED.detail
    OR issue_occurrences.occurred_at IS DISTINCT FROM EXCLUDED.occurred_at
+RETURNING 1
+)
+SELECT EXISTS (SELECT 1 FROM up) AS changed,
+       (EXISTS (SELECT 1 FROM up) AND NOT COALESCE((SELECT active FROM prior), false)) AS fresh
 `
 
 type UpsertIssueOccurrenceParams struct {
@@ -3429,8 +3438,14 @@ type UpsertIssueOccurrenceParams struct {
 	Detail         []byte
 }
 
-func (q *Queries) UpsertIssueOccurrence(ctx context.Context, arg UpsertIssueOccurrenceParams) (int64, error) {
-	result, err := q.db.Exec(ctx, upsertIssueOccurrence,
+type UpsertIssueOccurrenceRow struct {
+	Changed bool
+	Fresh   pgtype.Bool
+}
+
+// changed reports any write; fresh only a new or reactivated occurrence, the one thing that is new evidence.
+func (q *Queries) UpsertIssueOccurrence(ctx context.Context, arg UpsertIssueOccurrenceParams) (UpsertIssueOccurrenceRow, error) {
+	row := q.db.QueryRow(ctx, upsertIssueOccurrence,
 		arg.OrganisationID,
 		arg.ProjectID,
 		arg.IssueID,
@@ -3439,10 +3454,9 @@ func (q *Queries) UpsertIssueOccurrence(ctx context.Context, arg UpsertIssueOccu
 		arg.OccurredAt,
 		arg.Detail,
 	)
-	if err != nil {
-		return 0, err
-	}
-	return result.RowsAffected(), nil
+	var i UpsertIssueOccurrenceRow
+	err := row.Scan(&i.Changed, &i.Fresh)
+	return i, err
 }
 
 const upsertJobObservation = `-- name: UpsertJobObservation :execrows
@@ -3506,13 +3520,21 @@ func (q *Queries) UpsertJobObservation(ctx context.Context, arg UpsertJobObserva
 	return result.RowsAffected(), nil
 }
 
-const upsertJobOccurrence = `-- name: UpsertJobOccurrence :execrows
+const upsertJobOccurrence = `-- name: UpsertJobOccurrence :one
+WITH prior AS (
+    SELECT p.active FROM issue_occurrences p
+    WHERE p.organisation_id = $1 AND p.project_id = $2 AND p.issue_id = $3 AND p.source_id = $4
+), up AS (
 INSERT INTO issue_occurrences (organisation_id, project_id, issue_id, source_id, source_layer, call_id, occurred_at, detail)
 VALUES ($1, $2, $3, $4, 'jobs', $5, $6, $7)
 ON CONFLICT (organisation_id, project_id, issue_id, source_id) DO UPDATE
 SET detail=EXCLUDED.detail, call_id=EXCLUDED.call_id, occurred_at=EXCLUDED.occurred_at, active=true, observed_at=now()
 WHERE NOT issue_occurrences.active OR issue_occurrences.detail IS DISTINCT FROM EXCLUDED.detail
  OR issue_occurrences.call_id IS DISTINCT FROM EXCLUDED.call_id OR issue_occurrences.occurred_at IS DISTINCT FROM EXCLUDED.occurred_at
+RETURNING 1
+)
+SELECT EXISTS (SELECT 1 FROM up) AS changed,
+       (EXISTS (SELECT 1 FROM up) AND NOT COALESCE((SELECT active FROM prior), false)) AS fresh
 `
 
 type UpsertJobOccurrenceParams struct {
@@ -3525,8 +3547,14 @@ type UpsertJobOccurrenceParams struct {
 	Detail         []byte
 }
 
-func (q *Queries) UpsertJobOccurrence(ctx context.Context, arg UpsertJobOccurrenceParams) (int64, error) {
-	result, err := q.db.Exec(ctx, upsertJobOccurrence,
+type UpsertJobOccurrenceRow struct {
+	Changed bool
+	Fresh   pgtype.Bool
+}
+
+// changed reports any write; fresh only a new or reactivated occurrence, the one thing that is new evidence.
+func (q *Queries) UpsertJobOccurrence(ctx context.Context, arg UpsertJobOccurrenceParams) (UpsertJobOccurrenceRow, error) {
+	row := q.db.QueryRow(ctx, upsertJobOccurrence,
 		arg.OrganisationID,
 		arg.ProjectID,
 		arg.IssueID,
@@ -3535,19 +3563,26 @@ func (q *Queries) UpsertJobOccurrence(ctx context.Context, arg UpsertJobOccurren
 		arg.OccurredAt,
 		arg.Detail,
 	)
-	if err != nil {
-		return 0, err
-	}
-	return result.RowsAffected(), nil
+	var i UpsertJobOccurrenceRow
+	err := row.Scan(&i.Changed, &i.Fresh)
+	return i, err
 }
 
-const upsertMediaOccurrence = `-- name: UpsertMediaOccurrence :execrows
+const upsertMediaOccurrence = `-- name: UpsertMediaOccurrence :one
+WITH prior AS (
+    SELECT p.active FROM issue_occurrences p
+    WHERE p.organisation_id = $1 AND p.project_id = $2 AND p.issue_id = $3 AND p.source_id = $4
+), up AS (
 INSERT INTO issue_occurrences (organisation_id, project_id, issue_id, source_id, source_layer, call_id, occurred_at, detail)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 ON CONFLICT (organisation_id, project_id, issue_id, source_id) DO UPDATE
 SET call_id=EXCLUDED.call_id
 WHERE issue_occurrences.call_id IS NULL AND EXCLUDED.call_id IS NOT NULL
  AND issue_occurrences.detail = EXCLUDED.detail AND issue_occurrences.occurred_at IS NOT DISTINCT FROM EXCLUDED.occurred_at
+RETURNING 1
+)
+SELECT EXISTS (SELECT 1 FROM up) AS changed,
+       (EXISTS (SELECT 1 FROM up) AND NOT COALESCE((SELECT active FROM prior), false)) AS fresh
 `
 
 type UpsertMediaOccurrenceParams struct {
@@ -3561,8 +3596,14 @@ type UpsertMediaOccurrenceParams struct {
 	Detail         []byte
 }
 
-func (q *Queries) UpsertMediaOccurrence(ctx context.Context, arg UpsertMediaOccurrenceParams) (int64, error) {
-	result, err := q.db.Exec(ctx, upsertMediaOccurrence,
+type UpsertMediaOccurrenceRow struct {
+	Changed bool
+	Fresh   pgtype.Bool
+}
+
+// changed reports any write; fresh only a new or reactivated occurrence, the one thing that is new evidence.
+func (q *Queries) UpsertMediaOccurrence(ctx context.Context, arg UpsertMediaOccurrenceParams) (UpsertMediaOccurrenceRow, error) {
+	row := q.db.QueryRow(ctx, upsertMediaOccurrence,
 		arg.OrganisationID,
 		arg.ProjectID,
 		arg.IssueID,
@@ -3572,10 +3613,9 @@ func (q *Queries) UpsertMediaOccurrence(ctx context.Context, arg UpsertMediaOccu
 		arg.OccurredAt,
 		arg.Detail,
 	)
-	if err != nil {
-		return 0, err
-	}
-	return result.RowsAffected(), nil
+	var i UpsertMediaOccurrenceRow
+	err := row.Scan(&i.Changed, &i.Fresh)
+	return i, err
 }
 
 const upsertParticipant = `-- name: UpsertParticipant :exec
@@ -3609,12 +3649,20 @@ func (q *Queries) UpsertParticipant(ctx context.Context, arg UpsertParticipantPa
 	return err
 }
 
-const upsertStandingOccurrence = `-- name: UpsertStandingOccurrence :execrows
+const upsertStandingOccurrence = `-- name: UpsertStandingOccurrence :one
+WITH prior AS (
+    SELECT p.active FROM issue_occurrences p
+    WHERE p.organisation_id = $1 AND p.project_id = $2 AND p.issue_id = $3 AND p.source_id = $4
+), up AS (
 INSERT INTO issue_occurrences (organisation_id, project_id, issue_id, source_id, source_layer, detail)
 VALUES ($1, $2, $3, $4, $5, $6)
 ON CONFLICT (organisation_id, project_id, issue_id, source_id) DO UPDATE
 SET detail = EXCLUDED.detail, active = true, observed_at = now()
 WHERE NOT issue_occurrences.active OR issue_occurrences.detail IS DISTINCT FROM EXCLUDED.detail
+RETURNING 1
+)
+SELECT EXISTS (SELECT 1 FROM up) AS changed,
+       (EXISTS (SELECT 1 FROM up) AND NOT COALESCE((SELECT active FROM prior), false)) AS fresh
 `
 
 type UpsertStandingOccurrenceParams struct {
@@ -3626,8 +3674,14 @@ type UpsertStandingOccurrenceParams struct {
 	Detail         []byte
 }
 
-func (q *Queries) UpsertStandingOccurrence(ctx context.Context, arg UpsertStandingOccurrenceParams) (int64, error) {
-	result, err := q.db.Exec(ctx, upsertStandingOccurrence,
+type UpsertStandingOccurrenceRow struct {
+	Changed bool
+	Fresh   pgtype.Bool
+}
+
+// changed reports any write; fresh only a new or reactivated occurrence, the one thing that is new evidence.
+func (q *Queries) UpsertStandingOccurrence(ctx context.Context, arg UpsertStandingOccurrenceParams) (UpsertStandingOccurrenceRow, error) {
+	row := q.db.QueryRow(ctx, upsertStandingOccurrence,
 		arg.OrganisationID,
 		arg.ProjectID,
 		arg.IssueID,
@@ -3635,10 +3689,9 @@ func (q *Queries) UpsertStandingOccurrence(ctx context.Context, arg UpsertStandi
 		arg.SourceLayer,
 		arg.Detail,
 	)
-	if err != nil {
-		return 0, err
-	}
-	return result.RowsAffected(), nil
+	var i UpsertStandingOccurrenceRow
+	err := row.Scan(&i.Changed, &i.Fresh)
+	return i, err
 }
 
 const useInvitation = `-- name: UseInvitation :one

@@ -81,12 +81,12 @@ func (s *Store) PutJobFindings(ctx context.Context, job store.PendingJobFinding,
 		if err = q.EnsureJobIssue(ctx, EnsureJobIssueParams{OrganisationID: job.OrganisationID, ProjectID: job.ProjectID, ID: f.ID, Title: f.Title, Severity: f.Severity}); err != nil {
 			return err
 		}
-		n, err = q.UpsertJobOccurrence(ctx, UpsertJobOccurrenceParams{OrganisationID: job.OrganisationID, ProjectID: job.ProjectID, IssueID: f.ID, SourceID: sourceID, CallID: callID, OccurredAt: timestamp(f.At), Detail: detail})
+		up, err := q.UpsertJobOccurrence(ctx, UpsertJobOccurrenceParams{OrganisationID: job.OrganisationID, ProjectID: job.ProjectID, IssueID: f.ID, SourceID: sourceID, CallID: callID, OccurredAt: timestamp(f.At), Detail: detail})
 		if err != nil {
 			return err
 		}
-		if n > 0 {
-			changed = true
+		changed = changed || up.Changed
+		if up.Fresh.Bool {
 			if err = q.AdvanceIssueEvidence(ctx, AdvanceIssueEvidenceParams{OrganisationID: job.OrganisationID, ProjectID: job.ProjectID, ID: f.ID}); err != nil {
 				return err
 			}

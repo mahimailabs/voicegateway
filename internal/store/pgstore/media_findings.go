@@ -63,14 +63,16 @@ func (s *Store) PutMediaFinding(ctx context.Context, f store.MediaFinding) error
 	if err = q.EnsureMediaIssue(ctx, EnsureMediaIssueParams{OrganisationID: f.OrganisationID, ProjectID: f.ProjectID, ID: id, Title: title}); err != nil {
 		return err
 	}
-	n, err := q.UpsertMediaOccurrence(ctx, UpsertMediaOccurrenceParams{OrganisationID: f.OrganisationID, ProjectID: f.ProjectID, SourceID: "webhook:" + f.EventID, IssueID: id, SourceLayer: f.Layer + "_events", CallID: callID, OccurredAt: timestamp(f.At), Detail: payload})
+	up, err := q.UpsertMediaOccurrence(ctx, UpsertMediaOccurrenceParams{OrganisationID: f.OrganisationID, ProjectID: f.ProjectID, SourceID: "webhook:" + f.EventID, IssueID: id, SourceLayer: f.Layer + "_events", CallID: callID, OccurredAt: timestamp(f.At), Detail: payload})
 	if err != nil {
 		return err
 	}
-	if n > 0 {
+	if up.Fresh.Bool {
 		if err = q.AdvanceIssueEvidence(ctx, AdvanceIssueEvidenceParams{OrganisationID: f.OrganisationID, ProjectID: f.ProjectID, ID: id}); err != nil {
 			return err
 		}
+	}
+	if up.Changed {
 		if err = q.AdvanceIssueRevision(ctx, AdvanceIssueRevisionParams{OrganisationID: f.OrganisationID, ProjectID: f.ProjectID}); err != nil {
 			return err
 		}

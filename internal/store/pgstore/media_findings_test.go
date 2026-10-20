@@ -42,6 +42,11 @@ func TestMediaFindingReplayScopeAndTerminalEvidence(t *testing.T) {
 	if err := s.PutMediaFinding(ctx, f); err != nil {
 		t.Fatal(err)
 	}
+	// A late call link is not a new failure: the resolved issue stays resolved.
+	m, err = s.IssueMetadata(ctx, "default", f.ProjectID, "recording-lost")
+	if err != nil || m.State != "resolved" || m.EvidenceRevision != 1 || m.Regressed {
+		t.Fatalf("late link reopened: %+v %v", m, err)
+	}
 	if err := s.ApplyCallFindings(ctx, "default", f.ProjectID, call, []store.Finding{}); err != nil {
 		t.Fatal(err)
 	}

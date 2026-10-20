@@ -614,13 +614,22 @@ INSERT INTO issues (organisation_id, project_id, id, title, kind, source, severi
 VALUES (@organisation_id, @project_id, @id, @title, 'event', 'calls', @severity)
 ON CONFLICT (organisation_id, project_id, id) DO UPDATE SET title = EXCLUDED.title, severity = EXCLUDED.severity;
 
--- name: UpsertIssueOccurrence :execrows
+-- name: UpsertIssueOccurrence :one
+-- changed reports any write; fresh only a new or reactivated occurrence, the one thing that is new evidence.
+WITH prior AS (
+    SELECT p.active FROM issue_occurrences p
+    WHERE p.organisation_id = @organisation_id AND p.project_id = @project_id AND p.issue_id = @issue_id AND p.source_id = @source_id
+), up AS (
 INSERT INTO issue_occurrences (organisation_id, project_id, issue_id, source_id, call_id, occurred_at, detail, observed_at)
 VALUES (@organisation_id, @project_id, @issue_id, @source_id, sqlc.narg(call_id), sqlc.narg(occurred_at), @detail, now())
 ON CONFLICT (organisation_id, project_id, issue_id, source_id) DO UPDATE
 SET detail = EXCLUDED.detail, occurred_at = EXCLUDED.occurred_at, active = true, observed_at = now()
 WHERE NOT issue_occurrences.active OR issue_occurrences.detail IS DISTINCT FROM EXCLUDED.detail
-   OR issue_occurrences.occurred_at IS DISTINCT FROM EXCLUDED.occurred_at;
+   OR issue_occurrences.occurred_at IS DISTINCT FROM EXCLUDED.occurred_at
+RETURNING 1
+)
+SELECT EXISTS (SELECT 1 FROM up) AS changed,
+       (EXISTS (SELECT 1 FROM up) AND NOT COALESCE((SELECT active FROM prior), false)) AS fresh;
 
 -- name: AdvanceIssueEvidence :exec
 UPDATE issues SET evidence_revision = evidence_revision + 1
@@ -642,7 +651,8 @@ UPDATE issues SET state = COALESCE(sqlc.narg(new_state)::text, state),
     reviewed_evidence_revision = CASE WHEN sqlc.narg(new_state)::text IS NULL THEN reviewed_evidence_revision ELSE @seen_evidence_revision END,
     tags = @tags, archived = @archived, metadata_revision = metadata_revision + 1
 WHERE organisation_id = @organisation_id AND project_id = @project_id AND id = @id
-AND metadata_revision = @expected_revision AND evidence_revision = @seen_evidence_revision
+AND metadata_revision = @expected_revision
+AND (sqlc.narg(new_state)::text IS NULL OR evidence_revision = @seen_evidence_revision)
 RETURNING id, state, decided_at, evidence_revision, reviewed_evidence_revision, metadata_revision, tags, archived;
 
 -- name: AdvanceIssueRevision :exec
@@ -722,12 +732,21 @@ INSERT INTO issues (organisation_id, project_id, id, title, kind, source, severi
 VALUES (@organisation_id, @project_id, @id, @title, 'standing', @source, @severity)
 ON CONFLICT (organisation_id, project_id, id) DO UPDATE SET title = EXCLUDED.title, severity = EXCLUDED.severity;
 
--- name: UpsertStandingOccurrence :execrows
+-- name: UpsertStandingOccurrence :one
+-- changed reports any write; fresh only a new or reactivated occurrence, the one thing that is new evidence.
+WITH prior AS (
+    SELECT p.active FROM issue_occurrences p
+    WHERE p.organisation_id = @organisation_id AND p.project_id = @project_id AND p.issue_id = @issue_id AND p.source_id = @source_id
+), up AS (
 INSERT INTO issue_occurrences (organisation_id, project_id, issue_id, source_id, source_layer, detail)
 VALUES (@organisation_id, @project_id, @issue_id, @source_id, @source_layer, @detail)
 ON CONFLICT (organisation_id, project_id, issue_id, source_id) DO UPDATE
 SET detail = EXCLUDED.detail, active = true, observed_at = now()
-WHERE NOT issue_occurrences.active OR issue_occurrences.detail IS DISTINCT FROM EXCLUDED.detail;
+WHERE NOT issue_occurrences.active OR issue_occurrences.detail IS DISTINCT FROM EXCLUDED.detail
+RETURNING 1
+)
+SELECT EXISTS (SELECT 1 FROM up) AS changed,
+       (EXISTS (SELECT 1 FROM up) AND NOT COALESCE((SELECT active FROM prior), false)) AS fresh;
 
 -- name: DeactivateStandingFindings :execrows
 UPDATE issue_occurrences o SET active = false
@@ -796,13 +815,22 @@ INSERT INTO issues (organisation_id, project_id, id, title, kind, source, severi
 VALUES (@organisation_id, @project_id, @id, @title, 'event', 'agent_workers', @severity)
 ON CONFLICT (organisation_id, project_id, id) DO UPDATE SET title=EXCLUDED.title, severity=EXCLUDED.severity;
 
--- name: UpsertJobOccurrence :execrows
+-- name: UpsertJobOccurrence :one
+-- changed reports any write; fresh only a new or reactivated occurrence, the one thing that is new evidence.
+WITH prior AS (
+    SELECT p.active FROM issue_occurrences p
+    WHERE p.organisation_id = @organisation_id AND p.project_id = @project_id AND p.issue_id = @issue_id AND p.source_id = @source_id
+), up AS (
 INSERT INTO issue_occurrences (organisation_id, project_id, issue_id, source_id, source_layer, call_id, occurred_at, detail)
 VALUES (@organisation_id, @project_id, @issue_id, @source_id, 'jobs', sqlc.narg(call_id), sqlc.narg(occurred_at), @detail)
 ON CONFLICT (organisation_id, project_id, issue_id, source_id) DO UPDATE
 SET detail=EXCLUDED.detail, call_id=EXCLUDED.call_id, occurred_at=EXCLUDED.occurred_at, active=true, observed_at=now()
 WHERE NOT issue_occurrences.active OR issue_occurrences.detail IS DISTINCT FROM EXCLUDED.detail
- OR issue_occurrences.call_id IS DISTINCT FROM EXCLUDED.call_id OR issue_occurrences.occurred_at IS DISTINCT FROM EXCLUDED.occurred_at;
+ OR issue_occurrences.call_id IS DISTINCT FROM EXCLUDED.call_id OR issue_occurrences.occurred_at IS DISTINCT FROM EXCLUDED.occurred_at
+RETURNING 1
+)
+SELECT EXISTS (SELECT 1 FROM up) AS changed,
+       (EXISTS (SELECT 1 FROM up) AND NOT COALESCE((SELECT active FROM prior), false)) AS fresh;
 
 -- name: DeactivateJobFindings :execrows
 UPDATE issue_occurrences SET active=false
@@ -847,13 +875,22 @@ INSERT INTO issues (organisation_id, project_id, id, title, kind, source, severi
 VALUES (@organisation_id, @project_id, @id, @title, 'event', 'delivery', 'high')
 ON CONFLICT (organisation_id, project_id, id) DO UPDATE SET title=EXCLUDED.title;
 
--- name: UpsertMediaOccurrence :execrows
+-- name: UpsertMediaOccurrence :one
+-- changed reports any write; fresh only a new or reactivated occurrence, the one thing that is new evidence.
+WITH prior AS (
+    SELECT p.active FROM issue_occurrences p
+    WHERE p.organisation_id = @organisation_id AND p.project_id = @project_id AND p.issue_id = @issue_id AND p.source_id = @source_id
+), up AS (
 INSERT INTO issue_occurrences (organisation_id, project_id, issue_id, source_id, source_layer, call_id, occurred_at, detail)
 VALUES (@organisation_id, @project_id, @issue_id, @source_id, @source_layer, sqlc.narg(call_id), sqlc.narg(occurred_at), @detail)
 ON CONFLICT (organisation_id, project_id, issue_id, source_id) DO UPDATE
 SET call_id=EXCLUDED.call_id
 WHERE issue_occurrences.call_id IS NULL AND EXCLUDED.call_id IS NOT NULL
- AND issue_occurrences.detail = EXCLUDED.detail AND issue_occurrences.occurred_at IS NOT DISTINCT FROM EXCLUDED.occurred_at;
+ AND issue_occurrences.detail = EXCLUDED.detail AND issue_occurrences.occurred_at IS NOT DISTINCT FROM EXCLUDED.occurred_at
+RETURNING 1
+)
+SELECT EXISTS (SELECT 1 FROM up) AS changed,
+       (EXISTS (SELECT 1 FROM up) AND NOT COALESCE((SELECT active FROM prior), false)) AS fresh;
 
 
 -- name: InitMediaBackfills :exec

@@ -82,11 +82,11 @@ func (s *Store) ApplyStandingFindings(ctx context.Context, read store.LayerRead,
 		if err := q.EnsureStandingIssue(ctx, EnsureStandingIssueParams{OrganisationID: read.OrganisationID, ProjectID: read.ProjectID, ID: f.ID, Title: f.Title, Source: source, Severity: f.Severity}); err != nil {
 			return err
 		}
-		changed, err := q.UpsertStandingOccurrence(ctx, UpsertStandingOccurrenceParams{OrganisationID: read.OrganisationID, ProjectID: read.ProjectID, IssueID: f.ID, SourceID: f.SourceID, SourceLayer: read.Layer, Detail: detail})
+		up, err := q.UpsertStandingOccurrence(ctx, UpsertStandingOccurrenceParams{OrganisationID: read.OrganisationID, ProjectID: read.ProjectID, IssueID: f.ID, SourceID: f.SourceID, SourceLayer: read.Layer, Detail: detail})
 		if err != nil {
 			return err
 		}
-		if changed > 0 {
+		if up.Fresh.Bool {
 			if err := q.AdvanceIssueEvidence(ctx, AdvanceIssueEvidenceParams{OrganisationID: read.OrganisationID, ProjectID: read.ProjectID, ID: f.ID}); err != nil {
 				return err
 			}

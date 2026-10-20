@@ -305,3 +305,53 @@ func TestIssueBackfillPreservesSummaryAndRejectsStaleEvaluation(t *testing.T) {
 		t.Fatalf("backfill never finishes: %+v %v", pending, err)
 	}
 }
+
+func TestIssueEvidenceAdvancesOnlyOnNewOccurrences(t *testing.T) {
+	s, _ := migrated(t)
+	ctx := context.Background()
+	if _, err := s.CreateProject(ctx, project("one", "key-one")); err != nil {
+		t.Fatal(err)
+	}
+	at := time.Now().UTC()
+	call, err := s.UpsertCall(ctx, store.CallUpsert{OrganisationID: "default", ProjectID: "one", RoomSID: "rs", RoomName: "room", StartedAt: &at})
+	if err != nil {
+		t.Fatal(err)
+	}
+	finding := func(detail string) []store.Finding {
+		return []store.Finding{{ID: "slow", Title: "Slow answers", Severity: "medium", Detail: detail, Turns: []int{0}}}
+	}
+	if err := s.ApplyCallFindings(ctx, "default", "one", call, finding("over 1500 ms")); err != nil {
+		t.Fatal(err)
+	}
+	resolved := "resolved"
+	if _, err := s.UpdateIssueMetadata(ctx, "default", "one", "slow", 0, 1, &resolved, nil, false); err != nil {
+		t.Fatal(err)
+	}
+	// A threshold change rewrites the detail of the same occurrence: no new failure, no regression.
+	if err := s.ApplyCallFindings(ctx, "default", "one", call, finding("over 1200 ms")); err != nil {
+		t.Fatal(err)
+	}
+	m, err := s.IssueMetadata(ctx, "default", "one", "slow")
+	if err != nil || m.EvidenceRevision != 1 || m.Regressed || m.State != "resolved" {
+		t.Fatalf("rewritten detail reopened the issue: %+v %v", m, err)
+	}
+	// The occurrence clears, then fails again: that is new evidence.
+	if err := s.ApplyCallFindings(ctx, "default", "one", call, []store.Finding{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.ApplyCallFindings(ctx, "default", "one", call, finding("over 1200 ms")); err != nil {
+		t.Fatal(err)
+	}
+	m, err = s.IssueMetadata(ctx, "default", "one", "slow")
+	if err != nil || m.EvidenceRevision != 2 || !m.Regressed {
+		t.Fatalf("reactivated occurrence did not regress: %+v %v", m, err)
+	}
+	// Tags and archive never compare evidence, so a stale evidence revision does not conflict.
+	m, err = s.UpdateIssueMetadata(ctx, "default", "one", "slow", m.Revision, 1, nil, []string{"support"}, true)
+	if err != nil || !m.Archived || m.Tags[0] != "support" || !m.Regressed {
+		t.Fatalf("tags-only edit with stale evidence: %+v %v", m, err)
+	}
+	if _, err := s.UpdateIssueMetadata(ctx, "default", "one", "slow", m.Revision, 1, &resolved, nil, false); !errors.Is(err, store.ErrIssueConflict) {
+		t.Fatalf("decision on stale evidence accepted: %v", err)
+	}
+}
