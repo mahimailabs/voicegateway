@@ -132,7 +132,7 @@ func (s *Scraper) MediaServer(ctx context.Context, p store.Project) error {
 	if last != s.ID {
 		s.forget(key) // another worker read it since; what this one remembers may be older
 	}
-	read := store.LayerRead{OrganisationID: p.OrganisationID, ProjectID: p.ID, Layer: store.LayerMediaServer, Every: s.Every}
+	read := store.LayerRead{OrganisationID: p.OrganisationID, ProjectID: p.ID, Layer: store.LayerMediaServer, Every: s.Every, JobFailuresSupported: IsLiveKitCloud(p.LiveKitURL)}
 	secret, err := s.Projects.LiveKitSecret(ctx, p.OrganisationID, p.ID)
 	if err != nil {
 		return fmt.Errorf("open LiveKit secret: %w", err)

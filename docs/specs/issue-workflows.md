@@ -181,3 +181,11 @@ claim that every upstream call was captured or no unreported failure exists. Sou
 implemented native evaluation remain unknown, keeping the aggregate incomplete. Contract lint,
 source attribution and TypeScript validation pass; native coverage race tests and all 244 frontend tests pass
 for this checkpoint. No roadmap completion checkbox changes.
+
+Media-server coverage is now persisted atomically with job observations. Failed reads retain
+prior job evidence; older reads cannot replace newer source health. Missing dispatch data,
+participant identities or dispatch timestamps produce partial coverage. A successful self-hosted
+LiveKit poll remains partial for job failure detection because ListDispatch does not reliably
+report failures there under the verified V1 capability contract. Positive native failures are
+still stored wherever observed. Native race regressions pass for partial, unavailable, recovered
+and out-of-order source reads, including that self-hosted capability boundary.

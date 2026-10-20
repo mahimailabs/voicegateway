@@ -17,7 +17,7 @@ func TestJobObservationsPreserveFailureAndRejectCrossScope(t *testing.T) {
 	}
 	at := time.Now().UTC().Truncate(time.Microsecond)
 	failedAt := at.Add(-time.Second)
-	read := store.LayerRead{OrganisationID: "default", ProjectID: projectID, Layer: store.LayerMediaServer, ReadAt: at, OK: true}
+	read := store.LayerRead{OrganisationID: "default", ProjectID: projectID, Layer: store.LayerMediaServer, ReadAt: at, Every: time.Minute, OK: true}
 	dispatches := []store.Dispatch{{ID: "AD_one", Jobs: []store.Job{{ID: "AJ_one", Status: "JS_FAILED", ParticipantIdentity: "native-identity", Statuses: []store.StatusAt{{Status: "JS_FAILED", At: &failedAt}}}}}}
 	sample := store.RoomSample{OrganisationID: "default", ProjectID: projectID, ReadAt: at, Room: store.Room{SID: "RM_one", Dispatches: &dispatches}}
 	apply := func() {
@@ -49,10 +49,14 @@ func TestJobObservationsPreserveFailureAndRejectCrossScope(t *testing.T) {
 	apply()
 	check(1) // Later incomplete data retains failure and correlation evidence.
 	read.OK = false
+	read.ErrorClass = store.ErrorUnreachable
+	read.ReadAt = at.Add(3 * time.Minute)
 	if err := s.StoreJobObservations(ctx, read, nil); err != nil {
 		t.Fatal(err)
 	}
 	read.OK = true
+	read.ErrorClass = ""
+	read.ReadAt = at.Add(4 * time.Minute)
 	if err := s.StoreJobObservations(ctx, read, nil); err != nil {
 		t.Fatal(err)
 	} // Closed room.
@@ -62,4 +66,50 @@ func TestJobObservationsPreserveFailureAndRejectCrossScope(t *testing.T) {
 		t.Fatal("cross-project observation accepted")
 	}
 	check(1)
+}
+
+func TestJobObservationSourceCoverageAndLateRead(t *testing.T) {
+	s, _ := migrated(t)
+	ctx := context.Background()
+	const scope = "job-source-health"
+	if _, err := s.CreateProject(ctx, project(scope, "key-"+scope)); err != nil {
+		t.Fatal(err)
+	}
+	at := time.Now().UTC().Add(-time.Minute)
+	read := store.LayerRead{OrganisationID: "default", ProjectID: scope, Layer: store.LayerMediaServer, ReadAt: at, Every: time.Minute, OK: true, JobFailuresSupported: true}
+	state := func(want string) {
+		t.Helper()
+		rows, err := s.q.IssueSourceCoverage(ctx, IssueSourceCoverageParams{OrganisationID: "default", ProjectID: scope})
+		if err != nil || len(rows) != 1 || rows[0].State != want {
+			t.Fatalf("source state: %+v %v want %s", rows, err, want)
+		}
+	}
+	if err := s.StoreJobObservations(ctx, read, []store.RoomSample{{OrganisationID: "default", ProjectID: scope, ReadAt: at, Room: store.Room{SID: "RM_partial"}}}); err != nil {
+		t.Fatal(err)
+	}
+	state("partial")
+	failed := read
+	failed.ReadAt = at.Add(time.Second)
+	failed.OK = false
+	failed.ErrorClass = store.ErrorUnreachable
+	if err := s.StoreJobObservations(ctx, failed, nil); err != nil {
+		t.Fatal(err)
+	}
+	state("unavailable")
+	// An older successful snapshot cannot erase a newer connection failure.
+	if err := s.StoreJobObservations(ctx, read, nil); err != nil {
+		t.Fatal(err)
+	}
+	state("unavailable")
+	read.ReadAt = at.Add(2 * time.Second)
+	if err := s.StoreJobObservations(ctx, read, []store.RoomSample{}); err != nil {
+		t.Fatal(err)
+	}
+	state("current")
+	read.ReadAt = read.ReadAt.Add(time.Second)
+	read.JobFailuresSupported = false
+	if err := s.StoreJobObservations(ctx, read, []store.RoomSample{}); err != nil {
+		t.Fatal(err)
+	}
+	state("partial") // Successful self-hosted polling cannot prove job-failure coverage.
 }

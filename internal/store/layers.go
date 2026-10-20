@@ -26,11 +26,14 @@ const (
 // LayerRead is one attempt to read a layer of a project. A failed read carries its error class and
 // no samples; it is never stored as an empty result.
 type LayerRead struct {
-	OrganisationID string
-	ProjectID      string
-	Layer          string
-	ReadAt         time.Time
-	OK             bool
+	// JobFailuresSupported is the known media-server capability, not an observed job outcome.
+	// Self-hosted LiveKit does not reliably expose failed jobs through ListDispatch (alerts V1).
+	JobFailuresSupported bool
+	OrganisationID       string
+	ProjectID            string
+	Layer                string
+	ReadAt               time.Time
+	OK                   bool
 	// ErrorClass is empty when OK.
 	ErrorClass string
 	// Every is the interval the layer is read at, so a reader can tell a gap from a pause.

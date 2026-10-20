@@ -21,7 +21,7 @@ func TestJobFindingsLateExactJoinAndSettings(t *testing.T) {
 	at := time.Now().UTC().Truncate(time.Microsecond)
 	dispatchAt := at.Add(-10 * time.Second)
 	ds := []store.Dispatch{{ID: "AD_exact", CreatedAt: &dispatchAt, Jobs: []store.Job{{ID: "AJ_exact", ParticipantIdentity: "actual-agent", Status: "JS_FAILED"}}}}
-	read := store.LayerRead{OrganisationID: "default", ProjectID: scope, Layer: store.LayerMediaServer, ReadAt: at, OK: true}
+	read := store.LayerRead{OrganisationID: "default", ProjectID: scope, Layer: store.LayerMediaServer, ReadAt: at, Every: time.Minute, OK: true}
 	if err := s.StoreJobObservations(ctx, read, []store.RoomSample{{OrganisationID: "default", ProjectID: scope, ReadAt: at, Room: store.Room{SID: "RM_exact", Dispatches: &ds}}}); err != nil {
 		t.Fatal(err)
 	}
