@@ -147,3 +147,25 @@ test("a denied save cancels an in-flight refresh before clearing settings", asyn
   expect(screen.queryByRole("spinbutton", { name: "Answer time" })).toBeNull()
   expect(notices.saved).not.toHaveBeenCalled()
 })
+
+
+test("decimal thresholds do not enable an unchanged save or drift in the payload", async () => {
+  const stored = { ...initial, thresholds: { answerMs: 1005, joinMs: 2400.5, ttsStartMs: 1000.25 } }
+  const writes: unknown[] = []
+  vi.stubGlobal("fetch", async (request: Request) => {
+    if (request.method === "PUT") {
+      const body = await request.json()
+      writes.push(body)
+      return json(200, { ...stored, thresholds: body.thresholds, revision: 1 })
+    }
+    return json(200, stored)
+  })
+  show()
+  const user = userEvent.setup()
+  const answer = await screen.findByRole("spinbutton", { name: "Answer time" })
+  expect((screen.getByRole("button", { name: "Save changes" }) as HTMLButtonElement).disabled).toBe(true)
+  await user.clear(answer); await user.type(answer, "2.4005")
+  await user.click(screen.getByRole("button", { name: "Save changes" }))
+  await waitFor(() => expect(writes).toEqual([{ thresholds: { answerMs: 2400.5, joinMs: 2400.5, ttsStartMs: 1000.25 }, revision: 0 }]))
+  await waitFor(() => expect((screen.getByRole("button", { name: "Save changes" }) as HTMLButtonElement).disabled).toBe(true))
+})
