@@ -83,7 +83,7 @@ func TestWorkerFindingsHistoricalBackfill(t *testing.T) {
 	}
 	// Queue more than one sweep of older calls so this test also works in isolation.
 	if _, err := f.pool.Exec(ctx, `INSERT INTO calls (id, organisation_id, project_id, room_sid, room_name, started_at, summary_stale_at)
-	 SELECT ('00000000-0000-4000-8000-' || lpad(n::text, 12, '0'))::uuid, 'default', $1,
+	 SELECT gen_random_uuid(), 'default', $1,
 	 'backlog-' || n, 'backlog-' || n, $2, NULL FROM generate_series(1, 101) n`, f.project, listBase); err != nil {
 		t.Fatal(err)
 	}

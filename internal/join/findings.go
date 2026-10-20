@@ -17,6 +17,18 @@ func (j *Joiner) BackfillFindings(ctx context.Context, now time.Time) error {
 	if err != nil {
 		return err
 	}
+	// One invalidation per scope after the sweep, bounded as Summarize's is.
+	changed := make(map[[2]string]bool)
+	defer func() {
+		if j.Changed == nil || len(changed) == 0 {
+			return
+		}
+		notifyCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 250*time.Millisecond)
+		defer cancel()
+		for scope := range changed {
+			j.Changed(notifyCtx, scope[0], scope[1])
+		}
+	}()
 	for _, call := range calls {
 		if ctx.Err() != nil {
 			return ctx.Err()
@@ -38,9 +50,7 @@ func (j *Joiner) BackfillFindings(ctx context.Context, now time.Time) error {
 			}
 			continue
 		}
-		if j.Changed != nil {
-			j.Changed(ctx, call.OrganisationID, call.ProjectID)
-		}
+		changed[[2]string{call.OrganisationID, call.ProjectID}] = true
 	}
 	return nil
 }

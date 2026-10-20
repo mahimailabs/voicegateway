@@ -1236,9 +1236,9 @@ export type IssueList = {
          */
         severity: 'high' | 'medium' | 'low' | 'info';
         /**
-         * The component the check runs on.
+         * The component the check runs on. delivery is a recorded egress or ingress failure.
          */
-        source: 'calls' | 'agent_workers' | 'phone_bridge';
+        source: 'calls' | 'agent_workers' | 'phone_bridge' | 'delivery';
         /**
          * Most recent event hit, UTC. Regression uses the persisted evidence revision, independently of event time.
          */

@@ -1655,6 +1655,7 @@ LEFT JOIN call_list c ON c.id = o.call_id AND c.organisation_id = i.organisation
 LEFT JOIN issue_sources src ON src.organisation_id = o.organisation_id AND src.project_id = o.project_id AND src.layer = o.source_layer
 WHERE i.organisation_id = $1 AND i.project_id = $2
   AND o.active AND (o.call_id IS NULL OR c.servable)
+  AND NOT (o.source_layer = 'calls' AND o.call_id IS NULL)
   AND (i.kind = 'standing' OR (o.occurred_at >= $3 AND o.occurred_at < $4))
   AND ($5::boolean IS NULL OR i.archived = $5)
   AND (cardinality($6::text[]) = 0 OR i.tags && $6::text[])

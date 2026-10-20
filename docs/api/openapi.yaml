@@ -5073,8 +5073,8 @@ components:
                 x-source: { kind: computed, file: dashboard/src/features/issues/issues-model.ts, pointer: null, detail: "Severity of the underlying check." }
               source:
                 type: string
-                enum: [ calls, agent_workers, phone_bridge ]
-                description: "The component the check runs on."
+                enum: [ calls, agent_workers, phone_bridge, delivery ]
+                description: "The component the check runs on. delivery is a recorded egress or ingress failure."
                 x-source: { kind: computed, file: dashboard/src/features/issues/issues-model.ts, pointer: null, detail: "The component the check runs on." }
               lastSeenAt:
                 type: [ string, "null" ]

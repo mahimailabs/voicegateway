@@ -1,5 +1,6 @@
 import { expect, it } from "vitest"
-import { type Issue, lastSortKey, standingState, coverageSummary } from "../src/features/issues/issues-model.ts"
+import type { IssueList } from "../src/lib/api-types"
+import { type Issue, issuesFrom, lastSortKey, standingState, coverageSummary } from "../src/features/issues/issues-model.ts"
 
 const issue = (id: string, kind: "event" | "standing", at: (number | null)[]) => ({ id, kind, hits: at.map((t) => ({ at: t,observedAt:t,evidenceState:kind === "standing" ? "current" : "recorded" })) }) as unknown as Issue
 
@@ -33,4 +34,11 @@ it("coverage distinguishes pending evaluations from unavailable and partial sour
   expect(text).toContain("SIP: partial")
   expect(text).toContain("LiveKit SFU: unknown")
   expect(text).not.toContain("Cloud agents")
+})
+
+// Recorded egress and ingress failures come from the delivery source and open their own page.
+it("lists delivery findings and links each to the service that reported it", () => {
+  const item = (id: string) => ({ id, title: id, kind: "event", source: "delivery", severity: "high", lastSeenAt: null, hits: [], metadata: {} }) as unknown as IssueList["items"][number]
+  const got = issuesFrom({ items: [item("recording-lost"), item("ingress-error")] } as unknown as IssueList)
+  expect(got.map((i) => [i.source, i.to])).toEqual([["Recordings and ingress", "/egress"], ["Recordings and ingress", "/ingress"]])
 })

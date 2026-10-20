@@ -22,7 +22,8 @@ CREATE TABLE issue_occurrences (
     project_id text NOT NULL,
     issue_id text NOT NULL,
     source_id text NOT NULL,
-    call_id uuid REFERENCES calls (id) ON DELETE CASCADE,
+    -- Deleting a call keeps recorded media and job evidence; only the link to the call goes.
+    call_id uuid REFERENCES calls (id) ON DELETE SET NULL,
     occurred_at timestamptz,
     detail jsonb NOT NULL,
     active boolean NOT NULL DEFAULT true,

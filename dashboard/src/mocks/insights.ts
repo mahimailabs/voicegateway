@@ -22,7 +22,7 @@ const iso = (s: number | null) => (s === null || !Number.isFinite(s) || s <= 0 ?
 const secs = (t: string | null) => (t === null ? null : Date.parse(t) / 1000)
 const dated = (s: number | null): s is number => s !== null && Number.isFinite(s) && s > 0
 const inRange = (s: number | null, from: number, to: number) => !dated(s) || (s * 1000 >= from && s * 1000 < to)
-const source: Record<string, IssueList["items"][number]["source"]> = { Calls: "calls", "Agent workers": "agent_workers", "Phone bridge": "phone_bridge" }
+const source: Record<string, IssueList["items"][number]["source"]> = { Calls: "calls", "Agent workers": "agent_workers", "Phone bridge": "phone_bridge", "Recordings and ingress": "delivery" }
 
 const calls = () => capturedCalls().filter((c) => !c.recording?.preview)
 const rooms = () => fromContract(mediaServer())

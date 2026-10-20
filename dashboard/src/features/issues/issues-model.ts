@@ -12,14 +12,17 @@ import type { IssueList, IssueMetadata } from "@/lib/api-types"
 export type Severity = "high" | "medium" | "low" | "info"
 export type Hit = { observedAt: number | null; evidenceState: IssueList["items"][number]["hits"][number]["evidenceState"]; at: number | null; where: string; detail: string; callId?: string }
 export type Kind = "event" | "standing"
-export type Issue = { id: string; title: string; kind: Kind; severity: Severity; source: "Calls" | "Agent workers" | "Phone bridge"; to: "/calls" | "/agents" | "/sip"; hits: Hit[]; metadata: IssueMetadata }
+export type Issue = { id: string; title: string; kind: Kind; severity: Severity; source: "Calls" | "Agent workers" | "Phone bridge" | "Recordings and ingress"; to: "/calls" | "/agents" | "/sip" | "/egress" | "/ingress"; hits: Hit[]; metadata: IssueMetadata }
 
 // The page's view of listIssues: the source as its label and page, hit times as Unix seconds.
 const sourceView = {
   calls: { label: "Calls", to: "/calls" },
   agent_workers: { label: "Agent workers", to: "/agents" },
   phone_bridge: { label: "Phone bridge", to: "/sip" },
+  delivery: { label: "Recordings and ingress", to: "/egress" },
 } as const
+// A delivery finding opens the page of the service that reported it.
+const pageOf: Partial<Record<string, Issue["to"]>> = { "ingress-error": "/ingress" }
 export function issuesFrom(list: IssueList): Issue[] {
   return list.items.map((i) => ({
     id: i.id,
@@ -28,7 +31,7 @@ export function issuesFrom(list: IssueList): Issue[] {
     kind: i.kind,
     severity: i.severity,
     source: sourceView[i.source].label,
-    to: sourceView[i.source].to,
+    to: pageOf[i.id] ?? sourceView[i.source].to,
     hits: i.hits.map((h) => ({ observedAt:h.observedAt === null ? null : Date.parse(h.observedAt)/1000,evidenceState:h.evidenceState,at: h.at === null ? null : Date.parse(h.at) / 1000, where: h.where, detail: h.detail, callId: h.callId ?? undefined })),
   }))
 }

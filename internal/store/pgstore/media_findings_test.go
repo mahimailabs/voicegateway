@@ -77,6 +77,18 @@ func TestMediaFindingReplayScopeAndTerminalEvidence(t *testing.T) {
 	if err := pool.QueryRow(ctx, "SELECT count(*) FROM issue_occurrences WHERE project_id=$1", f.ProjectID).Scan(&count); err != nil || count != 2 {
 		t.Fatalf("occurrences %d: %v", count, err)
 	}
+	// Deleting the call keeps the recorded failure and drops only its link to the call.
+	if _, err := pool.Exec(ctx, "DELETE FROM calls WHERE id=$1", call); err != nil {
+		t.Fatal(err)
+	}
+	var unlinked *string
+	if err := pool.QueryRow(ctx, "SELECT call_id::text FROM issue_occurrences WHERE project_id=$1 AND source_id=$2", f.ProjectID, "webhook:EV_failure").Scan(&unlinked); err != nil || unlinked != nil {
+		t.Fatalf("call deletion removed media evidence: %v %v", unlinked, err)
+	}
+	list, err := s.ListIssues(ctx, "default", f.ProjectID, store.IssueFilter{From: at.Add(-time.Hour), To: at.Add(time.Hour)})
+	if err != nil || len(list.Items) != 1 || list.Items[0].ID != "recording-lost" || list.Items[0].Source != "delivery" || len(list.Items[0].Hits) != 2 {
+		t.Fatalf("listed after call deletion: %+v %v", list.Items, err)
+	}
 }
 
 func TestMediaSourceReadsPreserveTerminalEvents(t *testing.T) {

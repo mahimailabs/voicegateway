@@ -1,7 +1,7 @@
 import { IssueTags } from "./issue-tags"
 import { useMemo } from "react"
 import { Link } from "@tanstack/react-router"
-import { Archive, Tag, ArrowCounterClockwise, ArrowSquareOut, CaretRight, CheckCircle, Clock, DotsThree, EyeSlash, Phone, PhoneCall, Robot, Shapes, Warning, WarningCircle } from "@phosphor-icons/react"
+import { Archive, Tag, ArrowCounterClockwise, ArrowSquareOut, CaretRight, CheckCircle, Clock, DotsThree, EyeSlash, Phone, PhoneCall, Robot, Shapes, UploadSimple, Warning, WarningCircle } from "@phosphor-icons/react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
@@ -23,7 +23,7 @@ import { useUrlState } from "@/lib/url-state"
 // component state with explicit source freshness, counted separately from events.
 
 const dot: Record<Severity, string> = { high: "bg-destructive", medium: "bg-amber-500", low: "bg-muted-foreground/50", info: "bg-muted-foreground/30" }
-const sourceIcon = { Calls: PhoneCall, "Agent workers": Robot, "Phone bridge": Phone }
+const sourceIcon = { Calls: PhoneCall, "Agent workers": Robot, "Phone bridge": Phone, "Recordings and ingress": UploadSimple }
 const day = (s: number) => new Date(s * 1000).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })
 
 function Hits({ issue }: { issue: Issue }) {
@@ -160,7 +160,7 @@ const fields: Field<Issue>[] = [
     label: "Source",
     type: "select",
     icon: <Shapes />,
-    options: (["Calls", "Agent workers", "Phone bridge"] as const).map((v) => ({ value: v, label: v })),
+    options: (["Calls", "Agent workers", "Phone bridge", "Recordings and ingress"] as const).map((v) => ({ value: v, label: v })),
     get: (i) => i.source,
   },
   {
