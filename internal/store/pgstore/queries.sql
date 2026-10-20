@@ -585,3 +585,13 @@ SELECT display_name, profile_revision FROM users WHERE id = @user_id;
 UPDATE users SET display_name = sqlc.narg(display_name), profile_revision = profile_revision + 1
 WHERE id = @user_id AND profile_revision = @expected_revision
 RETURNING display_name, profile_revision;
+
+-- name: ReadCallMetadata :one
+SELECT tags, archived, metadata_revision FROM calls
+WHERE organisation_id = sqlc.arg(organisation_id) AND project_id = sqlc.arg(project_id) AND id = sqlc.arg(call_id);
+
+-- name: UpdateCallMetadata :one
+UPDATE calls SET tags = sqlc.arg(tags), archived = sqlc.arg(archived), metadata_revision = metadata_revision + 1
+WHERE organisation_id = sqlc.arg(organisation_id) AND project_id = sqlc.arg(project_id) AND id = sqlc.arg(call_id)
+AND metadata_revision = sqlc.arg(expected_revision)
+RETURNING tags, archived, metadata_revision;

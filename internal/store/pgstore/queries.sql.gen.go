@@ -1763,6 +1763,30 @@ func (q *Queries) ReadAccountProfile(ctx context.Context, userID pgtype.UUID) (R
 	return i, err
 }
 
+const readCallMetadata = `-- name: ReadCallMetadata :one
+SELECT tags, archived, metadata_revision FROM calls
+WHERE organisation_id = $1 AND project_id = $2 AND id = $3
+`
+
+type ReadCallMetadataParams struct {
+	OrganisationID string
+	ProjectID      string
+	CallID         pgtype.UUID
+}
+
+type ReadCallMetadataRow struct {
+	Tags             []string
+	Archived         bool
+	MetadataRevision int64
+}
+
+func (q *Queries) ReadCallMetadata(ctx context.Context, arg ReadCallMetadataParams) (ReadCallMetadataRow, error) {
+	row := q.db.QueryRow(ctx, readCallMetadata, arg.OrganisationID, arg.ProjectID, arg.CallID)
+	var i ReadCallMetadataRow
+	err := row.Scan(&i.Tags, &i.Archived, &i.MetadataRevision)
+	return i, err
+}
+
 const readProjectSettings = `-- name: ReadProjectSettings :one
 SELECT COALESCE(s.answer_ms, 1500::double precision) AS answer_ms,
        COALESCE(s.join_ms, 2000::double precision) AS join_ms,
@@ -2208,6 +2232,42 @@ func (q *Queries) UpdateAccountProfile(ctx context.Context, arg UpdateAccountPro
 	row := q.db.QueryRow(ctx, updateAccountProfile, arg.DisplayName, arg.UserID, arg.ExpectedRevision)
 	var i UpdateAccountProfileRow
 	err := row.Scan(&i.DisplayName, &i.ProfileRevision)
+	return i, err
+}
+
+const updateCallMetadata = `-- name: UpdateCallMetadata :one
+UPDATE calls SET tags = $1, archived = $2, metadata_revision = metadata_revision + 1
+WHERE organisation_id = $3 AND project_id = $4 AND id = $5
+AND metadata_revision = $6
+RETURNING tags, archived, metadata_revision
+`
+
+type UpdateCallMetadataParams struct {
+	Tags             []string
+	Archived         bool
+	OrganisationID   string
+	ProjectID        string
+	CallID           pgtype.UUID
+	ExpectedRevision int64
+}
+
+type UpdateCallMetadataRow struct {
+	Tags             []string
+	Archived         bool
+	MetadataRevision int64
+}
+
+func (q *Queries) UpdateCallMetadata(ctx context.Context, arg UpdateCallMetadataParams) (UpdateCallMetadataRow, error) {
+	row := q.db.QueryRow(ctx, updateCallMetadata,
+		arg.Tags,
+		arg.Archived,
+		arg.OrganisationID,
+		arg.ProjectID,
+		arg.CallID,
+		arg.ExpectedRevision,
+	)
+	var i UpdateCallMetadataRow
+	err := row.Scan(&i.Tags, &i.Archived, &i.MetadataRevision)
 	return i, err
 }
 

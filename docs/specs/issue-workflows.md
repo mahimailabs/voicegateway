@@ -1,0 +1,52 @@
+# Persistent issue workflows
+
+## Current evidence
+
+Issues already groups call findings and standing component checks with source links. Its dispositions
+use local browser storage, keyed by issue ID. Call tags use room names and archive state uses browser
+storage. Production listCalls deliberately rejects tag/archived queries because metadata is absent.
+These are UI previews, not shared workflows.
+
+## Required end state
+
+1. Read real findings from recorded call/turn evidence and latest supported component samples.
+   Reuse the same rule definitions for subsequent webhook alerts. Distinguish event time from
+   standing state, unknown from healthy, and a missing source from recovery.
+2. Persist issue metadata by organisation, project and stable issue/rule identity. Persist call
+   metadata by organisation, project and immutable call UUID, never display room name.
+3. Viewer and scoped API keys read only. Member/Admin mutations go through the existing role gate
+   and same-origin protection. Reject wrong scope and missing identities without leaking data.
+4. Tags are bounded, normalized, unique values. Archive is reversible and independent of resolving
+   or ignoring an issue. Resolving stores the latest occurrence observed, so a later occurrence can
+   regress; an archive must never falsify underlying evidence or suppress alert evaluation silently.
+5. Writes compare revisions atomically. Stale saves and Undo fail with 409. Bulk actions either
+   commit as one transaction or explicitly report per-item outcomes; do not show partial success as
+   complete success. Refresh/cancel old scope and denied data using the existing query conventions.
+6. Search, tags and archive filter actual persisted records and totals. Cursor/snapshot semantics
+   must remain consistent when metadata changes. Evidence links resolve to the permitted real call.
+7. Preserve the approved table, filters, drawer and menus. Replace local writes with real API writes;
+   show pending/error/permission states. No browser-storage migration or fallback fake success.
+
+## Acceptance evidence required
+
+- Native Postgres: persistence/reopen, same room name in different calls/projects, isolation,
+  concurrent revisions, rejected stale writes, reversible archives and tag normalization.
+- HTTP: roles, project keys, cross-origin, malformed/oversized requests, wrong project and missing ID.
+- Real call evidence: findings agree with source durations, missing measurements remain unknown,
+  standing source failures do not become healthy, and regression follows new evidence.
+- Queries: search/tag/archive results and counts agree; snapshot changes cannot silently duplicate or
+  skip rows; list/detail metadata agrees.
+- Browser: another session sees saved state, reload preserves it, failure preserves the user's intent,
+  Viewer has no mutation controls, project switching cannot retain or mutate prior-project metadata.
+- Full root race/test/lint/schema/provenance/browser gates, focused PR review and merge.
+
+Settings and alerts dependencies remain explicit. Completing metadata alone does not complete the
+issue-workflow task, and completed issue persistence does not prove webhook delivery/retries.
+
+## Implementation progress
+
+Call metadata storage is being implemented in migration 00016 with immutable call IDs, normalized
+bounded tags, reversible archive state and atomic revisions. Native verification covers same-room
+identity isolation, wrong project/organisation, concurrent updates, stale Undo and worker retries.
+This foundation is not API/UI wiring or completed issue evaluation. All acceptance remains open
+until the full paths and checks above pass.
