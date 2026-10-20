@@ -307,6 +307,11 @@ func Worker(ctx context.Context, c config.Config, log *slog.Logger) error {
 		return nil
 	})
 	g.Go(func() error {
+		evaluator := &scrape.JobEvaluator{Store: pgstore.NewStore(pool, nil), Changed: live.Notify}
+		every(gctx, summarizeEvery, "job findings", evaluator.Tick, log)
+		return nil
+	})
+	g.Go(func() error {
 		every(gctx, summarizeEvery, "findings backfill", joiner.BackfillFindings, log)
 		return nil
 	})

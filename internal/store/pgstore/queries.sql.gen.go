@@ -403,6 +403,45 @@ func (q *Queries) ClaimIssueSource(ctx context.Context, arg ClaimIssueSourcePara
 	return result.RowsAffected(), nil
 }
 
+const claimJobFindings = `-- name: ClaimJobFindings :execrows
+UPDATE issue_job_observations j SET
+ evaluated_observation_revision = $1,
+ evaluated_settings_revision = $2,
+ evaluated_call_id = $3, evaluated_joined_at = $4,
+ evaluation_revision = evaluation_revision + 1
+WHERE j.organisation_id = $5 AND j.project_id = $6 AND j.job_id = $7
+ AND j.observation_revision = $1 AND evaluation_revision = $8
+ AND $2::bigint = COALESCE((SELECT s.revision FROM project_settings s WHERE s.organisation_id=j.organisation_id AND s.project_id=j.project_id),0)
+`
+
+type ClaimJobFindingsParams struct {
+	ObservationRevision int64
+	SettingsRevision    int64
+	CallID              pgtype.UUID
+	JoinedAt            pgtype.Timestamptz
+	OrganisationID      string
+	ProjectID           string
+	JobID               string
+	ExpectedRevision    int64
+}
+
+func (q *Queries) ClaimJobFindings(ctx context.Context, arg ClaimJobFindingsParams) (int64, error) {
+	result, err := q.db.Exec(ctx, claimJobFindings,
+		arg.ObservationRevision,
+		arg.SettingsRevision,
+		arg.CallID,
+		arg.JoinedAt,
+		arg.OrganisationID,
+		arg.ProjectID,
+		arg.JobID,
+		arg.ExpectedRevision,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const clearStale = `-- name: ClearStale :exec
 UPDATE calls SET summary_stale_at = NULL, summary_failures = 0
 WHERE id = $1 AND summary_stale_at = $2
@@ -681,7 +720,7 @@ func (q *Queries) CreateWorkerEndpoint(ctx context.Context, arg CreateWorkerEndp
 const deactivateCallFindings = `-- name: DeactivateCallFindings :execrows
 UPDATE issue_occurrences SET active = false
 WHERE organisation_id = $1 AND project_id = $2 AND call_id = $3
-AND active AND NOT (issue_id = ANY($4::text[]))
+AND source_layer = 'calls' AND active AND NOT (issue_id = ANY($4::text[]))
 AND ($5::text[] IS NULL OR issue_id = ANY($5::text[]))
 `
 
@@ -700,6 +739,34 @@ func (q *Queries) DeactivateCallFindings(ctx context.Context, arg DeactivateCall
 		arg.CallID,
 		arg.IssueIds,
 		arg.EvaluatedIds,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const deactivateJobFindings = `-- name: DeactivateJobFindings :execrows
+UPDATE issue_occurrences SET active=false
+WHERE organisation_id = $1 AND project_id = $2 AND source_layer='jobs' AND source_id = $3
+ AND active AND issue_id=ANY($4::text[]) AND NOT(issue_id=ANY($5::text[]))
+`
+
+type DeactivateJobFindingsParams struct {
+	OrganisationID string
+	ProjectID      string
+	SourceID       string
+	Covered        []string
+	Present        []string
+}
+
+func (q *Queries) DeactivateJobFindings(ctx context.Context, arg DeactivateJobFindingsParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deactivateJobFindings,
+		arg.OrganisationID,
+		arg.ProjectID,
+		arg.SourceID,
+		arg.Covered,
+		arg.Present,
 	)
 	if err != nil {
 		return 0, err
@@ -825,6 +892,31 @@ type EnsureCallIssueParams struct {
 
 func (q *Queries) EnsureCallIssue(ctx context.Context, arg EnsureCallIssueParams) error {
 	_, err := q.db.Exec(ctx, ensureCallIssue,
+		arg.OrganisationID,
+		arg.ProjectID,
+		arg.ID,
+		arg.Title,
+		arg.Severity,
+	)
+	return err
+}
+
+const ensureJobIssue = `-- name: EnsureJobIssue :exec
+INSERT INTO issues (organisation_id, project_id, id, title, kind, source, severity)
+VALUES ($1, $2, $3, $4, 'event', 'agent_workers', $5)
+ON CONFLICT (organisation_id, project_id, id) DO UPDATE SET title=EXCLUDED.title, severity=EXCLUDED.severity
+`
+
+type EnsureJobIssueParams struct {
+	OrganisationID string
+	ProjectID      string
+	ID             string
+	Title          string
+	Severity       string
+}
+
+func (q *Queries) EnsureJobIssue(ctx context.Context, arg EnsureJobIssueParams) error {
+	_, err := q.db.Exec(ctx, ensureJobIssue,
 		arg.OrganisationID,
 		arg.ProjectID,
 		arg.ID,
@@ -3192,6 +3284,41 @@ func (q *Queries) UpsertJobObservation(ctx context.Context, arg UpsertJobObserva
 		arg.ReportedFailedAt,
 		arg.FailureObservedAt,
 		arg.ObservedAt,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const upsertJobOccurrence = `-- name: UpsertJobOccurrence :execrows
+INSERT INTO issue_occurrences (organisation_id, project_id, issue_id, source_id, source_layer, call_id, occurred_at, detail)
+VALUES ($1, $2, $3, $4, 'jobs', $5, $6, $7)
+ON CONFLICT (organisation_id, project_id, issue_id, source_id) DO UPDATE
+SET detail=EXCLUDED.detail, call_id=EXCLUDED.call_id, occurred_at=EXCLUDED.occurred_at, active=true, observed_at=now()
+WHERE NOT issue_occurrences.active OR issue_occurrences.detail IS DISTINCT FROM EXCLUDED.detail
+ OR issue_occurrences.call_id IS DISTINCT FROM EXCLUDED.call_id OR issue_occurrences.occurred_at IS DISTINCT FROM EXCLUDED.occurred_at
+`
+
+type UpsertJobOccurrenceParams struct {
+	OrganisationID string
+	ProjectID      string
+	IssueID        string
+	SourceID       string
+	CallID         pgtype.UUID
+	OccurredAt     pgtype.Timestamptz
+	Detail         []byte
+}
+
+func (q *Queries) UpsertJobOccurrence(ctx context.Context, arg UpsertJobOccurrenceParams) (int64, error) {
+	result, err := q.db.Exec(ctx, upsertJobOccurrence,
+		arg.OrganisationID,
+		arg.ProjectID,
+		arg.IssueID,
+		arg.SourceID,
+		arg.CallID,
+		arg.OccurredAt,
+		arg.Detail,
 	)
 	if err != nil {
 		return 0, err

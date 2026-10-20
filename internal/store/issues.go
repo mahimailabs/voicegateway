@@ -91,3 +91,9 @@ type PendingJobFinding struct {
 	DispatchedAt, JoinedAt, ReportedFailedAt, FailureObservedAt   *time.Time
 	ObservationRevision, EvaluationRevision                       int64
 }
+
+// JobFinding carries the timestamp evidence of one native job event.
+type JobFinding struct {
+	Finding
+	At *time.Time
+}

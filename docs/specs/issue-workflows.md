@@ -148,3 +148,15 @@ revision without a semantic change. Missing fields, failed reads and room closur
 failure evidence. The Postgres race regression covers these cases and scope rejection. The
 notification-order and private-identity regressions also pass with the race detector. Issue evaluation and late-webhook correlation
 remain unfinished; this checkpoint does not complete issue workflows.
+
+Job evaluation now runs in bounded worker sweeps. Native failed jobs produce event findings;
+without a reported failure timestamp, the detail labels the timestamp as first observation.
+Dispatch-to-join findings require a reported participant identity matched to an agent participant
+in the same project and room instance. A late webhook can attach the canonical call link and
+requeue evaluation. Missing or negative intervals do not establish healthy join latency. Project
+threshold revisions requeue evaluations; observation and evaluation revisions reject stale writes.
+Call finding replacement is constrained to its own source and cannot erase job evidence.
+
+Targeted root race checks pass for exact and cross-project correlation, late call/participant
+arrival, threshold effects, stale evaluation rejection, persistence through room closure, private
+identity projection and notification ordering. Final full-suite checks and review remain pending.

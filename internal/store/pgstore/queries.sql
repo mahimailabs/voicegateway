@@ -629,7 +629,7 @@ WHERE organisation_id = @organisation_id AND project_id = @project_id AND id = @
 -- name: DeactivateCallFindings :execrows
 UPDATE issue_occurrences SET active = false
 WHERE organisation_id = @organisation_id AND project_id = @project_id AND call_id = @call_id
-AND active AND NOT (issue_id = ANY(@issue_ids::text[]))
+AND source_layer = 'calls' AND active AND NOT (issue_id = ANY(@issue_ids::text[]))
 AND (sqlc.narg(evaluated_ids)::text[] IS NULL OR issue_id = ANY(sqlc.narg(evaluated_ids)::text[]));
 
 -- name: ReadIssueMetadata :one
@@ -779,3 +779,31 @@ WHERE j.evaluated_observation_revision <> j.observation_revision
  OR j.evaluated_call_id IS DISTINCT FROM c.id OR j.evaluated_joined_at IS DISTINCT FROM p.joined_at
 ORDER BY j.observed_at, j.organisation_id, j.project_id, j.job_id
 LIMIT @max_jobs;
+
+-- name: ClaimJobFindings :execrows
+UPDATE issue_job_observations j SET
+ evaluated_observation_revision = @observation_revision,
+ evaluated_settings_revision = @settings_revision,
+ evaluated_call_id = sqlc.narg(call_id), evaluated_joined_at = sqlc.narg(joined_at),
+ evaluation_revision = evaluation_revision + 1
+WHERE j.organisation_id = @organisation_id AND j.project_id = @project_id AND j.job_id = @job_id
+ AND j.observation_revision = @observation_revision AND evaluation_revision = @expected_revision
+ AND @settings_revision::bigint = COALESCE((SELECT s.revision FROM project_settings s WHERE s.organisation_id=j.organisation_id AND s.project_id=j.project_id),0);
+
+-- name: EnsureJobIssue :exec
+INSERT INTO issues (organisation_id, project_id, id, title, kind, source, severity)
+VALUES (@organisation_id, @project_id, @id, @title, 'event', 'agent_workers', @severity)
+ON CONFLICT (organisation_id, project_id, id) DO UPDATE SET title=EXCLUDED.title, severity=EXCLUDED.severity;
+
+-- name: UpsertJobOccurrence :execrows
+INSERT INTO issue_occurrences (organisation_id, project_id, issue_id, source_id, source_layer, call_id, occurred_at, detail)
+VALUES (@organisation_id, @project_id, @issue_id, @source_id, 'jobs', sqlc.narg(call_id), sqlc.narg(occurred_at), @detail)
+ON CONFLICT (organisation_id, project_id, issue_id, source_id) DO UPDATE
+SET detail=EXCLUDED.detail, call_id=EXCLUDED.call_id, occurred_at=EXCLUDED.occurred_at, active=true, observed_at=now()
+WHERE NOT issue_occurrences.active OR issue_occurrences.detail IS DISTINCT FROM EXCLUDED.detail
+ OR issue_occurrences.call_id IS DISTINCT FROM EXCLUDED.call_id OR issue_occurrences.occurred_at IS DISTINCT FROM EXCLUDED.occurred_at;
+
+-- name: DeactivateJobFindings :execrows
+UPDATE issue_occurrences SET active=false
+WHERE organisation_id = @organisation_id AND project_id = @project_id AND source_layer='jobs' AND source_id = @source_id
+ AND active AND issue_id=ANY(@covered::text[]) AND NOT(issue_id=ANY(@present::text[]));
