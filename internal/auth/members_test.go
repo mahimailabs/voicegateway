@@ -256,7 +256,10 @@ func TestRolesGateEveryRoute(t *testing.T) {
 
 	// A project key (phase 06c, which retired the interim token) reads its project, nothing else.
 	token := f.projectKey("org-a", "p")
-	for _, path := range reads[1:9] {
+	for _, path := range reads {
+		if !strings.HasPrefix(path, "/api/v1/org/org-a/project/p/") {
+			continue
+		}
 		if status, _ := f.send(web, call{method: http.MethodGet, path: path, token: token}); status != http.StatusOK {
 			t.Errorf("key GET %s = %d, want 200", path, status)
 		}

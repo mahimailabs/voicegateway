@@ -891,7 +891,13 @@ function ThresholdsForm({ settings }: { settings: ProjectSettings }) {
   const draft = edit?.values ?? asDraft(t)
   const n = (v: string) => Number(v)
   const valid = [draft.answer, draft.join, draft.tts].every((v) => v.trim() !== "" && Number.isFinite(n(v)) && n(v) >= 0.1 && n(v) <= 60)
-  const changed = n(draft.answer) * 1000 !== t.answerMs || n(draft.join) * 1000 !== t.joinMs || n(draft.tts) * 1000 !== t.ttsStartMs
+  // Shift the decimal exponent before parsing, avoiding binary multiplication drift.
+  // Unlike rounding to whole milliseconds, this retains fractional thresholds.
+  const ms = (v: string) => {
+    const [significand, exponent = "0"] = n(v).toString().split("e")
+    return Number(`${significand}e${Number(exponent) + 3}`)
+  }
+  const changed = ms(draft.answer) !== t.answerMs || ms(draft.join) !== t.joinMs || ms(draft.tts) !== t.ttsStartMs
   const save = useMutation({
     mutationFn: (v: { thresholds: T; revision: number; message: string; undo?: T }) => saveProjectSettings(selected, { thresholds: v.thresholds, revision: v.revision }),
     onSuccess: async (saved, variables) => {
@@ -946,7 +952,7 @@ function ThresholdsForm({ settings }: { settings: ProjectSettings }) {
         <Button variant="outline" disabled={!canEdit || save.isPending} onClick={() => apply(DEFAULTS, "Thresholds reset to defaults")}>
           Reset to defaults
         </Button>
-        <Button disabled={!canEdit || save.isPending || !valid || !changed} onClick={() => apply({ answerMs: n(draft.answer) * 1000, joinMs: n(draft.join) * 1000, ttsStartMs: n(draft.tts) * 1000 }, "Thresholds saved")}>
+        <Button disabled={!canEdit || save.isPending || !valid || !changed} onClick={() => apply({ answerMs: ms(draft.answer), joinMs: ms(draft.join), ttsStartMs: ms(draft.tts) }, "Thresholds saved")}>
           {save.isPending ? "Saving…" : "Save changes"}
         </Button>
       </div>
