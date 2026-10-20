@@ -13,10 +13,10 @@ import (
 
 // Calls is the call index.
 type Calls interface {
-	PendingRecordingBackfills(context.Context) ([]store.RecordingBackfill, error)
-	AdvanceRecordingBackfill(context.Context, store.RecordingBackfill, int64, string, bool) error
-	DeferRecordingBackfill(context.Context, store.RecordingBackfill) error
-	PutRecordingFinding(context.Context, store.RecordingFinding) error
+	PendingMediaBackfills(context.Context) ([]store.MediaBackfill, error)
+	AdvanceMediaBackfill(context.Context, store.MediaBackfill, int64, string, bool) error
+	DeferMediaBackfill(context.Context, store.MediaBackfill) error
+	PutMediaFinding(context.Context, store.MediaFinding) error
 	PendingCallFindings(context.Context, int) ([]store.PendingFindings, error)
 	PutCallFindings(context.Context, store.PendingFindings, []store.Finding, []string, int64, bool, time.Time) error
 	DeferCallFindings(context.Context, store.PendingFindings) error
@@ -39,7 +39,7 @@ type Calls interface {
 // Traces counts traces that never linked to a call, and reads a call's spans and the turns built
 // from them, for its summary.
 type Traces interface {
-	RecordingEvents(context.Context, store.RecordingBackfill) ([]store.Event, error)
+	MediaEvents(context.Context, store.MediaBackfill) ([]store.Event, error)
 	CountUnlinkedTraces(ctx context.Context, lastSpanBefore time.Time) (uint64, error)
 	CallTrace(ctx context.Context, organisationID, projectID, callID string) ([]store.Span, turn.Result, error)
 }
@@ -133,7 +133,7 @@ const SummaryBatch = 200
 
 // Stored marks the summaries of every call the rows joined stale, once the rows are in ClickHouse.
 func (j *Joiner) Stored(ctx context.Context, rows []store.Event) error {
-	if err := j.recordingFindings(ctx, rows); err != nil {
+	if err := j.mediaFindings(ctx, rows); err != nil {
 		return err
 	}
 	seen := map[string]bool{}

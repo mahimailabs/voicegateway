@@ -66,6 +66,10 @@ type fixture struct {
 }
 
 func newFixture(t *testing.T) *fixture {
+	return newFixtureWithWebhook(t, 0)
+}
+
+func newFixtureWithWebhook(t *testing.T, webhookPort int) *fixture {
 	t.Helper()
 	if os.Getenv("CI") == "" {
 		if testing.Short() {
@@ -116,13 +120,20 @@ func newFixture(t *testing.T) *fixture {
 	rdb := redis.NewClient(ropts)
 	t.Cleanup(func() { _ = rdb.Close() })
 
+	command := []string{"--dev", "--bind", "0.0.0.0", "--redis-host", "redis:6379"}
+	var hostPorts []int
+	if webhookPort != 0 {
+		hostPorts = []int{webhookPort}
+		command = append(command, "--config-body", fmt.Sprintf("webhook:\n  api_key: devkey\n  urls:\n    - http://host.testcontainers.internal:%d/events\n", webhookPort))
+	}
 	lk, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
 		ContainerRequest: testcontainers.ContainerRequest{
-			Image:        livekitImage,
-			Cmd:          []string{"--dev", "--bind", "0.0.0.0", "--redis-host", "redis:6379"},
-			Networks:     []string{nw.Name},
-			ExposedPorts: []string{"7880/tcp"},
-			WaitingFor:   wait.ForHTTP("/").WithPort("7880/tcp"),
+			Image:           livekitImage,
+			Cmd:             command,
+			HostAccessPorts: hostPorts,
+			Networks:        []string{nw.Name},
+			ExposedPorts:    []string{"7880/tcp"},
+			WaitingFor:      wait.ForHTTP("/").WithPort("7880/tcp"),
 		},
 		Started: true,
 	})

@@ -73,13 +73,13 @@ func (q *Queries) AdvanceIssueRevision(ctx context.Context, arg AdvanceIssueRevi
 	return err
 }
 
-const advanceRecordingBackfill = `-- name: AdvanceRecordingBackfill :execrows
-UPDATE issue_recording_backfills SET cursor_ns= $1, cursor_key= $2,
+const advanceMediaBackfill = `-- name: AdvanceMediaBackfill :execrows
+UPDATE issue_media_backfills SET cursor_ns= $1, cursor_key= $2,
  done= $3, revision=revision+1, failures=0, retry_at=now()
 WHERE organisation_id= $4 AND project_id= $5 AND revision= $6
 `
 
-type AdvanceRecordingBackfillParams struct {
+type AdvanceMediaBackfillParams struct {
 	CursorNs         int64
 	CursorKey        string
 	Done             bool
@@ -88,8 +88,8 @@ type AdvanceRecordingBackfillParams struct {
 	ExpectedRevision int64
 }
 
-func (q *Queries) AdvanceRecordingBackfill(ctx context.Context, arg AdvanceRecordingBackfillParams) (int64, error) {
-	result, err := q.db.Exec(ctx, advanceRecordingBackfill,
+func (q *Queries) AdvanceMediaBackfill(ctx context.Context, arg AdvanceMediaBackfillParams) (int64, error) {
+	result, err := q.db.Exec(ctx, advanceMediaBackfill,
 		arg.CursorNs,
 		arg.CursorKey,
 		arg.Done,
@@ -855,20 +855,20 @@ func (q *Queries) DeferCallFindings(ctx context.Context, arg DeferCallFindingsPa
 	return err
 }
 
-const deferRecordingBackfill = `-- name: DeferRecordingBackfill :exec
-UPDATE issue_recording_backfills SET failures=least(failures+1,12), revision=revision+1,
+const deferMediaBackfill = `-- name: DeferMediaBackfill :exec
+UPDATE issue_media_backfills SET failures=least(failures+1,12), revision=revision+1,
  retry_at=now() + least(3600, 10 * power(2,least(failures,9))) * interval '1 second'
 WHERE organisation_id= $1 AND project_id= $2 AND revision= $3
 `
 
-type DeferRecordingBackfillParams struct {
+type DeferMediaBackfillParams struct {
 	OrganisationID   string
 	ProjectID        string
 	ExpectedRevision int64
 }
 
-func (q *Queries) DeferRecordingBackfill(ctx context.Context, arg DeferRecordingBackfillParams) error {
-	_, err := q.db.Exec(ctx, deferRecordingBackfill, arg.OrganisationID, arg.ProjectID, arg.ExpectedRevision)
+func (q *Queries) DeferMediaBackfill(ctx context.Context, arg DeferMediaBackfillParams) error {
+	_, err := q.db.Exec(ctx, deferMediaBackfill, arg.OrganisationID, arg.ProjectID, arg.ExpectedRevision)
 	return err
 }
 
@@ -975,6 +975,29 @@ func (q *Queries) EnsureJobIssue(ctx context.Context, arg EnsureJobIssueParams) 
 	return err
 }
 
+const ensureMediaIssue = `-- name: EnsureMediaIssue :exec
+INSERT INTO issues (organisation_id, project_id, id, title, kind, source, severity)
+VALUES ($1, $2, $3, $4, 'event', 'delivery', 'high')
+ON CONFLICT (organisation_id, project_id, id) DO UPDATE SET title=EXCLUDED.title
+`
+
+type EnsureMediaIssueParams struct {
+	OrganisationID string
+	ProjectID      string
+	ID             string
+	Title          string
+}
+
+func (q *Queries) EnsureMediaIssue(ctx context.Context, arg EnsureMediaIssueParams) error {
+	_, err := q.db.Exec(ctx, ensureMediaIssue,
+		arg.OrganisationID,
+		arg.ProjectID,
+		arg.ID,
+		arg.Title,
+	)
+	return err
+}
+
 const ensureProjectSettings = `-- name: EnsureProjectSettings :exec
 INSERT INTO project_settings(organisation_id, project_id) VALUES ($1, $2)
 ON CONFLICT (organisation_id, project_id) DO NOTHING
@@ -987,22 +1010,6 @@ type EnsureProjectSettingsParams struct {
 
 func (q *Queries) EnsureProjectSettings(ctx context.Context, arg EnsureProjectSettingsParams) error {
 	_, err := q.db.Exec(ctx, ensureProjectSettings, arg.OrganisationID, arg.ProjectID)
-	return err
-}
-
-const ensureRecordingIssue = `-- name: EnsureRecordingIssue :exec
-INSERT INTO issues (organisation_id, project_id, id, title, kind, source, severity)
-VALUES ($1, $2, 'recording-lost', 'Recording lost or cut short', 'event', 'delivery', 'high')
-ON CONFLICT (organisation_id, project_id, id) DO UPDATE SET title=EXCLUDED.title
-`
-
-type EnsureRecordingIssueParams struct {
-	OrganisationID string
-	ProjectID      string
-}
-
-func (q *Queries) EnsureRecordingIssue(ctx context.Context, arg EnsureRecordingIssueParams) error {
-	_, err := q.db.Exec(ctx, ensureRecordingIssue, arg.OrganisationID, arg.ProjectID)
 	return err
 }
 
@@ -1126,14 +1133,14 @@ func (q *Queries) HealCall(ctx context.Context, arg HealCallParams) error {
 	return err
 }
 
-const initRecordingBackfills = `-- name: InitRecordingBackfills :exec
-INSERT INTO issue_recording_backfills (organisation_id, project_id)
+const initMediaBackfills = `-- name: InitMediaBackfills :exec
+INSERT INTO issue_media_backfills (organisation_id, project_id)
 SELECT organisation_id, id FROM projects
 ON CONFLICT DO NOTHING
 `
 
-func (q *Queries) InitRecordingBackfills(ctx context.Context) error {
-	_, err := q.db.Exec(ctx, initRecordingBackfills)
+func (q *Queries) InitMediaBackfills(ctx context.Context) error {
+	_, err := q.db.Exec(ctx, initMediaBackfills)
 	return err
 }
 
@@ -2336,21 +2343,21 @@ func (q *Queries) PendingJobFindings(ctx context.Context, maxJobs int32) ([]Pend
 	return items, nil
 }
 
-const pendingRecordingBackfills = `-- name: PendingRecordingBackfills :many
-SELECT organisation_id, project_id, cursor_ns, cursor_key, revision, done, retry_at, failures FROM issue_recording_backfills
+const pendingMediaBackfills = `-- name: PendingMediaBackfills :many
+SELECT organisation_id, project_id, cursor_ns, cursor_key, revision, done, retry_at, failures FROM issue_media_backfills
 WHERE NOT done AND retry_at <= now()
 ORDER BY retry_at, organisation_id, project_id LIMIT 10
 `
 
-func (q *Queries) PendingRecordingBackfills(ctx context.Context) ([]IssueRecordingBackfill, error) {
-	rows, err := q.db.Query(ctx, pendingRecordingBackfills)
+func (q *Queries) PendingMediaBackfills(ctx context.Context) ([]IssueMediaBackfill, error) {
+	rows, err := q.db.Query(ctx, pendingMediaBackfills)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []IssueRecordingBackfill
+	var items []IssueMediaBackfill
 	for rows.Next() {
-		var i IssueRecordingBackfill
+		var i IssueMediaBackfill
 		if err := rows.Scan(
 			&i.OrganisationID,
 			&i.ProjectID,
@@ -3529,6 +3536,43 @@ func (q *Queries) UpsertJobOccurrence(ctx context.Context, arg UpsertJobOccurren
 	return result.RowsAffected(), nil
 }
 
+const upsertMediaOccurrence = `-- name: UpsertMediaOccurrence :execrows
+INSERT INTO issue_occurrences (organisation_id, project_id, issue_id, source_id, source_layer, call_id, occurred_at, detail)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+ON CONFLICT (organisation_id, project_id, issue_id, source_id) DO UPDATE
+SET call_id=EXCLUDED.call_id
+WHERE issue_occurrences.call_id IS NULL AND EXCLUDED.call_id IS NOT NULL
+ AND issue_occurrences.detail = EXCLUDED.detail AND issue_occurrences.occurred_at IS NOT DISTINCT FROM EXCLUDED.occurred_at
+`
+
+type UpsertMediaOccurrenceParams struct {
+	OrganisationID string
+	ProjectID      string
+	IssueID        string
+	SourceID       string
+	SourceLayer    string
+	CallID         pgtype.UUID
+	OccurredAt     pgtype.Timestamptz
+	Detail         []byte
+}
+
+func (q *Queries) UpsertMediaOccurrence(ctx context.Context, arg UpsertMediaOccurrenceParams) (int64, error) {
+	result, err := q.db.Exec(ctx, upsertMediaOccurrence,
+		arg.OrganisationID,
+		arg.ProjectID,
+		arg.IssueID,
+		arg.SourceID,
+		arg.SourceLayer,
+		arg.CallID,
+		arg.OccurredAt,
+		arg.Detail,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const upsertParticipant = `-- name: UpsertParticipant :exec
 INSERT INTO call_participants (call_id, participant_sid, identity, kind, joined_at, left_at)
 VALUES ($1, $2, $3, $4, $5, $6)
@@ -3558,39 +3602,6 @@ func (q *Queries) UpsertParticipant(ctx context.Context, arg UpsertParticipantPa
 		arg.LeftAt,
 	)
 	return err
-}
-
-const upsertRecordingOccurrence = `-- name: UpsertRecordingOccurrence :execrows
-INSERT INTO issue_occurrences (organisation_id, project_id, issue_id, source_id, source_layer, call_id, occurred_at, detail)
-VALUES ($1, $2, 'recording-lost', $3, 'egress_events', $4, $5, $6)
-ON CONFLICT (organisation_id, project_id, issue_id, source_id) DO UPDATE
-SET call_id=EXCLUDED.call_id
-WHERE issue_occurrences.call_id IS NULL AND EXCLUDED.call_id IS NOT NULL
- AND issue_occurrences.detail = EXCLUDED.detail AND issue_occurrences.occurred_at IS NOT DISTINCT FROM EXCLUDED.occurred_at
-`
-
-type UpsertRecordingOccurrenceParams struct {
-	OrganisationID string
-	ProjectID      string
-	SourceID       string
-	CallID         pgtype.UUID
-	OccurredAt     pgtype.Timestamptz
-	Detail         []byte
-}
-
-func (q *Queries) UpsertRecordingOccurrence(ctx context.Context, arg UpsertRecordingOccurrenceParams) (int64, error) {
-	result, err := q.db.Exec(ctx, upsertRecordingOccurrence,
-		arg.OrganisationID,
-		arg.ProjectID,
-		arg.SourceID,
-		arg.CallID,
-		arg.OccurredAt,
-		arg.Detail,
-	)
-	if err != nil {
-		return 0, err
-	}
-	return result.RowsAffected(), nil
 }
 
 const upsertStandingOccurrence = `-- name: UpsertStandingOccurrence :execrows

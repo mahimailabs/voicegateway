@@ -8,7 +8,7 @@ import (
 	"github.com/livekit/protocol/livekit"
 )
 
-func TestRecordingFindingsFromDurableWebhooks(t *testing.T) {
+func TestMediaFindingsFromDurableWebhooks(t *testing.T) {
 	f := newFixture(t)
 	for _, ev := range []*livekit.WebhookEvent{
 		{Event: "egress_ended", Id: "EV_failed", CreatedAt: at(base), EgressInfo: &livekit.EgressInfo{EgressId: "EG_failed", RoomId: "RM_recording", Status: livekit.EgressStatus_EGRESS_FAILED, Error: "provider-secret"}},
@@ -53,5 +53,26 @@ func TestRecordingFindingsFromDurableWebhooks(t *testing.T) {
 	}
 	if count != 2 {
 		t.Fatalf("got %d findings", count)
+	}
+}
+
+func TestIngressFindingsRequireExplicitErrorAndRetainHistory(t *testing.T) {
+	f := newFixture(t)
+	failed := &livekit.WebhookEvent{Event: "ingress_ended", Id: "EV_ingress_failed", CreatedAt: at(base), IngressInfo: &livekit.IngressInfo{IngressId: "IN_failed", State: &livekit.IngressState{Status: livekit.IngressState_ENDPOINT_ERROR, Error: "private-provider-error"}}}
+	f.appendWebhook(failed)
+	f.appendWebhook(&livekit.WebhookEvent{Event: "ingress_ended", Id: "EV_unknown", IngressInfo: &livekit.IngressInfo{IngressId: "IN_unknown"}})
+	f.appendWebhook(&livekit.WebhookEvent{Event: "ingress_ended", Id: "EV_complete", IngressInfo: &livekit.IngressInfo{IngressId: "IN_complete", State: &livekit.IngressState{Status: livekit.IngressState_ENDPOINT_COMPLETE}}})
+	f.store("ingress-first")
+	f.appendWebhook(failed)
+	f.appendWebhook(&livekit.WebhookEvent{Event: "ingress_started", Id: "EV_recovery", CreatedAt: at(base) + 1, IngressInfo: &livekit.IngressInfo{IngressId: "IN_failed", State: &livekit.IngressState{Status: livekit.IngressState_ENDPOINT_PUBLISHING}}})
+	f.store("ingress-replay")
+	var count int
+	var detail string
+	if err := f.pool.QueryRow(context.Background(), "SELECT count(*),min(detail::text) FROM issue_occurrences WHERE project_id=$1 AND issue_id='ingress-error'", f.project).Scan(&count, &detail); err != nil || count != 1 || strings.Contains(detail, "private-provider-error") {
+		t.Fatalf("ingress evidence: %d %q %v", count, detail, err)
+	}
+	metadata, err := f.stack.calls.IssueMetadata(context.Background(), "default", f.project, "ingress-error")
+	if err != nil || metadata.EvidenceRevision != 1 {
+		t.Fatalf("replay/recovery changed failure history: %+v %v", metadata, err)
 	}
 }

@@ -238,3 +238,16 @@ advance the roadmap checkbox.
 Native recovery checks also pass for replay after findings commit but before checkpoint,
 and for a retained event after its linked call is deleted: the finding remains unlinked
 and no call is recreated. Go lint, format and SQL generation consistency checks pass.
+
+
+The event evaluator and historical cursor now cover both recording and ingress findings.
+Native signed-webhook verification against livekit-server v1.13.3 confirms ingress
+ERROR and subsequent PUBLISHING produce the expected ended/started events. Only
+an ingress_ended payload with an explicit ENDPOINT_ERROR creates an ingress finding.
+Missing state, normal completion and recovery do not create extra failures or erase
+historical failure evidence. Raw ingress error text is excluded from issue descriptions.
+The bounded backfill regression now mixes 101 ingress/egress events at one exact
+nanosecond timestamp and verifies restart/replay. Native ingestion tests cover explicit
+error gating, replay and retention of failure history after recovery. Source coverage
+integration and final whole-PR checks remain open; alert incident recovery remains part
+of the subsequent webhook implementation.

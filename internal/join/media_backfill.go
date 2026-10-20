@@ -8,22 +8,22 @@ import (
 	"github.com/mahimailabs/voicegateway/internal/store"
 )
 
-// BackfillRecordings advances only after durable findings. Partial failures replay safely.
-func (j *Joiner) BackfillRecordings(ctx context.Context, _ time.Time) error {
-	batches, err := j.Calls.PendingRecordingBackfills(ctx)
+// BackfillMediaFindings advances only after durable findings. Partial failures replay safely.
+func (j *Joiner) BackfillMediaFindings(ctx context.Context, _ time.Time) error {
+	batches, err := j.Calls.PendingMediaBackfills(ctx)
 	if err != nil {
 		return err
 	}
 	for _, b := range batches {
 		run, cancel := context.WithTimeout(ctx, 30*time.Second)
-		err := j.backfillRecordingPage(run, b)
+		err := j.backfillMediaPage(run, b)
 		cancel()
 		if err != nil {
 			if ctx.Err() != nil {
 				return ctx.Err()
 			}
-			j.Log.Warn("recording backfill failed", "project", b.ProjectID, "err", err)
-			if err := j.Calls.DeferRecordingBackfill(ctx, b); err != nil {
+			j.Log.Warn("media finding backfill failed", "project", b.ProjectID, "err", err)
+			if err := j.Calls.DeferMediaBackfill(ctx, b); err != nil {
 				return err
 			}
 			continue
@@ -35,18 +35,18 @@ func (j *Joiner) BackfillRecordings(ctx context.Context, _ time.Time) error {
 	return nil
 }
 
-func (j *Joiner) backfillRecordingPage(ctx context.Context, b store.RecordingBackfill) error {
-	rows, err := j.Traces.RecordingEvents(ctx, b)
+func (j *Joiner) backfillMediaPage(ctx context.Context, b store.MediaBackfill) error {
+	rows, err := j.Traces.MediaEvents(ctx, b)
 	if err != nil {
 		return err
 	}
 	for _, row := range rows {
-		err := j.recordingFindings(ctx, []store.Event{row})
+		err := j.mediaFindings(ctx, []store.Event{row})
 		// Retention can remove a linked call while retaining the component event.
 		// Preserve the event without recreating the deleted call or linking another scope.
 		if errors.Is(err, store.ErrNotFound) && row.CallID != "" {
 			row.CallID = ""
-			err = j.recordingFindings(ctx, []store.Event{row})
+			err = j.mediaFindings(ctx, []store.Event{row})
 		}
 		if err != nil {
 			return err
@@ -57,5 +57,5 @@ func (j *Joiner) backfillRecordingPage(ctx context.Context, b store.RecordingBac
 		last := rows[len(rows)-1]
 		ns, key = last.ReceivedAt.UnixNano(), last.DedupeKey
 	}
-	return j.Calls.AdvanceRecordingBackfill(ctx, b, ns, key, len(rows) < 100)
+	return j.Calls.AdvanceMediaBackfill(ctx, b, ns, key, len(rows) < 100)
 }

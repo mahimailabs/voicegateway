@@ -10,7 +10,7 @@ import (
 	"github.com/mahimailabs/voicegateway/internal/store"
 )
 
-func TestRecordingFindingReplayScopeAndTerminalEvidence(t *testing.T) {
+func TestMediaFindingReplayScopeAndTerminalEvidence(t *testing.T) {
 	s, pool := migrated(t)
 	ctx := context.Background()
 	for _, id := range []string{"recording-one", "recording-two"} {
@@ -19,15 +19,15 @@ func TestRecordingFindingReplayScopeAndTerminalEvidence(t *testing.T) {
 		}
 	}
 	at := time.Now().UTC().Truncate(time.Microsecond)
-	f := store.RecordingFinding{OrganisationID: "default", ProjectID: "recording-one", EventID: "EV_failure", EgressID: "EG_one", Status: "EGRESS_FAILED", At: &at}
-	if err := s.PutRecordingFinding(ctx, f); err != nil {
+	f := store.MediaFinding{OrganisationID: "default", ProjectID: "recording-one", EventID: "EV_failure", ComponentID: "EG_one", Layer: "egress", Status: "EGRESS_FAILED", At: &at}
+	if err := s.PutMediaFinding(ctx, f); err != nil {
 		t.Fatal(err)
 	}
 	resolved := "resolved"
 	if _, err := s.UpdateIssueMetadata(ctx, "default", f.ProjectID, "recording-lost", 0, 1, &resolved, nil, false); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.PutRecordingFinding(ctx, f); err != nil {
+	if err := s.PutMediaFinding(ctx, f); err != nil {
 		t.Fatal(err)
 	}
 	m, err := NewStore(pool, s.sealer).IssueMetadata(ctx, "default", f.ProjectID, "recording-lost")
@@ -39,7 +39,7 @@ func TestRecordingFindingReplayScopeAndTerminalEvidence(t *testing.T) {
 		t.Fatal(err)
 	}
 	f.CallID = call
-	if err := s.PutRecordingFinding(ctx, f); err != nil {
+	if err := s.PutMediaFinding(ctx, f); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.ApplyCallFindings(ctx, "default", f.ProjectID, call, []store.Finding{}); err != nil {
@@ -52,16 +52,16 @@ func TestRecordingFindingReplayScopeAndTerminalEvidence(t *testing.T) {
 	}
 	wrong := f
 	wrong.ProjectID = "recording-two"
-	if err := s.PutRecordingFinding(ctx, wrong); !errors.Is(err, store.ErrNotFound) {
+	if err := s.PutMediaFinding(ctx, wrong); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("cross-project call accepted: %v", err)
 	}
 	wrong.CallID = ""
-	if err := s.PutRecordingFinding(ctx, wrong); err != nil {
+	if err := s.PutMediaFinding(ctx, wrong); err != nil {
 		t.Fatal(err)
 	}
 	f.EventID = "EV_limit"
 	f.Status = "EGRESS_LIMIT_REACHED"
-	if err := s.PutRecordingFinding(ctx, f); err != nil {
+	if err := s.PutMediaFinding(ctx, f); err != nil {
 		t.Fatal(err)
 	}
 	var detail string
@@ -70,7 +70,7 @@ func TestRecordingFindingReplayScopeAndTerminalEvidence(t *testing.T) {
 	}
 	f.EventID = "EV_complete"
 	f.Status = "EGRESS_COMPLETE"
-	if err := s.PutRecordingFinding(ctx, f); err == nil {
+	if err := s.PutMediaFinding(ctx, f); err == nil {
 		t.Fatal("healthy completion accepted as failure")
 	}
 	var count int

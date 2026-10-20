@@ -316,7 +316,7 @@ func Worker(ctx context.Context, c config.Config, log *slog.Logger) error {
 		return nil
 	})
 	g.Go(func() error {
-		every(gctx, summarizeEvery, "recording backfill", joiner.BackfillRecordings, log)
+		every(gctx, summarizeEvery, "recording backfill", joiner.BackfillMediaFindings, log)
 		return nil
 	})
 	g.Go(func() error {

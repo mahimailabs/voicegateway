@@ -138,6 +138,17 @@ type IssueJobObservation struct {
 	EvaluatedJoinedAt            pgtype.Timestamptz
 }
 
+type IssueMediaBackfill struct {
+	OrganisationID string
+	ProjectID      string
+	CursorNs       int64
+	CursorKey      string
+	Revision       int64
+	Done           bool
+	RetryAt        pgtype.Timestamptz
+	Failures       int32
+}
+
 type IssueOccurrence struct {
 	OrganisationID string
 	ProjectID      string
@@ -149,17 +160,6 @@ type IssueOccurrence struct {
 	Active         bool
 	ObservedAt     pgtype.Timestamptz
 	SourceLayer    string
-}
-
-type IssueRecordingBackfill struct {
-	OrganisationID string
-	ProjectID      string
-	CursorNs       int64
-	CursorKey      string
-	Revision       int64
-	Done           bool
-	RetryAt        pgtype.Timestamptz
-	Failures       int32
 }
 
 type IssueSource struct {

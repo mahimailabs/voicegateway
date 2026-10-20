@@ -16,18 +16,22 @@ import (
 
 type failedRecordingRead struct{ join.Traces }
 
-func (f failedRecordingRead) RecordingEvents(context.Context, store.RecordingBackfill) ([]store.Event, error) {
+func (f failedRecordingRead) MediaEvents(context.Context, store.MediaBackfill) ([]store.Event, error) {
 	return nil, errors.New("source unavailable")
 }
 
-func TestRecordingBackfillBatchBoundaryFailureAndRestart(t *testing.T) {
+func TestMediaBackfillBatchBoundaryFailureAndRestart(t *testing.T) {
 	f := newFixture(t)
 	ctx := context.Background()
 	received := time.Now().UTC().Truncate(time.Second).Add(123456789 * time.Nanosecond)
 	rows := make([]store.Event, 101)
 	for i := range rows {
 		id := fmt.Sprintf("EV_%03d", i)
-		body := f.webhook(&livekit.WebhookEvent{Event: "egress_ended", Id: id, CreatedAt: at(base), EgressInfo: &livekit.EgressInfo{EgressId: fmt.Sprintf("EG_%03d", i), Status: livekit.EgressStatus_EGRESS_FAILED}})
+		ev := &livekit.WebhookEvent{Event: "egress_ended", Id: id, CreatedAt: at(base), EgressInfo: &livekit.EgressInfo{EgressId: fmt.Sprintf("EG_%03d", i), Status: livekit.EgressStatus_EGRESS_FAILED}}
+		if i%2 == 1 {
+			ev = &livekit.WebhookEvent{Event: "ingress_ended", Id: id, CreatedAt: at(base), IngressInfo: &livekit.IngressInfo{IngressId: fmt.Sprintf("IN_%03d", i), State: &livekit.IngressState{Status: livekit.IngressState_ENDPOINT_ERROR}}}
+		}
+		body := f.webhook(ev)
 		rows[i] = store.Event{OrganisationID: "default", ProjectID: f.project, Kind: string(event.KindLiveKitWebhook), EventID: id, DedupeKey: id, StreamID: id, ReceivedAt: received, Payload: body}
 	}
 	if err := f.events.Insert(ctx, rows); err != nil {
@@ -35,32 +39,32 @@ func TestRecordingBackfillBatchBoundaryFailureAndRestart(t *testing.T) {
 	}
 	j := *f.joiner
 	j.Traces = failedRecordingRead{Traces: f.events}
-	if err := j.BackfillRecordings(ctx, time.Now()); err != nil {
+	if err := j.BackfillMediaFindings(ctx, time.Now()); err != nil {
 		t.Fatal(err)
 	}
 	var ns, revision int64
 	var failures, count int
 	var done bool
-	if err := f.pool.QueryRow(ctx, "SELECT cursor_ns,failures,done FROM issue_recording_backfills WHERE project_id=$1", f.project).Scan(&ns, &failures, &done); err != nil || ns != 0 || failures != 1 || done {
+	if err := f.pool.QueryRow(ctx, "SELECT cursor_ns,failures,done FROM issue_media_backfills WHERE project_id=$1", f.project).Scan(&ns, &failures, &done); err != nil || ns != 0 || failures != 1 || done {
 		t.Fatalf("failed read advanced: %d %d %v %v", ns, failures, done, err)
 	}
-	if _, err := f.pool.Exec(ctx, "UPDATE issue_recording_backfills SET retry_at=now() WHERE project_id=$1", f.project); err != nil {
+	if _, err := f.pool.Exec(ctx, "UPDATE issue_media_backfills SET retry_at=now() WHERE project_id=$1", f.project); err != nil {
 		t.Fatal(err)
 	}
-	if err := f.joiner.BackfillRecordings(ctx, time.Now()); err != nil {
+	if err := f.joiner.BackfillMediaFindings(ctx, time.Now()); err != nil {
 		t.Fatal(err)
 	}
-	if err := f.pool.QueryRow(ctx, "SELECT cursor_ns,revision,done FROM issue_recording_backfills WHERE project_id=$1", f.project).Scan(&ns, &revision, &done); err != nil || ns != received.UnixNano() || done {
+	if err := f.pool.QueryRow(ctx, "SELECT cursor_ns,revision,done FROM issue_media_backfills WHERE project_id=$1", f.project).Scan(&ns, &revision, &done); err != nil || ns != received.UnixNano() || done {
 		t.Fatalf("first page cursor: %d %d %v %v", ns, revision, done, err)
 	}
 	if err := f.pool.QueryRow(ctx, "SELECT count(*) FROM issue_occurrences WHERE project_id=$1", f.project).Scan(&count); err != nil || count != 100 {
 		t.Fatalf("first page: %d %v", count, err)
 	}
 	// Simulate a crash after findings committed but before the cursor checkpoint.
-	if _, err := f.pool.Exec(ctx, "UPDATE issue_recording_backfills SET cursor_ns=0,cursor_key='',revision=revision+1 WHERE project_id=$1", f.project); err != nil {
+	if _, err := f.pool.Exec(ctx, "UPDATE issue_media_backfills SET cursor_ns=0,cursor_key='',revision=revision+1 WHERE project_id=$1", f.project); err != nil {
 		t.Fatal(err)
 	}
-	if err := f.joiner.BackfillRecordings(ctx, time.Now()); err != nil {
+	if err := f.joiner.BackfillMediaFindings(ctx, time.Now()); err != nil {
 		t.Fatal(err)
 	}
 	if err := f.pool.QueryRow(ctx, "SELECT count(*) FROM issue_occurrences WHERE project_id=$1", f.project).Scan(&count); err != nil || count != 100 {
@@ -68,22 +72,22 @@ func TestRecordingBackfillBatchBoundaryFailureAndRestart(t *testing.T) {
 	}
 	// A new worker resumes the persisted cursor, including the tie-breaking event key.
 	restarted := *f.joiner
-	if err := restarted.BackfillRecordings(ctx, time.Now()); err != nil {
+	if err := restarted.BackfillMediaFindings(ctx, time.Now()); err != nil {
 		t.Fatal(err)
 	}
 	if err := f.pool.QueryRow(ctx, "SELECT count(*) FROM issue_occurrences WHERE project_id=$1", f.project).Scan(&count); err != nil || count != 101 {
 		t.Fatalf("restart: %d %v", count, err)
 	}
-	stale := store.RecordingBackfill{OrganisationID: "default", ProjectID: f.project, Revision: revision}
-	if err := f.stack.calls.AdvanceRecordingBackfill(ctx, stale, 0, "", false); err != nil {
+	stale := store.MediaBackfill{OrganisationID: "default", ProjectID: f.project, Revision: revision}
+	if err := f.stack.calls.AdvanceMediaBackfill(ctx, stale, 0, "", false); err != nil {
 		t.Fatal(err)
 	}
-	if err := f.pool.QueryRow(ctx, "SELECT done,cursor_ns FROM issue_recording_backfills WHERE project_id=$1", f.project).Scan(&done, &ns); err != nil || !done || ns != received.UnixNano() {
+	if err := f.pool.QueryRow(ctx, "SELECT done,cursor_ns FROM issue_media_backfills WHERE project_id=$1", f.project).Scan(&done, &ns); err != nil || !done || ns != received.UnixNano() {
 		t.Fatalf("stale checkpoint regressed: %v %d %v", done, ns, err)
 	}
 }
 
-func TestRecordingBackfillRetainedEventAfterCallDeletion(t *testing.T) {
+func TestMediaBackfillRetainedEventAfterCallDeletion(t *testing.T) {
 	f := newFixture(t)
 	ctx := context.Background()
 	call, err := f.stack.calls.UpsertCall(ctx, store.CallUpsert{OrganisationID: "default", ProjectID: f.project, RoomSID: "RM_deleted", StartedAt: &base})
@@ -98,7 +102,7 @@ func TestRecordingBackfillRetainedEventAfterCallDeletion(t *testing.T) {
 	if _, err := f.pool.Exec(ctx, "DELETE FROM calls WHERE id=$1", call); err != nil {
 		t.Fatal(err)
 	}
-	if err := f.joiner.BackfillRecordings(ctx, time.Now()); err != nil {
+	if err := f.joiner.BackfillMediaFindings(ctx, time.Now()); err != nil {
 		t.Fatal(err)
 	}
 	var linked *string

@@ -837,36 +837,36 @@ FROM issue_sources WHERE organisation_id = @organisation_id AND project_id = @pr
 ORDER BY layer;
 
 
--- name: EnsureRecordingIssue :exec
+-- name: EnsureMediaIssue :exec
 INSERT INTO issues (organisation_id, project_id, id, title, kind, source, severity)
-VALUES (@organisation_id, @project_id, 'recording-lost', 'Recording lost or cut short', 'event', 'delivery', 'high')
+VALUES (@organisation_id, @project_id, @id, @title, 'event', 'delivery', 'high')
 ON CONFLICT (organisation_id, project_id, id) DO UPDATE SET title=EXCLUDED.title;
 
--- name: UpsertRecordingOccurrence :execrows
+-- name: UpsertMediaOccurrence :execrows
 INSERT INTO issue_occurrences (organisation_id, project_id, issue_id, source_id, source_layer, call_id, occurred_at, detail)
-VALUES (@organisation_id, @project_id, 'recording-lost', @source_id, 'egress_events', sqlc.narg(call_id), sqlc.narg(occurred_at), @detail)
+VALUES (@organisation_id, @project_id, @issue_id, @source_id, @source_layer, sqlc.narg(call_id), sqlc.narg(occurred_at), @detail)
 ON CONFLICT (organisation_id, project_id, issue_id, source_id) DO UPDATE
 SET call_id=EXCLUDED.call_id
 WHERE issue_occurrences.call_id IS NULL AND EXCLUDED.call_id IS NOT NULL
  AND issue_occurrences.detail = EXCLUDED.detail AND issue_occurrences.occurred_at IS NOT DISTINCT FROM EXCLUDED.occurred_at;
 
 
--- name: InitRecordingBackfills :exec
-INSERT INTO issue_recording_backfills (organisation_id, project_id)
+-- name: InitMediaBackfills :exec
+INSERT INTO issue_media_backfills (organisation_id, project_id)
 SELECT organisation_id, id FROM projects
 ON CONFLICT DO NOTHING;
 
--- name: PendingRecordingBackfills :many
-SELECT * FROM issue_recording_backfills
+-- name: PendingMediaBackfills :many
+SELECT * FROM issue_media_backfills
 WHERE NOT done AND retry_at <= now()
 ORDER BY retry_at, organisation_id, project_id LIMIT 10;
 
--- name: AdvanceRecordingBackfill :execrows
-UPDATE issue_recording_backfills SET cursor_ns= @cursor_ns, cursor_key= @cursor_key,
+-- name: AdvanceMediaBackfill :execrows
+UPDATE issue_media_backfills SET cursor_ns= @cursor_ns, cursor_key= @cursor_key,
  done= @done, revision=revision+1, failures=0, retry_at=now()
 WHERE organisation_id= @organisation_id AND project_id= @project_id AND revision= @expected_revision;
 
--- name: DeferRecordingBackfill :exec
-UPDATE issue_recording_backfills SET failures=least(failures+1,12), revision=revision+1,
+-- name: DeferMediaBackfill :exec
+UPDATE issue_media_backfills SET failures=least(failures+1,12), revision=revision+1,
  retry_at=now() + least(3600, 10 * power(2,least(failures,9))) * interval '1 second'
 WHERE organisation_id= @organisation_id AND project_id= @project_id AND revision= @expected_revision;

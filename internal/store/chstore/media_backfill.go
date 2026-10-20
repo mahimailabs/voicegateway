@@ -8,15 +8,15 @@ import (
 	"github.com/mahimailabs/voicegateway/internal/store"
 )
 
-// RecordingEvents reads a bounded, deterministic page including events without call links.
-func (s *Store) RecordingEvents(ctx context.Context, b store.RecordingBackfill) ([]store.Event, error) {
+// MediaEvents reads a bounded, deterministic page including events without call links.
+func (s *Store) MediaEvents(ctx context.Context, b store.MediaBackfill) ([]store.Event, error) {
 	rows, err := s.conn.Query(ctx, `SELECT dedupe_key,event_id,received_at,payload,toString(call_id)
  FROM events FINAL WHERE organisation_id=? AND project_id=? AND kind=?
- AND JSONExtractString(payload,'event')='egress_ended'
+ AND JSONExtractString(payload,'event') IN ('egress_ended','ingress_ended')
  AND (toUnixTimestamp64Nano(received_at),dedupe_key) > (?,?)
  ORDER BY received_at,dedupe_key LIMIT 100`, b.OrganisationID, b.ProjectID, string(event.KindLiveKitWebhook), b.CursorNS, b.CursorKey)
 	if err != nil {
-		return nil, fmt.Errorf("read recording backfill: %w", err)
+		return nil, fmt.Errorf("read media finding backfill: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
 	out := make([]store.Event, 0, 100)

@@ -108,3 +108,12 @@ For terminal recording evidence, use protocol v1.52.1 EgressStatus and native
 WebhookEvent identity. FAILED/ABORTED mean lost; LIMIT_REACHED means cut short.
 Do not persist raw error text or output URLs in issue descriptions. Event identity
 is scoped by organisation and project, independently of whether a call is linked.
+
+
+Native ingress webhook verification now passes against pinned livekit-server v1.13.3:
+TestIngressErrorEmitsSignedTerminalWebhook sends PUBLISHING, ERROR and PUBLISHING
+through protocol v1.52.1 IOInfoClient over Redis. It receives the server's actual HTTP
+webhooks and verifies signatures with webhook.ReceiveWebhookEvent. The error event
+is ingress_ended with ENDPOINT_ERROR; recovery is ingress_started with PUBLISHING.
+Both carry native event IDs and creation timestamps. This verifies native server
+state/event propagation, not an encoder or ingress media pipeline's failure detection.

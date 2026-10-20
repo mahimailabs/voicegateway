@@ -82,7 +82,7 @@ CREATE TABLE issue_job_observations (
 CREATE INDEX issue_job_observations_room ON issue_job_observations (organisation_id, project_id, room_sid);
 
 -- Nanosecond cursor matches ClickHouse DateTime64(9), without Postgres timestamp truncation.
-CREATE TABLE issue_recording_backfills (
+CREATE TABLE issue_media_backfills (
  organisation_id text NOT NULL,
  project_id text NOT NULL,
  cursor_ns bigint NOT NULL DEFAULT 0,
