@@ -44,10 +44,12 @@ type Issue struct {
 	Metadata   IssueMetadata `json:"metadata"`
 }
 type IssueHit struct {
-	At     *time.Time `json:"at"`
-	Where  string     `json:"where"`
-	Detail string     `json:"detail"`
-	CallID *string    `json:"callId"`
+	ObservedAt    *time.Time `json:"observedAt"`
+	EvidenceState string     `json:"evidenceState"`
+	At            *time.Time `json:"at"`
+	Where         string     `json:"where"`
+	Detail        string     `json:"detail"`
+	CallID        *string    `json:"callId"`
 }
 type IssueFilter struct {
 	From, To time.Time
@@ -61,4 +63,23 @@ type IssueFilter struct {
 type PendingFindings struct {
 	OrganisationID, ProjectID, ID string
 	Revision                      int64
+}
+
+// FindingKey identifies one rule on one component. Coverage is explicit: an unknown field cannot
+// clear its previous finding merely because the surrounding component read succeeded.
+type FindingKey struct {
+	IssueID  string `json:"issueId"`
+	SourceID string `json:"sourceId"`
+}
+type StandingFinding struct {
+	Finding
+	SourceID string
+	Where    string
+}
+type StandingEvaluation struct {
+	Findings []StandingFinding
+	Covered  []FindingKey
+	// Subjects contains every component in a successful complete source snapshot. An absent
+	// subject has been deleted; a present subject with unknown fields preserves those findings.
+	Subjects []string
 }

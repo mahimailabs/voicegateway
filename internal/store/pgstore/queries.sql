@@ -657,11 +657,19 @@ FOR UPDATE;
 SELECT i.id, i.title, i.kind, i.source, i.severity,
        i.state, i.decided_at, i.evidence_revision, i.reviewed_evidence_revision,
        i.metadata_revision, i.tags, i.archived,
-       o.occurred_at, o.detail, o.call_id
+       o.occurred_at, o.detail, o.call_id,
+       (CASE WHEN i.kind = 'standing' THEN o.observed_at ELSE NULL END)::timestamptz AS observed_at,
+       CASE WHEN i.kind = 'event' THEN 'recorded'
+            WHEN src.read_at IS NULL THEN 'unknown'
+            WHEN NOT src.ok THEN 'unavailable'
+            WHEN src.fresh_until < now() THEN 'stale'
+            WHEN o.observed_at < src.good_at THEN 'unknown'
+            ELSE 'current' END::text AS evidence_state
 FROM issues i
 JOIN issue_occurrences o ON o.organisation_id = i.organisation_id
     AND o.project_id = i.project_id AND o.issue_id = i.id
 LEFT JOIN call_list c ON c.id = o.call_id AND c.organisation_id = i.organisation_id AND c.project_id = i.project_id
+LEFT JOIN issue_sources src ON src.organisation_id = o.organisation_id AND src.project_id = o.project_id AND src.layer = o.source_layer
 WHERE i.organisation_id = @organisation_id AND i.project_id = @project_id
   AND o.active AND (o.call_id IS NULL OR c.servable)
   AND (i.kind = 'standing' OR (o.occurred_at >= @from_at AND o.occurred_at < @to_at))
@@ -699,3 +707,36 @@ WHERE id = @id AND organisation_id = @organisation_id AND project_id = @project_
 UPDATE calls SET issue_failures = LEAST(issue_failures + 1, 10),
  issue_retry_at = now() + LEAST(interval '10 seconds' * power(2, LEAST(issue_failures, 9)), interval '1 hour')
 WHERE id = @id AND issue_evaluation_revision = @expected_revision;
+
+-- name: ClaimIssueSource :execrows
+INSERT INTO issue_sources (organisation_id, project_id, layer, read_at, good_at, fresh_until, ok, error_class)
+VALUES (@organisation_id, @project_id, @layer, @read_at, CASE WHEN @ok::boolean THEN @read_at::timestamptz ELSE NULL END, @fresh_until, @ok, @error_class)
+ON CONFLICT (organisation_id, project_id, layer) DO UPDATE
+SET read_at = EXCLUDED.read_at, good_at = CASE WHEN EXCLUDED.ok THEN EXCLUDED.read_at ELSE issue_sources.good_at END,
+    fresh_until = EXCLUDED.fresh_until, ok = EXCLUDED.ok, error_class = EXCLUDED.error_class
+WHERE issue_sources.read_at < EXCLUDED.read_at;
+
+-- name: EnsureStandingIssue :exec
+INSERT INTO issues (organisation_id, project_id, id, title, kind, source, severity)
+VALUES (@organisation_id, @project_id, @id, @title, 'standing', @source, @severity)
+ON CONFLICT (organisation_id, project_id, id) DO UPDATE SET title = EXCLUDED.title, severity = EXCLUDED.severity;
+
+-- name: UpsertStandingOccurrence :execrows
+INSERT INTO issue_occurrences (organisation_id, project_id, issue_id, source_id, source_layer, detail)
+VALUES (@organisation_id, @project_id, @issue_id, @source_id, @source_layer, @detail)
+ON CONFLICT (organisation_id, project_id, issue_id, source_id) DO UPDATE
+SET detail = EXCLUDED.detail, active = true, observed_at = now()
+WHERE NOT issue_occurrences.active OR issue_occurrences.detail IS DISTINCT FROM EXCLUDED.detail;
+
+-- name: DeactivateStandingFindings :execrows
+UPDATE issue_occurrences o SET active = false
+WHERE o.organisation_id = @organisation_id AND o.project_id = @project_id AND o.source_layer = @source_layer AND o.active
+AND (NOT (o.source_id = ANY(@subjects::text[])) OR (
+    @covered::jsonb @> jsonb_build_array(jsonb_build_object('issueId', o.issue_id, 'sourceId', o.source_id))
+    AND NOT (@present::jsonb @> jsonb_build_array(jsonb_build_object('issueId', o.issue_id, 'sourceId', o.source_id)))
+));
+
+-- name: ConfirmStandingFindings :exec
+UPDATE issue_occurrences o SET observed_at = @read_at
+WHERE o.organisation_id = @organisation_id AND o.project_id = @project_id AND o.source_layer = @source_layer
+AND @present::jsonb @> jsonb_build_array(jsonb_build_object('issueId', o.issue_id, 'sourceId', o.source_id));

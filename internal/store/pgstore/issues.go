@@ -203,7 +203,7 @@ func (s *Store) ListIssues(ctx context.Context, org, project string, filter stor
 		if err := json.Unmarshal(row.Detail, &detail); err != nil {
 			return store.IssueList{}, fmt.Errorf("decode issue occurrence: %w", err)
 		}
-		hit := store.IssueHit{At: timeOf(row.OccurredAt), Where: detail.Where, Detail: detail.Detail}
+		hit := store.IssueHit{ObservedAt: timeOf(row.ObservedAt), EvidenceState: row.EvidenceState, At: timeOf(row.OccurredAt), Where: detail.Where, Detail: detail.Detail}
 		if row.CallID.Valid {
 			id := row.CallID.String()
 			hit.CallID = &id

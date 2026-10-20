@@ -475,16 +475,19 @@ describe("settings reads", () => {
     expect((await get(`${base}/settings`)).body.revision).toBe(1)
   })
 
-  test("issue decisions come back as saved, in RFC 3339, and a malformed one is left out", async () => {
-    const at = Date.UTC(2026, 9, 17, 10, 0, 0)
-    storage({ "vg.issue-state": { slow: { state: "resolved", at }, sip: { state: "ignored", at }, bad: { state: "maybe", at }, undated: { state: "resolved" } } })
-    const { status, body } = await get(`${base}/issue-dispositions`)
-    expect(status).toBe(200)
-    expect(valid("IssueDispositions", body)).toBe("")
-    expect(body.items).toEqual([
-      { issueId: "slow", state: "resolved", at: "2026-10-17T10:00:00.000Z" },
-      { issueId: "sip", state: "ignored", at: "2026-10-17T10:00:00.000Z" },
-    ])
+  test("issue metadata persists through the scoped API and refuses stale writes", async () => {
+    storage({})
+    const path=`${base}/issues/slow/metadata`
+    const before=(await get(path)).body
+    expect(valid("IssueMetadata",before)).toBe("")
+    const body={state:"resolved",tags:[" Follow-up "],archived:true,revision:before.revision,evidenceRevision:before.evidenceRevision}
+    const save=()=>fetch(path,{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)})
+    expect((await save()).status).toBe(200)
+    const saved=(await get(path)).body
+    expect(valid("IssueMetadata",saved)).toBe("")
+    expect(saved).toMatchObject({state:"resolved",tags:["follow-up"],archived:true,revision:before.revision+1})
+    expect(saved.decidedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/)
+    expect((await save()).status).toBe(409)
   })
 
   test("alert setup names every rule; an unchanged rule is on and sends nowhere, and an unknown channel is dropped", async () => {
@@ -531,7 +534,7 @@ describe("settings reads", () => {
     const { body } = await get("http://console.test/api/v1/workspaces")
     expect(valid("Workspaces", body)).toBe("")
     expect(body.items.flatMap((o: { id: string; projects: { id: string }[] }) => o.projects.map((p) => `${o.id}/${p.id}`))).toEqual(["default/default-project"])
-    for (const path of ["settings", "issue-dispositions", "alert-setup"]) {
+    for (const path of ["settings", "issues/slow/metadata", "alert-setup"]) {
       const res = await get(`http://console.test/api/v1/org/default/project/elsewhere/${path}`)
       expect(res.status).toBe(404)
       expect(valid("Error", res.body)).toBe("")

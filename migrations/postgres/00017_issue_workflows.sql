@@ -40,3 +40,16 @@ ALTER TABLE calls ADD COLUMN issue_source_available boolean NOT NULL DEFAULT fal
 ALTER TABLE calls ADD COLUMN issue_retry_at timestamptz;
 ALTER TABLE calls ADD COLUMN issue_failures integer NOT NULL DEFAULT 0;
 ALTER TABLE calls ADD COLUMN issue_evaluation_revision bigint NOT NULL DEFAULT 0;
+ALTER TABLE issue_occurrences ADD COLUMN source_layer text NOT NULL DEFAULT 'calls';
+CREATE TABLE issue_sources (
+    organisation_id text NOT NULL,
+    project_id text NOT NULL,
+    layer text NOT NULL,
+    read_at timestamptz NOT NULL,
+    good_at timestamptz,
+    fresh_until timestamptz NOT NULL,
+    ok boolean NOT NULL,
+    error_class text NOT NULL,
+    PRIMARY KEY (organisation_id, project_id, layer),
+    FOREIGN KEY (organisation_id, project_id) REFERENCES projects (organisation_id, id) ON DELETE CASCADE
+);

@@ -102,3 +102,41 @@ and unchanged summaries. Go lint and SQL generation checks pass. The full native
 exercises a backlog larger than one sweep; targeted native checks pass. A clean full final run
 is still required before merge.
 Standing findings and webhook delivery remain open; the roadmap task stays unchecked.
+
+Standing-source implementation is in progress. SIP polling now evaluates native redacted trunk
+and dispatch projections and persists findings with source read health. Per-component rule
+coverage preserves earlier findings when a successful read omits an individual field. Failed
+reads preserve evidence; newer explicit healthy reads or confirmed component deletion clear it.
+Out-of-order reads cannot replace newer observations, and unchanged readings do not regress a
+resolved decision. Each positive finding has its own last-confirmed source timestamp. The API and
+UI distinguish current, stale, unavailable and unconfirmed standing evidence; event hits remain
+recorded evidence. Storage lifecycle and SIP rule tests pass; final integration gates are pending.
+
+SIP evidence audit (2026-10-20): LiveKit Docs MCP secure-trunking and inbound-trunk pages, plus
+protocol v1.52.1 SIPTransport/SIPMediaEncryption and the existing projectSIP projection. Explicit
+UDP/TCP is distinguished from AUTO, which does not establish negotiated transport. Trunk media
+configuration is not proof of negotiated media or per-call overrides. Redacted phone suffixes
+cannot establish duplicate full numbers, so that preview heuristic is not promoted to a native
+finding. The worker uses existing SDK clients and projections, without additional provider calls.
+
+Sources: https://docs.livekit.io/telephony/features/secure-trunking/ and
+https://docs.livekit.io/telephony/accepting-calls/inbound-trunk/.
+
+Cloud deployment evaluation is wired to the existing Cloud agent poller. Explicit failure status
+strings produce a finding per agent; unknown/new status strings do not clear previous evidence.
+Sleeping is a reported non-failure state, not proof of failed dispatch or a reason to recommend
+paid hosting. The native protocol exposes status as a string, so the evaluator keeps unknown
+values unknown. Job outcomes and join latency still need their own source evaluation; deployment
+status is not substituted for either. Source: protocol v1.52.1 AgentDeployment.status and
+https://docs.livekit.io/deploy/agents/quickstart/.
+
+Standing checkpoint validation: targeted native race tests (source lifecycle, list freshness,
+SIP/Cloud rule evaluation), Go lint, SQL generation, API schema/provenance, TypeScript, all 233
+frontend tests and 88 browser/accessibility checks pass. This does not complete the broader issue
+workflow: job failures/join latency, call rule parity and overall source coverage still need work,
+followed by a clean full native run and PR review. No roadmap checkbox is advanced.
+
+Join-source audit: call_participants already stores the native participant identity and join time
+(internal/join/webhook.go). Job correlation must use that identity and the job ID within the same
+project and immutable call, not an agent-name-only match across jobs. The media projection alone
+omits participant identity; using its first participant would risk attributing the wrong join.

@@ -55,6 +55,12 @@ function range(q: URLSearchParams): { from: Date; to: Date } | string {
 const SNAPSHOT = "captured"
 
 export const handlers = [
+ http.get(`${project}/issues/:issueId/metadata`,({params})=>{
+  if(!known(params)) return fail(404,"not_found","No such project.")
+  const selected=settingsScope(params),id=String(params.issueId)
+  if(!issueList(new Date(0),new Date(Date.now()+60000),selected).items.some(i=>i.id===id)) return fail(404,"not_found","No such issue.")
+  return HttpResponse.json(issueMetadataOf(selected,id))
+ }),
  http.put(`${project}/issues/:issueId/metadata`,async({params,request})=>{
   if(!known(params)) return fail(404,"not_found","No such project.")
   const selected=settingsScope(params), id=String(params.issueId)

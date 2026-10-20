@@ -228,6 +228,8 @@ func Worker(ctx context.Context, c config.Config, log *slog.Logger) error {
 	})
 	g.Go(func() error {
 		return (&scrape.SIPScraper{
+			Findings: pgstore.NewStore(pool, nil),
+			Changed:  live.Notify,
 			Projects: pgstore.NewStore(pool, sealer),
 			Samples:  events,
 			Lock:     &scrape.RedisLock{Client: rdb},
@@ -264,6 +266,7 @@ func Worker(ctx context.Context, c config.Config, log *slog.Logger) error {
 	})
 	g.Go(func() error {
 		return (&scrape.CloudAgentScraper{
+			Findings: pgstore.NewStore(pool, nil),
 			Changed:  live.Notify,
 			Projects: pgstore.NewStore(pool, sealer),
 			Samples:  events,

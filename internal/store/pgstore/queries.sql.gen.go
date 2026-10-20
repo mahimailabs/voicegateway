@@ -368,6 +368,41 @@ func (q *Queries) ClaimBackfillFindings(ctx context.Context, arg ClaimBackfillFi
 	return result.RowsAffected(), nil
 }
 
+const claimIssueSource = `-- name: ClaimIssueSource :execrows
+INSERT INTO issue_sources (organisation_id, project_id, layer, read_at, good_at, fresh_until, ok, error_class)
+VALUES ($1, $2, $3, $4, CASE WHEN $5::boolean THEN $4::timestamptz ELSE NULL END, $6, $5, $7)
+ON CONFLICT (organisation_id, project_id, layer) DO UPDATE
+SET read_at = EXCLUDED.read_at, good_at = CASE WHEN EXCLUDED.ok THEN EXCLUDED.read_at ELSE issue_sources.good_at END,
+    fresh_until = EXCLUDED.fresh_until, ok = EXCLUDED.ok, error_class = EXCLUDED.error_class
+WHERE issue_sources.read_at < EXCLUDED.read_at
+`
+
+type ClaimIssueSourceParams struct {
+	OrganisationID string
+	ProjectID      string
+	Layer          string
+	ReadAt         pgtype.Timestamptz
+	Ok             bool
+	FreshUntil     pgtype.Timestamptz
+	ErrorClass     string
+}
+
+func (q *Queries) ClaimIssueSource(ctx context.Context, arg ClaimIssueSourceParams) (int64, error) {
+	result, err := q.db.Exec(ctx, claimIssueSource,
+		arg.OrganisationID,
+		arg.ProjectID,
+		arg.Layer,
+		arg.ReadAt,
+		arg.Ok,
+		arg.FreshUntil,
+		arg.ErrorClass,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const clearStale = `-- name: ClearStale :exec
 UPDATE calls SET summary_stale_at = NULL, summary_failures = 0
 WHERE id = $1 AND summary_stale_at = $2
@@ -399,6 +434,31 @@ func (q *Queries) CloseIdleCalls(ctx context.Context, idleSince pgtype.Timestamp
 		return 0, err
 	}
 	return result.RowsAffected(), nil
+}
+
+const confirmStandingFindings = `-- name: ConfirmStandingFindings :exec
+UPDATE issue_occurrences o SET observed_at = $1
+WHERE o.organisation_id = $2 AND o.project_id = $3 AND o.source_layer = $4
+AND $5::jsonb @> jsonb_build_array(jsonb_build_object('issueId', o.issue_id, 'sourceId', o.source_id))
+`
+
+type ConfirmStandingFindingsParams struct {
+	ReadAt         pgtype.Timestamptz
+	OrganisationID string
+	ProjectID      string
+	SourceLayer    string
+	Present        []byte
+}
+
+func (q *Queries) ConfirmStandingFindings(ctx context.Context, arg ConfirmStandingFindingsParams) error {
+	_, err := q.db.Exec(ctx, confirmStandingFindings,
+		arg.ReadAt,
+		arg.OrganisationID,
+		arg.ProjectID,
+		arg.SourceLayer,
+		arg.Present,
+	)
+	return err
 }
 
 const countAdmins = `-- name: CountAdmins :one
@@ -647,6 +707,39 @@ func (q *Queries) DeactivateCallFindings(ctx context.Context, arg DeactivateCall
 	return result.RowsAffected(), nil
 }
 
+const deactivateStandingFindings = `-- name: DeactivateStandingFindings :execrows
+UPDATE issue_occurrences o SET active = false
+WHERE o.organisation_id = $1 AND o.project_id = $2 AND o.source_layer = $3 AND o.active
+AND (NOT (o.source_id = ANY($4::text[])) OR (
+    $5::jsonb @> jsonb_build_array(jsonb_build_object('issueId', o.issue_id, 'sourceId', o.source_id))
+    AND NOT ($6::jsonb @> jsonb_build_array(jsonb_build_object('issueId', o.issue_id, 'sourceId', o.source_id)))
+))
+`
+
+type DeactivateStandingFindingsParams struct {
+	OrganisationID string
+	ProjectID      string
+	SourceLayer    string
+	Subjects       []string
+	Covered        []byte
+	Present        []byte
+}
+
+func (q *Queries) DeactivateStandingFindings(ctx context.Context, arg DeactivateStandingFindingsParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deactivateStandingFindings,
+		arg.OrganisationID,
+		arg.ProjectID,
+		arg.SourceLayer,
+		arg.Subjects,
+		arg.Covered,
+		arg.Present,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const deferCallFindings = `-- name: DeferCallFindings :exec
 UPDATE calls SET issue_failures = LEAST(issue_failures + 1, 10),
  issue_retry_at = now() + LEAST(interval '10 seconds' * power(2, LEAST(issue_failures, 9)), interval '1 hour')
@@ -753,6 +846,33 @@ type EnsureProjectSettingsParams struct {
 
 func (q *Queries) EnsureProjectSettings(ctx context.Context, arg EnsureProjectSettingsParams) error {
 	_, err := q.db.Exec(ctx, ensureProjectSettings, arg.OrganisationID, arg.ProjectID)
+	return err
+}
+
+const ensureStandingIssue = `-- name: EnsureStandingIssue :exec
+INSERT INTO issues (organisation_id, project_id, id, title, kind, source, severity)
+VALUES ($1, $2, $3, $4, 'standing', $5, $6)
+ON CONFLICT (organisation_id, project_id, id) DO UPDATE SET title = EXCLUDED.title, severity = EXCLUDED.severity
+`
+
+type EnsureStandingIssueParams struct {
+	OrganisationID string
+	ProjectID      string
+	ID             string
+	Title          string
+	Source         string
+	Severity       string
+}
+
+func (q *Queries) EnsureStandingIssue(ctx context.Context, arg EnsureStandingIssueParams) error {
+	_, err := q.db.Exec(ctx, ensureStandingIssue,
+		arg.OrganisationID,
+		arg.ProjectID,
+		arg.ID,
+		arg.Title,
+		arg.Source,
+		arg.Severity,
+	)
 	return err
 }
 
@@ -1249,11 +1369,19 @@ const listIssueOccurrences = `-- name: ListIssueOccurrences :many
 SELECT i.id, i.title, i.kind, i.source, i.severity,
        i.state, i.decided_at, i.evidence_revision, i.reviewed_evidence_revision,
        i.metadata_revision, i.tags, i.archived,
-       o.occurred_at, o.detail, o.call_id
+       o.occurred_at, o.detail, o.call_id,
+       (CASE WHEN i.kind = 'standing' THEN o.observed_at ELSE NULL END)::timestamptz AS observed_at,
+       CASE WHEN i.kind = 'event' THEN 'recorded'
+            WHEN src.read_at IS NULL THEN 'unknown'
+            WHEN NOT src.ok THEN 'unavailable'
+            WHEN src.fresh_until < now() THEN 'stale'
+            WHEN o.observed_at < src.good_at THEN 'unknown'
+            ELSE 'current' END::text AS evidence_state
 FROM issues i
 JOIN issue_occurrences o ON o.organisation_id = i.organisation_id
     AND o.project_id = i.project_id AND o.issue_id = i.id
 LEFT JOIN call_list c ON c.id = o.call_id AND c.organisation_id = i.organisation_id AND c.project_id = i.project_id
+LEFT JOIN issue_sources src ON src.organisation_id = o.organisation_id AND src.project_id = o.project_id AND src.layer = o.source_layer
 WHERE i.organisation_id = $1 AND i.project_id = $2
   AND o.active AND (o.call_id IS NULL OR c.servable)
   AND (i.kind = 'standing' OR (o.occurred_at >= $3 AND o.occurred_at < $4))
@@ -1292,6 +1420,8 @@ type ListIssueOccurrencesRow struct {
 	OccurredAt               pgtype.Timestamptz
 	Detail                   []byte
 	CallID                   pgtype.UUID
+	ObservedAt               pgtype.Timestamptz
+	EvidenceState            string
 }
 
 func (q *Queries) ListIssueOccurrences(ctx context.Context, arg ListIssueOccurrencesParams) ([]ListIssueOccurrencesRow, error) {
@@ -1327,6 +1457,8 @@ func (q *Queries) ListIssueOccurrences(ctx context.Context, arg ListIssueOccurre
 			&i.OccurredAt,
 			&i.Detail,
 			&i.CallID,
+			&i.ObservedAt,
+			&i.EvidenceState,
 		); err != nil {
 			return nil, err
 		}
@@ -2955,6 +3087,38 @@ func (q *Queries) UpsertParticipant(ctx context.Context, arg UpsertParticipantPa
 		arg.LeftAt,
 	)
 	return err
+}
+
+const upsertStandingOccurrence = `-- name: UpsertStandingOccurrence :execrows
+INSERT INTO issue_occurrences (organisation_id, project_id, issue_id, source_id, source_layer, detail)
+VALUES ($1, $2, $3, $4, $5, $6)
+ON CONFLICT (organisation_id, project_id, issue_id, source_id) DO UPDATE
+SET detail = EXCLUDED.detail, active = true, observed_at = now()
+WHERE NOT issue_occurrences.active OR issue_occurrences.detail IS DISTINCT FROM EXCLUDED.detail
+`
+
+type UpsertStandingOccurrenceParams struct {
+	OrganisationID string
+	ProjectID      string
+	IssueID        string
+	SourceID       string
+	SourceLayer    string
+	Detail         []byte
+}
+
+func (q *Queries) UpsertStandingOccurrence(ctx context.Context, arg UpsertStandingOccurrenceParams) (int64, error) {
+	result, err := q.db.Exec(ctx, upsertStandingOccurrence,
+		arg.OrganisationID,
+		arg.ProjectID,
+		arg.IssueID,
+		arg.SourceID,
+		arg.SourceLayer,
+		arg.Detail,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const useInvitation = `-- name: UseInvitation :one

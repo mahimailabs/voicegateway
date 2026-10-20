@@ -127,6 +127,18 @@ type IssueOccurrence struct {
 	Detail         []byte
 	Active         bool
 	ObservedAt     pgtype.Timestamptz
+	SourceLayer    string
+}
+
+type IssueSource struct {
+	OrganisationID string
+	ProjectID      string
+	Layer          string
+	ReadAt         pgtype.Timestamptz
+	GoodAt         pgtype.Timestamptz
+	FreshUntil     pgtype.Timestamptz
+	Ok             bool
+	ErrorClass     string
 }
 
 type ListSnapshot struct {

@@ -11,7 +11,7 @@ import { useIssueMetadata } from "./issue-state"
 import { type Columns, DataTable, type Field } from "@/components/data-table"
 import { DataGridColumnHeader } from "@/components/reui/data-grid/data-grid-column-header"
 import { cn } from "@/lib/utils"
-import { type Issue, type Severity, issuesFrom, lastSeen, lastSortKey } from "./issues-model"
+import { type Issue, type Severity, issuesFrom, lastSeen, lastSortKey, standingState, evidenceLabel } from "./issues-model"
 import { useQuery } from "@tanstack/react-query"
 import { QueryState } from "@/components/page-state"
 import { issuesQuery } from "@/lib/api"
@@ -19,8 +19,7 @@ import { useUrlState } from "@/lib/url-state"
 
 // Issues: every finding the console computes, grouped so a pattern across calls reads as one row
 // (decision 0021). Open a row for the calls or components it was found on. A standing issue is
-// current state (an agent or phone bridge check over the latest read): it reads "Current", not a
-// time, and is counted apart from the problems that happened.
+// component state with explicit source freshness, counted separately from events.
 
 const dot: Record<Severity, string> = { high: "bg-destructive", medium: "bg-amber-500", low: "bg-muted-foreground/50", info: "bg-muted-foreground/30" }
 const sourceIcon = { Calls: PhoneCall, "Agent workers": Robot, "Phone bridge": Phone }
@@ -31,7 +30,7 @@ function Hits({ issue }: { issue: Issue }) {
     <ul className="divide-y">
       {issue.hits.map((h, k) => (
         <li key={k} className="grid grid-cols-[120px_minmax(0,220px)_minmax(0,1fr)] items-baseline gap-4 py-2.5 text-[13px]">
-          <span className="text-muted-foreground tnum">{issue.kind === "standing" ? "Current" : h.at === null ? "Unknown" : day(h.at)}</span>
+          <span className="text-muted-foreground tnum">{issue.kind === "standing" ? evidenceLabel[h.evidenceState] : h.at === null ? "Unknown" : day(h.at)}</span>
           {h.callId ? (
             <Link to="/calls/$callId" params={{ callId: h.callId }} className="truncate font-mono text-[12px] hover:underline">
               {h.where}
@@ -58,9 +57,9 @@ function Last({ i }: { i: Issue }) {
     return (
       <Tooltip>
         <TooltipTrigger asChild>
-          <span className="cursor-help">Current</span>
+          <span className="cursor-help">{evidenceLabel[standingState(i)]}</span>
         </TooltipTrigger>
-        <TooltipContent className="text-xs">True of the latest read whatever the range, not an event in it.</TooltipContent>
+        <TooltipContent className="text-xs">{standingState(i) === "current" ? "Confirmed by the latest source read." : "Earlier evidence is preserved. The latest source read cannot currently confirm it."}</TooltipContent>
       </Tooltip>
     )
   return <span className="tnum">{t === null ? "Unknown" : day(t)}</span>
@@ -170,7 +169,7 @@ const fields: Field<Issue>[] = [
     icon: <Clock />,
     options: [
       { value: "event", label: "Happened in range" },
-      { value: "standing", label: "Current state" },
+      { value: "standing", label: "Component state" },
     ],
     get: (i) => i.kind,
   },
@@ -279,8 +278,8 @@ function IssuesView({ all, complete }: { all: Issue[]; complete: boolean }) {
         </h1>
         <p className="text-[13px] text-muted-foreground">
           {current.length
-            ? `Plus ${current.length} current ${current.length === 1 ? "state" : "states"}${currentHigh ? `, ${currentHigh} high,` : ""} on agent workers and the phone bridge, true now whatever the range.`
-            : complete ? "No open current state on agent workers or the phone bridge." : "Standing-source coverage is incomplete."}
+            ? `Plus ${current.length} component ${current.length === 1 ? "finding" : "findings"}${currentHigh ? ` (${currentHigh} high)` : ""}. Source freshness is shown per finding.`
+            : complete ? "No open component findings." : "Standing-source coverage is incomplete."}
         </p>
       </header>
       {!complete && <p role="status" className="text-[13px] text-muted-foreground">Source coverage is incomplete. Listed findings are recorded evidence; missing findings do not establish recovery.</p>}
@@ -325,7 +324,7 @@ function IssuesView({ all, complete }: { all: Issue[]; complete: boolean }) {
           />
         </TabsContent>
       </Tabs>
-      <p className="text-[12px] text-muted-foreground">Decisions are shared across the project. A resolved issue regresses when new evidence is observed. "Current" is a check on the latest read of agents or the phone bridge, not an event with a time.</p>
+      <p className="text-[12px] text-muted-foreground">Decisions are shared across the project. A resolved issue regresses when new evidence is observed. "Current" means confirmed by the latest source read. Unknown or unavailable sources preserve earlier evidence.</p>
     </div>
   )
 }

@@ -1181,7 +1181,7 @@ export type IssueList = {
      */
     complete: boolean;
     /**
-     * Event issues with a hit in the range, and every standing issue whatever the range, high severity first, then by hits. Grouping, titles and severities are the ones in issues-model.ts.
+     * Event issues with a hit in the range, and every standing issue whatever the range, high severity first, then by stable rule ID. Grouping, titles and severities come from persisted native evaluations.
      */
     items: Array<{
         metadata: IssueMetadata;
@@ -1194,7 +1194,7 @@ export type IssueList = {
          */
         title: string;
         /**
-         * event: something that happened, each hit dated and kept only when from <= at < to. standing: a state true of the latest read (an agent worker or phone bridge check over what LiveKit lists now), listed in every range with undated hits and never counted as a problem in the range.
+         * event: something that happened, each hit dated and kept only when from <= at < to. standing: a component finding listed in every range. Its evidenceState distinguishes confirmed, stale, unavailable and unknown observations; it is never counted as an event in the range.
          */
         kind: 'event' | 'standing';
         /**
@@ -1206,13 +1206,21 @@ export type IssueList = {
          */
         source: 'calls' | 'agent_workers' | 'phone_bridge';
         /**
-         * Most recent hit, UTC. Compared with a disposition's time to mark a resolved issue as regressed.
+         * Most recent event hit, UTC. Regression uses the persisted evidence revision, independently of event time.
          */
         lastSeenAt: string | null;
         /**
          * Where the issue was found, most recent first. Never empty.
          */
         hits: Array<{
+            /**
+             * Last source read that confirmed this standing finding.
+             */
+            observedAt: string | null;
+            /**
+             * Recorded event, currently confirmed standing finding, stale source, failed source, or unconfirmed latest read.
+             */
+            evidenceState: 'recorded' | 'current' | 'stale' | 'unavailable' | 'unknown';
             /**
              * When the hit happened, UTC.
              */

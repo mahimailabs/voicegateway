@@ -4991,8 +4991,8 @@ components:
           x-source: { kind: computed, file: docs/api/coverage.md, pointer: null, detail: "false when part of the range is not stored, so an issue may have more hits than listed." }
         items:
           type: array
-          description: "Event issues with a hit in the range, and every standing issue whatever the range, high severity first, then by hits. Grouping, titles and severities are the ones in issues-model.ts."
-          x-source: { kind: computed, file: dashboard/src/features/issues/issues-model.ts, pointer: null, detail: "Event issues with a hit in the range, and every standing issue whatever the range, high severity first, then by hits. Grouping, titles and severities are the ones in issues-model.ts." }
+          description: "Event issues with a hit in the range, and every standing issue whatever the range, high severity first, then by stable rule ID. Grouping, titles and severities come from persisted native evaluations."
+          x-source: { kind: computed, file: dashboard/src/features/issues/issues-model.ts, pointer: null, detail: "Event issues with a hit in the range, and every standing issue whatever the range, high severity first, then by stable rule ID. Grouping, titles and severities come from persisted native evaluations." }
           items:
             type: object
             additionalProperties: false
@@ -5012,8 +5012,8 @@ components:
               kind:
                 type: string
                 enum: [ event, standing ]
-                description: "event: something that happened, each hit dated and kept only when from <= at < to. standing: a state true of the latest read (an agent worker or phone bridge check over what LiveKit lists now), listed in every range with undated hits and never counted as a problem in the range."
-                x-source: { kind: computed, file: dashboard/src/features/issues/issues-model.ts, pointer: null, detail: "Call findings are events dated by the call's start; Agent workers and Phone bridge checks run over the current read, so they are standing." }
+                description: "event: something that happened, each hit dated and kept only when from <= at < to. standing: a component finding listed in every range. Its evidenceState distinguishes confirmed, stale, unavailable and unknown observations; it is never counted as an event in the range."
+                x-source: { kind: computed, file: dashboard/src/features/issues/issues-model.ts, pointer: null, detail: "Call findings are events dated by the call's start; Component checks preserve prior findings when source reads fail or omit required fields." }
               severity:
                 type: string
                 enum: [ high, medium, low, info ]
@@ -5027,9 +5027,9 @@ components:
               lastSeenAt:
                 type: [ string, "null" ]
                 format: date-time
-                description: "Most recent hit, UTC. Compared with a disposition's time to mark a resolved issue as regressed."
-                x-null-reason: "A standing issue, whose hits carry no time because it is true now."
-                x-source: { kind: computed, file: dashboard/src/features/issues/issues-model.ts, pointer: null, detail: "Most recent hit, UTC. Compared with a disposition's time to mark a resolved issue as regressed." }
+                description: "Most recent event hit, UTC. Regression uses the persisted evidence revision, independently of event time."
+                x-null-reason: "Standing findings use observedAt and evidenceState on each hit instead."
+                x-source: { kind: computed, file: dashboard/src/features/issues/issues-model.ts, pointer: null, detail: "Most recent event hit, UTC. Regression uses the persisted evidence revision, independently of event time." }
               hits:
                 type: array
                 description: "Where the issue was found, most recent first. Never empty."
@@ -5037,8 +5037,19 @@ components:
                 items:
                   type: object
                   additionalProperties: false
-                  required: [ at, where, detail, callId ]
+                  required: [ at, where, detail, callId, observedAt, evidenceState ]
                   properties:
+                    observedAt:
+                      type: [ string, "null" ]
+                      format: date-time
+                      description: Last source read that confirmed this standing finding.
+                      x-null-reason: Event hits use at instead.
+                      x-source: { kind: computed, file: internal/store/pgstore/issues.go, pointer: null, detail: Persisted last positive observation, not refreshed by unknown fields. }
+                    evidenceState:
+                      type: string
+                      enum: [ recorded, current, stale, unavailable, unknown ]
+                      description: Recorded event, currently confirmed standing finding, stale source, failed source, or unconfirmed latest read.
+                      x-source: { kind: computed, file: internal/store/pgstore/issues.go, pointer: null, detail: Source read health and expiry compared with the last confirmed finding. }
                     at:
                       type: [ string, "null" ]
                       format: date-time

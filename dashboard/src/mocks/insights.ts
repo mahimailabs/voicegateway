@@ -55,7 +55,7 @@ export function issues(): Omit<Issue, "metadata">[] {
       const kind = f.id.replace(/\d+$/, "")
       const i = byKind.get(kind) ?? { id: kind, title: kinds[kind] ?? f.title, kind: "event" as const, severity: f.severity, source: "Calls" as const, to: "/calls" as const, hits: [] }
       if (rank[f.severity] < rank[i.severity]) i.severity = f.severity
-      i.hits.push({ at: Number.isFinite(at) ? at : null, where: c.room, detail: f.title, callId: c.id })
+      i.hits.push({observedAt:null,evidenceState:"recorded", at: Number.isFinite(at) ? at : null, where: c.room, detail: f.title, callId: c.id })
       byKind.set(kind, i)
     }
   }
@@ -63,7 +63,7 @@ export function issues(): Omit<Issue, "metadata">[] {
     const m = new Map<string, Omit<Issue, "metadata">>()
     for (const c of list) {
       const i = m.get(c.title) ?? { id: `${to}:${c.title}`, title: c.title, kind: "standing" as const, severity: c.severity, source, to, hits: [] }
-      i.hits.push({ at: null, where: c.where, detail: c.why })
+      i.hits.push({observedAt:null,evidenceState:"unknown", at: null, where: c.where, detail: c.why })
       m.set(c.title, i)
     }
     return [...m.values()]
@@ -125,7 +125,7 @@ export function issueList(from: Date, to: Date, scope = "default/default-project
         source: source[i.source],
         lastSeenAt: times.length ? iso(Math.max(...times)) : null,
         // Most recent first, as the contract orders them.
-        hits: [...hits].sort((a, b) => (b.at ?? -Infinity) - (a.at ?? -Infinity)).map((h) => ({ at: standing ? null : iso(h.at), where: h.where, detail: h.detail, callId: h.callId ?? null })),
+        hits: [...hits].sort((a, b) => (b.at ?? -Infinity) - (a.at ?? -Infinity)).map((h) => ({observedAt:iso(h.observedAt),evidenceState:h.evidenceState, at: standing ? null : iso(h.at), where: h.where, detail: h.detail, callId: h.callId ?? null })),
       }
     })
     .filter((i) => i.hits.length > 0)
