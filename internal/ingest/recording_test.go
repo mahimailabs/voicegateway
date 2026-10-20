@@ -177,3 +177,40 @@ func TestUploadRecordingsOffDiscards(t *testing.T) {
 		t.Fatalf("%d puts, discarded %v, recording %+v; want none stored", bucket.calls, got.AudioDiscarded, got.Recording)
 	}
 }
+
+// continuedQuota is at its cap but still continues reports of calls it already counted.
+type continuedQuota struct{ quotaResult }
+
+func (continuedQuota) Continue(context.Context, string, string, event.Kind, []byte) (bool, error) {
+	return true, nil
+}
+
+// At the cap no audio reaches the bucket: a refused report would leave it unlinked, and a report
+// the quota continues keeps its transcript without audio.
+func TestUploadAtCapStoresNoAudio(t *testing.T) {
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	for _, c := range []struct {
+		name     string
+		quota    Quota
+		status   int
+		appended int
+	}{
+		{"refused", quotaResult{warning: 100}, http.StatusPaymentRequired, 0},
+		{"continued", continuedQuota{quotaResult{warning: 100}}, http.StatusOK, 1},
+		{"quota down", quotaResult{err: errors.New("down")}, http.StatusServiceUnavailable, 0},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			body, ctype := sessionUpload(t, headerPart(t), part{"audio", "recording.ogg", []byte("ogg")})
+			bucket, stream := &fakeAudio{}, &envelopes{}
+			u := &Uploads{Quota: c.quota, Projects: recordingProject{}, Stream: stream, Audio: bucket, Log: log, Now: time.Now}
+			rec := send(http.HandlerFunc(u.SessionReport), bearer(t, testKey, testSecret, true), "", ctype, body)
+			if rec.Code != c.status || bucket.calls != 0 || len(stream.got) != c.appended {
+				t.Fatalf("status %d, %d puts, %d appended; want %d, no puts, %d appended", rec.Code, bucket.calls, len(stream.got), c.status, c.appended)
+			}
+			var got event.SessionReport
+			if c.appended == 1 && (json.Unmarshal(stream.got[0].Payload, &got) != nil || !got.AudioDiscarded || got.Recording != nil) {
+				t.Fatalf("continued report recording %+v, discarded %v", got.Recording, got.AudioDiscarded)
+			}
+		})
+	}
+}

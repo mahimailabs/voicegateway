@@ -87,10 +87,11 @@ func (u *Uploads) SessionReport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, maxSessionUpload)
-	// Every upload, this one with its audio included, passes verify before any body is read, so a
-	// check there that refuses an upload also keeps its audio out of the bucket.
+	// The quota is decided when the report is appended, after the audio has been read. An
+	// organisation at its cap therefore stores no audio: a refused report would leave it unlinked,
+	// and a report its quota still continues keeps only its transcript.
 	var keep audioSink
-	if keys.project.Recordings {
+	if keys.project.Recordings && u.audioAllowed(r.Context(), keys.project.OrganisationID) {
 		keep = u.storeAudio(r.Context(), keys.project)
 	}
 	report, jobID, err := readSessionReport(r, keep)
@@ -248,6 +249,16 @@ type audioSink func(h *livekit.MetricsRecordingHeader, part *multipart.Part) (*e
 type storeError struct{ err error }
 
 func (e *storeError) Error() string { return "store recording: " + e.err.Error() }
+
+// audioAllowed reports whether the organisation is under its cap. Without a quota (self-hosted)
+// audio is always allowed; a quota that cannot answer allows none, and the append answers 503.
+func (u *Uploads) audioAllowed(ctx context.Context, org string) bool {
+	if u.Quota == nil {
+		return true
+	}
+	allowed, _, err := u.Quota.Check(ctx, org)
+	return err == nil && allowed
+}
 
 // storeAudio streams the audio part to the bucket, named by the header's job id. The part's own
 // Content-Length, which LiveKit Agents sends, lets the bucket take it in one request.
