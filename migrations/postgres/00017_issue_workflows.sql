@@ -48,6 +48,7 @@ CREATE TABLE issue_sources (
     read_at timestamptz NOT NULL,
     good_at timestamptz,
     fresh_until timestamptz NOT NULL,
+    evaluation_complete boolean NOT NULL DEFAULT false,
     ok boolean NOT NULL,
     error_class text NOT NULL,
     PRIMARY KEY (organisation_id, project_id, layer),

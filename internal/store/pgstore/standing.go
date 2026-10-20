@@ -45,7 +45,7 @@ func (s *Store) ApplyStandingFindings(ctx context.Context, read store.LayerRead,
 	defer func() { _ = tx.Rollback(ctx) }()
 	q := s.q.WithTx(tx)
 	freshUntil := read.ReadAt.Add(3 * read.Every)
-	n, err := q.ClaimIssueSource(ctx, ClaimIssueSourceParams{OrganisationID: read.OrganisationID, ProjectID: read.ProjectID, Layer: read.Layer, ReadAt: timestamp(&read.ReadAt), Ok: read.OK, FreshUntil: timestamp(&freshUntil), ErrorClass: read.ErrorClass})
+	n, err := q.ClaimIssueSource(ctx, ClaimIssueSourceParams{OrganisationID: read.OrganisationID, ProjectID: read.ProjectID, Layer: read.Layer, ReadAt: timestamp(&read.ReadAt), Ok: read.OK, FreshUntil: timestamp(&freshUntil), ErrorClass: read.ErrorClass, EvaluationComplete: read.OK && evaluation != nil && !evaluation.Incomplete})
 	if err != nil {
 		return err
 	}

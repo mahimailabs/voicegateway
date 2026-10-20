@@ -152,14 +152,15 @@ type IssueOccurrence struct {
 }
 
 type IssueSource struct {
-	OrganisationID string
-	ProjectID      string
-	Layer          string
-	ReadAt         pgtype.Timestamptz
-	GoodAt         pgtype.Timestamptz
-	FreshUntil     pgtype.Timestamptz
-	Ok             bool
-	ErrorClass     string
+	OrganisationID     string
+	ProjectID          string
+	Layer              string
+	ReadAt             pgtype.Timestamptz
+	GoodAt             pgtype.Timestamptz
+	FreshUntil         pgtype.Timestamptz
+	EvaluationComplete bool
+	Ok                 bool
+	ErrorClass         string
 }
 
 type ListSnapshot struct {

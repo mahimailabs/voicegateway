@@ -184,9 +184,31 @@ func (s *Store) ListIssues(ctx context.Context, org, project string, filter stor
 	if err != nil {
 		return store.IssueList{}, err
 	}
-	// Call rules are persisted, but standing-source evaluation and historical coverage are not
-	// complete yet. Do not present an empty list as proof that all sources are healthy.
-	out := store.IssueList{From: filter.From, To: filter.To, Complete: false, Items: []store.Issue{}}
+
+	evaluation, err := q.IssueEvaluationCoverage(ctx, IssueEvaluationCoverageParams{OrganisationID: org, ProjectID: project, FromAt: timestamp(&filter.From), ToAt: timestamp(&filter.To)})
+	if err != nil {
+		return store.IssueList{}, err
+	}
+	sources, err := q.IssueSourceCoverage(ctx, IssueSourceCoverageParams{OrganisationID: org, ProjectID: project})
+	if err != nil {
+		return store.IssueList{}, err
+	}
+	coverage := store.IssueCoverage{PendingCalls: evaluation.PendingCalls, UnavailableCalls: evaluation.UnavailableCalls, PendingJobs: evaluation.PendingJobs, Sources: []store.IssueSourceCoverage{}}
+	complete := evaluation.PendingCalls == 0 && evaluation.UnavailableCalls == 0 && evaluation.PendingJobs == 0
+	for _, layer := range []string{store.LayerMediaServer, store.LayerSIP, store.LayerCloudAgents, store.LayerEgress, store.LayerIngress} {
+		source := store.IssueSourceCoverage{Layer: layer, State: "unknown"}
+		for _, row := range sources {
+			if row.Layer == layer {
+				source.State = row.State
+				source.ReadAt = timeOf(row.ReadAt)
+				break
+			}
+		}
+		coverage.Sources = append(coverage.Sources, source)
+		complete = complete && source.State == "current"
+	}
+	out := store.IssueList{From: filter.From, To: filter.To, Complete: complete, Coverage: coverage, Items: []store.Issue{}}
+
 	positions := map[string]int{}
 	for _, row := range rows {
 		pos, ok := positions[row.ID]

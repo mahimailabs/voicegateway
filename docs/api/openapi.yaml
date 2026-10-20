@@ -4973,7 +4973,7 @@ components:
     IssueList:
       type: object
       additionalProperties: false
-      required: [ from, to, complete, items ]
+      required: [ from, to, complete, coverage, items ]
       properties:
         from:
           type: string
@@ -4987,8 +4987,60 @@ components:
           x-source: { kind: computed, file: docs/api/coverage.md, pointer: null, detail: "Exclusive range end, UTC." }
         complete:
           type: boolean
-          description: "false when part of the range is not stored, so an issue may have more hits than listed."
-          x-source: { kind: computed, file: docs/api/coverage.md, pointer: null, detail: "false when part of the range is not stored, so an issue may have more hits than listed." }
+          description: "Whether retained calls in the selected range and project job observations are evaluated, and required component sources are fresh and fully evaluated. Does not prove complete upstream capture or absence of unreported failures."
+          x-source: { kind: computed, file: docs/api/coverage.md, pointer: null, detail: "Whether retained calls in the selected range and project job observations are evaluated, and required component sources are fresh and fully evaluated. Does not prove complete upstream capture or absence of unreported failures." }
+        coverage:
+          type: object
+          additionalProperties: false
+          required: [ pendingCalls, unavailableCalls, pendingJobs, sources ]
+          description: "Evaluation and source availability for retained evidence, independent of issue filters."
+          x-source: { kind: computed, file: internal/store/pgstore/issues.go, pointer: null, detail: "Read in the same snapshot as issue occurrences." }
+          properties:
+            pendingCalls:
+              type: [ integer, 'null' ]
+              x-unit: count
+              x-null-reason: "Evaluation counts could not be read."
+              minimum: 0
+              description: "Retained calls in the range awaiting evaluation, including retry backoff and changed thresholds."
+              x-source: { kind: computed, file: internal/store/pgstore/queries.sql, pointer: null, detail: "IssueEvaluationCoverage pending_calls." }
+            unavailableCalls:
+              type: [ integer, 'null' ]
+              x-unit: count
+              x-null-reason: "Evaluation counts could not be read."
+              minimum: 0
+              description: "Evaluated retained calls in the range whose source evidence was unavailable."
+              x-source: { kind: computed, file: internal/store/pgstore/queries.sql, pointer: null, detail: "IssueEvaluationCoverage unavailable_calls." }
+            pendingJobs:
+              type: [ integer, 'null' ]
+              x-unit: count
+              x-null-reason: "Evaluation counts could not be read."
+              minimum: 0
+              description: "Project job observations awaiting evaluation or correlation, across the retained history."
+              x-source: { kind: computed, file: internal/store/pgstore/queries.sql, pointer: null, detail: "IssueEvaluationCoverage pending_jobs." }
+            sources:
+              type: array
+              description: "Required component sources. Missing reads are unknown; successful reads with missing rule evidence are partial."
+              x-source: { kind: computed, file: internal/store/pgstore/issues.go, pointer: null, detail: "Explicit expected layer inventory, joined to latest stored source reads." }
+              items:
+                type: object
+                additionalProperties: false
+                required: [ layer, state, readAt ]
+                properties:
+                  layer:
+                    type: string
+                    enum: [ media_server, sip, cloud_agents, egress, ingress ]
+                    description: "Component source layer."
+                    x-source: { kind: computed, file: internal/store/layers.go, pointer: null, detail: "Native source layer identifiers." }
+                  state:
+                    type: string
+                    enum: [ unknown, current, partial, stale, unavailable ]
+                    description: "Current means fresh and evaluated, not healthy."
+                    x-source: { kind: computed, file: internal/store/pgstore/queries.sql, pointer: null, detail: "IssueSourceCoverage, with unknown for missing reads." }
+                  readAt:
+                    type: [ string, 'null' ]
+                    format: date-time
+                    description: "Latest source read time, or null when no read exists."
+                    x-source: { kind: computed, file: internal/store/pgstore/queries.sql, pointer: null, detail: "issue_sources.read_at." }
         items:
           type: array
           description: "Event issues with a hit in the range, and every standing issue whatever the range, high severity first, then by stable rule ID. Grouping, titles and severities come from persisted native evaluations."

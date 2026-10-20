@@ -28,10 +28,11 @@ type IssueMetadata struct {
 // IssueList is read from a single snapshot. It returns every matching occurrence, so table
 // filtering and totals do not depend on a partially loaded call list.
 type IssueList struct {
-	From     time.Time `json:"from"`
-	To       time.Time `json:"to"`
-	Complete bool      `json:"complete"`
-	Items    []Issue   `json:"items"`
+	Coverage IssueCoverage `json:"coverage"`
+	From     time.Time     `json:"from"`
+	To       time.Time     `json:"to"`
+	Complete bool          `json:"complete"`
+	Items    []Issue       `json:"items"`
 }
 type Issue struct {
 	ID         string        `json:"id"`
@@ -77,8 +78,9 @@ type StandingFinding struct {
 	Where    string
 }
 type StandingEvaluation struct {
-	Findings []StandingFinding
-	Covered  []FindingKey
+	Incomplete bool
+	Findings   []StandingFinding
+	Covered    []FindingKey
 	// Subjects contains every component in a successful complete source snapshot. An absent
 	// subject has been deleted; a present subject with unknown fields preserves those findings.
 	Subjects []string
@@ -96,4 +98,17 @@ type PendingJobFinding struct {
 type JobFinding struct {
 	Finding
 	At *time.Time
+}
+
+// IssueCoverage describes evaluation of retained evidence, not guaranteed upstream capture.
+type IssueCoverage struct {
+	PendingCalls     int64                 `json:"pendingCalls"`
+	UnavailableCalls int64                 `json:"unavailableCalls"`
+	PendingJobs      int64                 `json:"pendingJobs"`
+	Sources          []IssueSourceCoverage `json:"sources"`
+}
+type IssueSourceCoverage struct {
+	Layer  string     `json:"layer"`
+	State  string     `json:"state"`
+	ReadAt *time.Time `json:"readAt"`
 }

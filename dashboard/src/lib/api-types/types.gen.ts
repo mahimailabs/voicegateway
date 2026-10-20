@@ -1177,9 +1177,43 @@ export type IssueList = {
      */
     to: string;
     /**
-     * false when part of the range is not stored, so an issue may have more hits than listed.
+     * Whether retained calls in the selected range and project job observations are evaluated, and required component sources are fresh and fully evaluated. Does not prove complete upstream capture or absence of unreported failures.
      */
     complete: boolean;
+    /**
+     * Evaluation and source availability for retained evidence, independent of issue filters.
+     */
+    coverage: {
+        /**
+         * Retained calls in the range awaiting evaluation, including retry backoff and changed thresholds.
+         */
+        pendingCalls: number | null;
+        /**
+         * Evaluated retained calls in the range whose source evidence was unavailable.
+         */
+        unavailableCalls: number | null;
+        /**
+         * Project job observations awaiting evaluation or correlation, across the retained history.
+         */
+        pendingJobs: number | null;
+        /**
+         * Required component sources. Missing reads are unknown; successful reads with missing rule evidence are partial.
+         */
+        sources: Array<{
+            /**
+             * Component source layer.
+             */
+            layer: 'media_server' | 'sip' | 'cloud_agents' | 'egress' | 'ingress';
+            /**
+             * Current means fresh and evaluated, not healthy.
+             */
+            state: 'unknown' | 'current' | 'partial' | 'stale' | 'unavailable';
+            /**
+             * Latest source read time, or null when no read exists.
+             */
+            readAt: string | null;
+        }>;
+    };
     /**
      * Event issues with a hit in the range, and every standing issue whatever the range, high severity first, then by stable rule ID. Grouping, titles and severities come from persisted native evaluations.
      */

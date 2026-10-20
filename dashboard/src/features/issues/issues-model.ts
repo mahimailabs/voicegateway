@@ -49,3 +49,18 @@ export const evidenceLabel = { recorded:"Recorded",current:"Current",stale:"Stal
 export const lastSortKey = (i: Issue) => i.kind === "standing"
   ? standingState(i) === "current" ? Infinity : Math.max(...i.hits.map(h => h.observedAt ?? -Infinity))
   : lastSeen(i) ?? -Infinity
+
+export function coverageSummary(coverage: IssueList["coverage"]): string {
+  const parts: string[] = []
+  if (coverage.pendingCalls === null) parts.push("Call evaluation status unknown")
+  if (coverage.unavailableCalls === null) parts.push("Call evidence availability unknown")
+  if (coverage.pendingJobs === null) parts.push("Job evaluation status unknown")
+  if (coverage.pendingCalls) parts.push(`${coverage.pendingCalls} calls pending evaluation`)
+  if (coverage.unavailableCalls) parts.push(`${coverage.unavailableCalls} calls with unavailable evidence`)
+  if (coverage.pendingJobs) parts.push(`${coverage.pendingJobs} job observations pending evaluation`)
+  const labels = { media_server: "LiveKit SFU", sip: "SIP", cloud_agents: "Cloud agents", egress: "Egress", ingress: "Ingress" }
+  for (const source of coverage.sources) {
+    if (source.state !== "current") parts.push(`${labels[source.layer]}: ${source.state}`)
+  }
+  return parts.join(" · ")
+}

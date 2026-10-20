@@ -168,3 +168,16 @@ as a timing-based interpretation. Endpointing evidence no longer hides a measure
 finding. These local interpretations are not promoted to persisted issues without equivalent
 source correlation. All 243 frontend tests and dashboard lint/TypeScript checks pass for this audit.
 The outstanding work remains source coverage reporting, final native/browser gates and review.
+
+Coverage reporting now reads evaluation counts and source state in the same Postgres snapshot as
+issue occurrences. Pending calls include retry backoff and changed settings; unavailable calls
+have completed evaluation without retained source evidence. Pending job counts include late
+participant/call correlation and settings changes. Every expected component source is explicit;
+missing, failed, stale and partial reads remain distinguishable. SIP and Cloud evaluations mark
+missing rule evidence as partial. The existing Issues status line exposes these gaps.
+
+The complete flag describes evaluation of retained data and fresh component evidence, not a
+claim that every upstream call was captured or no unreported failure exists. Sources without an
+implemented native evaluation remain unknown, keeping the aggregate incomplete. Contract lint,
+source attribution and TypeScript validation pass; native coverage race tests and all 244 frontend tests pass
+for this checkpoint. No roadmap completion checkbox changes.

@@ -129,7 +129,7 @@ export function issueList(from: Date, to: Date, scope = "default/default-project
       }
     })
     .filter((i) => i.hits.length > 0)
-  return { from: from.toISOString(), to: to.toISOString(), complete: true, items }
+  return { from: from.toISOString(), to: to.toISOString(), complete: false, coverage: { pendingCalls: 0, unavailableCalls: 0, pendingJobs: 0, sources: [] }, items }
 }
 
 export function alertEvents(from: Date, to: Date): AlertEvents {

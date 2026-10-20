@@ -709,11 +709,11 @@ UPDATE calls SET issue_failures = LEAST(issue_failures + 1, 10),
 WHERE id = @id AND issue_evaluation_revision = @expected_revision;
 
 -- name: ClaimIssueSource :execrows
-INSERT INTO issue_sources (organisation_id, project_id, layer, read_at, good_at, fresh_until, ok, error_class)
-VALUES (@organisation_id, @project_id, @layer, @read_at, CASE WHEN @ok::boolean THEN @read_at::timestamptz ELSE NULL END, @fresh_until, @ok, @error_class)
+INSERT INTO issue_sources (organisation_id, project_id, layer, read_at, good_at, fresh_until, ok, error_class, evaluation_complete)
+VALUES (@organisation_id, @project_id, @layer, @read_at, CASE WHEN @ok::boolean THEN @read_at::timestamptz ELSE NULL END, @fresh_until, @ok, @error_class, @evaluation_complete)
 ON CONFLICT (organisation_id, project_id, layer) DO UPDATE
 SET read_at = EXCLUDED.read_at, good_at = CASE WHEN EXCLUDED.ok THEN EXCLUDED.read_at ELSE issue_sources.good_at END,
-    fresh_until = EXCLUDED.fresh_until, ok = EXCLUDED.ok, error_class = EXCLUDED.error_class
+    fresh_until = EXCLUDED.fresh_until, ok = EXCLUDED.ok, error_class = EXCLUDED.error_class, evaluation_complete = EXCLUDED.evaluation_complete
 WHERE issue_sources.read_at < EXCLUDED.read_at;
 
 -- name: EnsureStandingIssue :exec
@@ -807,3 +807,31 @@ WHERE NOT issue_occurrences.active OR issue_occurrences.detail IS DISTINCT FROM 
 UPDATE issue_occurrences SET active=false
 WHERE organisation_id = @organisation_id AND project_id = @project_id AND source_layer='jobs' AND source_id = @source_id
  AND active AND issue_id=ANY(@covered::text[]) AND NOT(issue_id=ANY(@present::text[]));
+
+-- name: IssueEvaluationCoverage :one
+SELECT
+ (SELECT count(*) FROM calls c JOIN call_list l ON l.id=c.id
+  LEFT JOIN project_settings s ON s.organisation_id=c.organisation_id AND s.project_id=c.project_id
+  WHERE c.organisation_id = @organisation_id AND c.project_id = @project_id AND l.servable
+   AND l.start_at >= @from_at AND l.start_at < @to_at
+   AND (c.summary_stale_at IS NOT NULL OR c.issue_evaluated_at IS NULL OR c.issue_settings_revision <> COALESCE(s.revision,0)))::bigint AS pending_calls,
+ (SELECT count(*) FROM calls c JOIN call_list l ON l.id=c.id
+  LEFT JOIN project_settings s ON s.organisation_id=c.organisation_id AND s.project_id=c.project_id
+  WHERE c.organisation_id = @organisation_id AND c.project_id = @project_id AND l.servable
+   AND l.start_at >= @from_at AND l.start_at < @to_at
+   AND c.summary_stale_at IS NULL AND c.issue_evaluated_at IS NOT NULL
+   AND c.issue_settings_revision = COALESCE(s.revision,0) AND NOT c.issue_source_available)::bigint AS unavailable_calls,
+ (SELECT count(*) FROM issue_job_observations j
+  LEFT JOIN calls c ON c.organisation_id=j.organisation_id AND c.project_id=j.project_id AND c.room_sid=j.room_sid
+  LEFT JOIN LATERAL (SELECT min(cp.joined_at)::timestamptz AS joined_at FROM call_participants cp
+   WHERE cp.call_id=c.id AND cp.kind='agent' AND cp.identity=j.participant_identity AND j.participant_identity<>'') p ON true
+  LEFT JOIN project_settings s ON s.organisation_id=j.organisation_id AND s.project_id=j.project_id
+  WHERE j.organisation_id = @organisation_id AND j.project_id = @project_id
+   AND (j.evaluated_observation_revision <> j.observation_revision OR j.evaluated_settings_revision <> COALESCE(s.revision,0)
+    OR j.evaluated_call_id IS DISTINCT FROM c.id OR j.evaluated_joined_at IS DISTINCT FROM p.joined_at))::bigint AS pending_jobs;
+
+-- name: IssueSourceCoverage :many
+SELECT layer, read_at, good_at,
+ CASE WHEN NOT ok THEN 'unavailable' WHEN fresh_until < now() THEN 'stale' WHEN NOT evaluation_complete THEN 'partial' ELSE 'current' END::text AS state
+FROM issue_sources WHERE organisation_id = @organisation_id AND project_id = @project_id
+ORDER BY layer;

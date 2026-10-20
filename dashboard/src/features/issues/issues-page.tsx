@@ -11,9 +11,10 @@ import { useIssueMetadata } from "./issue-state"
 import { type Columns, DataTable, type Field } from "@/components/data-table"
 import { DataGridColumnHeader } from "@/components/reui/data-grid/data-grid-column-header"
 import { cn } from "@/lib/utils"
-import { type Issue, type Severity, issuesFrom, lastSeen, lastSortKey, standingState, evidenceLabel } from "./issues-model"
+import { type Issue, type Severity, issuesFrom, lastSeen, lastSortKey, standingState, evidenceLabel, coverageSummary } from "./issues-model"
 import { useQuery } from "@tanstack/react-query"
 import { QueryState } from "@/components/page-state"
+import type { IssueList } from "@/lib/api-types"
 import { issuesQuery } from "@/lib/api"
 import { useUrlState } from "@/lib/url-state"
 
@@ -182,11 +183,12 @@ const viewLabel: Record<View, string> = { open: "Open", resolved: "Resolved", ig
 export function IssuesPage() {
   const read = useQuery(issuesQuery())
   const all = useMemo(() => (read.data ? issuesFrom(read.data) : null), [read.data])
-  if (!all || read.isError) return <QueryState icon={WarningCircle} what="issues" query={read} />
-  return <IssuesView all={all} complete={read.data?.complete ?? false} />
+  if (!all || !read.data || read.isError) return <QueryState icon={WarningCircle} what="issues" query={read} />
+  return <IssuesView all={all} complete={read.data.complete} coverage={read.data.coverage} />
 }
 
-function IssuesView({ all, complete }: { all: Issue[]; complete: boolean }) {
+function IssuesView({ all, complete, coverage }: { all: Issue[]; complete: boolean; coverage: IssueList["coverage"] }) {
+  const gaps = coverageSummary(coverage)
   const metadata = useIssueMetadata()
   const [view, setView] = useUrlState<View>("view", "open")
   const withStatus = all.map((i) => ({ i, st: { status: i.metadata.state, regressed: i.metadata.regressed } }))
@@ -282,7 +284,7 @@ function IssuesView({ all, complete }: { all: Issue[]; complete: boolean }) {
             : complete ? "No open component findings." : "Standing-source coverage is incomplete."}
         </p>
       </header>
-      {!complete && <p role="status" className="text-[13px] text-muted-foreground">Source coverage is incomplete. Listed findings are recorded evidence; missing findings do not establish recovery.</p>}
+      {!complete && <p role="status" className="text-[13px] text-muted-foreground">Source coverage is incomplete. {gaps ? `${gaps}. ` : ""}Listed findings are recorded evidence; missing findings do not establish recovery.</p>}
       <Tabs value={view} onValueChange={(v) => setView(v as View)}>
         <TabsList>
           {(["open", "resolved", "ignored", "archived"] as View[]).map((v) => (

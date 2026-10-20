@@ -40,6 +40,9 @@ func TestSIPFindingsUnknownFieldsCannotClearPriorEvidence(t *testing.T) {
 	}
 	cfg := &store.SIP{Inbound: []store.SIPInbound{{ID: "in"}}, Outbound: []store.SIPOutbound{{ID: "out", Transport: "SIP_TRANSPORT_AUTO"}}, Rules: []store.SIPRule{{ID: "rule", Type: "dispatchRuleIndividual"}}}
 	got := sipFindings(cfg)
+	if !got.Incomplete {
+		t.Fatal("missing source fields must report partial coverage")
+	}
 	for _, key := range []store.FindingKey{{IssueID: "sip:plain-phone", SourceID: "inbound:in"}, {IssueID: "sip:unrestricted-inbound", SourceID: "inbound:in"}, {IssueID: "sip:plain-signaling", SourceID: "outbound:out"}, {IssueID: "sip:phone-identity", SourceID: "rule:rule"}} {
 		if slices.Contains(got.Covered, key) {
 			t.Errorf("unknown field marked evaluated: %+v", key)

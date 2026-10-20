@@ -24,6 +24,7 @@ func sipFindings(cfg *store.SIP) *store.StandingEvaluation {
 	check := func(subject, rule string, known, failed bool, severity, title, detail string) {
 		id := store.LayerSIP + ":" + rule
 		if !known {
+			out.Incomplete = true
 			return
 		}
 		out.Covered = append(out.Covered, store.FindingKey{IssueID: id, SourceID: subject})
@@ -95,6 +96,9 @@ func cloudAgentFindings(cfg *store.CloudAgents) *store.StandingEvaluation {
 			}
 		}
 		rule := store.LayerCloudAgents + ":deployment-error"
+		if !known {
+			out.Incomplete = true
+		}
 		if known {
 			out.Covered = append(out.Covered, store.FindingKey{IssueID: rule, SourceID: subject})
 		}

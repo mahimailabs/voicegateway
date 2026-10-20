@@ -100,3 +100,18 @@ Recording metadata names a project-scoped media resource through `getRecordingMe
 `x-access` is the mandatory authorisation policy for these console reads. The browser session mechanism is intentionally not chosen by #321; its absence from an OpenAPI security-scheme binding does not permit anonymous reads. Project keys remain separate hashed, project-scoped ingest/MCP credentials and are not implicitly organisation membership. Embed credentials follow decision 0023: short-lived, read-only, one project and an allowed widget set, with an origin allow-list. They must not grant arbitrary console/settings access or expose the project API key to an iframe. Token minting and the eventual wire/session binding belong to the server/access workstream.
 
 `x-embed-access` marks the only reads an embed token may make, per widget: answer-time and turn-anatomy read `getCallStats`, calls reads `listCalls`, call reads `getCall` and `getRecordingMedia`, issues reads `listIssues`. Each requires one project, an origin allow-list and read-only use. `surfaces.json` `embedReads` lists the same pairs, and `make api-check` fails when an embed token would reach a read its widget does not need (settings, SIP, invitations, workspaces) or a widget's read lacks embed access. Every other read stays organisation-member only.
+
+## Persisted issue evaluation coverage
+
+IssueList.coverage is read in the same Postgres snapshot as its occurrences and metadata. Pending
+call counts include retry backoff, stale summaries and changed project thresholds, restricted to
+retained servable calls in the selected range. Unavailable calls were evaluated but lacked source
+evidence. Pending job counts cover project observations awaiting evaluation or exact call/participant
+correlation across retained history. Tag, archive and search filters do not hide these gaps.
+
+Component sources report unknown (no evaluation), unavailable (failed read), stale, partial (missing
+rule evidence), or current (fresh and fully evaluated). Current does not mean healthy: findings are
+reported separately. The complete flag requires zero pending/unavailable evaluations and current
+coverage for every expected source. It does not guarantee complete upstream capture, historical
+retention before collection, or the absence of unreported failures. Numeric counts may be null when
+unavailable and must never be displayed as zero in that case.
