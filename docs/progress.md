@@ -490,3 +490,32 @@ Preview.5 carries the startup correction and optional Cloud quotas. Its image pu
 
 
 Final release check: the unmodified `v1.0.0-preview.5` checkout and published image installed into a second empty Compose project successfully. All four preflight checks passed, then the documented admin and verified-project commands succeeded. Native LiveKit captured call `af95e734-b01c-43cc-82ab-7f60ab06d5f1`: 44.953 seconds, two participants, three turns, observed completion and measured response times of 1.23 s and 1.04 s. Authenticated reads returned the completed call. No Cloud entitlement was configured: self-hosted ingestion remained available. Both architecture image builds and publication passed. This is an automated fresh-environment rehearsal performed at the maintainer's request, not a claim of an independent teammate run.
+
+### 2026-10-20: observed SFU and worker updates (in review)
+
+The console now refreshes the existing project-scoped SFU, worker metrics and Cloud deployment
+reads at their source cadence (10, 15 and 60 seconds). Requests bind their scope, abort on
+unmount, time out and refetch on reconnect/focus. The API and client disable HTTP caching for
+these snapshots. The Live page no longer shifts and repeats historical rooms on today's clock:
+each room SID uses original timestamps, and its bar stops at its last observed sample.
+
+Source age, API disconnects and failed scrapes are visible independently. Three missed sampling
+intervals mark samples stale. Only a newer successful observation establishes that a room or
+worker is no longer listed; it does not establish a termination reason. Worker metrics show real
+per-endpoint load and active-job gauges, including missing values, failed endpoints and last
+sample times. Load is not labelled CPU utilization. A denied API read hides retained telemetry.
+
+See docs/specs/live-operations.md for acceptance and remaining scope. This is sampled monitoring,
+not the worker-pushed event feed tracked by #320. That checklist item, full self-hosted CPU/memory
+telemetry and capacity-runner execution remain open. The capacity/topology preview is unchanged.
+
+Validation: the full Docker-backed Go race suite and all 192 dashboard tests passed. Go/dashboard
+lint, TypeScript and API contract/source/type checks passed. All 72 browser/accessibility checks
+passed on the full rerun after two initial call-detail startup timeouts. The final native SFU/worker
+success, disappearance and failure tests passed with the no-store assertions. Pre-commit hooks
+passed. No hosted-onboarding or SES approval completion is claimed.
+
+PR #429 review follow-up: a shared QueryCache error handler clears denied SFU, worker and Cloud
+agent data for every observer, including the overview and command palette. It retains the error
+and refresh lifecycle so restored permission recovers without a reload. Regression tests cover
+401/403/404 across all three sources, another project's cache isolation, and restored access.

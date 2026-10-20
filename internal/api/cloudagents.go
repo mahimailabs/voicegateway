@@ -27,6 +27,8 @@ const (
 )
 
 func (a *API) cloudAgents(w http.ResponseWriter, r *http.Request) {
+	// Live snapshots must not be replayed from an HTTP cache.
+	w.Header().Set("Cache-Control", "no-store")
 	ctx := r.Context()
 	org, proj := chi.URLParam(r, "orgId"), chi.URLParam(r, "projectId")
 	st, ok := a.sampledLayer(w, r, store.LayerCloudAgents, "the project's API key has no agent admin grant, which ListAgents needs")
