@@ -120,3 +120,30 @@ test("a refreshed server revision preserves the unsaved draft and its original r
   expect((answer as HTMLInputElement).value).toBe("2.5")
   expect(writes).toEqual([{ thresholds: { answerMs: 2500, joinMs: 2000, ttsStartMs: 1000 }, revision: 0 }])
 })
+
+
+test("a denied save cancels an in-flight refresh before clearing settings", async () => {
+  let reads = 0
+  let finish!: (response: Response) => void
+  let signal: AbortSignal | undefined
+  vi.stubGlobal("fetch", async (request: Request) => {
+    if (request.method === "PUT") return json(403, { code: "forbidden", message: "Access revoked", requestId: "r" })
+    if (!request.url.includes("/settings")) return json(401, { code: "unauthorized", message: "Session expired", requestId: "r" })
+    if (++reads === 1) return json(200, initial)
+    signal = request.signal
+    return new Promise<Response>((resolve) => { finish = resolve })
+  })
+  const client = show()
+  const user = userEvent.setup()
+  const answer = await screen.findByRole("spinbutton", { name: "Answer time" })
+  await user.clear(answer); await user.type(answer, "2.5")
+  const key = ["settings", { org: "default", project: "p1" }]
+  void client.refetchQueries({ queryKey: key, exact: true })
+  await waitFor(() => expect(reads).toBe(2))
+  await user.click(screen.getByRole("button", { name: "Save changes" }))
+  await waitFor(() => expect(signal?.aborted).toBe(true))
+  finish(json(200, initial))
+  await waitFor(() => expect(client.getQueryData(key)).toBeUndefined())
+  expect(screen.queryByRole("spinbutton", { name: "Answer time" })).toBeNull()
+  expect(notices.saved).not.toHaveBeenCalled()
+})

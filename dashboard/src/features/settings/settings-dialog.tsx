@@ -905,8 +905,9 @@ function ThresholdsForm({ settings }: { settings: ProjectSettings }) {
       } })
       toast(variables.message, variables.undo ? { action: { label: "Undo", onClick: () => save.mutate({ thresholds: variables.undo!, revision: saved.revision, message: "Thresholds restored" }) } } : undefined)
     },
-    onError: (error) => {
+    onError: async (error) => {
       if (error instanceof ApiError && (error.status === 401 || error.status === 403)) {
+        await qc.cancelQueries({ queryKey: ["settings", selected], exact: true })
         qc.getQueryCache().find({ queryKey: ["settings", selected], exact: true })?.setState({ data: undefined, dataUpdatedAt: 0, error, status: "error" })
         void refreshSession().catch(() => toast.error("Could not refresh your session."))
       }
