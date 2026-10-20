@@ -549,6 +549,20 @@ Native persistence and HTTP regressions, fractional-budget effects, frontend fai
 
 Settings review follow-ups (2026-10-20): denied saves cancel outstanding settings reads before clearing cached data. The settings project picker now navigates by project ID instead of changing only its label; a document navigation resets prior-project drafts and observers. The full serial Docker-backed Go race run and 207 dashboard tests passed. All 80 browser/accessibility checks pass, including cross-project saves in desktop/mobile light/dark. An earlier concurrent run had one ClickHouse startup timeout; the serial rerun passed unchanged assertions. PR #432 still requires final hosted verification and review; the wider settings roadmap item remains incomplete.
 
+### 2026-10-20: project thresholds merged; connection display correction
+
+PR #432 merged as 12f5f75d after all hosted checks passed on 30aacaa4 and both review findings were
+fixed. Threshold conversions retain fractional milliseconds without enabling Save on an unchanged
+value. Project-key permission coverage includes both settings and worker routes.
+
+The remaining settings audit found that Organisation rendered the selected project's media-server
+URL for every project row. The correction binds each row's request and cache key to its own project
+ID and labels only the selected row Current project. Rendered regressions cover two distinct server
+URLs and a denied second project without fallback to another project's data. All 210 dashboard
+tests and frontend lint/types pass; browser verification and PR review are in progress.
+
+Account profile PR #433 is separately in review. The broader settings task remains open through
+its remaining dependencies; neither these fixes nor metadata storage alone completes issue workflows.
 
 ### 2026-10-20: account profile persistence (verification in progress)
 
@@ -560,3 +574,5 @@ the draft, and permission loss cancels pending reads before clearing retained da
 Native persistence/auth tests and 210 dashboard tests pass. The full Go race suite, all 80 preview browser/accessibility checks and lint/types passed;
 authenticated browser verification also passed for save/reload, fresh sign-in, a second project,
 mobile clearing and theme persistence. PR review remains pending. This follows threshold PR #432 and does not complete the broader settings task.
+
+Account profile PR #433 merged as cbf8aadf after all hosted checks passed on 39920a12. Manual review verified ownership, validation and conflict handling; CodeRabbit was rate-limited and supplied no approval. Project connection PR #434 is being revalidated against that merged account form. The broader settings task remains incomplete.
