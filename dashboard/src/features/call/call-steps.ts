@@ -214,6 +214,18 @@ export type Finding = { id: string; severity: "high" | "medium" | "info"; title:
 // Thresholds are settings (Settings → Thresholds), shared by every page.
 export { BUDGET_MS } from "@/lib/thresholds"
 
+// Match the persisted rule: exact native finish reason, never a substring match.
+function hasErrorReason(raw: string | undefined): boolean {
+  if (raw === "error") return true
+  if (!raw) return false
+  try {
+    const reasons: unknown = JSON.parse(raw)
+    return Array.isArray(reasons) && reasons.every((reason) => typeof reason === "string") && reasons.includes("error")
+  } catch {
+    return false
+  }
+}
+
 export function findingsFor(call: Call, model: CallModel): Finding[] {
   const f: Finding[] = []
   type Scored = TurnModel & { eot: { probability: number; threshold: number } }
@@ -259,7 +271,7 @@ export function findingsFor(call: Call, model: CallModel): Finding[] {
     f.push({ id: "late", severity: "medium", title: `The transcript arrived late on ${late.length === 1 ? `turn ${late[0].i + 1}` : `${late.length} turns`}`, detail: `Speech to text finished ${late.map(({ t }) => fmtMs(t.transcriptionDelayMs!)).join(", ")} after the caller stopped. Everything after it waits.`, turns: late.map(({ i }) => i) })
   }
   const reqs = (call.spans ?? []).filter((s) => s.name === "llm_request")
-  const discarded = reqs.filter((s) => s.attrs?.["gen_ai.response.finish_reasons"]?.includes("error"))
+  const discarded = reqs.filter((s) => hasErrorReason(s.attrs?.["gen_ai.response.finish_reasons"]))
   if (discarded.length) {
     f.push({ id: "discard", severity: "medium", title: `${discarded.length} of ${reqs.length} model calls reported an error`, detail: `They reported finish reason "error". Inspect the request and its parent turn to distinguish provider failure from canceled preemptive generation. This flag alone does not establish the cause.`, turns: model.turns.filter((t) => turnSpans(call, t.i).children.some((s) => discarded.some((r) => r.spanId === s.spanId))).map((t) => t.i) })
   }

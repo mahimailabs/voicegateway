@@ -88,3 +88,18 @@ test("span speech gaps are derived only on the same clock and reported latency w
   c.spans[1].clockId = "foreign"
   expect(buildModel(c).turns[0]).toMatchObject({ responseMs: null, responseDerived: false })
 })
+
+test.each([
+  ["error", true],
+  ['["error"]', true],
+  ['["stop","error"]', true],
+  ["no_error", false],
+  ['["no_error"]', false],
+  ['{"error":true}', false],
+  ['["error",1]', false],
+  ["", false],
+])("model error evidence uses exact typed finish reasons: %s", (reason, expected) => {
+  const c = base()
+  c.spans = [span("request", "llm_request", null, 1000, { "gen_ai.response.finish_reasons": reason })]
+  expect(findingsFor(c, buildModel(c)).some((finding) => finding.id === "discard")).toBe(expected)
+})
