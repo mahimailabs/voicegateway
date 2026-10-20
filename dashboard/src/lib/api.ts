@@ -293,6 +293,6 @@ export const metadataQuery = (id: string, selected = currentScope()) => ({
 export const callTagsQuery = (selected = currentScope()) => ({
  queryKey:["call-tags",selected],
  queryFn: ({signal}: {signal:AbortSignal}) => data(getCallTags({...thrown,path:{orgId:selected.org,projectId:selected.project},signal})),
- retry:false,
+ staleTime:0, retry:false,
 })
 export const saveCallMetadata = (id: string, body: import("@/lib/api-types").CallMetadata, selected = currentScope()) => data(updateCallMetadata({...thrown,path:{orgId:selected.org,projectId:selected.project,callId:id},body}))
