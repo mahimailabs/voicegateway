@@ -740,3 +740,42 @@ AND (NOT (o.source_id = ANY(@subjects::text[])) OR (
 UPDATE issue_occurrences o SET observed_at = @read_at
 WHERE o.organisation_id = @organisation_id AND o.project_id = @project_id AND o.source_layer = @source_layer
 AND @present::jsonb @> jsonb_build_array(jsonb_build_object('issueId', o.issue_id, 'sourceId', o.source_id));
+
+-- name: UpsertJobObservation :execrows
+INSERT INTO issue_job_observations (organisation_id, project_id, job_id, room_sid, dispatch_id, agent_name,
+ participant_identity, dispatched_at, status, reported_failed_at, failure_observed_at, observed_at)
+VALUES (@organisation_id, @project_id, @job_id, @room_sid, @dispatch_id, sqlc.narg(agent_name),
+ sqlc.narg(participant_identity), sqlc.narg(dispatched_at), @status, sqlc.narg(reported_failed_at), sqlc.narg(failure_observed_at), @observed_at)
+ON CONFLICT (organisation_id, project_id, job_id) DO UPDATE
+SET agent_name = COALESCE(EXCLUDED.agent_name, issue_job_observations.agent_name),
+ participant_identity = COALESCE(EXCLUDED.participant_identity, issue_job_observations.participant_identity),
+ dispatched_at = COALESCE(EXCLUDED.dispatched_at, issue_job_observations.dispatched_at),
+ status = EXCLUDED.status,
+ reported_failed_at = COALESCE(issue_job_observations.reported_failed_at, EXCLUDED.reported_failed_at),
+ failure_observed_at = COALESCE(issue_job_observations.failure_observed_at, EXCLUDED.failure_observed_at),
+ observed_at = EXCLUDED.observed_at,
+ observation_revision = issue_job_observations.observation_revision + CASE WHEN
+  issue_job_observations.agent_name IS DISTINCT FROM COALESCE(EXCLUDED.agent_name, issue_job_observations.agent_name)
+  OR issue_job_observations.participant_identity IS DISTINCT FROM COALESCE(EXCLUDED.participant_identity, issue_job_observations.participant_identity)
+  OR issue_job_observations.dispatched_at IS DISTINCT FROM COALESCE(EXCLUDED.dispatched_at, issue_job_observations.dispatched_at)
+  OR issue_job_observations.status IS DISTINCT FROM EXCLUDED.status
+  OR (issue_job_observations.reported_failed_at IS NULL AND EXCLUDED.reported_failed_at IS NOT NULL)
+  OR (issue_job_observations.failure_observed_at IS NULL AND EXCLUDED.failure_observed_at IS NOT NULL)
+ THEN 1 ELSE 0 END
+WHERE issue_job_observations.observed_at < EXCLUDED.observed_at
+ AND issue_job_observations.room_sid = EXCLUDED.room_sid AND issue_job_observations.dispatch_id = EXCLUDED.dispatch_id;
+
+-- name: PendingJobFindings :many
+SELECT j.*, c.id AS call_id, p.joined_at
+FROM issue_job_observations j
+LEFT JOIN calls c ON c.organisation_id = j.organisation_id AND c.project_id = j.project_id AND c.room_sid = j.room_sid
+LEFT JOIN LATERAL (
+ SELECT min(cp.joined_at)::timestamptz AS joined_at FROM call_participants cp
+ WHERE cp.call_id = c.id AND cp.kind = 'agent' AND cp.identity = j.participant_identity AND j.participant_identity <> ''
+) p ON true
+LEFT JOIN project_settings settings ON settings.organisation_id = j.organisation_id AND settings.project_id = j.project_id
+WHERE j.evaluated_observation_revision <> j.observation_revision
+ OR j.evaluated_settings_revision <> COALESCE(settings.revision, 0)
+ OR j.evaluated_call_id IS DISTINCT FROM c.id OR j.evaluated_joined_at IS DISTINCT FROM p.joined_at
+ORDER BY j.observed_at, j.organisation_id, j.project_id, j.job_id
+LIMIT @max_jobs;

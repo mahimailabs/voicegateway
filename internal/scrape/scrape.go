@@ -14,8 +14,13 @@ import (
 	"github.com/mahimailabs/voicegateway/internal/store"
 )
 
+type JobObservations interface {
+	StoreJobObservations(context.Context, store.LayerRead, []store.RoomSample) error
+}
+
 // Scraper reads the media server of every project on a timer and stores what it saw.
 type Scraper struct {
+	Jobs JobObservations
 	// Changed runs only after the read is durably stored, including failed source reads.
 	Changed  func(context.Context, string, string)
 	Projects Projects
@@ -163,6 +168,11 @@ func (s *Scraper) store(ctx context.Context, read store.LayerRead, rooms []store
 	defer cancel()
 	if err := s.Samples.StoreRead(sctx, read, rooms, parts); err != nil {
 		return fmt.Errorf("store read: %w", err)
+	}
+	if s.Jobs != nil {
+		if err := s.Jobs.StoreJobObservations(sctx, read, rooms); err != nil {
+			return fmt.Errorf("store job observations: %w", err)
+		}
 	}
 	if s.Changed != nil {
 		s.Changed(ctx, read.OrganisationID, read.ProjectID)

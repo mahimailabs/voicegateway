@@ -58,13 +58,14 @@ func projectDispatch(d *livekit.AgentDispatch) store.Dispatch {
 	for _, j := range d.GetState().GetJobs() {
 		st := j.GetState()
 		job := store.Job{
-			ID:        j.GetId(),
-			Status:    st.GetStatus().String(),
-			StartedAt: nanos(st.GetStartedAt()),
-			WorkerID:  nonEmpty(st.GetWorkerId()),
-			AgentID:   nonEmpty(st.GetAgentId()),
-			Recording: ptr(j.GetEnableRecording()),
-			Statuses:  jobStatuses(st),
+			ParticipantIdentity: st.GetParticipantIdentity(),
+			ID:                  j.GetId(),
+			Status:              st.GetStatus().String(),
+			StartedAt:           nanos(st.GetStartedAt()),
+			WorkerID:            nonEmpty(st.GetWorkerId()),
+			AgentID:             nonEmpty(st.GetAgentId()),
+			Recording:           ptr(j.GetEnableRecording()),
+			Statuses:            jobStatuses(st),
 		}
 		out.Jobs = append(out.Jobs, job)
 	}

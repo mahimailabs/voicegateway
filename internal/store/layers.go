@@ -100,13 +100,16 @@ type Dispatch struct {
 
 // Job is the projection of livekit.Job and its JobState.
 type Job struct {
-	ID        string     `json:"id"`
-	Status    string     `json:"status"`
-	Statuses  []StatusAt `json:"statuses"`
-	StartedAt *time.Time `json:"startedAt"`
-	WorkerID  *string    `json:"workerId"`
-	AgentID   *string    `json:"agentId"`
-	Recording *bool      `json:"recording"`
+	// ParticipantIdentity is used only while persisting exact job/participant correlation.
+	// It must never appear in the stored media JSON or browser API.
+	ParticipantIdentity string     `json:"-"`
+	ID                  string     `json:"id"`
+	Status              string     `json:"status"`
+	Statuses            []StatusAt `json:"statuses"`
+	StartedAt           *time.Time `json:"startedAt"`
+	WorkerID            *string    `json:"workerId"`
+	AgentID             *string    `json:"agentId"`
+	Recording           *bool      `json:"recording"`
 }
 
 // StatusAt is a status and when it was first reported. At is nil when no time was reported.

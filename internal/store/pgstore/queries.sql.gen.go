@@ -1996,6 +1996,86 @@ func (q *Queries) PendingCallFindings(ctx context.Context, maxCalls int32) ([]Pe
 	return items, nil
 }
 
+const pendingJobFindings = `-- name: PendingJobFindings :many
+SELECT j.organisation_id, j.project_id, j.job_id, j.room_sid, j.dispatch_id, j.agent_name, j.participant_identity, j.dispatched_at, j.status, j.reported_failed_at, j.failure_observed_at, j.observed_at, j.observation_revision, j.evaluated_observation_revision, j.evaluation_revision, j.evaluated_settings_revision, j.evaluated_call_id, j.evaluated_joined_at, c.id AS call_id, p.joined_at
+FROM issue_job_observations j
+LEFT JOIN calls c ON c.organisation_id = j.organisation_id AND c.project_id = j.project_id AND c.room_sid = j.room_sid
+LEFT JOIN LATERAL (
+ SELECT min(cp.joined_at)::timestamptz AS joined_at FROM call_participants cp
+ WHERE cp.call_id = c.id AND cp.kind = 'agent' AND cp.identity = j.participant_identity AND j.participant_identity <> ''
+) p ON true
+LEFT JOIN project_settings settings ON settings.organisation_id = j.organisation_id AND settings.project_id = j.project_id
+WHERE j.evaluated_observation_revision <> j.observation_revision
+ OR j.evaluated_settings_revision <> COALESCE(settings.revision, 0)
+ OR j.evaluated_call_id IS DISTINCT FROM c.id OR j.evaluated_joined_at IS DISTINCT FROM p.joined_at
+ORDER BY j.observed_at, j.organisation_id, j.project_id, j.job_id
+LIMIT $1
+`
+
+type PendingJobFindingsRow struct {
+	OrganisationID               string
+	ProjectID                    string
+	JobID                        string
+	RoomSid                      string
+	DispatchID                   string
+	AgentName                    pgtype.Text
+	ParticipantIdentity          pgtype.Text
+	DispatchedAt                 pgtype.Timestamptz
+	Status                       string
+	ReportedFailedAt             pgtype.Timestamptz
+	FailureObservedAt            pgtype.Timestamptz
+	ObservedAt                   pgtype.Timestamptz
+	ObservationRevision          int64
+	EvaluatedObservationRevision int64
+	EvaluationRevision           int64
+	EvaluatedSettingsRevision    int64
+	EvaluatedCallID              pgtype.UUID
+	EvaluatedJoinedAt            pgtype.Timestamptz
+	CallID                       pgtype.UUID
+	JoinedAt                     pgtype.Timestamptz
+}
+
+func (q *Queries) PendingJobFindings(ctx context.Context, maxJobs int32) ([]PendingJobFindingsRow, error) {
+	rows, err := q.db.Query(ctx, pendingJobFindings, maxJobs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []PendingJobFindingsRow
+	for rows.Next() {
+		var i PendingJobFindingsRow
+		if err := rows.Scan(
+			&i.OrganisationID,
+			&i.ProjectID,
+			&i.JobID,
+			&i.RoomSid,
+			&i.DispatchID,
+			&i.AgentName,
+			&i.ParticipantIdentity,
+			&i.DispatchedAt,
+			&i.Status,
+			&i.ReportedFailedAt,
+			&i.FailureObservedAt,
+			&i.ObservedAt,
+			&i.ObservationRevision,
+			&i.EvaluatedObservationRevision,
+			&i.EvaluationRevision,
+			&i.EvaluatedSettingsRevision,
+			&i.EvaluatedCallID,
+			&i.EvaluatedJoinedAt,
+			&i.CallID,
+			&i.JoinedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const principalRows = `-- name: PrincipalRows :many
 SELECT u.id, u.email, u.password_version, m.organisation_id, m.role
 FROM users u LEFT JOIN memberships m ON m.user_id = u.id
@@ -3051,6 +3131,67 @@ func (q *Queries) UpsertIssueOccurrence(ctx context.Context, arg UpsertIssueOccu
 		arg.CallID,
 		arg.OccurredAt,
 		arg.Detail,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const upsertJobObservation = `-- name: UpsertJobObservation :execrows
+INSERT INTO issue_job_observations (organisation_id, project_id, job_id, room_sid, dispatch_id, agent_name,
+ participant_identity, dispatched_at, status, reported_failed_at, failure_observed_at, observed_at)
+VALUES ($1, $2, $3, $4, $5, $6,
+ $7, $8, $9, $10, $11, $12)
+ON CONFLICT (organisation_id, project_id, job_id) DO UPDATE
+SET agent_name = COALESCE(EXCLUDED.agent_name, issue_job_observations.agent_name),
+ participant_identity = COALESCE(EXCLUDED.participant_identity, issue_job_observations.participant_identity),
+ dispatched_at = COALESCE(EXCLUDED.dispatched_at, issue_job_observations.dispatched_at),
+ status = EXCLUDED.status,
+ reported_failed_at = COALESCE(issue_job_observations.reported_failed_at, EXCLUDED.reported_failed_at),
+ failure_observed_at = COALESCE(issue_job_observations.failure_observed_at, EXCLUDED.failure_observed_at),
+ observed_at = EXCLUDED.observed_at,
+ observation_revision = issue_job_observations.observation_revision + CASE WHEN
+  issue_job_observations.agent_name IS DISTINCT FROM COALESCE(EXCLUDED.agent_name, issue_job_observations.agent_name)
+  OR issue_job_observations.participant_identity IS DISTINCT FROM COALESCE(EXCLUDED.participant_identity, issue_job_observations.participant_identity)
+  OR issue_job_observations.dispatched_at IS DISTINCT FROM COALESCE(EXCLUDED.dispatched_at, issue_job_observations.dispatched_at)
+  OR issue_job_observations.status IS DISTINCT FROM EXCLUDED.status
+  OR (issue_job_observations.reported_failed_at IS NULL AND EXCLUDED.reported_failed_at IS NOT NULL)
+  OR (issue_job_observations.failure_observed_at IS NULL AND EXCLUDED.failure_observed_at IS NOT NULL)
+ THEN 1 ELSE 0 END
+WHERE issue_job_observations.observed_at < EXCLUDED.observed_at
+ AND issue_job_observations.room_sid = EXCLUDED.room_sid AND issue_job_observations.dispatch_id = EXCLUDED.dispatch_id
+`
+
+type UpsertJobObservationParams struct {
+	OrganisationID      string
+	ProjectID           string
+	JobID               string
+	RoomSid             string
+	DispatchID          string
+	AgentName           pgtype.Text
+	ParticipantIdentity pgtype.Text
+	DispatchedAt        pgtype.Timestamptz
+	Status              string
+	ReportedFailedAt    pgtype.Timestamptz
+	FailureObservedAt   pgtype.Timestamptz
+	ObservedAt          pgtype.Timestamptz
+}
+
+func (q *Queries) UpsertJobObservation(ctx context.Context, arg UpsertJobObservationParams) (int64, error) {
+	result, err := q.db.Exec(ctx, upsertJobObservation,
+		arg.OrganisationID,
+		arg.ProjectID,
+		arg.JobID,
+		arg.RoomSid,
+		arg.DispatchID,
+		arg.AgentName,
+		arg.ParticipantIdentity,
+		arg.DispatchedAt,
+		arg.Status,
+		arg.ReportedFailedAt,
+		arg.FailureObservedAt,
+		arg.ObservedAt,
 	)
 	if err != nil {
 		return 0, err

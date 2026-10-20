@@ -83,3 +83,11 @@ type StandingEvaluation struct {
 	// subject has been deleted; a present subject with unknown fields preserves those findings.
 	Subjects []string
 }
+
+// PendingJobFinding contains exact native job and participant evidence. It is worker-only data.
+type PendingJobFinding struct {
+	OrganisationID, ProjectID, JobID, RoomSID, DispatchID, Status string
+	AgentName, CallID                                             *string
+	DispatchedAt, JoinedAt, ReportedFailedAt, FailureObservedAt   *time.Time
+	ObservationRevision, EvaluationRevision                       int64
+}

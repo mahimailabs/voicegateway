@@ -117,6 +117,27 @@ type Issue struct {
 	Archived                 bool
 }
 
+type IssueJobObservation struct {
+	OrganisationID               string
+	ProjectID                    string
+	JobID                        string
+	RoomSid                      string
+	DispatchID                   string
+	AgentName                    pgtype.Text
+	ParticipantIdentity          pgtype.Text
+	DispatchedAt                 pgtype.Timestamptz
+	Status                       string
+	ReportedFailedAt             pgtype.Timestamptz
+	FailureObservedAt            pgtype.Timestamptz
+	ObservedAt                   pgtype.Timestamptz
+	ObservationRevision          int64
+	EvaluatedObservationRevision int64
+	EvaluationRevision           int64
+	EvaluatedSettingsRevision    int64
+	EvaluatedCallID              pgtype.UUID
+	EvaluatedJoinedAt            pgtype.Timestamptz
+}
+
 type IssueOccurrence struct {
 	OrganisationID string
 	ProjectID      string

@@ -140,3 +140,11 @@ Join-source audit: call_participants already stores the native participant ident
 (internal/join/webhook.go). Job correlation must use that identity and the job ID within the same
 project and immutable call, not an agent-name-only match across jobs. The media projection alone
 omits participant identity; using its first participant would risk attributing the wrong join.
+
+Job evidence checkpoint: the poller now passes native job observations to Postgres before emitting
+its live-change notification. The native participant identity is retained privately for exact
+correlation and excluded from JSON projections. Repeated polls do not advance the observation
+revision without a semantic change. Missing fields, failed reads and room closure preserve earlier
+failure evidence. The Postgres race regression covers these cases and scope rejection. The
+notification-order and private-identity regressions also pass with the race detector. Issue evaluation and late-webhook correlation
+remain unfinished; this checkpoint does not complete issue workflows.

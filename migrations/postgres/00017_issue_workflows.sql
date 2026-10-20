@@ -53,3 +53,29 @@ CREATE TABLE issue_sources (
     PRIMARY KEY (organisation_id, project_id, layer),
     FOREIGN KEY (organisation_id, project_id) REFERENCES projects (organisation_id, id) ON DELETE CASCADE
 );
+
+-- Job observations survive room closure so a late participant webhook can still establish the
+-- exact dispatch-to-join interval. Identity is server-side correlation data, never API output.
+CREATE TABLE issue_job_observations (
+    organisation_id text NOT NULL,
+    project_id text NOT NULL,
+    job_id text NOT NULL,
+    room_sid text NOT NULL,
+    dispatch_id text NOT NULL,
+    agent_name text,
+    participant_identity text,
+    dispatched_at timestamptz,
+    status text NOT NULL,
+    reported_failed_at timestamptz,
+    failure_observed_at timestamptz,
+    observed_at timestamptz NOT NULL,
+    observation_revision bigint NOT NULL DEFAULT 0,
+    evaluated_observation_revision bigint NOT NULL DEFAULT -1,
+    evaluation_revision bigint NOT NULL DEFAULT 0,
+    evaluated_settings_revision bigint NOT NULL DEFAULT -1,
+    evaluated_call_id uuid,
+    evaluated_joined_at timestamptz,
+    PRIMARY KEY (organisation_id, project_id, job_id),
+    FOREIGN KEY (organisation_id, project_id) REFERENCES projects (organisation_id, id) ON DELETE CASCADE
+);
+CREATE INDEX issue_job_observations_room ON issue_job_observations (organisation_id, project_id, room_sid);

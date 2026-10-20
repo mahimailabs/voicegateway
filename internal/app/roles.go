@@ -213,6 +213,7 @@ func Worker(ctx context.Context, c config.Config, log *slog.Logger) error {
 	g, gctx := errgroup.WithContext(ctx)
 	g.Go(func() error {
 		return (&scrape.Scraper{
+			Jobs:      pgstore.NewStore(pool, nil),
 			Changed:   live.Notify,
 			Projects:  pgstore.NewStore(pool, sealer),
 			Samples:   events,
