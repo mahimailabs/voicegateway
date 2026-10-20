@@ -79,6 +79,7 @@ func (s *ResourceScraper) Resources(ctx context.Context, p store.Project) error 
 		return nil
 	}
 	hold := s.Every * 9 / 10
+	leaseEnd := time.Now().Add(hold)
 	got, err := s.Lock.Lock(ctx, lockKey(p, store.LayerResources), hold)
 	if err != nil {
 		return fmt.Errorf("lock: %w", err)
@@ -87,7 +88,10 @@ func (s *ResourceScraper) Resources(ctx context.Context, p store.Project) error 
 		return nil
 	}
 
-	previousCtx, previousCancel := context.WithTimeout(ctx, s.Timeout)
+	// Include the prior-sample lookup and durable write in the same lease budget.
+	rctx, cancel := context.WithDeadline(ctx, leaseEnd)
+	defer cancel()
+	previousCtx, previousCancel := context.WithTimeout(rctx, s.Timeout)
 	previous, err := s.Samples.ResourceSamples(previousCtx, p.OrganisationID, p.ID, s.Now().Add(-45*time.Second), 10000)
 	previousCancel()
 	if err != nil {
@@ -99,7 +103,6 @@ func (s *ResourceScraper) Resources(ctx context.Context, p store.Project) error 
 			prior[sample.EndpointID] = sample
 		}
 	}
-	rctx, cancel := context.WithTimeout(ctx, hold)
 	results := make([]containerResource, len(endpoints))
 	classes := make([]string, len(endpoints))
 	var g errgroup.Group
@@ -111,7 +114,6 @@ func (s *ResourceScraper) Resources(ctx context.Context, p store.Project) error 
 		})
 	}
 	_ = g.Wait() // each read reports its own class, never an error
-	cancel()
 	if ctx.Err() != nil {
 		return nil
 	}
@@ -143,7 +145,7 @@ func (s *ResourceScraper) Resources(ctx context.Context, p store.Project) error 
 	if read.OK {
 		read.ErrorClass = ""
 	}
-	sctx, cancel := context.WithTimeout(ctx, s.Timeout)
+	sctx, cancel := context.WithTimeout(rctx, s.Timeout)
 	defer cancel()
 	if err := s.Samples.StoreResourceRead(sctx, read, reads, samples); err != nil {
 		return fmt.Errorf("store resource read: %w", err)

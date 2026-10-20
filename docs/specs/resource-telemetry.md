@@ -62,4 +62,8 @@ unavailable, with an explicit source limitation. Do not manufacture allocations 
   The test now uses the production collection interval and explicitly resets its test lease
   for the manual second collection. The full race-detector rerun passed with two package workers, followed by all 205 dashboard tests. Lint, TypeScript and API checks passed.
 - Browser verification initially passed 71 of 72 checks; the remaining call drawer timed out
-  during concurrent Docker tests. The same check failed in a second parallel run, then passed three isolated runs without changing assertions or timeouts. The complete serial browser suite and hosted checks remain pending before completion.
+  during concurrent Docker tests. The same check failed in a second parallel run, then passed three isolated runs without changing assertions or timeouts. All 72 browser/accessibility checks then passed serially with unchanged assertions and timeouts. Hosted checks and review remain pending before completion.
+
+- Review found that prior-sample lookup time could extend collection beyond its distributed lock.
+  Lookup, HTTP and persistence now share the original lease deadline. A deterministic regression
+  failed before the fix, then passed; expiry prevents persistence and publication.
