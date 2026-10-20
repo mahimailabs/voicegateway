@@ -21,3 +21,23 @@ test("project thresholds save and Undo use revisioned API writes", async ({ page
   expect(undoResponse.request().postDataJSON()).toEqual({ thresholds: { answerMs: 1500, joinMs: 2000, ttsStartMs: 1000 }, revision: 1 })
   await expect(answer).toHaveValue("1.5")
 })
+
+
+test("settings project picker changes the scope used by reads and writes", async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem("vg.mock-projects", JSON.stringify([{ orgId: "default", id: "second-project", name: "Second project" }])))
+  await page.goto("/org/default/project/default-project/overview?settings=thresholds")
+  await expect(page.getByRole("spinbutton", { name: "Answer time" })).toBeVisible({ timeout: 15_000 })
+  await page.getByRole("combobox", { name: "Project", exact: true }).filter({ visible: true }).click()
+  await page.getByRole("option", { name: "Second project", exact: true }).click()
+  await expect(page).toHaveURL(/\/project\/second-project\/overview\?settings=thresholds/)
+  const answer = page.getByRole("spinbutton", { name: "Answer time" })
+  await expect(answer).toHaveValue("1.5")
+  await answer.fill("3")
+  const saved = page.waitForResponse((r) => r.url().endsWith("/project/second-project/settings") && r.request().method() === "PUT")
+  await page.getByRole("button", { name: "Save changes", exact: true }).click()
+  expect((await saved).status()).toBe(200)
+  await page.getByRole("combobox", { name: "Project", exact: true }).filter({ visible: true }).click()
+  await page.getByRole("option", { name: "Default project", exact: true }).click()
+  await expect(page).toHaveURL(/\/project\/default-project\/overview\?settings=thresholds/)
+  await expect(answer).toHaveValue("1.5")
+})

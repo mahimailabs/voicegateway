@@ -41,7 +41,6 @@ import { errorText } from "@/components/page-state"
 // The organisation and its projects as getWorkspaces named them (lib/workspaces.ts). When it named
 // none, the scope's id stands in and no project is listed.
 const org = () => currentOrg() ?? { id: currentScope().org, name: currentScope().org, projects: [] }
-const projectName = () => org().projects.find((p) => p.id === currentScope().project)?.name ?? currentScope().project
 
 type Key = "account" | "organisation" | "access" | "integrations" | "embeds" | "data" | "thresholds"
 type Page = { key: Key; label: string; icon: Icon; scope: "project" | "organisation" | "you" }
@@ -1041,10 +1040,13 @@ export function SettingsDialog({ open, onOpenChange, page, onPageChange, orgOnly
   const current = shownPages.find((p) => p.key === active)!
   // The picked project follows the URL: after a project switch the picker starts on the new one.
   const scope = currentScope()
-  const at = `${scope.org}/${scope.project}`
-  const [pick, setPick] = useState({ at, name: projectName() })
-  const picked = pick.at === at ? pick.name : projectName()
-  const setPicked = (name: string) => setPick({ at, name })
+  const picked = scope.project
+  const pickedName = org().projects.find((p) => p.id === picked)?.name ?? picked
+  const setPicked = (id: string) => {
+    if (id === scope.project || !org().projects.some((p) => p.id === id)) return
+    // A new document resets all project-bound drafts and query observers together.
+    window.location.assign(`/org/${encodeURIComponent(scope.org)}/project/${encodeURIComponent(id)}/overview?settings=${active}`)
+  }
   const Body = body[active]
   const nav = (p: Page) => (
     <SidebarMenuItem key={p.key}>
@@ -1076,7 +1078,7 @@ export function SettingsDialog({ open, onOpenChange, page, onPageChange, orgOnly
           <div className="min-w-0 flex-1 space-y-0.5">
             <DialogTitle className="text-[18px] font-semibold">Settings</DialogTitle>
             <DialogDescription className="text-[14px]">
-              {current.scope === "you" ? "Your own account." : current.scope === "organisation" ? `Settings for ${org().name}.` : `Settings for ${picked}.`}{" "}
+              {current.scope === "you" ? "Your own account." : current.scope === "organisation" ? `Settings for ${org().name}.` : `Settings for ${pickedName}.`}{" "}
               <span className="whitespace-nowrap">
                 Open anywhere with{" "}
                 <KbdGroup>
@@ -1102,8 +1104,8 @@ export function SettingsDialog({ open, onOpenChange, page, onPageChange, orgOnly
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        {org().projects.map(({ name: p }) => (
-                          <SelectItem key={p} value={p}>
+                        {org().projects.map(({ id, name: p }) => (
+                          <SelectItem key={id} value={id}>
                             {p}
                           </SelectItem>
                         ))}
@@ -1143,8 +1145,8 @@ export function SettingsDialog({ open, onOpenChange, page, onPageChange, orgOnly
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {org().projects.map(({ name: p }) => (
-                      <SelectItem key={p} value={p}>
+                    {org().projects.map(({ id, name: p }) => (
+                      <SelectItem key={id} value={id}>
                         {p}
                       </SelectItem>
                     ))}

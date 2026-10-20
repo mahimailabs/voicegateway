@@ -45,3 +45,9 @@ TanStack Query and existing shadcn controls. No new framework or legacy browser-
 - API schema validation and provenance checks passed before the latest totals-schema correction; repeat the full checks with the finished UI.
 - Frontend persistence, scoped invalidation, denial clearing, conflict handling and stale Undo are implemented. Background refresh preserves unsaved drafts and their original revision. The dashboard suite passed 204 tests before the resource baseline update.
 - The original 72 browser checks passed. The updated baseline includes new authenticated settings-session and browser Save/Undo checks; final full checks and review remain pending. This task is not complete.
+
+
+Review follow-ups (2026-10-20):
+- A denied write now cancels in-flight settings reads before clearing retained values; a regression verifies that a late read cannot restore them.
+- The settings project picker previously changed only its label. It now navigates using the project ID, retaining the selected settings pane; browser verification covers writing the selected project and returning to the unchanged original project.
+- The serial Docker-backed full Go race run and all 207 dashboard tests passed. The first concurrent run had one ClickHouse startup timeout, not an assertion failure. All 76 browser checks passed for the denied-write fix; all 80 expanded browser/accessibility checks now pass, including project switching in light/dark desktop/mobile. Final hosted checks and review for the picker follow-up remain pending.
