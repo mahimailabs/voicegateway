@@ -74,7 +74,7 @@ func (f *fixture) webWith(m invite.Mailer, token string) *inviteWeb {
 	}
 	s.Links = links
 	apiRoutes := (&api.API{
-		Projects: f.pg, Settings: f.pg, NewProjects: f.sealed(), VerifyLiveKit: acceptLiveKit{}, Calls: f.pg, Traces: emptyTraces{}, Layers: quietLayers{}, Endpoints: f.pg, Accounts: f.pg, Keys: f.pg, NewKey: auth.NewKey,
+		Projects: f.pg, Settings: f.pg, Metadata: f.pg, NewProjects: f.sealed(), VerifyLiveKit: acceptLiveKit{}, Calls: f.pg, Traces: emptyTraces{}, Layers: quietLayers{}, Endpoints: f.pg, Accounts: f.pg, Keys: f.pg, NewKey: auth.NewKey,
 		Invitations: f.pg, Inviter: app.NewInviter(links), LinkBase: s.LinkBase, Instance: instance,
 		Log: s.Log, Now: time.Now, Gate: s.Gate,
 	}).Routes()

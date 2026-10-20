@@ -140,10 +140,20 @@ func (a *API) listCalls(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	f.BudgetMs = settings.Thresholds.AnswerMs
+	if a.Metadata == nil {
+		writeError(w, r, http.StatusServiceUnavailable, codeSourceUnavailable, "call metadata unavailable")
+		return
+	}
+	metadataRevision, err := a.Metadata.CallMetadataRevision(ctx, org, project)
+	if err != nil {
+		a.fail(w, r, err, "project not found")
+		return
+	}
+	f.MetadataRevision = &metadataRevision
 
 	// The snapshot is kept server-side under a short id, so the token the console carries in its
 	// URL stays small; it is bound to the scope and filters it was taken for.
-	filters := fingerprint(org, project, q, "", settings.Revision)
+	filters := fingerprint(org, project, q, "", settings.Revision, metadataRevision)
 	var (
 		snap   store.ListSnapshot
 		totals callTotals
@@ -171,7 +181,7 @@ func (a *API) listCalls(w http.ResponseWriter, r *http.Request) {
 	}
 	if cursorToken != "" {
 		var c cursor
-		if err := decode(cursorToken, &c); err != nil || c.Bound != fingerprint(org, project, q, token, settings.Revision) {
+		if err := decode(cursorToken, &c); err != nil || c.Bound != fingerprint(org, project, q, token, settings.Revision, metadataRevision) {
 			writeError(w, r, http.StatusBadRequest, codeInvalidRequest, "cursor was issued for other filters, sort, order or snapshot")
 			return
 		}
@@ -180,6 +190,10 @@ func (a *API) listCalls(w http.ResponseWriter, r *http.Request) {
 
 	first := token == ""
 	rows, pageTotals, at, err := a.Calls.ListCalls(ctx, f, after, limit+1, first, maxValues)
+	if errors.Is(err, store.ErrMetadataSnapshot) {
+		writeError(w, r, http.StatusBadRequest, codeInvalidRequest, "call metadata changed; restart pagination")
+		return
+	}
 	if err != nil {
 		a.fail(w, r, err, "")
 		return
@@ -198,7 +212,7 @@ func (a *API) listCalls(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	bound := fingerprint(org, project, q, token, settings.Revision)
+	bound := fingerprint(org, project, q, token, settings.Revision, metadataRevision)
 
 	out := callPage{Items: make([]callSummary, 0, min(len(rows), limit)), Page: page{Snapshot: token}, Totals: totals}
 	for i, row := range rows {
@@ -299,9 +313,13 @@ func (a *API) parseList(org, project string, q url.Values) (store.CallFilter, in
 	if err != nil {
 		return bad("%v", err)
 	}
-	// No stored value can satisfy these yet: every call's issues are unknown, and the server holds
-	// no tags, archive or recordings. archived=false and recorded=false match every call.
-	f.MatchNone = len(issueFilter) > 0 || len(tags) > 0 || (archived != nil && *archived) || (recorded != nil && *recorded)
+	// Issue and recording filters still have no stored value; metadata filters are persisted.
+	f.Tags, err = store.NormalizeTags(tags)
+	if err != nil {
+		return bad("invalid tag filter")
+	}
+	f.Archived = archived
+	f.MatchNone = len(issueFilter) > 0 || (recorded != nil && *recorded)
 
 	if v := q.Get("sort"); v != "" {
 		if !slices.Contains(sorts, v) {
@@ -343,7 +361,7 @@ func optionalBool(q url.Values, name string) (*bool, error) {
 
 // fingerprint binds a snapshot to the scope and filters it was taken for, and a cursor to those
 // plus its snapshot id: every query parameter except the paging ones, in a canonical order.
-func fingerprint(org, project string, q url.Values, snapshotID string, settingsRevision int64) string {
+func fingerprint(org, project string, q url.Values, snapshotID string, settingsRevision int64, metadataRevisions ...int64) string {
 	keys := make([]string, 0, len(q))
 	for k := range q {
 		if k != "cursor" && k != "snapshot" && k != "limit" {
@@ -359,6 +377,9 @@ func fingerprint(org, project string, q url.Values, snapshotID string, settingsR
 		_, _ = fmt.Fprintf(h, "%s=%s\n", k, strings.Join(vs, "\x00"))
 	}
 	_, _ = fmt.Fprintf(h, "snapshot=%s\nsettingsRevision=%d\n", snapshotID, settingsRevision)
+	for _, revision := range metadataRevisions {
+		_, _ = fmt.Fprintf(h, "metadataRevision=%d\n", revision)
+	}
 	return hex.EncodeToString(h.Sum(nil))[:24]
 }
 
@@ -395,7 +416,7 @@ func toSummary(r store.CallListRow) callSummary {
 		ID: r.ID, Room: r.RoomName, RoomSID: text(r.RoomSID), StartedAt: r.StartAt, EndedAt: r.EndedAt,
 		DurationSeconds: r.DurationSeconds, EndState: r.EndState, Channel: r.Channel, Pipeline: r.Pipeline,
 		Models: r.Models, AgentKey: r.AgentKey, TurnCount: r.TurnCount, AnswerMs: r.AnswerMs, AnswerMsMedian: r.AnswerMsMedian,
-		Issues: issueCount{Titles: []string{}}, Tags: []string{},
+		Issues: issueCount{Titles: []string{}}, Tags: append([]string{}, r.Metadata.Tags...), Archived: r.Metadata.Archived,
 	}
 	if s.Models == nil {
 		s.Models = []string{}

@@ -864,6 +864,139 @@ paths:
           $ref: "#/components/responses/InternalError"
         "503":
           $ref: "#/components/responses/SourceUnavailable"
+  /api/v1/org/{orgId}/project/{projectId}/call-tags:
+    get:
+      operationId: getCallTags
+      security:
+        - consoleSession: []
+        - projectKey: []
+      summary: Read distinct tags assigned to calls in this project
+      tags:
+        - Console reads
+      x-access:
+        principal: organisation_member
+        minimumRole: Viewer
+        projectIsolation: required
+        browserSessionTransport: session_cookie
+        scope: project
+      description: "Requires authenticated organisation membership and permission to read the named project. A browser signs in with the session cookie (decision 0027); the role gate admits the minimumRole and above. Credential absence is 401, denied membership is 403, cross-project resource ids are not_found. Server-side LiveKit credentials must never reach the browser."
+      parameters:
+        - $ref: "#/components/parameters/OrganisationId"
+        - $ref: "#/components/parameters/ProjectId"
+      responses:
+        "200":
+          description: Authorised read result. Null means unreported, never zero. Source-specific coverage limits remain visible.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CallTags"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/SourceUnavailable"
+  /api/v1/org/{orgId}/project/{projectId}/calls/{callId}/metadata:
+    get:
+      operationId: getCallMetadata
+      security:
+        - consoleSession: []
+        - projectKey: []
+      summary: Read persisted call tags, archive state and revision
+      tags:
+        - Console reads
+      x-access:
+        principal: organisation_member
+        minimumRole: Viewer
+        projectIsolation: required
+        browserSessionTransport: session_cookie
+        scope: project
+      description: "Requires authenticated organisation membership and permission to read the named project. A browser signs in with the session cookie (decision 0027); the role gate admits the minimumRole and above. Credential absence is 401, denied membership is 403, cross-project resource ids are not_found. Server-side LiveKit credentials must never reach the browser."
+      parameters:
+        - $ref: "#/components/parameters/OrganisationId"
+        - $ref: "#/components/parameters/ProjectId"
+        - name: callId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Immutable call UUID within the named project.
+      responses:
+        "200":
+          description: Authorised read result. Null means unreported, never zero. Source-specific coverage limits remain visible.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CallMetadata"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/SourceUnavailable"
+    put:
+      operationId: updateCallMetadata
+      summary: Save call tags and archive state if the read revision is still current
+      tags: [ Console writes ]
+      security:
+        - consoleSession: []
+      x-access:
+        principal: organisation_member
+        minimumRole: Member
+        projectIsolation: required
+        browserSessionTransport: session_cookie
+        scope: project
+      description: Members and Admins can save call metadata. Project keys and Viewers cannot write. A stale revision returns revision_conflict without overwriting a newer save.
+      parameters:
+        - $ref: "#/components/parameters/OrganisationId"
+        - $ref: "#/components/parameters/ProjectId"
+        - name: callId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Immutable call UUID within the named project.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateCallMetadata"
+      responses:
+        "200":
+          description: Persisted call metadata with the new revision.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CallMetadata"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/SourceUnavailable"
   /api/v1/org/{orgId}/project/{projectId}/settings:
     get:
       operationId: getProjectSettings
@@ -2024,13 +2157,13 @@ components:
         tags:
           type: array
           description: User-assigned labels. Empty means no assigned labels; canonical call id replaces the preview room-name key.
-          x-source: { kind: configuration, file: dashboard/src/features/call/call-tags.tsx, pointer: null, detail: User-assigned labels. Empty means no assigned labels; canonical call id replaces the preview room-name key. }
+          x-source: { kind: configuration, file: migrations/postgres/00016_call_metadata.sql, pointer: null, detail: User-assigned labels. Empty means no assigned labels; canonical call id replaces the preview room-name key. }
           items:
             type: string
         archived:
           type: boolean
           description: User archive disposition for this conversation. Archived records remain readable; nothing is deleted.
-          x-source: { kind: configuration, file: dashboard/src/features/calls/call-archive.ts, pointer: null, detail: User archive disposition for this conversation. Archived records remain readable; nothing is deleted. }
+          x-source: { kind: configuration, file: migrations/postgres/00016_call_metadata.sql, pointer: null, detail: User archive disposition for this conversation. Archived records remain readable; nothing is deleted. }
         clocks:
           type: array
           items:
@@ -4277,13 +4410,13 @@ components:
         tags:
           type: array
           description: "User-assigned labels. Empty means none."
-          x-source: { kind: configuration, file: dashboard/src/features/call/call-tags.tsx, pointer: null, detail: "User-assigned labels. Empty means none." }
+          x-source: { kind: configuration, file: migrations/postgres/00016_call_metadata.sql, pointer: null, detail: "User-assigned labels. Empty means none." }
           items:
             type: string
         archived:
           type: boolean
           description: "User archive disposition. Archived calls stay readable."
-          x-source: { kind: configuration, file: dashboard/src/features/calls/call-archive.ts, pointer: null, detail: "User archive disposition. Archived calls stay readable." }
+          x-source: { kind: configuration, file: migrations/postgres/00016_call_metadata.sql, pointer: null, detail: "User archive disposition. Archived calls stay readable." }
         recorded:
           type: boolean
           description: "A retained recording exists for this call."
@@ -5030,6 +5163,47 @@ components:
           items:
             $ref: "#/components/schemas/AlertRuleSetup"
           x-source: { kind: configuration, file: dashboard/src/features/alerts/alerts-model.ts, pointer: null, detail: Saved overrides for the seven rules. Absence of an override uses the documented preview default; it does not prove delivery is connected. }
+    CallTags:
+      type: object
+      additionalProperties: false
+      required: [ tags ]
+      properties:
+        tags:
+          type: array
+          uniqueItems: true
+          items:
+            type: string
+          x-source: { kind: configuration, file: migrations/postgres/00016_call_metadata.sql, pointer: null, detail: Distinct persisted tags of readable calls in the named project. }
+    CallMetadata:
+      type: object
+      additionalProperties: false
+      required: [ tags, archived, revision ]
+      properties:
+        tags:
+          type: array
+          maxItems: 32
+          uniqueItems: true
+          items:
+            type: string
+            minLength: 1
+            maxLength: 64
+          description: Normalized lowercase tags belonging to this immutable call ID.
+          x-source: { kind: configuration, file: migrations/postgres/00016_call_metadata.sql, pointer: null, detail: Persisted call tags. }
+        archived:
+          type: boolean
+          description: Reversible archive state. Does not delete evidence or resolve findings.
+          x-source: { kind: configuration, file: migrations/postgres/00016_call_metadata.sql, pointer: null, detail: Persisted call archive state. }
+        revision:
+          type: integer
+          minimum: 0
+          maximum: 9007199254740991
+          x-unit: count
+          x-configuration: true
+          x-source: { kind: configuration, file: migrations/postgres/00016_call_metadata.sql, pointer: null, detail: Atomic call metadata revision. }
+    UpdateCallMetadata:
+      allOf:
+        - $ref: "#/components/schemas/CallMetadata"
+      description: Replace tags and archive state only when revision matches. Clear tags with an empty array. A stale revision returns 409 without changing persisted data.
     UpdateProjectSettings:
       type: object
       additionalProperties: false

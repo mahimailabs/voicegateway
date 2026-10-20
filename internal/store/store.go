@@ -163,6 +163,7 @@ type MetricPoint struct {
 
 // Call is a stored call as the API reads it. A nil time or empty string was not reported.
 type Call struct {
+	Metadata CallMetadata
 	ID       string
 	RoomName string
 	RoomSID  string
@@ -210,6 +211,9 @@ type CallSummary struct {
 
 // CallFilter is a listCalls request as storage reads it. A nil bound is no bound.
 type CallFilter struct {
+	Tags                      []string
+	Archived                  *bool
+	MetadataRevision          *int64
 	OrganisationID, ProjectID string
 	// SnapshotAt leaves out calls written after it.
 	SnapshotAt                                     time.Time
@@ -219,7 +223,7 @@ type CallFilter struct {
 	AnswerMin, AnswerMax, DurationMin, DurationMax *float64
 	TurnsMin, TurnsMax                             *int
 	UnknownAnswer, UnknownDuration, UnknownTurns   bool
-	// MatchNone is set when a filter no stored value can satisfy (issues, tags, archived=true,
+	// MatchNone is set when a filter no stored value can satisfy (issues,
 	// recorded=true), so the list is empty rather than the filter ignored.
 	MatchNone bool
 	// SortBy is startedAt, durationSeconds, turnCount, answerMs or issues; issues has no stored
@@ -239,6 +243,7 @@ type CallCursor struct {
 
 // CallListRow is one listCalls row. A nil value is unknown.
 type CallListRow struct {
+	Metadata              CallMetadata
 	ID, RoomName, RoomSID string
 	// StartAt is the started-at the API shows: the reported room start, else the first seen time.
 	StartAt            time.Time

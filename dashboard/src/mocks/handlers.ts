@@ -1,3 +1,4 @@
+import { metadataOf, saveMetadata } from "./dispositions"
 import { http, HttpResponse, type PathParams } from "msw"
 import type { AlertEvents, AlertSetup, Call, CallPage, CallStats, CreatedInvitation, CreatedPasswordReset, CreatedProjectKey, Invitations, ProjectCreate, WorkspaceProject, IssueDispositions, Member, Members, ProjectKeys, IssueList, ProjectSettings, ProviderProbes, Resources, Workers, CapacityRun, CloudAgents, Egress, Error as ApiErrorBody, Ingress, MediaServer, ProjectSnapshot, Sip, Workspaces } from "@/lib/api-types"
 import { callStats } from "./call-stats"
@@ -53,6 +54,24 @@ function range(q: URLSearchParams): { from: Date; to: Date } | string {
 const SNAPSHOT = "captured"
 
 export const handlers = [
+ http.get(`${project}/call-tags`,({params})=>{
+  if(!known(params)) return fail(404,"not_found","No such project.")
+  return HttpResponse.json({tags:[...new Set(capturedCalls().flatMap(c=>metadataOf(settingsScope(params),c.id).tags))].sort()})
+ }),
+ http.get(`${project}/calls/:callId/metadata`,({params})=>{
+  if(!known(params)||!capturedCalls().some(c=>c.id===params.callId)) return fail(404,"not_found","No such call.")
+  return HttpResponse.json(metadataOf(settingsScope(params),String(params.callId)))
+ }),
+ http.put(`${project}/calls/:callId/metadata`,async({params,request})=>{
+  if(!known(params)||!capturedCalls().some(c=>c.id===params.callId)) return fail(404,"not_found","No such call.")
+  const body=await request.json() as {tags?:unknown;archived?:unknown;revision?:unknown}
+  if(!Array.isArray(body.tags)||body.tags.length>32||body.tags.some(t=>typeof t!=="string"||!t.trim()||Array.from(t.trim()).length>64||/\p{Cc}/u.test(t))||typeof body.archived!=="boolean"||!Number.isSafeInteger(body.revision)) return fail(400,"invalid_request","Invalid metadata.")
+  const before=metadataOf(settingsScope(params),String(params.callId))
+  if(body.revision!==before.revision) return fail(409,"revision_conflict","Call metadata changed; reload before saving.")
+  const next={tags:[...new Set((body.tags as string[]).map(t=>t.trim().toLowerCase()))].sort(),archived:body.archived,revision:before.revision+1}
+  saveMetadata(settingsScope(params),String(params.callId),next)
+  return HttpResponse.json(next)
+ }),
   http.get<PathParams, never, CallPage | ApiErrorBody>(`${project}/calls`, ({ params, request }) => {
     if (!known(params)) return fail(404, "not_found", "No such project.")
     const q = new URL(request.url).searchParams
@@ -72,7 +91,7 @@ export const handlers = [
       if (!Number.isInteger(start) || start < 0 || key !== bound) return fail(400, "invalid_request", "The cursor does not belong to these filters.")
     }
 
-    const matching = sortCalls(capturedCalls().map(summarize).filter((c) => matchesFilters(c, filters)), filters)
+    const matching = sortCalls(capturedCalls().map(c=>summarize({...c,...metadataOf(settingsScope(params),c.id)})).filter((c) => matchesFilters(c, filters)), filters)
     const items = matching.slice(start, start + limit)
     const next = start + limit < matching.length ? `${start + limit}:${bound}` : null
     return HttpResponse.json<CallPage>({ items, page: { nextCursor: next, snapshot: SNAPSHOT }, totals: totals(matching, projectSettings(settingsScope(params)).thresholds.answerMs) })
@@ -81,7 +100,7 @@ export const handlers = [
   http.get<PathParams, never, Call | ApiErrorBody>(`${project}/calls/:callId`, ({ params }) => {
     if (!known(params)) return fail(404, "not_found", "No such project.")
     const call = capturedCalls().find((c) => c.id === params.callId)
-    return call ? HttpResponse.json(withPlayback(call, params)) : fail(404, "not_found", "No such call in this project.")
+    return call ? HttpResponse.json(withPlayback({...call,tags:metadataOf(settingsScope(params),call.id).tags,archived:metadataOf(settingsScope(params),call.id).archived}, params)) : fail(404, "not_found", "No such call in this project.")
   }),
 
   // Overview's aggregates, issues and alert evaluation over a range; both bounds are required.

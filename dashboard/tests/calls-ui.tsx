@@ -8,7 +8,7 @@ import { TooltipProvider } from "../src/components/ui/tooltip"
 import { handlers } from "../src/mocks/handlers"
 import { capturedCalls } from "../src/mocks/fixtures"
 import capture from "../src/mocks/capture-session.json"
-import { setArchived } from "../src/features/calls/call-archive"
+import { setMockApi } from "../src/lib/session"
 
 vi.hoisted(() => {
   window.matchMedia ??= (query: string) => ({ matches: false, media: query, onchange: null, addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {}, dispatchEvent: () => false }) as MediaQueryList
@@ -27,7 +27,7 @@ beforeAll(() => server.listen({ onUnhandledRequest: "error" }))
 afterEach(() => {
   cleanup()
   clients.splice(0).forEach((client) => client.clear())
-  setArchived([])
+  setMockApi(false)
   localStorage.clear()
   server.resetHandlers()
 })
@@ -35,6 +35,7 @@ afterAll(() => server.close())
 
 /** Render the real Calls routes with isolated query state and optional deep-link filters. */
 export async function showCalls(id?: string, search: Record<string, unknown> = {}) {
+  setMockApi(true)
   const { CallsPage } = await import("../src/features/calls/calls-page")
   const root = createRootRoute({ component: () => <Outlet /> })
   const routes = ["/calls", "/calls/$callId"].map((path) => createRoute({ getParentRoute: () => root, path, component: CallsPage }))

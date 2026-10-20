@@ -96,3 +96,17 @@ test("permission loss clears retained project settings", async () => {
   expect(client.getQueryData(query.queryKey)).toBeUndefined()
   client.clear()
 })
+
+
+test.each(["calls", "call", "call-metadata", "call-tags"])("permission loss clears retained %s data for every observer", async (kind) => {
+  const { createQueryClient } = await import("../src/lib/query-client.ts")
+  const client = createQueryClient()
+  const key = [kind, { org: "one", project: "first" }, "call-id"]
+  const other = [kind, { org: "one", project: "second" }, "call-id"]
+  client.setQueryData(key, { tags: ["private"] })
+  client.setQueryData(other, { tags: ["other-project"] })
+  await expect(client.fetchQuery({ queryKey: key, staleTime: 0, retry: false, queryFn: async () => { throw new ApiError(403, "forbidden", "Access removed") } })).rejects.toBeInstanceOf(ApiError)
+  expect(client.getQueryData(key)).toBeUndefined()
+  expect(client.getQueryData(other)).toEqual({ tags: ["other-project"] })
+  client.clear()
+})
