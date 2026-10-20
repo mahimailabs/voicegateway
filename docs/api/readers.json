@@ -21,28 +21,6 @@
     "exclusion": "Browser-only appearance preference, not server data."
   },
   {
-    "file": "dashboard/src/features/call/call-tags.tsx",
-    "fixtures": [],
-    "assets": [],
-    "browserStorage": true,
-    "operations": [
-      "getCall",
-      "listCalls"
-    ],
-    "assetNotes": {}
-  },
-  {
-    "file": "dashboard/src/features/calls/call-archive.ts",
-    "fixtures": [],
-    "assets": [],
-    "browserStorage": true,
-    "operations": [
-      "getCall",
-      "listCalls"
-    ],
-    "assetNotes": {}
-  },
-  {
     "file": "dashboard/src/features/calls/calls-page.tsx",
     "fixtures": [
       "preview"
@@ -85,7 +63,9 @@
       "createProjectKey",
       "getAlertSetup",
       "getCall",
+      "getCallMetadata",
       "getCallStats",
+      "getCallTags",
       "getCapacity",
       "getCloudAgents",
       "getEgress",
@@ -96,7 +76,6 @@
       "getMembers",
       "getMyOrganisationEntitlement",
       "getProjectSettings",
-      "updateProjectSettings",
       "getProjectSnapshot",
       "getProviderProbes",
       "getResources",
@@ -110,7 +89,9 @@
       "removeMember",
       "revokeInvitation",
       "revokeProjectKey",
-      "updateMember"
+      "updateCallMetadata",
+      "updateMember",
+      "updateProjectSettings"
     ]
   },
   {
@@ -209,7 +190,8 @@
       "recordings",
       "settings",
       "summaries",
-      "workspaces"
+      "workspaces",
+      "dispositions"
     ],
     "assets": [],
     "browserStorage": false,
@@ -331,7 +313,6 @@
   {
     "file": "dashboard/src/mocks/summaries.ts",
     "fixtures": [
-      "dispositions",
       "media-server.json"
     ],
     "assets": [],

@@ -864,6 +864,44 @@ paths:
           $ref: "#/components/responses/InternalError"
         "503":
           $ref: "#/components/responses/SourceUnavailable"
+  /api/v1/org/{orgId}/project/{projectId}/call-tags:
+    get:
+      operationId: getCallTags
+      security:
+        - consoleSession: []
+        - projectKey: []
+      summary: Read distinct tags assigned to calls in this project
+      tags:
+        - Console reads
+      x-access:
+        principal: organisation_member
+        minimumRole: Viewer
+        projectIsolation: required
+        browserSessionTransport: session_cookie
+        scope: project
+      description: "Requires authenticated organisation membership and permission to read the named project. A browser signs in with the session cookie (decision 0027); the role gate admits the minimumRole and above. Credential absence is 401, denied membership is 403, cross-project resource ids are not_found. Server-side LiveKit credentials must never reach the browser."
+      parameters:
+        - $ref: "#/components/parameters/OrganisationId"
+        - $ref: "#/components/parameters/ProjectId"
+      responses:
+        "200":
+          description: Authorised read result. Null means unreported, never zero. Source-specific coverage limits remain visible.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CallTags"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/SourceUnavailable"
   /api/v1/org/{orgId}/project/{projectId}/calls/{callId}/metadata:
     get:
       operationId: getCallMetadata
@@ -5125,6 +5163,17 @@ components:
           items:
             $ref: "#/components/schemas/AlertRuleSetup"
           x-source: { kind: configuration, file: dashboard/src/features/alerts/alerts-model.ts, pointer: null, detail: Saved overrides for the seven rules. Absence of an override uses the documented preview default; it does not prove delivery is connected. }
+    CallTags:
+      type: object
+      additionalProperties: false
+      required: [ tags ]
+      properties:
+        tags:
+          type: array
+          uniqueItems: true
+          items:
+            type: string
+          x-source: { kind: configuration, file: migrations/postgres/00016_call_metadata.sql, pointer: null, detail: Distinct persisted tags of readable calls in the named project. }
     CallMetadata:
       type: object
       additionalProperties: false

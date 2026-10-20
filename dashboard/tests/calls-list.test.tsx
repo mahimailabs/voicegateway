@@ -97,3 +97,20 @@ test("a shared room filter limits the rows and survives opening its call", async
   expect(router.state.location.search).toMatchObject({ q })
   expect(await screen.findByRole("dialog")).toBeTruthy()
 })
+
+test("bulk archive reports partial failure and retains the failed call", async () => {
+  await showCalls()
+  await waitFor(() => expect(links().length).toBeGreaterThan(1))
+  const first = links()[0], second = links()[1]
+  const firstId = first.getAttribute("data-call-id"), secondId = second.getAttribute("data-call-id")
+  server.use(http.put(`${project}/calls/:callId/metadata`, ({params}) => params.callId === secondId
+    ? HttpResponse.json({code:"internal_error",message:"Storage unavailable",requestId:"test"},{status:500})
+    : undefined))
+  const user=userEvent.setup()
+  await user.click(within(first.closest("tr")!).getByRole("checkbox"))
+  await user.click(within(second.closest("tr")!).getByRole("checkbox"))
+  await user.click(screen.getByRole("button",{name:"Archive",exact:true}))
+  expect(await screen.findByRole("alert")).toHaveProperty("textContent",expect.stringContaining("1/2 saved"))
+  await waitFor(()=>expect(links().some(el=>el.getAttribute("data-call-id")===firstId)).toBe(false))
+  expect(links().some(el=>el.getAttribute("data-call-id")===secondId)).toBe(true)
+})

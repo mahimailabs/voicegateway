@@ -38,6 +38,12 @@ func TestMetadataFiltersDetailAndSnapshotInvalidation(t *testing.T) {
 			t.Fatalf("filtered %v: %d %+v", q, code, page)
 		}
 	}
+	var catalog struct {
+		Tags []string `json:"tags"`
+	}
+	if code := f.get(f.api(nil), "/api/v1/org/default/project/"+f.project+"/call-tags", &catalog); code != http.StatusOK || len(catalog.Tags) != 1 || catalog.Tags[0] != "support" {
+		t.Fatalf("tag catalogue %d %+v", code, catalog)
+	}
 	var detail call
 	if code := f.get(f.api(nil), path(f.project, ids[0]), &detail); code != http.StatusOK || !detail.Archived || len(detail.Tags) != 1 {
 		t.Fatalf("detail %d %+v", code, detail)

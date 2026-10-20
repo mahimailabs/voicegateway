@@ -15,6 +15,7 @@ import (
 )
 
 type CallMetadataStore interface {
+	CallTags(context.Context, string, string) ([]string, error)
 	CallMetadataRevision(context.Context, string, string) (int64, error)
 	CallMetadata(context.Context, string, string, string) (store.CallMetadata, error)
 	UpdateCallMetadata(context.Context, string, string, string, int64, []string, bool) (store.CallMetadata, error)
@@ -68,4 +69,25 @@ func (a *API) updateCallMetadata(w http.ResponseWriter, r *http.Request) {
 	default:
 		writeJSON(w, http.StatusOK, result)
 	}
+}
+
+func (a *API) getCallTags(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
+	if a.Metadata == nil {
+		writeError(w, r, http.StatusServiceUnavailable, codeSourceUnavailable, "call metadata unavailable")
+		return
+	}
+	org, project := chi.URLParam(r, "orgId"), chi.URLParam(r, "projectId")
+	if _, err := a.Projects.Project(r.Context(), org, project); err != nil {
+		a.fail(w, r, err, "project not found")
+		return
+	}
+	tags, err := a.Metadata.CallTags(r.Context(), org, project)
+	if err != nil {
+		a.fail(w, r, err, "")
+		return
+	}
+	writeJSON(w, http.StatusOK, struct {
+		Tags []string `json:"tags"`
+	}{Tags: tags})
 }

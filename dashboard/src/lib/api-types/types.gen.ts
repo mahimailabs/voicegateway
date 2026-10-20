@@ -1349,6 +1349,10 @@ export type AlertSetup = {
     items: Array<AlertRuleSetup>;
 };
 
+export type CallTags = {
+    tags: Array<string>;
+};
+
 export type CallMetadata = {
     /**
      * Normalized lowercase tags belonging to this immutable call ID.
@@ -2905,6 +2909,60 @@ export type GetProviderProbesResponses = {
 };
 
 export type GetProviderProbesResponse = GetProviderProbesResponses[keyof GetProviderProbesResponses];
+
+export type GetCallTagsData = {
+    body?: never;
+    path: {
+        /**
+         * Authorised orgId; the server must verify organisation/project ownership before any read.
+         */
+        orgId: string;
+        /**
+         * Authorised projectId; the server must verify organisation/project ownership before any read.
+         */
+        projectId: string;
+    };
+    query?: never;
+    url: '/api/v1/org/{orgId}/project/{projectId}/call-tags';
+};
+
+export type GetCallTagsErrors = {
+    /**
+     * invalid_request; never return an empty success result for this failure.
+     */
+    400: Error;
+    /**
+     * unauthenticated; never return an empty success result for this failure.
+     */
+    401: Error;
+    /**
+     * forbidden; never return an empty success result for this failure.
+     */
+    403: Error;
+    /**
+     * not_found; never return an empty success result for this failure.
+     */
+    404: Error;
+    /**
+     * internal_error; never return an empty success result for this failure.
+     */
+    500: Error;
+    /**
+     * source_unavailable; never return an empty success result for this failure.
+     */
+    503: Error;
+};
+
+export type GetCallTagsError = GetCallTagsErrors[keyof GetCallTagsErrors];
+
+export type GetCallTagsResponses = {
+    /**
+     * Authorised read result. Null means unreported, never zero. Source-specific coverage limits remain visible.
+     */
+    200: CallTags;
+};
+
+export type GetCallTagsResponse = GetCallTagsResponses[keyof GetCallTagsResponses];
 
 export type GetCallMetadataData = {
     body?: never;

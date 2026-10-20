@@ -71,3 +71,11 @@ rejected-write stability and stale-generation refusal. Native HTTP tests passed 
 queries, detail agreement and old snapshot rejection, alongside authenticated metadata permissions.
 Go lint, SQL generation checks and API schema/provenance/type checks passed. UI wiring and issue
 findings/dispositions remain open, so this is not a completed issue workflow.
+
+The call metadata UI now reads and writes the scoped API. Tags, archives and revision-safe Undo
+no longer use browser storage outside the explicit preview adapter. Member/Admin controls wait
+for confirmed writes; Viewer controls are read-only. Bulk archives report per-item failures, and
+permission loss hides retained metadata. The scoped tag catalogue reads real servable calls.
+All 217 dashboard tests and lint/type checks passed in a serial run; the full browser rerun and
+native race gates are still being verified. Issue evaluation/dispositions and webhook delivery
+remain unfinished, so the roadmap task remains unchecked.

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import { Link, useNavigate, useParams } from "@tanstack/react-router"
-import { keepPreviousData, useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query"
+import { keepPreviousData, useInfiniteQuery, useQuery } from "@tanstack/react-query"
 import type { SortingState } from "@tanstack/react-table"
 import { Archive, ArrowCounterClockwise, CaretRight, ChatsCircle, Clock, Desktop, Flask, Globe, Hash, Phone, PhoneCall, Question, Tag, Timer, Waveform, WarningCircle } from "@phosphor-icons/react"
 import type { Icon } from "@phosphor-icons/react"
@@ -13,24 +13,24 @@ import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "
 import { Button } from "@/components/ui/button"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { toast } from "sonner"
-import { setArchived, useArchived } from "./call-archive"
+import { useCallMetadata, type MetadataEdit } from "@/features/call/use-call-metadata"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { cn } from "@/lib/utils"
-import { ApiError, type Call, type CallSummary, type CallTotals, callCountQuery, callPagesQuery, callQuery, latestCallQuery } from "@/lib/api"
+import { ApiError, type Call, type CallSummary, type CallTotals, callCountQuery, callPagesQuery, callQuery, latestCallQuery, callTagsQuery } from "@/lib/api"
 import { serverOperators, toServerParams } from "./call-filters"
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty"
 import { PageState, errorText } from "@/components/page-state"
 import { Spinner } from "@/components/ui/spinner"
 import { CallMeta } from "@/features/call/call-meta"
-import { CallTags, TagChip, useCallTags } from "@/features/call/call-tags"
+import { CallTags, TagChip } from "@/features/call/call-tags"
 import { CallTurnControls } from "@/features/call/call-turn-controls"
 import { CallView } from "@/features/call/call-view"
 import { fmtMs, pipelineLabel } from "@/features/call/call-model"
 import { BUDGET_MS } from "@/features/call/call-steps"
 import { useUrlState } from "@/lib/url-state"
 
-// Archive and row key: the room SID as before; the contract id when the room reported none.
-const keyOf = (c: { roomSid: string | null; id: string }) => c.roomSid ?? c.id
+// Metadata and row identity use the immutable call ID, including when rooms are reused.
+const keyOf = (c: { id: string }) => c.id
 
 // How each call reached the agent, as the server classifies it (CallSummary.channel).
 type Channel = CallSummary["channel"]
@@ -155,7 +155,7 @@ const ConsoleCallLink: CallLink = ({ row, className, children }) => (
   </Link>
 )
 
-export function columns(tagsOf: (room: string) => string[], CallName: CallLink = ConsoleCallLink): Columns<Row> {
+export function columns(tagsOf: (call: CallSummary) => string[], CallName: CallLink = ConsoleCallLink): Columns<Row> {
   return [
     {
       id: "room",
@@ -182,9 +182,9 @@ export function columns(tagsOf: (room: string) => string[], CallName: CallLink =
             <AnswerCell r={r} />
             <IssuesCell r={r} />
           </div>
-          {tagsOf(r.summary.room).length > 0 && (
+          {tagsOf(r.summary).length > 0 && (
             <div className="mt-1 flex flex-wrap gap-1">
-              {tagsOf(r.summary.room).map((t) => (
+              {tagsOf(r.summary).map((t) => (
                 <TagChip key={t} tag={t} />
               ))}
             </div>
@@ -255,7 +255,7 @@ export function columns(tagsOf: (room: string) => string[], CallName: CallLink =
 }
 
 // Unknown values (no answer measured, turns not reported) match only "is empty", never a number.
-function callFields(allTags: string[], tagsOf: (room: string) => string[]): Field<Row>[] {
+function callFields(allTags: string[]): Field<Row>[] {
   return [
     { id: "room", label: "Room", type: "text", icon: <Hash />, operators: serverOperators.room, get: (r) => r.summary.room },
     { id: "channel", label: "Channel", type: "select", icon: <Phone />, operators: serverOperators.choiceWithNot, options: (Object.keys(channelInfo) as Channel[]).map((c) => ({ value: c, label: channelInfo[c].label })), get: (r) => r.summary.channel },
@@ -279,7 +279,7 @@ function callFields(allTags: string[], tagsOf: (room: string) => string[]): Fiel
     { id: "length", label: "Length (s)", type: "number", icon: <Clock />, operators: serverOperators.number, get: (r) => r.summary.durationSeconds },
     { id: "turns", label: "Turns", type: "number", icon: <ChatsCircle />, operators: serverOperators.number, get: (r) => r.summary.turnCount },
     { id: "recorded", label: "Recorded", type: "boolean", icon: <Waveform />, operators: serverOperators.boolean, get: (r) => r.summary.recorded },
-    ...(allTags.length ? [{ id: "tag", label: "Tag", type: "multiselect" as const, icon: <Tag />, operators: serverOperators.tags, options: allTags.map((t) => ({ value: t, label: t })), get: (r: Row) => tagsOf(r.summary.room) }] : []),
+    ...(allTags.length ? [{ id: "tag", label: "Tag", type: "multiselect" as const, icon: <Tag />, operators: serverOperators.tags, options: allTags.map((t) => ({ value: t, label: t })), get: (r: Row) => r.summary.tags }] : []),
   ]
 }
 
@@ -302,7 +302,6 @@ export function CallsPage() {
   // The open call lives in the URL, /calls/<call id>, so a call has a link to share.
   const { callId } = useParams({ strict: false }) as { callId?: string }
   const navigate = useNavigate()
-  const queryClient = useQueryClient()
   // The call last open, so closing its drawer puts focus back on its link and keyboard users keep their place.
   const lastOpen = useRef<string | null>(null)
   useEffect(() => {
@@ -318,20 +317,18 @@ export function CallsPage() {
     "q",
     useMemo(() => createFilterQuery([]), []),
   )
-  const tags = useCallTags()
-  const archived = useArchived()
+  const edit = useCallMetadata()
+  const catalog = useQuery(callTagsQuery())
+  const [archiving,setArchiving] = useState(false)
+  const [archiveError,setArchiveError] = useState<string|null>(null)
   const [view, setView] = useUrlState<"active" | "archived">("view", "active")
-  // Archive and tags are kept in this browser and served back by the API (see mocks/dispositions.ts),
-  // so a change re-reads the list.
-  const dispositions = JSON.stringify([archived, tags.snapshot()])
-  useEffect(() => void queryClient.invalidateQueries({ queryKey: ["calls"] }), [dispositions, queryClient])
 
   // The range ends at the project's latest call; a call still open counts from its start.
   const latest = useQuery(latestCallQuery())
   const last = latest.data ? Date.parse(latest.data.endedAt ?? latest.data.startedAt) / 1000 : null
   const now = last ?? Date.now() / 1000
   const [range, setRange] = useUrlRange("7d", now)
-  const fields = useMemo(() => callFields(tags.all, tags.of), [tags])
+  const fields = useMemo(() => callFields(catalog.data?.tags ?? []), [catalog.data])
   const labels = useMemo(() => Object.fromEntries(fields.map((f) => [f.id, String(f.label)])), [fields])
 
   // The range, the filters and the archive tab all run on the server; the cards and the table read the
@@ -376,13 +373,22 @@ export function CallsPage() {
     r
       ? navigate({ to: "/calls/$callId", params: { callId: r.id }, search: keepListState } as never)
       : navigate({ to: "/calls", search: keepListState } as never)
-  const archive = (calls: { roomSid: string | null; id: string; room: string }[], to: boolean, done?: () => void) => {
-    const before = archived
-    const ids = calls.map(keyOf)
-    setArchived(to ? [...new Set([...archived, ...ids])] : archived.filter((x) => !ids.includes(x)))
-    done?.()
-    const what = calls.length === 1 ? calls[0].room : `${calls.length} calls`
-    toast(to ? `Archived ${what}` : `Moved ${what} back to calls`, { action: { label: "Undo", onClick: () => setArchived(before) } })
+  const archive = async (calls: {id:string;room:string}[],to:boolean,done?:()=>void) => {
+    if (archiving || !edit.canEdit) return
+    setArchiving(true);setArchiveError(null)
+    const saved:MetadataEdit[]=[];const failed:string[]=[]
+    for (const call of calls) {
+      try {saved.push(await edit.mutateAsync({id:call.id,archived:to}))}
+      catch(error) {failed.push(`${call.room}: ${errorText(error)}`)}
+    }
+    setArchiving(false)
+    if (failed.length) setArchiveError(`${saved.length}/${calls.length} saved. ${failed.join("; ")}`)
+    else done?.()
+    if (saved.length) toast(`${to?"Archived":"Restored"} ${saved.length} call${saved.length===1?"":"s"}`,{action:{label:"Undo",onClick:()=>{void (async()=>{
+      const errors:string[]=[]
+      for (const result of saved) {try {await edit.mutateAsync({id:result.id,undo:result})}catch(error){errors.push(errorText(error))}}
+      if(errors.length) toast.error(`Undo failed for ${errors.length}/${saved.length} calls. ${errors.join("; ")}`)
+    })()}}})
   }
   const t = server.nothing ? NO_CALLS : first?.totals
   const answers = t?.answers
@@ -433,6 +439,7 @@ export function CallsPage() {
       </header>
 
       <section className="space-y-3">
+        {archiveError && <p role="alert" className="text-sm text-destructive">{archiveError}</p>}
         <Tabs value={view} onValueChange={(v) => setView(v as "active" | "archived")}>
           <TabsList>
             <TabsTrigger value="active">
@@ -455,7 +462,7 @@ export function CallsPage() {
               filtered
               server={{ total: total ?? null, hasMore: Boolean(list.hasNextPage), loading: list.isFetchingNextPage, loadMore: () => void list.fetchNextPage() }}
               data={rows}
-              columns={columns(tags.of)}
+              columns={columns(c => c.tags)}
               fields={fields}
               query={query}
               onQueryChange={setQuery}
@@ -465,10 +472,11 @@ export function CallsPage() {
               sort={DEFAULT_SORT}
               empty={view === "archived" ? "No archived calls." : "No calls match these filters."}
               bulk={(sel, clear) =>
-                view === "active" ? (
+                !edit.canEdit ? null : view === "active" ? (
                   <Button
                     size="sm"
                     variant="outline"
+                    disabled={archiving}
                     onClick={() =>
                       archive(
                         sel.map((r) => r.summary),
@@ -483,6 +491,7 @@ export function CallsPage() {
                   <Button
                     size="sm"
                     variant="outline"
+                    disabled={archiving}
                     onClick={() =>
                       archive(
                         sel.map((r) => r.summary),
@@ -503,7 +512,7 @@ export function CallsPage() {
       </section>
       <Sheet open={callId !== undefined} onOpenChange={(o) => !o && setOpen(null)}>
         <SheetContent side="right" onOpenAutoFocus={(e) => e.preventDefault()} onCloseAutoFocus={refocus} onPointerDownOutside={keepOpenOnInsidePress} className="gap-0 p-0 data-[side=right]:w-[80vw] data-[side=right]:sm:max-w-none">
-          {callId !== undefined && <CallDrawer callId={callId} preview={preview?.call.id === callId ? preview.call : undefined} archived={archived} archive={archive} />}
+          {callId !== undefined && <CallDrawer callId={callId} preview={preview?.call.id === callId ? preview.call : undefined} canEdit={edit.canEdit} pending={archiving} error={archiveError} archive={archive} />}
         </SheetContent>
       </Sheet>
     </div>
@@ -512,15 +521,16 @@ export function CallsPage() {
 
 // One call, read by the id in the URL, whatever the list's filters are. The dev design preview is built
 // in the browser.
-function CallDrawer({ callId, preview, archived, archive }: { callId: string; preview?: Call; archived: string[]; archive: (calls: { roomSid: string | null; id: string; room: string }[], to: boolean) => void }) {
+function CallDrawer({ callId, preview, canEdit, pending, error, archive }: { callId: string; preview?: Call; canEdit: boolean; pending:boolean; error:string|null; archive: (calls: { roomSid: string | null; id: string; room: string }[], to: boolean) => void }) {
   const read = useQuery({ ...callQuery(callId), enabled: !preview })
-  const call = preview ?? read.data
+  const denied = read.error instanceof ApiError && [401,403,404].includes(read.error.status)
+  const call = denied ? undefined : preview ?? read.data
   if (!call) {
     if (read.error instanceof ApiError && read.error.status === 404) return <DrawerState title="Call not found" detail={`No call ${callId} in this project.`} />
     if (read.isError) return <DrawerState title="The call could not be loaded" detail={errorText(read.error)} />
     return <DrawerState loading title="Loading the call" />
   }
-  const isArchived = archived.includes(keyOf(call))
+  const isArchived = call.archived
   return (
     <>
       <SheetHeader className="shrink-0 border-b px-5 py-4 pr-14">
@@ -531,11 +541,12 @@ function CallDrawer({ callId, preview, archived, archive }: { callId: string; pr
           </div>
         </SheetDescription>
         <div className="flex flex-wrap items-center gap-2 pt-1.5">
-          <CallTags room={call.room} />
-          <Button size="sm" variant="ghost" className="ml-auto text-muted-foreground" onClick={() => archive([call], !isArchived)}>
+          <CallTags key={call.id} callId={call.id} disabled={!!preview} />
+          {canEdit && !preview && <Button disabled={pending} size="sm" variant="ghost" className="ml-auto text-muted-foreground" onClick={() => archive([call], !isArchived)}>
             {isArchived ? <ArrowCounterClockwise /> : <Archive />}
             {isArchived ? "Unarchive" : "Archive"}
-          </Button>
+          </Button>}
+          {error && <p role="alert" className="w-full text-xs text-destructive">{error}</p>}
           <CallTurnControls call={call} />
         </div>
       </SheetHeader>

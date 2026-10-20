@@ -57,3 +57,8 @@ func (s *Store) CallMetadataRevision(ctx context.Context, org, project string) (
 	}
 	return revision, err
 }
+
+func (s *Store) CallTags(ctx context.Context, org, project string) ([]string, error) {
+	tags, err := s.q.CallTags(ctx, CallTagsParams{OrganisationID: org, ProjectID: project})
+	return nonNilStrings(tags), err
+}

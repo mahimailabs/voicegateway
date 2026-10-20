@@ -7,6 +7,9 @@ import {
   createProject as createProjectCall,
   createProjectKey as createProjectKeyCall,
   getAlertSetup,
+  getCallMetadata,
+  getCallTags,
+  updateCallMetadata,
   getCall,
   getCallStats,
   getCapacity,
@@ -281,3 +284,15 @@ export const createPasswordReset = (userId: string) => data(createPasswordResetC
 export const createProject = (orgId: string, body: ProjectCreate) => data(createProjectCall({ ...thrown, path: { orgId }, body }))
 
 export const entitlementQuery = () => ({ queryKey: ["entitlement", currentScope().org], queryFn: () => data(getMyOrganisationEntitlement({ ...thrown, path: { orgId: currentScope().org } })), refetchInterval: 30_000, retry: false as const })
+
+export const metadataQuery = (id: string, selected = currentScope()) => ({
+ queryKey: ["call-metadata", selected, id],
+ queryFn: ({signal}: {signal: AbortSignal}) => data(getCallMetadata({...thrown,path:{orgId:selected.org,projectId:selected.project,callId:id},signal})),
+ staleTime: 0, retry: false,
+})
+export const callTagsQuery = (selected = currentScope()) => ({
+ queryKey:["call-tags",selected],
+ queryFn: ({signal}: {signal:AbortSignal}) => data(getCallTags({...thrown,path:{orgId:selected.org,projectId:selected.project},signal})),
+ retry:false,
+})
+export const saveCallMetadata = (id: string, body: import("@/lib/api-types").CallMetadata, selected = currentScope()) => data(updateCallMetadata({...thrown,path:{orgId:selected.org,projectId:selected.project,callId:id},body}))

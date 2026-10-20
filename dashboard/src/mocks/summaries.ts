@@ -3,7 +3,6 @@ import { buildModel, turnCount } from "@/features/call/call-model"
 import { findingsFor } from "@/features/call/call-steps"
 import type { MediaServerData } from "@/features/media-server/room-drawer"
 import mediaServer from "@/mocks/media-server.json"
-import { isArchived, tagsOf } from "./dispositions"
 
 // What the server computes for the Calls list, here in the mock until web serves it. The checks
 // are the call drawer's own (buildModel, findingsFor), so a row and its drawer never disagree.
@@ -65,8 +64,8 @@ export function summarize(c: Call): CallSummary {
       medium: checked ? findings.filter((f) => f.severity === "medium").length : null,
       titles: findings.filter((f) => f.severity !== "info").map((f) => f.title),
     },
-    tags: tagsOf(c),
-    archived: isArchived(c),
+    tags: c.tags ?? [],
+    archived: c.archived ?? false,
     recorded: Boolean(c.recording && !c.recording.preview),
   }
 }

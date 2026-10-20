@@ -71,6 +71,13 @@ func TestCallMetadataSessionPersistenceAndPermissions(t *testing.T) {
 			t.Fatalf("metadata %+v", got)
 		}
 	}
+	for _, credential := range []call{
+		{method: http.MethodGet, path: "/api/v1/org/org-a/project/p/call-tags", cookie: viewer},
+		{method: http.MethodGet, path: "/api/v1/org/org-a/project/p/call-tags", token: key},
+	} {
+		check(credential, http.StatusOK)
+	}
+	check(call{method: http.MethodGet, path: "/api/v1/org/org-b/project/p/call-tags", token: key}, http.StatusForbidden)
 	for _, method := range []string{http.MethodGet, http.MethodPut} {
 		for _, wrong := range []string{other, "00000000-0000-4000-8000-000000000001", "not-a-uuid"} {
 			check(call{method: method, path: strings.Replace(path, id, wrong, 1), body: valid, cookie: member}, http.StatusNotFound)

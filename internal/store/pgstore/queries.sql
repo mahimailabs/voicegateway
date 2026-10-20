@@ -602,3 +602,9 @@ RETURNING tags, archived, metadata_revision;
 
 -- name: CallMetadataRevision :one
 SELECT call_metadata_revision FROM projects WHERE organisation_id = @organisation_id AND id = @project_id;
+
+-- name: CallTags :many
+SELECT DISTINCT unnest(c.tags)::text AS tag
+FROM calls c JOIN call_list l ON l.id = c.id
+WHERE c.organisation_id = @organisation_id AND c.project_id = @project_id AND l.servable
+ORDER BY tag;

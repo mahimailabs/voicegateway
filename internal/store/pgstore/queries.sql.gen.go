@@ -160,6 +160,38 @@ func (q *Queries) CallMetadataRevision(ctx context.Context, arg CallMetadataRevi
 	return call_metadata_revision, err
 }
 
+const callTags = `-- name: CallTags :many
+SELECT DISTINCT unnest(c.tags)::text AS tag
+FROM calls c JOIN call_list l ON l.id = c.id
+WHERE c.organisation_id = $1 AND c.project_id = $2 AND l.servable
+ORDER BY tag
+`
+
+type CallTagsParams struct {
+	OrganisationID string
+	ProjectID      string
+}
+
+func (q *Queries) CallTags(ctx context.Context, arg CallTagsParams) ([]string, error) {
+	rows, err := q.db.Query(ctx, callTags, arg.OrganisationID, arg.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var tag string
+		if err := rows.Scan(&tag); err != nil {
+			return nil, err
+		}
+		items = append(items, tag)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const callTotals = `-- name: CallTotals :one
 WITH f AS (
     SELECT l.organisation_id, l.project_id, l.id, l.room_name, l.room_sid, l.job_id, l.started_at, l.ended_at, l.end_state, l.created_at, l.first_seen_at, l.servable, l.summarized, l.start_at, l.duration_seconds, l.participants, l.channel, l.turn_count, l.answer_ms, l.answer_ms_median, l.models, l.pipeline, l.agent_key
