@@ -273,3 +273,34 @@ func TestCreateProjectAnswersTheBucketVerifier(t *testing.T) {
 		})
 	}
 }
+
+type countRooms struct{ n int }
+
+func (countRooms) VerifyLiveKit(context.Context, string, string, string) error { return nil }
+func (c countRooms) VerifyLiveKitRooms(context.Context, string, string, string) (int, error) {
+	return c.n, nil
+}
+
+// createProject answers the rooms the verify read listed, and null, not zero, when the verifier
+// cannot count them.
+func TestCreateProjectAnswersLiveRooms(t *testing.T) {
+	body := `{"name":"Production","livekitUrl":"wss://lk.example.com","livekitApiKey":"APIkey","livekitApiSecret":"test-secret"}`
+	for _, tt := range []struct {
+		name     string
+		verifier LiveKitVerifier
+		want     string
+	}{
+		{"counted", countRooms{3}, `"liveRooms":3`},
+		{"none live", countRooms{0}, `"liveRooms":0`},
+		{"not counted", verifyAs{nil}, `"liveRooms":null`},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			a := &API{NewProjects: &countProjectCreates{}, VerifyLiveKit: tt.verifier}
+			w := httptest.NewRecorder()
+			a.createProject(w, httptest.NewRequest(http.MethodPost, "/", strings.NewReader(body)))
+			if w.Code != http.StatusCreated || !strings.Contains(w.Body.String(), tt.want) {
+				t.Fatalf("= %d %s; want 201 with %s", w.Code, w.Body, tt.want)
+			}
+		})
+	}
+}

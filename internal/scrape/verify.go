@@ -28,15 +28,22 @@ func NewVerifier(publicOnly bool) Verifier {
 // cause is wrapped for the command line; it never holds the secret, which travels only inside the
 // signed token.
 func (v Verifier) VerifyLiveKit(ctx context.Context, url, apiKey, apiSecret string) error {
+	_, err := v.VerifyLiveKitRooms(ctx, url, apiKey, apiSecret)
+	return err
+}
+
+// VerifyLiveKitRooms is VerifyLiveKit that also returns how many rooms the same signed read listed:
+// the rooms live on that LiveKit project now.
+func (v Verifier) VerifyLiveKitRooms(ctx context.Context, url, apiKey, apiSecret string) (int, error) {
 	ctx, cancel := context.WithTimeout(ctx, v.Timeout)
 	defer cancel()
-	_, err := v.Dial(url, apiKey, apiSecret).ListRooms(ctx)
+	res, err := v.Dial(url, apiKey, apiSecret).ListRooms(ctx)
 	if err == nil {
-		return nil
+		return len(res), nil
 	}
 	switch classify(err) {
 	case store.ErrorUnauthenticated, store.ErrorPermissionDenied:
-		return fmt.Errorf("%w: %w", store.ErrLiveKitSecretInvalid, err)
+		return 0, fmt.Errorf("%w: %w", store.ErrLiveKitSecretInvalid, err)
 	}
-	return fmt.Errorf("%w: %w", store.ErrLiveKitUnreachable, err)
+	return 0, fmt.Errorf("%w: %w", store.ErrLiveKitUnreachable, err)
 }

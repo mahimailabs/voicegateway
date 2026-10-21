@@ -1467,6 +1467,15 @@ export type ProjectConnection = {
     firstCall: FirstCall | null;
 };
 
+export type ProjectCreated = {
+    id: string;
+    name: string;
+    /**
+     * Rooms live on the LiveKit project at the verify, from the same signed ListRooms read. Null when the verifier did not count them; never a guessed zero.
+     */
+    liveRooms: number | null;
+};
+
 export type ProjectLiveKit = {
     /**
      * The project's LiveKit URL. It never changes; another LiveKit server is another project.
@@ -4003,9 +4012,9 @@ export type CreateProjectError = CreateProjectErrors[keyof CreateProjectErrors];
 
 export type CreateProjectResponses = {
     /**
-     * The new project, as getWorkspaces lists it. Never its LiveKit key or secret.
+     * The new project, as getWorkspaces lists it, and how many rooms its LiveKit project had live at the verify. Never its LiveKit key or secret.
      */
-    201: WorkspaceProject;
+    201: ProjectCreated;
 };
 
 export type CreateProjectResponse = CreateProjectResponses[keyof CreateProjectResponses];

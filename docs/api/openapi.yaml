@@ -1493,7 +1493,7 @@ paths:
               $ref: "#/components/schemas/ProjectCreate"
       responses:
         "201":
-          description: The new project, as getWorkspaces lists it. Never its LiveKit key or secret.
+          description: The new project, as getWorkspaces lists it, and how many rooms its LiveKit project had live at the verify. Never its LiveKit key or secret.
           headers:
             Cache-Control:
               description: Always no-store, so no cache keeps the answer.
@@ -1502,7 +1502,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/WorkspaceProject"
+                $ref: "#/components/schemas/ProjectCreated"
         "409":
           $ref: "#/components/responses/Conflict"
         "422":
@@ -5654,6 +5654,25 @@ components:
             - type: "null"
           x-source: { kind: computed, file: internal/store/pgstore/connection.go, pointer: null, detail: "Earliest row of the calls index, which only the worker writes from verified ingest." }
           x-null-reason: No call has been stored for this project yet. Sample data never counts.
+    ProjectCreated:
+      type: object
+      additionalProperties: false
+      required: [ id, name, liveRooms ]
+      x-source: { kind: computed, file: internal/api/projects.go, pointer: null, detail: "createProject's answer: the stored project and the verify read's room count." }
+      properties:
+        id:
+          type: string
+          x-source: { kind: configuration, file: internal/api/projects.go, pointer: null, detail: "The project id, the name as a slug." }
+        name:
+          type: string
+          x-source: { kind: configuration, file: internal/api/projects.go, pointer: null, detail: "The project name as stored." }
+        liveRooms:
+          type: [ integer, "null" ]
+          minimum: 0
+          x-unit: count
+          description: Rooms live on the LiveKit project at the verify, from the same signed ListRooms read. Null when the verifier did not count them; never a guessed zero.
+          x-source: { kind: computed, file: internal/scrape/verify.go, pointer: null, detail: "The number of rooms the verify's signed ListRooms read listed (server-sdk-go RoomServiceClient.ListRooms)." }
+          x-null-reason: The verifier did not count the rooms.
     ProjectLiveKit:
       type: object
       additionalProperties: false
