@@ -1,0 +1,50 @@
+---
+title: Coding agents (MCP)
+description: Let Claude Code, Cursor or any MCP client read your project's calls.
+---
+
+VoiceGateway serves an MCP server at `/mcp`. A coding agent asks it the same questions the console answers: which calls were slow, what happened in one call, what the media server, SIP, egress, ingress and agent workers looked like.
+
+<Steps>
+<Step>
+
+### Create a project key
+
+Follow [Project API keys](/docs/team/api-keys). The agent reads that one project and changes nothing.
+
+</Step>
+<Step>
+
+### Add the server to your agent
+
+Claude Code:
+
+```bash
+claude mcp add --transport http voicegateway https://<your-voicegateway>/mcp \
+  --header "Authorization: Bearer vgk_..."
+```
+
+Any other MCP client that speaks Streamable HTTP:
+
+```json
+{
+  "mcpServers": {
+    "voicegateway": {
+      "url": "https://<your-voicegateway>/mcp",
+      "headers": { "Authorization": "Bearer vgk_..." }
+    }
+  }
+}
+```
+
+</Step>
+<Step>
+
+### Ask
+
+"List yesterday's calls with issues", "Why was call … slow?", "Is the SIP trunk healthy?"
+
+</Step>
+</Steps>
+
+Each tool is one read of the VoiceGateway API, with the same names and fields as the console's **API reference** page. A value no source reported comes back as null, never zero. Revoke the key and every tool stops on its next call.

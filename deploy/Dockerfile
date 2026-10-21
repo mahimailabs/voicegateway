@@ -18,6 +18,8 @@ COPY cmd ./cmd
 COPY internal ./internal
 COPY ee ./ee
 COPY migrations ./migrations
+# The MCP server builds its tools from the API contract, embedded from docs/api.
+COPY docs/api ./docs/api
 # Cache mounts keep downloaded modules and build results between builds without baking them into a
 # layer, so a source change rebuilds only what changed.
 RUN --mount=type=cache,target=/go/pkg/mod \
