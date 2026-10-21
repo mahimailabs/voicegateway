@@ -66,7 +66,7 @@ func TestMCPToolsReadTheKeysProject(t *testing.T) {
 	// The production wiring (internal/app): the router the tools call has no gate of its own; the
 	// gate in front of /mcp identified the caller.
 	inner := &API{
-		Projects: f.pg, Settings: f.pg, Metadata: f.pg, Issues: f.pg, Calls: f.pg, Traces: f.events, Layers: f.events,
+		Projects: f.pg, Settings: f.pg, Metadata: f.pg, Issues: f.pg, Calls: f.pg, Connections: f.pg, Traces: f.events, Layers: f.events,
 		Endpoints: f.pg, Accounts: f.pg, Stats: f.pg, ResourceEndpoints: f.pg, ResourceSamples: f.events,
 		Log: f.log, Now: time.Now,
 	}
@@ -104,7 +104,7 @@ func TestMCPToolsReadTheKeysProject(t *testing.T) {
 	slices.Sort(names)
 	want := []string{
 		"getCall", "getCallMetadata", "getCallStats", "getCallTags", "getCloudAgents", "getEgress", "getIngress",
-		"getIssueMetadata", "getMediaServer", "getProjectSettings", "getResources", "getSip", "getWorkers",
+		"getIssueMetadata", "getMediaServer", "getProjectConnection", "getProjectSettings", "getResources", "getSip", "getWorkers",
 		"getWorkspaces", "listCalls", "listIssues",
 	}
 	if !slices.Equal(names, want) {
@@ -192,6 +192,7 @@ func TestMCPToolsReadTheKeysProject(t *testing.T) {
 		{"listIssues", "issues", day, nil, &failure{args: backwards, status: "400"}},
 		{"getIssueMetadata", "issues/" + issueID + "/metadata", map[string]any{"issueId": issueID}, nil, &failure{other: true, args: map[string]any{"issueId": issueID}, status: "404"}},
 		{"getProjectSettings", "settings", nil, nil, nil},
+		{"getProjectConnection", "connection", nil, nil, nil},
 		{"getMediaServer", "media-server", nil, nil, neverRead},
 		{"getSip", "sip", nil, nil, neverRead},
 		{"getEgress", "egress", nil, nil, neverRead},

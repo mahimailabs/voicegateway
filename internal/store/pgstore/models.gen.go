@@ -248,6 +248,16 @@ type ProjectBucket struct {
 	CreatedAt       pgtype.Timestamptz
 }
 
+type ProjectConnection struct {
+	OrganisationID string
+	ProjectID      string
+	Source         string
+	LastAcceptedAt pgtype.Timestamptz
+	LastRejectedAt pgtype.Timestamptz
+	Reason         pgtype.Text
+	UsedKey        pgtype.Text
+}
+
 type ProjectKey struct {
 	KeyID          string
 	OrganisationID string

@@ -1,16 +1,18 @@
 ---
-title: Connect your LiveKit project
+title: Connect your agent
 description: Point LiveKit and your agent at VoiceGateway.
 ---
 
 <Picture src="/diagrams/connect" alt="LiveKit sends webhooks to VoiceGateway. The voice agent uploads its own data to VoiceGateway through LIVEKIT_OBSERVABILITY_URL." />
 
-One VoiceGateway project is one LiveKit project.
+One VoiceGateway project is one LiveKit project. Self-hosted and Cloud follow the same steps; only the host in the URLs differs.
 
 <Steps>
 <Step>
 
 ### Add the project
+
+Self-hosted:
 
 ```bash
 export LIVEKIT_URL=wss://your-project.livekit.cloud
@@ -19,27 +21,70 @@ export LIVEKIT_API_SECRET=...
 make project-add NAME="Production"
 ```
 
+Cloud: in the console, choose **Add a LiveKit project** in the organisation switcher (top left) or in **Settings > Organisation**, and enter the same three values.
+
 The secret is stored encrypted and never shown again.
+
+Self-hosted only: the console builds the two URLs from `VOICEGATEWAY_PUBLIC_URL`. Add the address LiveKit and your agent reach VoiceGateway on to `deploy/.env`, then run `make up` again:
+
+```bash
+VOICEGATEWAY_PUBLIC_URL=https://voicegateway.example.com
+```
+
+For an agent on the same machine, `http://localhost:8080` is enough. Until it is set, the panel says the public URL is not set instead of showing the URLs. Cloud sets it for you.
 
 </Step>
 <Step>
 
-### Point your agent at it
+### Copy the two URLs
+
+The **Connect your agent** panel is on the project's **Overview** until the first call is stored, and always in **Settings > Connection**. It shows both:
+
+- Agent upload: `https://<host>/ingest/<organisation-id>/<project-id>`
+- Webhook: `https://<host>/ingest/<organisation-id>/<project-id>/livekit/webhook`
+
+</Step>
+<Step>
+
+### Connect the agent
+
+In an existing agent, set one variable and turn session recording on. No VoiceGateway code.
 
 ```bash
-LIVEKIT_OBSERVABILITY_URL=http://<voicegateway-host>:8080/ingest/<organisation-id>/<project-id>
+LIVEKIT_OBSERVABILITY_URL=https://<host>/ingest/<organisation-id>/<project-id>
 ```
 
-Start the agent session with `record=True`. No other code change.
+- Python: livekit-agents 1.8.0 or later (tested on 1.8.6 to 1.8.8), `session.start(..., record=True)`.
+- Node: @livekit/agents 1.8.0 or later, `session.start({ ..., record: true })`.
+
+The agent uploads only sessions that record. To send traces, logs, metrics and the transcript without the call audio, record without it: `record={"audio": False}` in Python, `record: { audio: false }` in Node. Every version that honours `LIVEKIT_OBSERVABILITY_URL` accepts these options.
+
+No agent yet? Run the [example agent](https://github.com/mahimailabs/voicegateway/tree/main/examples/livekit-agent). It needs a clone of this repository, [uv](https://docs.astral.sh/uv/) and the [LiveKit CLI](https://docs.livekit.io/reference/developer-tools/livekit-cli/) (`lk`). Copy `examples/livekit-agent/.env.example` to `.env`, fill in the LiveKit values and the agent upload URL, then run `make example-call`. It starts the example agent, places one call with `lk` and stops. The example uses LiveKit Inference, which needs a LiveKit Cloud project.
 
 </Step>
 <Step>
 
 ### Send LiveKit's webhooks
 
-In LiveKit, add a webhook to `https://<voicegateway-host>/ingest/<organisation-id>/<project-id>/livekit/webhook`, signed with the same API key. Use the organisation and project IDs from the console URL. The URL selects the project; LiveKit signatures authenticate the request. Without it, a call closes only after 2 hours with no activity, and its end time is marked as inferred.
+In LiveKit Cloud, open **Settings > Webhooks**, choose **Create new webhook**, paste the webhook URL and pick the same API key as the signing key. On a self-hosted LiveKit server, put the URL under `webhook.urls` in `livekit.yaml` and the same API key under `webhook.api_key`, then restart the LiveKit server:
+
+```yaml
+webhook:
+  api_key: <your LiveKit API key>
+  urls:
+    - https://<host>/ingest/<organisation-id>/<project-id>/livekit/webhook
+```
+
+Without it, a call closes only after 2 hours with no activity, and its end time is marked as inferred.
+
+</Step>
+<Step>
+
+### Watch the first call arrive
+
+The panel moves from **Waiting** to **First call stored**. If VoiceGateway refuses a webhook or an upload, the panel shows the reason and the fix.
 
 </Step>
 </Steps>
 
-LiveKit Cloud needs a public HTTPS address for VoiceGateway. See [reaching VoiceGateway from LiveKit](https://github.com/mahimailabs/voicegateway/blob/main/docs/self-hosting.md#reaching-voicegateway-from-livekit).
+LiveKit Cloud needs a public HTTPS address for a self-hosted VoiceGateway. See [reaching VoiceGateway from LiveKit](https://github.com/mahimailabs/voicegateway/blob/main/docs/self-hosting.md#reaching-voicegateway-from-livekit).

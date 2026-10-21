@@ -959,3 +959,35 @@ WHERE organisation_id= @organisation_id AND project_id= @project_id AND revision
 UPDATE issue_media_backfills SET failures=least(failures+1,12), revision=revision+1,
  retry_at=now() + least(3600, 10 * power(2,least(failures,9))) * interval '1 second'
 WHERE organisation_id= @organisation_id AND project_id= @project_id AND revision= @expected_revision;
+
+-- name: RecordConnectionAccepted :execrows
+-- Selecting the project inserts nothing for a project that does not exist, so a request addressed
+-- to an unknown project records nothing.
+INSERT INTO project_connections (organisation_id, project_id, source, last_accepted_at)
+SELECT p.organisation_id, p.id, @source, @at
+FROM projects p WHERE p.organisation_id = @organisation_id AND p.id = @project_id
+ON CONFLICT (organisation_id, project_id, source) DO UPDATE SET
+    last_accepted_at = GREATEST(project_connections.last_accepted_at, EXCLUDED.last_accepted_at);
+
+-- name: RecordConnectionRejected :execrows
+INSERT INTO project_connections (organisation_id, project_id, source, last_rejected_at, reason, used_key)
+SELECT p.organisation_id, p.id, @source, @at, @reason, sqlc.narg(used_key)
+FROM projects p WHERE p.organisation_id = @organisation_id AND p.id = @project_id
+ON CONFLICT (organisation_id, project_id, source) DO UPDATE SET
+    last_rejected_at = EXCLUDED.last_rejected_at,
+    reason           = EXCLUDED.reason,
+    used_key         = EXCLUDED.used_key;
+
+-- name: ProjectConnections :many
+SELECT source, last_accepted_at, last_rejected_at, reason, used_key
+FROM project_connections
+WHERE organisation_id = @organisation_id AND project_id = @project_id;
+
+-- name: FirstCall :one
+-- The earliest call the worker joined that the console can open: the same servable rule as
+-- ListCalls and CallByID. calls_start_at serves the order.
+SELECT id, start_at::timestamptz AS started_at
+FROM call_list
+WHERE organisation_id = @organisation_id AND project_id = @project_id AND servable
+ORDER BY start_at, id
+LIMIT 1;
