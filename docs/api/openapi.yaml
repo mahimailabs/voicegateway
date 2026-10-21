@@ -5515,7 +5515,7 @@ components:
           type: [ array, "null" ]
           maxItems: 20
           description: The sites allowed to frame the project's widgets. Empty or null allows none.
-          x-source: { kind: configuration, file: migrations/postgres/00020_embed_origins.sql, pointer: null, detail: project_settings.allowed_origins. }
+          x-source: { kind: configuration, file: migrations/postgres/00021_embed_origins.sql, pointer: null, detail: project_settings.allowed_origins. }
           items:
             type: string
             maxLength: 300
@@ -5544,7 +5544,7 @@ components:
         origin:
           type: string
           description: The one site that may frame the widgets, one of the project's allowedOrigins.
-          x-source: { kind: configuration, file: migrations/postgres/00020_embed_origins.sql, pointer: null, detail: One of project_settings.allowed_origins. }
+          x-source: { kind: configuration, file: migrations/postgres/00021_embed_origins.sql, pointer: null, detail: One of project_settings.allowed_origins. }
         expiresInSeconds:
           type: integer
           minimum: 60

@@ -10,7 +10,7 @@ PRODUCT.md capability 9, decisions 0017, 0023, 0027 and 0034, docs/api/openapi.y
 
 ## In Scope
 
-- Allowed origins per project (Admin), stored in Postgres (00020), read in getProjectSettings.
+- Allowed origins per project (Admin), stored in Postgres (00021), read in getProjectSettings.
 - `createEmbedToken` for a project key or a member; tokens checked by the gate on every request.
 - `frame-ancestors` and `Referrer-Policy` on console pages; an embed token reads its widgets' routes only.
 - Compact widgets at `/org/<org>/project/<project>/embed/<widget>?token=&size=&theme=`: answer-time (small, medium), calls (small, medium), issues (small, medium, large), recent-calls (medium, large), time-per-turn (medium, large), and call (the one-call view a recent call opens).
