@@ -282,7 +282,15 @@ describe("Agent", () => {
     show(() => <AgentScreen connection={connection({ agent: { ...none, lastRejectedAt: ago(1), reason: "key_mismatch", usedKey: "APIother", expectedKey: "APIexample123" } })} now={now} onContinue={vi.fn()} />)
     const status = await screen.findByRole("status")
     expect(within(status).getByText("Your agent uses a different LiveKit API key from this project's.")).toBeTruthy()
+    const summary = "Use this project's key and secret in your agent, then restart it."
+    expect(within(status).getByText(summary)).toBeTruthy()
     expect(status.textContent).not.toMatch(/token named/i)
+    expect(status.textContent).not.toContain("APIother")
+    await userEvent.setup().click(within(status).getByRole("button", { name: "Details" }))
+    // Details adds the two keys and the fix; it never repeats the summary.
+    expect(status.textContent).toContain("Your agent signed with APIother; this project expects APIexample123.")
+    expect(status.textContent).toContain("Set LIVEKIT_API_KEY to APIexample123")
+    expect(status.textContent?.split(summary).length).toBe(2)
   })
 })
 

@@ -70,7 +70,7 @@ function open(entry: string, { hosted = true, role = "admin", org = "default" }:
   return router
 }
 
-const agentHeading = () => screen.findByRole("heading", { level: 1, name: "Add one line to your agent." }, { timeout: 4000 })
+const agentHeading = () => screen.findByRole("heading", { level: 1, name: "Point your agent here." }, { timeout: 4000 })
 
 describe("the Overview of a Cloud project with no call", () => {
   test("sends an Admin into setup", async () => {
@@ -84,7 +84,7 @@ describe("the Overview of a Cloud project with no call", () => {
     await waitFor(() => expect(localStorage.getItem("vg.mock-entitlement")).toBe("hosted"))
     await new Promise((r) => setTimeout(r, 1000))
     expect(router.state.location.pathname).not.toBe("/setup")
-    expect(screen.queryByRole("heading", { level: 1, name: "Add one line to your agent." })).toBeNull()
+    expect(screen.queryByRole("heading", { level: 1, name: "Point your agent here." })).toBeNull()
   })
 
   test.each([["viewer"], ["member"]])("leaves a %s in the console", async (role) => {

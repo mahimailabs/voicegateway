@@ -79,12 +79,12 @@ const cloudScreens: { name: string; path: string; storage: () => Record<string, 
       await page.waitForTimeout(1500)
     },
   },
-  { name: "agent", path: "/org/default/project/default-project/setup", storage: () => ({ ...hosted, "vg.mock-no-calls": "true" }), heading: "Add one line to your agent." },
+  { name: "agent", path: "/org/default/project/default-project/setup", storage: () => ({ ...hosted, "vg.mock-no-calls": "true" }), heading: "Point your agent here." },
   {
     name: "agent error",
     path: "/org/default/project/default-project/setup",
     storage: () => ({ ...hosted, "vg.mock-no-calls": "true", "vg.mock-connection": JSON.stringify({ agent: { lastAcceptedAt: null, lastRejectedAt: new Date().toISOString(), reason: "key_mismatch", usedKey: "APIother", expectedKey: "APIexample123" } }) }),
-    heading: "Add one line to your agent.",
+    heading: "Point your agent here.",
     act: async (page) => {
       await expect(page.getByText("Your agent uses a different LiveKit API key from this project's.")).toBeVisible()
       await page.getByRole("button", { name: "Details" }).click()
