@@ -279,6 +279,7 @@ type ProjectSetting struct {
 	JoinMs         float64
 	TtsStartMs     float64
 	Revision       int64
+	AllowedOrigins []string
 }
 
 type ProjectWorkerEndpoint struct {

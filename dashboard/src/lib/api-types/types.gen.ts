@@ -1328,7 +1328,7 @@ export type Error = {
     /**
      * Stable error category.
      */
-    code: 'invalid_request' | 'revision_conflict' | 'unauthenticated' | 'forbidden' | 'not_found' | 'source_unavailable' | 'internal_error' | 'range_not_satisfiable' | 'last_admin' | 'already_member' | 'member_of_other_organisations' | 'project_exists' | 'livekit_secret_invalid' | 'livekit_unreachable' | 'recording_bucket_refused' | 'recording_bucket_unreachable';
+    code: 'invalid_request' | 'revision_conflict' | 'unauthenticated' | 'forbidden' | 'not_found' | 'source_unavailable' | 'internal_error' | 'range_not_satisfiable' | 'last_admin' | 'already_member' | 'member_of_other_organisations' | 'project_exists' | 'livekit_secret_invalid' | 'livekit_unreachable' | 'recording_bucket_refused' | 'recording_bucket_unreachable' | 'origin_not_allowed';
     /**
      * Safe human-readable explanation, excluding upstream credentials and request bodies.
      */
@@ -1441,6 +1441,51 @@ export type UpdateProjectSettings = {
      * Revision checked atomically on save to prevent lost updates.
      */
     revision: number;
+};
+
+export type UpdateAllowedOrigins = {
+    /**
+     * The sites allowed to frame the project's widgets. Empty or null allows none.
+     */
+    allowedOrigins: Array<string> | null;
+    /**
+     * Revision checked atomically on save to prevent lost updates.
+     */
+    revision: number;
+};
+
+export type CreateEmbedToken = {
+    /**
+     * The widgets the token opens. A recent-calls frame whose rows open a call needs both recent-calls and call.
+     */
+    widgets: Array<'answer-time' | 'calls' | 'issues' | 'recent-calls' | 'time-per-turn' | 'call'>;
+    /**
+     * The one site that may frame the widgets, one of the project's allowedOrigins.
+     */
+    origin: string;
+    /**
+     * How long the token is valid.
+     */
+    expiresInSeconds?: number;
+};
+
+export type EmbedToken = {
+    /**
+     * vge_ followed by a signed JWT. Put it in the frame's address as ?token=. Shown once; VoiceGateway does not store it.
+     */
+    token: string;
+    /**
+     * When the token stops working.
+     */
+    expiresAt: string;
+    /**
+     * The widgets the token opens.
+     */
+    widgets: Array<'answer-time' | 'calls' | 'issues' | 'recent-calls' | 'time-per-turn' | 'call'>;
+    /**
+     * The origin the token may be framed by, normalised.
+     */
+    origin: string;
 };
 
 export type ProjectSettings = {
@@ -3419,6 +3464,118 @@ export type UpdateProjectSettingsResponses = {
 };
 
 export type UpdateProjectSettingsResponse = UpdateProjectSettingsResponses[keyof UpdateProjectSettingsResponses];
+
+export type UpdateAllowedOriginsData = {
+    body: UpdateAllowedOrigins;
+    path: {
+        /**
+         * Authorised orgId; the server must verify organisation/project ownership before any read.
+         */
+        orgId: string;
+        /**
+         * Authorised projectId; the server must verify organisation/project ownership before any read.
+         */
+        projectId: string;
+    };
+    query?: never;
+    url: '/api/v1/org/{orgId}/project/{projectId}/settings/allowed-origins';
+};
+
+export type UpdateAllowedOriginsErrors = {
+    /**
+     * invalid_request; never return an empty success result for this failure.
+     */
+    400: Error;
+    /**
+     * unauthenticated; never return an empty success result for this failure.
+     */
+    401: Error;
+    /**
+     * forbidden; never return an empty success result for this failure.
+     */
+    403: Error;
+    /**
+     * not_found; never return an empty success result for this failure.
+     */
+    404: Error;
+    /**
+     * revision_conflict, settings changed since they were read; last_admin, the change would leave the organisation without an admin; already_member, the invited email's account is a member already; member_of_other_organisations, a reset's member belongs to an organisation the requester does not administer; project_exists, the organisation already has a project with the new name's id.
+     */
+    409: Error;
+    /**
+     * internal_error; never return an empty success result for this failure.
+     */
+    500: Error;
+    /**
+     * source_unavailable; never return an empty success result for this failure.
+     */
+    503: Error;
+};
+
+export type UpdateAllowedOriginsError = UpdateAllowedOriginsErrors[keyof UpdateAllowedOriginsErrors];
+
+export type UpdateAllowedOriginsResponses = {
+    /**
+     * Persisted settings with the new revision.
+     */
+    200: ProjectSettings;
+};
+
+export type UpdateAllowedOriginsResponse = UpdateAllowedOriginsResponses[keyof UpdateAllowedOriginsResponses];
+
+export type CreateEmbedTokenData = {
+    body: CreateEmbedToken;
+    path: {
+        /**
+         * Authorised orgId; the server must verify organisation/project ownership before any read.
+         */
+        orgId: string;
+        /**
+         * Authorised projectId; the server must verify organisation/project ownership before any read.
+         */
+        projectId: string;
+    };
+    query?: never;
+    url: '/api/v1/org/{orgId}/project/{projectId}/embed-tokens';
+};
+
+export type CreateEmbedTokenErrors = {
+    /**
+     * invalid_request; never return an empty success result for this failure.
+     */
+    400: Error;
+    /**
+     * unauthenticated; never return an empty success result for this failure.
+     */
+    401: Error;
+    /**
+     * forbidden; never return an empty success result for this failure.
+     */
+    403: Error;
+    /**
+     * not_found; never return an empty success result for this failure.
+     */
+    404: Error;
+    /**
+     * internal_error; never return an empty success result for this failure.
+     */
+    500: Error;
+    /**
+     * source_unavailable; never return an empty success result for this failure.
+     */
+    503: Error;
+};
+
+export type CreateEmbedTokenError = CreateEmbedTokenErrors[keyof CreateEmbedTokenErrors];
+
+export type CreateEmbedTokenResponses = {
+    /**
+     * The token, shown in this answer only.
+     */
+    201: EmbedToken;
+};
+
+export type CreateEmbedTokenResponse = CreateEmbedTokenResponses[keyof CreateEmbedTokenResponses];
 
 export type GetAlertSetupData = {
     body?: never;

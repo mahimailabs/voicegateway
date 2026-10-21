@@ -78,6 +78,7 @@ paths:
       security:
         - consoleSession: []
         - projectKey: []
+        - embedToken: []
       summary: List call summaries in a project, filtered and sorted on the server
       tags:
         - Console reads
@@ -90,7 +91,7 @@ paths:
       x-embed-access:
         credential: embed_token
         widgets:
-          - calls
+          - recent-calls
         projectIsolation: required
         originAllowList: required
         readOnly: true
@@ -258,6 +259,7 @@ paths:
       security:
         - consoleSession: []
         - projectKey: []
+        - embedToken: []
       summary: Read one conversation and its reported turns, events, spans and recording
       tags:
         - Console reads
@@ -310,6 +312,7 @@ paths:
       security:
         - consoleSession: []
         - projectKey: []
+        - embedToken: []
       summary: Totals, answer times and stage timings over calls in a range
       tags:
         - Console reads
@@ -323,11 +326,12 @@ paths:
         credential: embed_token
         widgets:
           - answer-time
-          - turn-anatomy
+          - calls
+          - time-per-turn
         projectIsolation: required
         originAllowList: required
         readOnly: true
-      description: "Overview figures, the agent rows, Turn anatomy and the answer-time and turn-anatomy widgets. Requires authenticated organisation membership and permission to read the named project. Credential absence is 401, denied membership is 403. Computed on the server over every stored record in the range; the console never totals pages of listCalls itself."
+      description: "Overview figures, the agent rows, Turn anatomy and the answer-time, calls, issues and time-per-turn widgets. Requires authenticated organisation membership and permission to read the named project. Credential absence is 401, denied membership is 403. Computed on the server over every stored record in the range; the console never totals pages of listCalls itself."
       parameters:
         - $ref: "#/components/parameters/OrganisationId"
         - $ref: "#/components/parameters/ProjectId"
@@ -370,6 +374,7 @@ paths:
       security:
         - consoleSession: []
         - projectKey: []
+        - embedToken: []
       summary: Issues grouped across calls, agents and the phone bridge in a range
       tags:
         - Console reads
@@ -1187,6 +1192,95 @@ paths:
         "503":
           $ref: "#/components/responses/SourceUnavailable"
 
+  /api/v1/org/{orgId}/project/{projectId}/settings/allowed-origins:
+    put:
+      operationId: updateAllowedOrigins
+      summary: Replace the sites allowed to frame the project's widgets
+      tags: [ Console writes ]
+      security:
+        - consoleSession: []
+      x-access:
+        principal: organisation_member
+        minimumRole: Admin
+        projectIsolation: required
+        browserSessionTransport: session_cookie
+        scope: project
+      description: "Admins only (decision 0033). Each origin is https://host[:port], or http://localhost[:port] for development, with no path, query or wildcard; it is stored as a browser serialises it (lowercase, default port dropped, punycode host). At most 20. An empty list or null clears the list, which allows no origin and stops every embed token at its next request. A stale revision returns revision_conflict."
+      parameters:
+        - $ref: "#/components/parameters/OrganisationId"
+        - $ref: "#/components/parameters/ProjectId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateAllowedOrigins"
+      responses:
+        "200":
+          description: Persisted settings with the new revision.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectSettings"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/SourceUnavailable"
+
+  /api/v1/org/{orgId}/project/{projectId}/embed-tokens:
+    post:
+      operationId: createEmbedToken
+      summary: Mint a short-lived, read-only token for some of the project's widgets
+      tags: [ Console writes ]
+      security:
+        - consoleSession: []
+        - projectKey: []
+      x-access:
+        principal: organisation_member
+        minimumRole: Viewer
+        projectIsolation: required
+        browserSessionTransport: session_cookie
+        scope: project
+      description: "Decision 0033. A platform's backend calls this with a project key and puts the token in the widget frame's address (?token=); the key never reaches the browser. The token reads only the named widgets of this project, may be framed only by origin, which must be one of the project's allowedOrigins (else origin_not_allowed), and expires after expiresInSeconds (60 to 86400, 3600 by default). Nothing is stored: every request with the token checks again that the minting key is unrevoked, or the minting member still in the organisation, and the origin still allowed. An embed token cannot mint another."
+      parameters:
+        - $ref: "#/components/parameters/OrganisationId"
+        - $ref: "#/components/parameters/ProjectId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateEmbedToken"
+      responses:
+        "201":
+          description: The token, shown in this answer only.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmbedToken"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/SourceUnavailable"
+
   /api/v1/org/{orgId}/project/{projectId}/alert-setup:
     get:
       operationId: getAlertSetup
@@ -1666,6 +1760,7 @@ paths:
       security:
         - consoleSession: []
         - projectKey: []
+        - embedToken: []
       summary: Read retained opt-in recording audio
       tags:
         - Console reads
@@ -2057,6 +2152,11 @@ components:
       scheme: bearer
       bearerFormat: vgk_<keyId>_<secret>
       description: A project API key, which an Admin creates in the console. It reads its own project as a Viewer and is refused writes, other projects and organisation operations.
+    embedToken:
+      type: http
+      scheme: bearer
+      bearerFormat: vge_<JWT>
+      description: An embed token from createEmbedToken (decision 0033). It reads, in its one project, only the operations its widgets need (x-embed-access), until it expires or its minting key or member loses access.
     instanceToken:
       type: http
       scheme: bearer
@@ -5196,7 +5296,7 @@ components:
           type: string
           description: Stable error category.
           x-source: { kind: computed, file: docs/api/coverage.md, pointer: null, detail: Stable error category. }
-          enum: [ invalid_request, revision_conflict, unauthenticated, forbidden, not_found, source_unavailable, internal_error, range_not_satisfiable, last_admin, already_member, member_of_other_organisations, project_exists, livekit_secret_invalid, livekit_unreachable, recording_bucket_refused, recording_bucket_unreachable ]
+          enum: [ invalid_request, revision_conflict, unauthenticated, forbidden, not_found, source_unavailable, internal_error, range_not_satisfiable, last_admin, already_member, member_of_other_organisations, project_exists, livekit_secret_invalid, livekit_unreachable, recording_bucket_refused, recording_bucket_unreachable, origin_not_allowed ]
         message:
           type: string
           description: Safe human-readable explanation, excluding upstream credentials and request bodies.
@@ -5406,6 +5506,79 @@ components:
           maximum: 9007199254740991
           description: Revision checked atomically on save to prevent lost updates.
           x-source: { kind: configuration, file: migrations/postgres/00014_project_settings.sql, pointer: null, detail: Project settings revision. }
+    UpdateAllowedOrigins:
+      type: object
+      additionalProperties: false
+      required: [ allowedOrigins, revision ]
+      properties:
+        allowedOrigins:
+          type: [ array, "null" ]
+          maxItems: 20
+          description: The sites allowed to frame the project's widgets. Empty or null allows none.
+          x-source: { kind: configuration, file: migrations/postgres/00020_embed_origins.sql, pointer: null, detail: project_settings.allowed_origins. }
+          items:
+            type: string
+            maxLength: 300
+        revision:
+          x-unit: count
+          x-configuration: true
+          type: integer
+          minimum: 0
+          maximum: 9007199254740991
+          description: Revision checked atomically on save to prevent lost updates.
+          x-source: { kind: configuration, file: migrations/postgres/00014_project_settings.sql, pointer: null, detail: Project settings revision. }
+    CreateEmbedToken:
+      type: object
+      additionalProperties: false
+      required: [ widgets, origin ]
+      properties:
+        widgets:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          description: The widgets the token opens. A recent-calls frame whose rows open a call needs both recent-calls and call.
+          x-source: { kind: configuration, file: dashboard/src/features/embed/widgets.ts, pointer: null, detail: Widget ids. }
+          items:
+            type: string
+            enum: [ answer-time, calls, issues, recent-calls, time-per-turn, call ]
+        origin:
+          type: string
+          description: The one site that may frame the widgets, one of the project's allowedOrigins.
+          x-source: { kind: configuration, file: migrations/postgres/00020_embed_origins.sql, pointer: null, detail: One of project_settings.allowed_origins. }
+        expiresInSeconds:
+          type: integer
+          minimum: 60
+          maximum: 86400
+          default: 3600
+          x-unit: seconds
+          x-configuration: true
+          description: How long the token is valid.
+          x-source: { kind: configuration, file: internal/api/embeds.go, pointer: null, detail: Requested token lifetime. }
+    EmbedToken:
+      type: object
+      additionalProperties: false
+      required: [ token, expiresAt, widgets, origin ]
+      properties:
+        token:
+          type: string
+          description: vge_ followed by a signed JWT. Put it in the frame's address as ?token=. Shown once; VoiceGateway does not store it.
+          x-source: { kind: computed, file: internal/auth/embed.go, pointer: null, detail: Signed embed token. }
+        expiresAt:
+          type: string
+          format: date-time
+          description: When the token stops working.
+          x-source: { kind: computed, file: internal/auth/embed.go, pointer: null, detail: Token expiry, by the server clock. }
+        widgets:
+          type: array
+          description: The widgets the token opens.
+          x-source: { kind: computed, file: internal/api/embeds.go, pointer: null, detail: Requested widgets without duplicates. }
+          items:
+            type: string
+            enum: [ answer-time, calls, issues, recent-calls, time-per-turn, call ]
+        origin:
+          type: string
+          description: The origin the token may be framed by, normalised.
+          x-source: { kind: computed, file: internal/api/embeds.go, pointer: null, detail: Normalised requested origin. }
     ProjectSettings:
       type: object
       additionalProperties: false

@@ -2,7 +2,7 @@
 
 import type { Client, ClientMeta, Options as Options2, RequestResult, ServerSentEventsResult, TDataShape } from './client';
 import { client } from './client.gen';
-import type { CreateInvitationData, CreateInvitationErrors, CreateInvitationResponses, CreateOrganisationInvitationData, CreateOrganisationInvitationErrors, CreateOrganisationInvitationResponses, CreatePasswordResetData, CreatePasswordResetErrors, CreatePasswordResetResponses, CreateProjectData, CreateProjectErrors, CreateProjectKeyData, CreateProjectKeyErrors, CreateProjectKeyResponses, CreateProjectResponses, GetAlertSetupData, GetAlertSetupErrors, GetAlertSetupResponses, GetCallData, GetCallErrors, GetCallMetadataData, GetCallMetadataErrors, GetCallMetadataResponses, GetCallResponses, GetCallStatsData, GetCallStatsErrors, GetCallStatsResponses, GetCallTagsData, GetCallTagsErrors, GetCallTagsResponses, GetCapacityData, GetCapacityErrors, GetCapacityResponses, GetCloudAgentsData, GetCloudAgentsErrors, GetCloudAgentsResponses, GetEgressData, GetEgressErrors, GetEgressResponses, GetIngressData, GetIngressErrors, GetIngressResponses, GetInvitationsData, GetInvitationsErrors, GetInvitationsResponses, GetIssueMetadataData, GetIssueMetadataErrors, GetIssueMetadataResponses, GetLiveEventsData, GetLiveEventsErrors, GetLiveEventsResponse, GetLiveEventsResponses, GetMediaServerData, GetMediaServerErrors, GetMediaServerResponses, GetMembersData, GetMembersErrors, GetMembersResponses, GetMyOrganisationEntitlementData, GetMyOrganisationEntitlementErrors, GetMyOrganisationEntitlementResponses, GetOrganisationData, GetOrganisationEntitlementData, GetOrganisationEntitlementErrors, GetOrganisationEntitlementResponses, GetOrganisationErrors, GetOrganisationResponses, GetOrganisationUsageData, GetOrganisationUsageErrors, GetOrganisationUsageResponses, GetProjectSettingsData, GetProjectSettingsErrors, GetProjectSettingsResponses, GetProjectSnapshotData, GetProjectSnapshotErrors, GetProjectSnapshotResponses, GetProviderProbesData, GetProviderProbesErrors, GetProviderProbesResponses, GetRecordingMediaData, GetRecordingMediaErrors, GetRecordingMediaResponses, GetResourcesData, GetResourcesErrors, GetResourcesResponses, GetSipData, GetSipErrors, GetSipResponses, GetWorkersData, GetWorkersErrors, GetWorkersResponses, GetWorkspacesData, GetWorkspacesErrors, GetWorkspacesResponses, ListAlertEventsData, ListAlertEventsErrors, ListAlertEventsResponses, ListCallsData, ListCallsErrors, ListCallsResponses, ListIssuesData, ListIssuesErrors, ListIssuesResponses, ListProjectKeysData, ListProjectKeysErrors, ListProjectKeysResponses, PutOrganisationData, PutOrganisationEntitlementData, PutOrganisationEntitlementErrors, PutOrganisationEntitlementResponses, PutOrganisationErrors, PutOrganisationResponses, RemoveMemberData, RemoveMemberErrors, RemoveMemberResponses, RevokeInvitationData, RevokeInvitationErrors, RevokeInvitationResponses, RevokeProjectKeyData, RevokeProjectKeyErrors, RevokeProjectKeyResponses, UpdateCallMetadataData, UpdateCallMetadataErrors, UpdateCallMetadataResponses, UpdateIssueMetadataData, UpdateIssueMetadataErrors, UpdateIssueMetadataResponses, UpdateMemberData, UpdateMemberErrors, UpdateMemberResponses, UpdateProjectSettingsData, UpdateProjectSettingsErrors, UpdateProjectSettingsResponses } from './types.gen';
+import type { CreateEmbedTokenData, CreateEmbedTokenErrors, CreateEmbedTokenResponses, CreateInvitationData, CreateInvitationErrors, CreateInvitationResponses, CreateOrganisationInvitationData, CreateOrganisationInvitationErrors, CreateOrganisationInvitationResponses, CreatePasswordResetData, CreatePasswordResetErrors, CreatePasswordResetResponses, CreateProjectData, CreateProjectErrors, CreateProjectKeyData, CreateProjectKeyErrors, CreateProjectKeyResponses, CreateProjectResponses, GetAlertSetupData, GetAlertSetupErrors, GetAlertSetupResponses, GetCallData, GetCallErrors, GetCallMetadataData, GetCallMetadataErrors, GetCallMetadataResponses, GetCallResponses, GetCallStatsData, GetCallStatsErrors, GetCallStatsResponses, GetCallTagsData, GetCallTagsErrors, GetCallTagsResponses, GetCapacityData, GetCapacityErrors, GetCapacityResponses, GetCloudAgentsData, GetCloudAgentsErrors, GetCloudAgentsResponses, GetEgressData, GetEgressErrors, GetEgressResponses, GetIngressData, GetIngressErrors, GetIngressResponses, GetInvitationsData, GetInvitationsErrors, GetInvitationsResponses, GetIssueMetadataData, GetIssueMetadataErrors, GetIssueMetadataResponses, GetLiveEventsData, GetLiveEventsErrors, GetLiveEventsResponse, GetLiveEventsResponses, GetMediaServerData, GetMediaServerErrors, GetMediaServerResponses, GetMembersData, GetMembersErrors, GetMembersResponses, GetMyOrganisationEntitlementData, GetMyOrganisationEntitlementErrors, GetMyOrganisationEntitlementResponses, GetOrganisationData, GetOrganisationEntitlementData, GetOrganisationEntitlementErrors, GetOrganisationEntitlementResponses, GetOrganisationErrors, GetOrganisationResponses, GetOrganisationUsageData, GetOrganisationUsageErrors, GetOrganisationUsageResponses, GetProjectSettingsData, GetProjectSettingsErrors, GetProjectSettingsResponses, GetProjectSnapshotData, GetProjectSnapshotErrors, GetProjectSnapshotResponses, GetProviderProbesData, GetProviderProbesErrors, GetProviderProbesResponses, GetRecordingMediaData, GetRecordingMediaErrors, GetRecordingMediaResponses, GetResourcesData, GetResourcesErrors, GetResourcesResponses, GetSipData, GetSipErrors, GetSipResponses, GetWorkersData, GetWorkersErrors, GetWorkersResponses, GetWorkspacesData, GetWorkspacesErrors, GetWorkspacesResponses, ListAlertEventsData, ListAlertEventsErrors, ListAlertEventsResponses, ListCallsData, ListCallsErrors, ListCallsResponses, ListIssuesData, ListIssuesErrors, ListIssuesResponses, ListProjectKeysData, ListProjectKeysErrors, ListProjectKeysResponses, PutOrganisationData, PutOrganisationEntitlementData, PutOrganisationEntitlementErrors, PutOrganisationEntitlementResponses, PutOrganisationErrors, PutOrganisationResponses, RemoveMemberData, RemoveMemberErrors, RemoveMemberResponses, RevokeInvitationData, RevokeInvitationErrors, RevokeInvitationResponses, RevokeProjectKeyData, RevokeProjectKeyErrors, RevokeProjectKeyResponses, UpdateAllowedOriginsData, UpdateAllowedOriginsErrors, UpdateAllowedOriginsResponses, UpdateCallMetadataData, UpdateCallMetadataErrors, UpdateCallMetadataResponses, UpdateIssueMetadataData, UpdateIssueMetadataErrors, UpdateIssueMetadataResponses, UpdateMemberData, UpdateMemberErrors, UpdateMemberResponses, UpdateProjectSettingsData, UpdateProjectSettingsErrors, UpdateProjectSettingsResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -43,15 +43,23 @@ export const getLiveEvents = <ThrowOnError extends boolean = false>(options: Opt
  * Requires authenticated organisation membership and permission to read the named project. A browser signs in with the session cookie (decision 0027); the role gate admits the minimumRole and above. Credential absence is 401, denied membership is 403, cross-project resource ids are not_found. Server-side LiveKit credentials must never reach the browser.
  */
 export const listCalls = <ThrowOnError extends boolean = false>(options: Options<ListCallsData, ThrowOnError>): RequestResult<ListCallsResponses, ListCallsErrors, ThrowOnError> => (options.client ?? client).get<ListCallsResponses, ListCallsErrors, ThrowOnError>({
-    security: [{
+    security: [
+        {
             in: 'cookie',
             name: 'vg_session',
             type: 'apiKey'
-        }, {
+        },
+        {
             key: 'projectKey',
             scheme: 'bearer',
             type: 'http'
-        }],
+        },
+        {
+            key: 'embedToken',
+            scheme: 'bearer',
+            type: 'http'
+        }
+    ],
     url: '/api/v1/org/{orgId}/project/{projectId}/calls',
     ...options
 });
@@ -62,15 +70,23 @@ export const listCalls = <ThrowOnError extends boolean = false>(options: Options
  * Requires authenticated organisation membership and permission to read the named project. A browser signs in with the session cookie (decision 0027); the role gate admits the minimumRole and above. Credential absence is 401, denied membership is 403, cross-project resource ids are not_found. Server-side LiveKit credentials must never reach the browser.
  */
 export const getCall = <ThrowOnError extends boolean = false>(options: Options<GetCallData, ThrowOnError>): RequestResult<GetCallResponses, GetCallErrors, ThrowOnError> => (options.client ?? client).get<GetCallResponses, GetCallErrors, ThrowOnError>({
-    security: [{
+    security: [
+        {
             in: 'cookie',
             name: 'vg_session',
             type: 'apiKey'
-        }, {
+        },
+        {
             key: 'projectKey',
             scheme: 'bearer',
             type: 'http'
-        }],
+        },
+        {
+            key: 'embedToken',
+            scheme: 'bearer',
+            type: 'http'
+        }
+    ],
     url: '/api/v1/org/{orgId}/project/{projectId}/calls/{callId}',
     ...options
 });
@@ -78,18 +94,26 @@ export const getCall = <ThrowOnError extends boolean = false>(options: Options<G
 /**
  * Totals, answer times and stage timings over calls in a range
  *
- * Overview figures, the agent rows, Turn anatomy and the answer-time and turn-anatomy widgets. Requires authenticated organisation membership and permission to read the named project. Credential absence is 401, denied membership is 403. Computed on the server over every stored record in the range; the console never totals pages of listCalls itself.
+ * Overview figures, the agent rows, Turn anatomy and the answer-time, calls, issues and time-per-turn widgets. Requires authenticated organisation membership and permission to read the named project. Credential absence is 401, denied membership is 403. Computed on the server over every stored record in the range; the console never totals pages of listCalls itself.
  */
 export const getCallStats = <ThrowOnError extends boolean = false>(options: Options<GetCallStatsData, ThrowOnError>): RequestResult<GetCallStatsResponses, GetCallStatsErrors, ThrowOnError> => (options.client ?? client).get<GetCallStatsResponses, GetCallStatsErrors, ThrowOnError>({
-    security: [{
+    security: [
+        {
             in: 'cookie',
             name: 'vg_session',
             type: 'apiKey'
-        }, {
+        },
+        {
             key: 'projectKey',
             scheme: 'bearer',
             type: 'http'
-        }],
+        },
+        {
+            key: 'embedToken',
+            scheme: 'bearer',
+            type: 'http'
+        }
+    ],
     url: '/api/v1/org/{orgId}/project/{projectId}/call-stats',
     ...options
 });
@@ -100,15 +124,23 @@ export const getCallStats = <ThrowOnError extends boolean = false>(options: Opti
  * The Issues page, the issues widget, issue counts and the command palette. Decisions and metadata are included in each issue from the same database snapshot. Requires authenticated organisation membership and permission to read the named project. Credential absence is 401, denied membership is 403. Computed on the server over every stored record in the range; the console never totals pages of listCalls itself.
  */
 export const listIssues = <ThrowOnError extends boolean = false>(options: Options<ListIssuesData, ThrowOnError>): RequestResult<ListIssuesResponses, ListIssuesErrors, ThrowOnError> => (options.client ?? client).get<ListIssuesResponses, ListIssuesErrors, ThrowOnError>({
-    security: [{
+    security: [
+        {
             in: 'cookie',
             name: 'vg_session',
             type: 'apiKey'
-        }, {
+        },
+        {
             key: 'projectKey',
             scheme: 'bearer',
             type: 'http'
-        }],
+        },
+        {
+            key: 'embedToken',
+            scheme: 'bearer',
+            type: 'http'
+        }
+    ],
     url: '/api/v1/org/{orgId}/project/{projectId}/issues',
     ...options
 });
@@ -456,6 +488,48 @@ export const updateProjectSettings = <ThrowOnError extends boolean = false>(opti
 });
 
 /**
+ * Replace the sites allowed to frame the project's widgets
+ *
+ * Admins only (decision 0033). Each origin is https://host[:port], or http://localhost[:port] for development, with no path, query or wildcard; it is stored as a browser serialises it (lowercase, default port dropped, punycode host). At most 20. An empty list or null clears the list, which allows no origin and stops every embed token at its next request. A stale revision returns revision_conflict.
+ */
+export const updateAllowedOrigins = <ThrowOnError extends boolean = false>(options: Options<UpdateAllowedOriginsData, ThrowOnError>): RequestResult<UpdateAllowedOriginsResponses, UpdateAllowedOriginsErrors, ThrowOnError> => (options.client ?? client).put<UpdateAllowedOriginsResponses, UpdateAllowedOriginsErrors, ThrowOnError>({
+    security: [{
+            in: 'cookie',
+            name: 'vg_session',
+            type: 'apiKey'
+        }],
+    url: '/api/v1/org/{orgId}/project/{projectId}/settings/allowed-origins',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Mint a short-lived, read-only token for some of the project's widgets
+ *
+ * Decision 0033. A platform's backend calls this with a project key and puts the token in the widget frame's address (?token=); the key never reaches the browser. The token reads only the named widgets of this project, may be framed only by origin, which must be one of the project's allowedOrigins (else origin_not_allowed), and expires after expiresInSeconds (60 to 86400, 3600 by default). Nothing is stored: every request with the token checks again that the minting key is unrevoked, or the minting member still in the organisation, and the origin still allowed. An embed token cannot mint another.
+ */
+export const createEmbedToken = <ThrowOnError extends boolean = false>(options: Options<CreateEmbedTokenData, ThrowOnError>): RequestResult<CreateEmbedTokenResponses, CreateEmbedTokenErrors, ThrowOnError> => (options.client ?? client).post<CreateEmbedTokenResponses, CreateEmbedTokenErrors, ThrowOnError>({
+    security: [{
+            in: 'cookie',
+            name: 'vg_session',
+            type: 'apiKey'
+        }, {
+            key: 'projectKey',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/api/v1/org/{orgId}/project/{projectId}/embed-tokens',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
  * Read saved alert rule configuration
  *
  * Requires authenticated organisation membership and permission to read the named project. A browser signs in with the session cookie (decision 0027); the role gate admits the minimumRole and above. Credential absence is 401, denied membership is 403, cross-project resource ids are not_found. Server-side LiveKit credentials must never reach the browser.
@@ -680,15 +754,23 @@ export const getWorkspaces = <ThrowOnError extends boolean = false>(options?: Op
  * Requires authenticated organisation membership and permission to read the named project. A browser signs in with the session cookie (decision 0027); the role gate admits the minimumRole and above. Credential absence is 401, denied membership is 403, cross-project resource ids are not_found. Server-side LiveKit credentials must never reach the browser. Resolve the recording id server-side only after project authorisation. Do not fetch an arbitrary request URL. Enforce retention and recording opt-in; never synthesise media for a call without an observed recording.
  */
 export const getRecordingMedia = <ThrowOnError extends boolean = false>(options: Options<GetRecordingMediaData, ThrowOnError>): RequestResult<GetRecordingMediaResponses, GetRecordingMediaErrors, ThrowOnError> => (options.client ?? client).get<GetRecordingMediaResponses, GetRecordingMediaErrors, ThrowOnError>({
-    security: [{
+    security: [
+        {
             in: 'cookie',
             name: 'vg_session',
             type: 'apiKey'
-        }, {
+        },
+        {
             key: 'projectKey',
             scheme: 'bearer',
             type: 'http'
-        }],
+        },
+        {
+            key: 'embedToken',
+            scheme: 'bearer',
+            type: 'http'
+        }
+    ],
     url: '/api/v1/org/{orgId}/project/{projectId}/recordings/{recordingId}',
     ...options
 });

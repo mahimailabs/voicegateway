@@ -118,3 +118,50 @@ func TestProjectKeySecurityMatchesTheGate(t *testing.T) {
 		}
 	}
 }
+
+// The widgets an embed token may read each route for (embedAccess) are the contract's
+// x-embed-access widgets, and an operation offers the embedToken scheme exactly when it has them.
+func TestEmbedAccessMatchesTheContract(t *testing.T) {
+	spec, err := os.ReadFile("../../docs/api/openapi.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc, err := libopenapi.NewDocument(spec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	model, err := doc.BuildV3Model()
+	if err != nil {
+		t.Fatal(err)
+	}
+	seen := map[string]bool{}
+	for path, item := range model.Model.Paths.PathItems.FromOldest() {
+		for method, op := range item.GetOperations().FromOldest() {
+			key := strings.ToUpper(method) + " " + path
+			var x struct {
+				Widgets []string `yaml:"widgets"`
+			}
+			if node, ok := op.Extensions.Get("x-embed-access"); ok {
+				if err := node.Decode(&x); err != nil {
+					t.Fatalf("%s: x-embed-access: %v", key, err)
+				}
+			}
+			offered := false
+			for _, req := range op.Security {
+				if _, ok := req.Requirements.Get("embedToken"); ok {
+					offered = true
+				}
+			}
+			got := embedAccess[key]
+			seen[key] = true
+			if !slices.Equal(got, x.Widgets) || offered != (len(x.Widgets) > 0) {
+				t.Errorf("%s (%s): gate widgets %v, contract widgets %v, embedToken offered %v", key, op.OperationId, got, x.Widgets, offered)
+			}
+		}
+	}
+	for key := range embedAccess {
+		if !seen[key] {
+			t.Errorf("%s: embed access for a route the contract does not have", key)
+		}
+	}
+}

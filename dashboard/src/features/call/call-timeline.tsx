@@ -11,6 +11,8 @@ import { cn } from "@/lib/utils"
 import { type CallModel, type Iv, callLength, fmtMs, fmtSec } from "./call-model"
 import { BUDGET_MS } from "./call-steps"
 import { useEmbedded } from "@/lib/url-state"
+import { useQuery } from "@tanstack/react-query"
+import { playableUrl } from "@/lib/embed"
 
 // The call as one stereo track: caller above the line, agent below, on one clock. The silence between the
 // caller finishing and the agent answering is drawn and labelled, because that gap is what callers feel.
@@ -49,6 +51,8 @@ function Wave({ data, duration, w, color, flip }: { data: number[]; duration: nu
 export function CallTimeline({ call, model, selected, zoom, onSelect }: { call: Call; model: CallModel; selected: number | null; zoom: number | null; onSelect: (i: number | null) => void }) {
   const rec = call.recording
   const embedded = useEmbedded()
+  // In a widget framed on another site the audio is read with the embed token (lib/embed.ts).
+  const playable = useQuery({ queryKey: ["recording-src", rec?.url], queryFn: () => playableUrl(rec!.url), enabled: !!rec, staleTime: Infinity })
   const player = useAudioPlayer()
   const now = useAudioPlayerTime()
   const whole: Iv = { start: 0, end: Math.max(...[callLength(call, model), model.duration].filter((x): x is number => x !== null), 0.5) }
@@ -102,7 +106,7 @@ export function CallTimeline({ call, model, selected, zoom, onSelect }: { call: 
       <div className="flex flex-wrap items-center gap-3">
         {rec ? (
           <>
-            <AudioPlayerButton item={{ id: call.id, src: rec.url }} variant="default" size="icon-sm" className="rounded-full" />
+            <AudioPlayerButton item={{ id: call.id, src: playable.data ?? rec.url }} disabled={!playable.data} variant="default" size="icon-sm" className="rounded-full" />
             <span className="text-sm tnum"><AudioPlayerTime className="font-medium" /> <span className="text-muted-foreground">/ {length !== null ? clock(length) : <Unknown why="Neither the room nor the call's timeline reported a length" />}</span></span>
             <AudioPlayerSpeed variant="ghost" size="icon-sm" />
           </>

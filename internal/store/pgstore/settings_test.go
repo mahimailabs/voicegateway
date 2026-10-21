@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"math"
+	"reflect"
 	"testing"
 
 	"github.com/mahimailabs/voicegateway/internal/store"
@@ -28,11 +29,11 @@ func TestProjectSettingsPersistenceScopeAndConflicts(t *testing.T) {
 	}
 	reopened := NewStore(pool, s.sealer)
 	got, err := reopened.ProjectSettings(ctx, "default", "one")
-	if err != nil || got != saved {
+	if err != nil || !reflect.DeepEqual(got, saved) {
 		t.Fatalf("persistence: %+v %v", got, err)
 	}
 	other, err := s.ProjectSettings(ctx, "default", "two")
-	if err != nil || other != initial {
+	if err != nil || !reflect.DeepEqual(other, initial) {
 		t.Fatalf("other project changed: %+v %v", other, err)
 	}
 	if _, err := s.ProjectSettings(ctx, "other-org", "one"); !errors.Is(err, store.ErrNotFound) {
@@ -52,7 +53,7 @@ func TestProjectSettingsPersistenceScopeAndConflicts(t *testing.T) {
 		}
 	}
 	got, err = s.ProjectSettings(ctx, "default", "one")
-	if err != nil || got != saved {
+	if err != nil || !reflect.DeepEqual(got, saved) {
 		t.Fatalf("rejected save changed settings: %+v %v", got, err)
 	}
 	results := make(chan error, 2)

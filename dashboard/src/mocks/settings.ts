@@ -29,6 +29,29 @@ export function updateSettings(scope: string, input: unknown): ProjectSettings |
   return saved
 }
 
+// Allowed embed origins as web normalises them (internal/api/embeds.go), or null for a value web refuses.
+export function normaliseOrigin(v: unknown): string | null {
+  if (typeof v !== "string") return null
+  let u: URL
+  try { u = new URL(v.trim()) } catch { return null }
+  if (u.username || u.password || u.search || u.hash || (u.pathname !== "/" && u.pathname !== "") || u.hostname.includes("*")) return null
+  const local = u.hostname === "localhost" || u.hostname === "127.0.0.1" || u.hostname === "[::1]"
+  if (u.protocol !== "https:" && !(u.protocol === "http:" && local)) return null
+  return u.origin
+}
+export function updateAllowedOrigins(scope: string, input: unknown): ProjectSettings | "invalid_request" | "revision_conflict" {
+  const value = record(input)
+  if (Object.keys(value).some((k) => !["allowedOrigins", "revision"].includes(k)) || !Number.isSafeInteger(value.revision)) return "invalid_request"
+  const list = value.allowedOrigins === null ? [] : Array.isArray(value.allowedOrigins) ? value.allowedOrigins.map(normaliseOrigin) : null
+  if (!list || list.length > 20 || list.some((o) => o === null)) return "invalid_request"
+  const prior = projectSettings(scope)
+  if (value.revision !== prior.revision) return "revision_conflict"
+  const origins = [...new Set(list as string[])]
+  const saved = { ...prior, allowedOrigins: origins.length ? origins : null, revision: prior.revision + 1 }
+  settingsByProject.set(scope, structuredClone(saved))
+  return saved
+}
+
 export const RULES: AlertRuleSetup["ruleId"][] = ["slow-answer", "cut-off", "job-failed", "slow-join", "plain-phone", "recording-lost", "ingress-error"]
 const CHANNELS: AlertRuleSetup["to"] = ["slack", "teams", "discord", "pagerduty", "opsgenie", "email", "webhook"]
 

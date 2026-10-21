@@ -576,7 +576,8 @@ WHERE organisation_id = $1 AND project_id = $2 AND id = $3;
 SELECT COALESCE(s.answer_ms, 1500::double precision) AS answer_ms,
        COALESCE(s.join_ms, 2000::double precision) AS join_ms,
        COALESCE(s.tts_start_ms, 1000::double precision) AS tts_start_ms,
-       COALESCE(s.revision, 0::bigint) AS revision
+       COALESCE(s.revision, 0::bigint) AS revision,
+       s.allowed_origins
 FROM projects p LEFT JOIN project_settings s ON s.organisation_id = p.organisation_id AND s.project_id = p.id
 WHERE p.organisation_id= @organisation_id AND p.id= @project_id;
 
@@ -590,7 +591,33 @@ ON CONFLICT (organisation_id, project_id) DO NOTHING;
 -- name: UpdateProjectSettings :one
 UPDATE project_settings SET answer_ms= @answer_ms, join_ms= @join_ms, tts_start_ms= @tts_start_ms, revision = revision + 1
 WHERE organisation_id= @organisation_id AND project_id= @project_id AND revision= @expected_revision
-RETURNING answer_ms, join_ms, tts_start_ms, revision;
+RETURNING answer_ms, join_ms, tts_start_ms, revision, allowed_origins;
+
+-- name: UpdateAllowedOrigins :one
+-- NULL clears the list, which allows no origin.
+UPDATE project_settings SET allowed_origins = sqlc.narg(allowed_origins)::text[], revision = revision + 1
+WHERE organisation_id= @organisation_id AND project_id= @project_id AND revision= @expected_revision
+RETURNING answer_ms, join_ms, tts_start_ms, revision, allowed_origins;
+
+-- name: EmbedGrantActive :one
+-- Whether an embed token still holds, in one round trip: the project still allows its origin, and
+-- the key that minted it is unrevoked, or the user who minted it is still a member.
+SELECT (
+    EXISTS (
+        SELECT 1 FROM project_settings s
+        WHERE s.organisation_id = @organisation_id AND s.project_id = @project_id AND @origin::text = ANY (s.allowed_origins)
+    )
+    AND (
+        EXISTS (
+            SELECT 1 FROM project_keys k
+            WHERE k.key_id = @key_id::text AND k.organisation_id = @organisation_id AND k.project_id = @project_id AND k.revoked_at IS NULL
+        )
+        OR EXISTS (
+            SELECT 1 FROM memberships m
+            WHERE m.user_id = NULLIF(@user_id::text, '')::uuid AND m.organisation_id = @organisation_id
+        )
+    )
+)::boolean AS active;
 
 -- name: ReadAccountProfile :one
 SELECT display_name, profile_revision FROM users WHERE id = @user_id;

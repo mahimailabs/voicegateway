@@ -57,6 +57,7 @@
     "assets": [],
     "browserStorage": false,
     "operations": [
+      "createEmbedToken",
       "createInvitation",
       "createPasswordReset",
       "createProject",
@@ -88,6 +89,7 @@
       "removeMember",
       "revokeInvitation",
       "revokeProjectKey",
+      "updateAllowedOrigins",
       "updateCallMetadata",
       "updateIssueMetadata",
       "updateMember",
@@ -394,5 +396,18 @@
     ],
     "assetNotes": {},
     "exclusion": "Development-only simulated issue metadata storage, behind the mock API. Production writes use Postgres."
+  },
+  {
+    "file": "dashboard/src/lib/embed.ts",
+    "fixtures": [],
+    "assets": [
+      "<dynamic>"
+    ],
+    "browserStorage": false,
+    "operations": [],
+    "assetNotes": {
+      "<dynamic>": "A call's recording at the URL getCall returned (getRecordingMedia), read with the widget's embed token because an audio element cannot send it (decision 0033)."
+    },
+    "exclusion": "Sends an embedded widget's token with its reads (decision 0033); no read of its own."
   }
 ]

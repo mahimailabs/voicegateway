@@ -165,27 +165,31 @@
   ],
   "widgets": [
     "answer-time",
-    "turn-anatomy",
     "calls",
-    "call",
-    "issues"
+    "issues",
+    "recent-calls",
+    "time-per-turn",
+    "call"
   ],
   "embedReads": {
     "answer-time": [
       "getCallStats"
     ],
-    "turn-anatomy": [
+    "calls": [
       "getCallStats"
     ],
-    "calls": [
+    "issues": [
+      "listIssues"
+    ],
+    "recent-calls": [
       "listCalls"
+    ],
+    "time-per-turn": [
+      "getCallStats"
     ],
     "call": [
       "getCall",
       "getRecordingMedia"
-    ],
-    "issues": [
-      "listIssues"
     ]
   }
 }

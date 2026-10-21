@@ -29,4 +29,7 @@ func (t Thresholds) Validate() error {
 type ProjectSettings struct {
 	Thresholds Thresholds `json:"thresholds"`
 	Revision   int64      `json:"revision"`
+	// AllowedOrigins are the sites allowed to frame the project's widgets; nil is not configured,
+	// which allows none.
+	AllowedOrigins []string `json:"-"`
 }
