@@ -18,6 +18,7 @@ COPY cmd ./cmd
 COPY internal ./internal
 COPY ee ./ee
 COPY migrations ./migrations
+COPY sdk/contract ./sdk/contract
 # Cache mounts keep downloaded modules and build results between builds without baking them into a
 # layer, so a source change rebuilds only what changed.
 RUN --mount=type=cache,target=/go/pkg/mod \
