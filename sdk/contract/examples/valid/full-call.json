@@ -1,24 +1,169 @@
 {
   "version": 1,
   "batchId": "b-2026-10-21-full-call-0001",
-  "sdk": { "name": "voicegateway-python", "version": "2.0.0" },
-  "framework": { "name": "livekit-agents", "version": "1.8.8" },
-  "call": { "jobId": "AJ_fixture0001", "roomName": "example-call-1", "roomSid": "RM_fixture0001" },
+  "sdk": {
+    "name": "voicegateway-python",
+    "version": "2.0.0"
+  },
+  "framework": {
+    "name": "livekit-agents",
+    "version": "1.8.8"
+  },
+  "call": {
+    "jobId": "AJ_fixture0001",
+    "roomName": "example-call-1",
+    "roomSid": "RM_fixture0001"
+  },
   "events": [
-    { "type": "fields", "at": "2026-10-21T02:21:48.000Z", "data": { "fields": { "customer": "acme", "plan": "trial" } } },
-    { "type": "state", "at": "2026-10-21T02:21:48.500Z", "data": { "actor": "agent", "state": "listening" } },
-    { "type": "state", "at": "2026-10-21T02:21:50.000Z", "data": { "actor": "user", "state": "speaking" } },
-    { "type": "state", "at": "2026-10-21T02:21:52.200Z", "data": { "actor": "user", "state": "listening" } },
-    { "type": "message", "at": "2026-10-21T02:21:52.700Z", "data": { "role": "user", "text": "Hi, what time do you open tomorrow?", "interrupted": false } },
-    { "type": "metrics", "at": "2026-10-21T02:21:52.700Z", "data": { "name": "eou_metrics", "values": { "timestamp": 1792549312.7, "end_of_utterance_delay": 0.54, "transcription_delay": 0.31, "on_user_turn_completed_delay": 0.0, "speech_id": "SP_fixture0001" } } },
-    { "type": "state", "at": "2026-10-21T02:21:52.710Z", "data": { "actor": "agent", "state": "thinking" } },
-    { "type": "metrics", "at": "2026-10-21T02:21:53.300Z", "data": { "name": "llm_metrics", "values": { "label": "livekit.agents.inference.llm.LLM", "request_id": "req_1", "timestamp": 1792549313.3, "duration": 0.61, "ttft": 0.43, "cancelled": false, "completion_tokens": 12, "prompt_tokens": 180, "prompt_cached_tokens": 0, "total_tokens": 192, "tokens_per_second": 19.7, "speech_id": "SP_fixture0001", "metadata": { "model_name": "google/gemma-4-31b-it", "model_provider": "livekit" } } } },
-    { "type": "metrics", "at": "2026-10-21T02:21:53.600Z", "data": { "name": "tts_metrics", "values": { "label": "livekit.agents.inference.tts.TTS", "request_id": "req_2", "timestamp": 1792549313.6, "ttfb": 0.47, "duration": 0.9, "audio_duration": 2.1, "cancelled": false, "characters_count": 42, "streamed": true, "speech_id": "SP_fixture0001", "metadata": { "model_name": "fishaudio/s2.1-pro", "model_provider": "livekit" } } } },
-    { "type": "state", "at": "2026-10-21T02:21:53.610Z", "data": { "actor": "agent", "state": "speaking" } },
-    { "type": "tool", "at": "2026-10-21T02:21:53.700Z", "data": { "name": "lookup_hours", "error": null } },
-    { "type": "message", "at": "2026-10-21T02:21:55.800Z", "data": { "role": "assistant", "text": "We open at nine tomorrow.", "interrupted": false } },
-    { "type": "state", "at": "2026-10-21T02:21:55.810Z", "data": { "actor": "agent", "state": "listening" } },
-    { "type": "error", "at": "2026-10-21T02:21:56.000Z", "data": { "source": "tts", "message": "connection reset, retrying", "recoverable": true } },
-    { "type": "close", "at": "2026-10-21T02:22:12.000Z", "data": { "reason": "participant_disconnected" } }
+    {
+      "type": "fields",
+      "at": "2026-10-21T02:21:48.000Z",
+      "data": {
+        "fields": {
+          "customer": "acme",
+          "plan": "trial"
+        }
+      }
+    },
+    {
+      "type": "state",
+      "at": "2026-10-21T02:21:48.500Z",
+      "data": {
+        "actor": "agent",
+        "state": "listening"
+      }
+    },
+    {
+      "type": "state",
+      "at": "2026-10-21T02:21:50.000Z",
+      "data": {
+        "actor": "user",
+        "state": "speaking"
+      }
+    },
+    {
+      "type": "state",
+      "at": "2026-10-21T02:21:52.200Z",
+      "data": {
+        "actor": "user",
+        "state": "listening"
+      }
+    },
+    {
+      "type": "message",
+      "at": "2026-10-21T02:21:52.700Z",
+      "data": {
+        "role": "user",
+        "text": "Hi, what time do you open tomorrow?",
+        "interrupted": false,
+        "metrics": {
+          "started_speaking_at": 1792549310.0,
+          "stopped_speaking_at": 1792549312.2,
+          "transcription_delay": 0.31,
+          "end_of_turn_delay": 0.54,
+          "on_user_turn_completed_delay": 0.0
+        }
+      }
+    },
+    {
+      "type": "state",
+      "at": "2026-10-21T02:21:52.710Z",
+      "data": {
+        "actor": "agent",
+        "state": "thinking"
+      }
+    },
+    {
+      "type": "state",
+      "at": "2026-10-21T02:21:53.610Z",
+      "data": {
+        "actor": "agent",
+        "state": "speaking"
+      }
+    },
+    {
+      "type": "tool",
+      "at": "2026-10-21T02:21:53.700Z",
+      "data": {
+        "name": "lookup_hours",
+        "error": null
+      }
+    },
+    {
+      "type": "message",
+      "at": "2026-10-21T02:21:55.800Z",
+      "data": {
+        "role": "assistant",
+        "text": "We open at nine tomorrow.",
+        "interrupted": false,
+        "metrics": {
+          "started_speaking_at": 1792549313.61,
+          "stopped_speaking_at": 1792549315.8,
+          "llm_node_ttft": 0.43,
+          "tts_node_ttfb": 0.47,
+          "llm_metadata": {
+            "model_name": "google/gemma-4-31b-it",
+            "model_provider": "livekit"
+          },
+          "tts_metadata": {
+            "model_name": "fishaudio/s2.1-pro",
+            "model_provider": "livekit"
+          }
+        }
+      }
+    },
+    {
+      "type": "usage",
+      "at": "2026-10-21T02:21:55.900Z",
+      "data": {
+        "models": [
+          {
+            "type": "llm_usage",
+            "provider": "livekit",
+            "model": "google/gemma-4-31b-it",
+            "input_tokens": 180,
+            "input_cached_tokens": 0,
+            "output_tokens": 12
+          },
+          {
+            "type": "tts_usage",
+            "provider": "livekit",
+            "model": "fishaudio/s2.1-pro",
+            "characters_count": 42,
+            "audio_duration": 2.1
+          },
+          {
+            "type": "stt_usage",
+            "provider": "livekit",
+            "model": "assemblyai/universal-3-6-pro",
+            "audio_duration": 2.2
+          }
+        ]
+      }
+    },
+    {
+      "type": "state",
+      "at": "2026-10-21T02:21:55.810Z",
+      "data": {
+        "actor": "agent",
+        "state": "listening"
+      }
+    },
+    {
+      "type": "error",
+      "at": "2026-10-21T02:21:56.000Z",
+      "data": {
+        "source": "tts",
+        "message": "connection reset, retrying",
+        "recoverable": true
+      }
+    },
+    {
+      "type": "close",
+      "at": "2026-10-21T02:22:12.000Z",
+      "data": {
+        "reason": "participant_disconnected"
+      }
+    }
   ]
 }

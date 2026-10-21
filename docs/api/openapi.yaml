@@ -199,6 +199,17 @@ paths:
             items:
               type: string
               enum: [ answerMs, durationSeconds, turnCount ]
+        - name: field
+          in: query
+          description: "An SDK call field as key:value. Repeat to keep calls holding every listed pair; one key with two values matches nothing. At most 16."
+          style: form
+          explode: true
+          schema:
+            type: array
+            maxItems: 16
+            items:
+              type: string
+              pattern: "^[a-z0-9_.-]{1,64}:.{0,256}$"
         - name: tag
           in: query
           description: User tag. Repeat to match calls carrying any listed tag.
@@ -2279,8 +2290,52 @@ components:
             $ref: "#/components/schemas/Clock"
           description: Distinct retained source clocks for this call. Every clockId resolves to exactly one entry; IDs are unique within this array. Empty only when no relative timeline is present. Metadata is derived from capture/adapter evidence, not a field already stored in the preview fixtures.
           x-source: { kind: computed, file: docs/api/coverage.md, pointer: null, detail: "Distinct retained source clocks for this call. Every clockId resolves to exactly one entry; IDs are unique within this array. Empty only when no relative timeline is present. Metadata is derived from capture/adapter evidence, not a field already stored in the preview fixtures." }
+        fields:
+          type: object
+          additionalProperties: { type: string }
+          description: Custom fields the agent attached through a VoiceGateway SDK (attach(fields=...) or set_field), later values winning. Empty when no SDK attached any. Absent from captures made before the SDK.
+          x-source: { kind: computed, file: migrations/postgres/00020_sdk_fields.sql, pointer: null, detail: "calls.fields, merged by the worker from SDK fields events (docs/specs/python-sdk.md)." }
+        live:
+          oneOf:
+            - $ref: "#/components/schemas/CallLive"
+            - type: "null"
+          description: The latest user and agent state a VoiceGateway SDK reported. Null when no SDK reported state for this call.
+          x-source: { kind: computed, file: internal/turn/sdk.go, pointer: null, detail: "Latest SDK state event per actor (LiveKit user_state_changed and agent_state_changed)." }
+          x-null-reason: No SDK reported a state for this call.
       required: [ room, roomSid, startedAt, endedAt, durationSeconds, participantCount, endReason, spans, turns, id, endState, tags, archived, clocks ]
       x-source: { kind: agent_upload, file: dashboard/src/mocks/calls.json, pointer: /calls/0, detail: Normalised captured call data; consult fixture source note and upstream-source inventory for conversions }
+    CallLive:
+      type: object
+      additionalProperties: false
+      required: [ user, agent ]
+      x-source: { kind: computed, file: internal/turn/sdk.go, pointer: null, detail: "Latest SDK state event per actor." }
+      properties:
+        user:
+          oneOf:
+            - $ref: "#/components/schemas/LiveState"
+            - type: "null"
+          x-source: { kind: computed, file: internal/turn/sdk.go, pointer: null, detail: "Latest LiveKit user_state_changed state the SDK reported." }
+          x-null-reason: The SDK reported no user state.
+        agent:
+          oneOf:
+            - $ref: "#/components/schemas/LiveState"
+            - type: "null"
+          x-source: { kind: computed, file: internal/turn/sdk.go, pointer: null, detail: "Latest LiveKit agent_state_changed state the SDK reported." }
+          x-null-reason: The SDK reported no agent state.
+    LiveState:
+      type: object
+      additionalProperties: false
+      required: [ state, at ]
+      x-source: { kind: computed, file: internal/turn/sdk.go, pointer: null, detail: "One SDK state event." }
+      properties:
+        state:
+          type: string
+          description: The framework's state name, for example listening, thinking or speaking.
+          x-source: { kind: computed, file: internal/turn/sdk.go, pointer: null, detail: "data.state of the SDK state event." }
+        at:
+          type: string
+          format: date-time
+          x-source: { kind: computed, file: internal/turn/sdk.go, pointer: null, detail: "When the SDK reported the state." }
     Span:
       type: object
       additionalProperties: false
@@ -5431,7 +5486,7 @@ components:
     ProjectConnection:
       type: object
       additionalProperties: false
-      required: [ urls, webhook, agent, firstCall ]
+      required: [ urls, webhook, agent, sdk, firstCall ]
       properties:
         urls:
           $ref: "#/components/schemas/ConnectionUrls"
@@ -5442,6 +5497,9 @@ components:
         agent:
           $ref: "#/components/schemas/ConnectionSource"
           x-source: { kind: computed, file: internal/ingest/connection.go, pointer: null, detail: "Last outcome web recorded for agent observability uploads posted under this project's observability URL." }
+        sdk:
+          $ref: "#/components/schemas/ConnectionSource"
+          x-source: { kind: computed, file: internal/ingest/connection.go, pointer: null, detail: "Last outcome web recorded for VoiceGateway SDK batches posted to this project's sdk/v1/events URL." }
         firstCall:
           oneOf:
             - $ref: "#/components/schemas/FirstCall"

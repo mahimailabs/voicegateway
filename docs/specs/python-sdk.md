@@ -37,8 +37,8 @@ Every language SDK sends the same versioned batch; the engine does all joining a
 | type | data | from LiveKit Agents |
 | --- | --- | --- |
 | `state` | `actor` (`user` or `agent`), `state` (the framework's state name) | `user_state_changed`, `agent_state_changed` |
-| `message` | `role`, `text` (nullable), `interrupted` (nullable) | `conversation_item_added` |
-| `metrics` | `name` (the framework's metric type, e.g. `llm_metrics`), `values` (its fields as reported) | `metrics_collected` |
+| `message` | `role`, `text` (nullable), `interrupted` (nullable), `metrics` (the framework's per-message report as given, nullable) | `conversation_item_added` (`ChatMessage.metrics`) |
+| `usage` | `models`: the session's usage so far, per model, as reported (cumulative) | `session_usage_updated` |
 | `tool` | `name`, `error` (nullable) | `function_tools_executed` |
 | `error` | `source`, `message`, `recoverable` (nullable) | `error` |
 | `fields` | `fields`: string keys `^[a-z0-9_.-]{1,64}$`, string values up to 256 characters | `attach(fields=...)`, `set_field` |
@@ -53,7 +53,7 @@ Engine (Go):
 1. `POST /ingest/{org}/{project}/sdk/v1/events` in internal/ingest: scoped resolver, LiveKit JWT verification, observability grant, quota, connection recorder with a new source `sdk` (Connect panel shows it). Body validated against the batch shape; refused bodies answer 400 and append nothing. Appended as kind `voicegateway.sdk.events` with the batch id as event id, so a retried batch is stored once.
 2. `event.CallIdentities` for the new kind (room SID, job id), so quota continuation works.
 3. The worker joins a batch to its call like a session report (room SID, else job id), opening the call by room SID when none exists yet. `fields` events merge into `calls.fields` (Postgres 00020, jsonb, GIN index), written only by the worker.
-4. Turns: when a call has no `agent_turn` spans, turns are built from its SDK `metrics` (grouped by `speech_id`) and `message` events; when it has spans, the spans win and SDK metrics are ignored. Unknown stays null.
+4. Turns: when a call has no `agent_turn` spans, each SDK assistant `message` is a turn, with the user message before it, timed by the framework's per-message metrics (end of turn and transcription delay from the user message; LLM first token and TTS first byte from the assistant message), and the call's usage is the latest `usage` event; when it has spans, the spans and their usage win. E2E latency, reported only on spans, stays unknown. LiveKit Agents deprecated `metrics_collected` in 1.8.8 in favour of `ChatMessage.metrics` and `session_usage_updated`, so the SDK reads those.
 5. Reads: getCall returns `fields`; listCalls takes repeated `field=key:value` (all must match); a call's latest SDK `state` per actor is returned by getCall as `live` for the live view. Contract in openapi.yaml with x-source; `make api-types`.
 6. Console: fields on the call page and a field filter in the call list; the live state on the call; the Connect panel's `sdk` source. Pre-built components only.
 

@@ -107,7 +107,7 @@ WHERE organisation_id = $1 AND id = $2;
 -- With its latest recording: an agent that uploads twice for one call, from two jobs, leaves two,
 -- and the call view plays the latest.
 SELECT l.id, l.room_name, l.room_sid, l.job_id, l.started_at, l.ended_at, l.end_state, l.first_seen_at,
-       l.participants, l.servable, l.summarized::boolean AS summarized, c.tags, c.archived, c.metadata_revision,
+       l.participants, l.servable, l.summarized::boolean AS summarized, c.tags, c.archived, c.metadata_revision, c.fields,
        r.id AS recording_id, r.started_at AS recording_started_at
 FROM call_list l JOIN calls c ON c.id = l.id
 LEFT JOIN LATERAL (
@@ -179,6 +179,7 @@ WITH f AS (
       AND (NOT @unknown_duration::bool OR l.duration_seconds IS NULL)
       AND (NOT @unknown_turns::bool OR l.turn_count IS NULL)
       AND (cardinality(@tags::text[]) = 0 OR c.tags && @tags::text[])
+      AND c.fields @> @fields::jsonb
       AND (sqlc.narg(archived)::boolean IS NULL OR c.archived = sqlc.narg(archived)::boolean)
       AND (sqlc.narg(recorded)::bool IS NULL OR l.recorded = sqlc.narg(recorded)::bool)
       AND NOT @match_none::bool
@@ -214,6 +215,7 @@ WITH f AS (
       AND (NOT @unknown_duration::bool OR l.duration_seconds IS NULL)
       AND (NOT @unknown_turns::bool OR l.turn_count IS NULL)
       AND (cardinality(@tags::text[]) = 0 OR c.tags && @tags::text[])
+      AND c.fields @> @fields::jsonb
       AND (sqlc.narg(archived)::boolean IS NULL OR c.archived = sqlc.narg(archived)::boolean)
       AND (sqlc.narg(recorded)::bool IS NULL OR l.recorded = sqlc.narg(recorded)::bool)
       AND NOT @match_none::bool
@@ -991,3 +993,8 @@ FROM call_list
 WHERE organisation_id = @organisation_id AND project_id = @project_id AND servable
 ORDER BY start_at, id
 LIMIT 1;
+
+-- name: MergeCallFields :exec
+-- An SDK's custom fields onto its call (Postgres 00020); a key already there takes the new value.
+UPDATE calls SET fields = fields || @fields::jsonb, updated_at = now()
+WHERE id = @id;

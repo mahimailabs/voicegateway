@@ -22,6 +22,7 @@ import (
 	"github.com/mahimailabs/voicegateway/internal/seal"
 	"github.com/mahimailabs/voicegateway/internal/store"
 	"github.com/mahimailabs/voicegateway/internal/store/pgstore"
+	sdkcontract "github.com/mahimailabs/voicegateway/sdk/contract"
 )
 
 // connectionStack is web's ingestion and its API on a real Postgres, with a stream that records
@@ -92,6 +93,7 @@ type connectionRead struct {
 	} `json:"urls"`
 	Webhook   sourceRead `json:"webhook"`
 	Agent     sourceRead `json:"agent"`
+	SDK       sourceRead `json:"sdk"`
 	FirstCall *struct {
 		ID        string     `json:"id"`
 		StartedAt *time.Time `json:"startedAt"`
@@ -371,5 +373,35 @@ func TestConnectionRefusalKeepsAccepted(t *testing.T) {
 	}
 	if reasonOf(a) != store.ReasonKeyMismatch || a.UsedKey != nil || a.ExpectedKey == nil {
 		t.Fatalf("made-up key kept: reason %q, used %v", reasonOf(a), a.UsedKey)
+	}
+}
+
+// docs/specs/python-sdk.md check 4: an SDK batch is accepted at its project's URL and recorded on
+// the sdk source; signed for project A and sent to B's URL, it is refused and recorded on B only.
+func TestSDKConnection(t *testing.T) {
+	s := newConnectionStack(t,
+		lkProject("acme", "voice", "APIacme", "acme-secret"),
+		lkProject("beta", "voice", "APIbeta", "beta-secret"),
+	)
+	batch, err := sdkcontract.Examples.ReadFile("examples/valid/full-call.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	tok := uploadToken(t, "APIacme", "acme-secret", true)
+	if got := s.post("/ingest/beta/voice/sdk/v1/events", tok, batch); got != 401 {
+		t.Fatalf("A's key at B's URL: %d", got)
+	}
+	if len(s.stream.events) != 0 {
+		t.Fatalf("appended %d", len(s.stream.events))
+	}
+	if b := s.connection(t, "beta", "voice").SDK; reasonOf(b) != store.ReasonKeyMismatch {
+		t.Fatalf("B's sdk source: %+v", b)
+	}
+	if got := s.post("/ingest/acme/voice/sdk/v1/events", tok, batch); got != 202 {
+		t.Fatalf("A's batch at A's URL: %d", got)
+	}
+	a := s.connection(t, "acme", "voice")
+	if a.SDK.LastAcceptedAt == nil || a.SDK.LastRejectedAt != nil || a.Agent != (sourceRead{}) || len(s.stream.events) != 1 {
+		t.Fatalf("A: sdk %+v, agent %+v, appended %d", a.SDK, a.Agent, len(s.stream.events))
 	}
 }

@@ -2,6 +2,9 @@
 # One scripted call: start the agent, dispatch it to a new room, join as a
 # caller that plays caller.ogg, leave, then stop the agent once its session
 # upload is done. Reads LiveKit and VoiceGateway settings from ./.env.
+#
+# ATTACH=1 runs agent_attach.py instead: the Python SDK, voicegateway.attach(),
+# with LiveKit's uploader off, so the call reaches VoiceGateway through the SDK only.
 set -euo pipefail
 
 cd "$(dirname "$0")"
@@ -17,7 +20,17 @@ set -a
 # shellcheck disable=SC1091
 . ./.env
 set +a
-for name in LIVEKIT_URL LIVEKIT_API_KEY LIVEKIT_API_SECRET LIVEKIT_OBSERVABILITY_URL; do
+if [ -n "${ATTACH:-}" ]; then
+	agent_script=agent_attach.py
+	connection=VOICEGATEWAY_URL
+	# SDK only: LiveKit Agents treats an empty LIVEKIT_OBSERVABILITY_URL as unset, and
+	# load_dotenv in the agent does not override a variable that exists.
+	export LIVEKIT_OBSERVABILITY_URL=
+else
+	agent_script=agent.py
+	connection=LIVEKIT_OBSERVABILITY_URL
+fi
+for name in LIVEKIT_URL LIVEKIT_API_KEY LIVEKIT_API_SECRET "$connection"; do
 	if [ -z "${!name:-}" ]; then
 		echo "$name is empty in examples/livekit-agent/.env" >&2
 		exit 1
@@ -43,7 +56,7 @@ trap cleanup EXIT
 
 # start mode, not dev: only start drains running jobs on SIGTERM, and the
 # session report is uploaded while the job shuts down.
-.venv/bin/python agent.py start --drain-timeout 60 > >(tee "$log") 2>&1 &
+.venv/bin/python "$agent_script" start --drain-timeout 60 > >(tee "$log") 2>&1 &
 agent_pid=$!
 
 echo "waiting for the agent to register with LiveKit"

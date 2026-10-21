@@ -50,6 +50,12 @@ func CallIdentities(kind Kind, body []byte) ([]CallIdentity, error) {
 			return nil, err
 		}
 		refs = append(refs, CallIdentity{h.GetRoomId(), h.GetJobId()})
+	case KindSDKEvents:
+		var b SDKBatch
+		if err := json.Unmarshal(body, &b); err != nil {
+			return nil, err
+		}
+		refs = append(refs, CallIdentity{deref(b.Call.RoomSID), deref(b.Call.JobID)})
 	case KindAgentTraces:
 		r := ptraceotlp.NewExportRequest()
 		if err := r.UnmarshalProto(body); err != nil {
@@ -142,4 +148,11 @@ func CallIdentities(kind Kind, body []byte) ([]CallIdentity, error) {
 		}
 	}
 	return unique, nil
+}
+
+func deref(s *string) string {
+	if s == nil {
+		return ""
+	}
+	return *s
 }

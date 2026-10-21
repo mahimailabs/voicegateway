@@ -1192,12 +1192,41 @@ wheels = [
 ]
 
 [[package]]
+name = "voicegateway"
+version = "2.0.0"
+source = { editable = "../../sdk/python" }
+dependencies = [
+    { name = "aiohttp" },
+    { name = "livekit-agents" },
+    { name = "livekit-api" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "aiohttp", specifier = ">=3.10,<4" },
+    { name = "livekit-agents", specifier = ">=1.8.6,<2" },
+    { name = "livekit-api", specifier = ">=1.2.0,<2" },
+]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "jsonschema", specifier = "==4.26.0" },
+    { name = "mypy", specifier = "==2.4.0" },
+    { name = "pytest", specifier = "==9.1.1" },
+    { name = "pytest-asyncio", specifier = "==1.4.0" },
+    { name = "rfc3339-validator", specifier = "==0.1.4" },
+    { name = "ruff", specifier = "==0.17.1" },
+    { name = "types-jsonschema", specifier = "==4.26.0.20261006" },
+]
+
+[[package]]
 name = "voicegateway-livekit-agent-example"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
     { name = "livekit-agents" },
     { name = "python-dotenv" },
+    { name = "voicegateway" },
 ]
 
 [package.dev-dependencies]
@@ -1210,6 +1239,7 @@ dev = [
 requires-dist = [
     { name = "livekit-agents", specifier = "==1.8.8" },
     { name = "python-dotenv", specifier = "==1.2.4" },
+    { name = "voicegateway", editable = "../../sdk/python" },
 ]
 
 [package.metadata.requires-dev]

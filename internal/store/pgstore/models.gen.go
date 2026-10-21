@@ -33,6 +33,7 @@ type Call struct {
 	IssueRetryAt            pgtype.Timestamptz
 	IssueFailures           int32
 	IssueEvaluationRevision int64
+	Fields                  []byte
 }
 
 type CallList struct {
@@ -60,6 +61,7 @@ type CallList struct {
 	Pipeline        string
 	AgentKey        pgtype.Text
 	Recorded        bool
+	Fields          []byte
 }
 
 type CallParticipant struct {

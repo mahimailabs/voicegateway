@@ -18,22 +18,35 @@ import (
 // call is the contract's Call. It holds no field the contract does not name
 // (additionalProperties: false).
 type call struct {
-	ID               string      `json:"id"`
-	Room             string      `json:"room"`
-	RoomSID          *string     `json:"roomSid"`
-	StartedAt        time.Time   `json:"startedAt"`
-	EndedAt          *time.Time  `json:"endedAt"`
-	DurationSeconds  *float64    `json:"durationSeconds"`
-	ParticipantCount *int64      `json:"participantCount"`
-	EndReason        *string     `json:"endReason"`
-	Spans            *[]span     `json:"spans"`
-	Turns            *[]callTurn `json:"turns"`
-	Usage            *usage      `json:"usage,omitempty"`
-	Recording        *recording  `json:"recording,omitempty"`
-	EndState         string      `json:"endState"`
-	Tags             []string    `json:"tags"`
-	Archived         bool        `json:"archived"`
-	Clocks           []clock     `json:"clocks"`
+	ID               string            `json:"id"`
+	Room             string            `json:"room"`
+	RoomSID          *string           `json:"roomSid"`
+	StartedAt        time.Time         `json:"startedAt"`
+	EndedAt          *time.Time        `json:"endedAt"`
+	DurationSeconds  *float64          `json:"durationSeconds"`
+	ParticipantCount *int64            `json:"participantCount"`
+	EndReason        *string           `json:"endReason"`
+	Spans            *[]span           `json:"spans"`
+	Turns            *[]callTurn       `json:"turns"`
+	Usage            *usage            `json:"usage,omitempty"`
+	Recording        *recording        `json:"recording,omitempty"`
+	EndState         string            `json:"endState"`
+	Tags             []string          `json:"tags"`
+	Archived         bool              `json:"archived"`
+	Clocks           []clock           `json:"clocks"`
+	Fields           map[string]string `json:"fields"`
+	Live             *callLive         `json:"live"`
+}
+
+// callLive is the latest user and agent state an SDK reported (docs/specs/python-sdk.md).
+type callLive struct {
+	User  *liveState `json:"user"`
+	Agent *liveState `json:"agent"`
+}
+
+type liveState struct {
+	State string    `json:"state"`
+	At    time.Time `json:"at"`
 }
 
 type span struct {
@@ -209,6 +222,13 @@ func buildCall(c store.Call, spans []store.Span, built turn.Result) (call, bool)
 		out.Turns = &t
 	}
 	out.Usage = toUsage(built.Usage)
+	out.Fields = c.Fields
+	if out.Fields == nil {
+		out.Fields = map[string]string{}
+	}
+	if l := built.Live; l != nil {
+		out.Live = &callLive{User: toLiveState(l.User), Agent: toLiveState(l.Agent)}
+	}
 	return out, true
 }
 
@@ -377,4 +397,11 @@ func earliestStart(spans []store.Span) *time.Time {
 		}
 	}
 	return out
+}
+
+func toLiveState(s *turn.LiveState) *liveState {
+	if s == nil {
+		return nil
+	}
+	return &liveState{State: s.State, At: s.At}
 }

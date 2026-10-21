@@ -1,0 +1,59 @@
+---
+title: Python SDK
+description: Add custom fields and live state to calls from a LiveKit Agents agent.
+---
+
+LiveKit Agents' uploader (`LIVEKIT_OBSERVABILITY_URL`, see [Connect your agent](/get-started/connect)) is the default connection. The Python SDK, `voicegateway.attach(session)`, adds what the uploader cannot do:
+
+- Send to VoiceGateway without `LIVEKIT_OBSERVABILITY_URL`, so LiveKit Cloud's own observability stays.
+- Put your own fields on a call, filterable in the call list.
+- Report user and agent state while the call is still running.
+
+## Install
+
+```bash
+uv add voicegateway
+```
+
+Python 3.11 to 3.13, livekit-agents 1.8.6 or later.
+
+## Attach
+
+```python
+import voicegateway
+
+
+@server.rtc_session(agent_name="my-agent")
+async def entrypoint(ctx: agents.JobContext) -> None:
+    session = AgentSession(...)
+    vg = voicegateway.attach(session, fields={"customer": "acme"})
+    await session.start(room=ctx.room, agent=MyAgent())
+```
+
+Call `attach` in the job entrypoint, before `session.start`. Set:
+
+```bash
+VOICEGATEWAY_URL=https://<host>/ingest/<organisation-id>/<project-id>
+```
+
+It is the agent upload URL from the **Connect your agent** panel. The request is signed with the agent's own `LIVEKIT_API_KEY` and `LIVEKIT_API_SECRET`; no new credential.
+
+The SDK sends the session's user and agent states, messages with their latency metrics, per-model usage, tool calls, errors and close. It flushes on close and on job shutdown.
+
+## Fields
+
+```python
+vg.set_field("plan", "trial")
+```
+
+Keys match `^[a-z0-9_.-]{1,64}$`; values are strings of at most 256 characters. Later values win. An invalid field is dropped and counted on `vg.dropped_fields`.
+
+## Fails open
+
+The agent never waits on VoiceGateway, and the SDK never raises into it. Without a URL or credentials, `attach` logs one warning and does nothing. When VoiceGateway is unreachable or refuses a batch, the SDK retries, then drops the events and counts them on `vg.dropped`.
+
+## With the uploader on
+
+Both can run. The upload stays the source for spans, recording and turns; the SDK adds fields and live state, and nothing is counted twice.
+
+The [example agent](https://github.com/mahimailabs/voicegateway/tree/main/examples/livekit-agent) has an SDK variant: `make example-call ATTACH=1`.

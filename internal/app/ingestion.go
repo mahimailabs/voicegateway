@@ -28,6 +28,10 @@ func mountIngestion(mux *http.ServeMux, projects ingestionProjects, stream inges
 		"/livekit/webhook": func(s scope) http.Handler {
 			return &ingest.Webhooks{Quota: quota, Projects: s.projects, Stream: stream, Outcome: conns.For(s.org, s.id, store.SourceWebhook), Log: log, Now: now}
 		},
+		"/sdk/v1/events": func(s scope) http.Handler {
+			u := &ingest.Uploads{Quota: quota, Projects: s.projects, Stream: stream, Outcome: conns.For(s.org, s.id, store.SourceSDK), Log: log, Now: now}
+			return http.HandlerFunc(u.SDKEvents)
+		},
 		"/observability/recordings/v0": func(s scope) http.Handler {
 			u := &ingest.Uploads{Quota: quota, Projects: s.projects, Stream: stream, Audio: audio, Outcome: conns.For(s.org, s.id, store.SourceAgent), Log: log, Now: now}
 			return http.HandlerFunc(u.SessionReport)

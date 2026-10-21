@@ -2,6 +2,7 @@ package pgstore
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
@@ -187,6 +188,7 @@ func (s *Store) Call(ctx context.Context, organisationID, projectID, callID stri
 	}
 	c := store.Call{
 		Metadata: store.CallMetadata{Tags: row.Tags, Archived: row.Archived, Revision: row.MetadataRevision},
+		Fields:   callFields(row.Fields),
 		ID:       row.ID.String(), RoomName: row.RoomName.String, RoomSID: row.RoomSid.String, JobID: row.JobID.String,
 		StartedAt: timeOf(row.StartedAt), EndedAt: timeOf(row.EndedAt), FirstSeenAt: timeOf(row.FirstSeenAt),
 		EndState: row.EndState, Participants: row.Participants, Servable: row.Servable.Bool, Summarized: row.Summarized,
@@ -309,4 +311,36 @@ func noNUL(ss []string) []string {
 		out = append(out, stripNUL(s))
 	}
 	return out
+}
+
+// MergeCallFields adds an SDK's custom fields to a call; a key it already has takes the new value.
+func (s *Store) MergeCallFields(ctx context.Context, callID string, fields map[string]string) error {
+	id, err := uuid(callID)
+	if err != nil {
+		return err
+	}
+	b, err := json.Marshal(noNULMap(fields))
+	if err != nil {
+		return err
+	}
+	if err := s.q.MergeCallFields(ctx, MergeCallFieldsParams{ID: id, Fields: b}); err != nil {
+		return fmt.Errorf("merge call fields: %w", badRow(err))
+	}
+	return nil
+}
+
+// noNULMap strips NUL from keys and values, which Postgres text and jsonb refuse.
+func noNULMap(m map[string]string) map[string]string {
+	out := make(map[string]string, len(m))
+	for k, v := range m {
+		out[stripNUL(k)] = stripNUL(v)
+	}
+	return out
+}
+
+// callFields decodes a call's SDK fields; a value that is not a string object reads as none.
+func callFields(b []byte) map[string]string {
+	m := map[string]string{}
+	_ = json.Unmarshal(b, &m)
+	return m
 }

@@ -35,6 +35,8 @@ type Calls interface {
 	DeferStale(ctx context.Context, callID string) error
 	PutSummary(ctx context.Context, c store.StaleCall, sum store.CallSummary, computedAt time.Time) error
 	LinkRecording(ctx context.Context, l store.RecordingLink) error
+	// MergeCallFields adds an SDK's custom fields to a call; a key it already has takes the new value.
+	MergeCallFields(ctx context.Context, callID string, fields map[string]string) error
 }
 
 // Traces counts traces that never linked to a call, and reads a call's spans and the turns built
@@ -94,6 +96,8 @@ func (j *Joiner) row(ctx context.Context, r *store.Event) error {
 		return j.traces(ctx, r)
 	case event.KindAgentMetrics:
 		return j.metrics(ctx, r)
+	case event.KindSDKEvents:
+		return j.sdkBatch(ctx, r)
 	}
 	return nil
 }

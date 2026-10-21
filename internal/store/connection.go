@@ -2,10 +2,11 @@ package store
 
 import "time"
 
-// Connection sources: LiveKit's webhooks and an agent's observability uploads.
+// Connection sources: LiveKit's webhooks, an agent's observability uploads and a VoiceGateway SDK.
 const (
 	SourceWebhook = "webhook"
 	SourceAgent   = "agent"
+	SourceSDK     = "sdk"
 )
 
 // Reason codes for a refused ingestion request (docs/specs/first-call-setup.md). The console shows a
