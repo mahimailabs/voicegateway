@@ -1,6 +1,6 @@
 # 0033: LiveKit's own uploader is the default agent connection
 
-- Status: accepted (Mahimai, 2026-10-21)
+- Status: accepted
 - Date: 2026-10-21
 
 ## Context
@@ -22,7 +22,12 @@ The uploader cannot do three things: keep LiveKit Cloud's own observability (the
 
 ## Decision
 
-Option 3. LiveKit Agents' uploader (`LIVEKIT_OBSERVABILITY_URL`) is the default agent connection. A Python SDK, `attach()`, is an optional add-on for what the uploader cannot do: keep LiveKit Cloud's own observability, custom call fields, and live mid-call events. Python first; TypeScript, Go and others as needed (Mahimai, 2026-10-21). 0002 stands for the SDK's shape.
+Option 3: the uploader is the default connection, plus a minimal Python SDK first, with other languages later. The SDK, `attach()`, is an optional add-on for what the uploader cannot do: keep LiveKit Cloud's own observability, custom call fields, and live mid-call events. 0002 stands for the SDK's shape.
+
+Mahimai decided it in the project thread on 2026-10-21, in these words:
+
+- 02:51Z: "Thats fine, then lets have the SDK, first lets build for python alone ( then we can expand to typescript, golang, and etc as needed )"
+- 02:51:56Z: "You can build it now, staying minimal so it is already when we add for other language packages as well"
 
 ## Consequences
 

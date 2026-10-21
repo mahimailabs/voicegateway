@@ -74,7 +74,10 @@ grep -q "received job request" "$log" || {
 
 # caller.ogg is 2 s of silence, one question and 20 s of silence: time for the
 # agent to answer before the caller leaves and the call ends.
-lk room join --identity caller --publish caller.ogg --exit-after-publish "$ROOM"
+# --auto-subscribe: the agent plays its reply only once someone subscribes to its audio track
+# (livekit-agents room_io waits for the subscription), so a caller that never subscribes is never
+# answered.
+lk room join --identity caller --auto-subscribe --publish caller.ogg --exit-after-publish "$ROOM"
 
 echo "caller left room $ROOM; stopping the agent after its session upload"
 kill -TERM "$agent_pid"
