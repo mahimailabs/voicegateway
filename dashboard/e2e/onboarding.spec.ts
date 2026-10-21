@@ -33,7 +33,11 @@ async function accessible(page: Page, testInfo: TestInfo, errors: ReturnType<typ
   await settle(page)
   const results = await new AxeBuilder({ page }).analyze()
   await testInfo.attach("axe", { body: JSON.stringify(results, null, 2), contentType: "application/json" })
-  await testInfo.attach(shot, { body: await page.screenshot({ fullPage: true }), contentType: "image/png" })
+  // A full-page capture resizes the viewport to the document's height, so with a modal open the page
+  // behind it re-lays out at that size and the capture waits for it to settle: 25 s on a loaded CI
+  // runner. A dialog is fixed to the viewport anyway, so capture just the viewport then.
+  const dialogOpen = (await page.getByRole("dialog").count()) > 0
+  await testInfo.attach(shot, { body: await page.screenshot({ fullPage: !dialogOpen, animations: "disabled" }), contentType: "image/png" })
   expect.soft(errors.unexpected(), "browser console and uncaught errors").toEqual([])
   expect(results.violations.filter((v) => v.impact === "serious" || v.impact === "critical").map(({ id, impact, nodes }) => ({ id, impact, targets: nodes.map((node) => node.target) })), "serious/critical axe violations").toEqual([])
 }
