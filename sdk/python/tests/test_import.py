@@ -16,4 +16,4 @@ def test_import_loads_no_livekit_module() -> None:
 def test_version_matches_the_package_metadata() -> None:
     from importlib.metadata import version
 
-    assert voicegateway.__version__ == version("voicegateway") == "2.0.0"
+    assert voicegateway.__version__ == version("voicegateway") == "1.0.0rc6"
