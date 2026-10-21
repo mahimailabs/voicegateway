@@ -107,7 +107,7 @@ WHERE organisation_id = $1 AND id = $2;
 -- With its latest recording: an agent that uploads twice for one call, from two jobs, leaves two,
 -- and the call view plays the latest.
 SELECT l.id, l.room_name, l.room_sid, l.job_id, l.started_at, l.ended_at, l.end_state, l.first_seen_at,
-       l.participants, l.servable, l.summarized::boolean AS summarized, c.tags, c.archived, c.metadata_revision,
+       l.participants, l.servable, l.summarized::boolean AS summarized, c.tags, c.archived, c.metadata_revision, c.fields,
        r.id AS recording_id, r.started_at AS recording_started_at
 FROM call_list l JOIN calls c ON c.id = l.id
 LEFT JOIN LATERAL (
@@ -179,6 +179,7 @@ WITH f AS (
       AND (NOT @unknown_duration::bool OR l.duration_seconds IS NULL)
       AND (NOT @unknown_turns::bool OR l.turn_count IS NULL)
       AND (cardinality(@tags::text[]) = 0 OR c.tags && @tags::text[])
+      AND c.fields @> @fields::jsonb
       AND (sqlc.narg(archived)::boolean IS NULL OR c.archived = sqlc.narg(archived)::boolean)
       AND (sqlc.narg(recorded)::bool IS NULL OR l.recorded = sqlc.narg(recorded)::bool)
       AND NOT @match_none::bool
@@ -214,6 +215,7 @@ WITH f AS (
       AND (NOT @unknown_duration::bool OR l.duration_seconds IS NULL)
       AND (NOT @unknown_turns::bool OR l.turn_count IS NULL)
       AND (cardinality(@tags::text[]) = 0 OR c.tags && @tags::text[])
+      AND c.fields @> @fields::jsonb
       AND (sqlc.narg(archived)::boolean IS NULL OR c.archived = sqlc.narg(archived)::boolean)
       AND (sqlc.narg(recorded)::bool IS NULL OR l.recorded = sqlc.narg(recorded)::bool)
       AND NOT @match_none::bool
@@ -990,3 +992,52 @@ WHERE organisation_id= @organisation_id AND project_id= @project_id AND revision
 UPDATE issue_media_backfills SET failures=least(failures+1,12), revision=revision+1,
  retry_at=now() + least(3600, 10 * power(2,least(failures,9))) * interval '1 second'
 WHERE organisation_id= @organisation_id AND project_id= @project_id AND revision= @expected_revision;
+
+-- name: RecordConnectionAccepted :execrows
+-- Selecting the project inserts nothing for a project that does not exist, so a request addressed
+-- to an unknown project records nothing.
+INSERT INTO project_connections (organisation_id, project_id, source, last_accepted_at)
+SELECT p.organisation_id, p.id, @source, @at
+FROM projects p WHERE p.organisation_id = @organisation_id AND p.id = @project_id
+ON CONFLICT (organisation_id, project_id, source) DO UPDATE SET
+    last_accepted_at = GREATEST(project_connections.last_accepted_at, EXCLUDED.last_accepted_at);
+
+-- name: RecordConnectionRejected :execrows
+INSERT INTO project_connections (organisation_id, project_id, source, last_rejected_at, reason, used_key)
+SELECT p.organisation_id, p.id, @source, @at, @reason, sqlc.narg(used_key)
+FROM projects p WHERE p.organisation_id = @organisation_id AND p.id = @project_id
+ON CONFLICT (organisation_id, project_id, source) DO UPDATE SET
+    last_rejected_at = EXCLUDED.last_rejected_at,
+    reason           = EXCLUDED.reason,
+    used_key         = EXCLUDED.used_key;
+
+-- name: ProjectConnections :many
+SELECT source, last_accepted_at, last_rejected_at, reason, used_key
+FROM project_connections
+WHERE organisation_id = @organisation_id AND project_id = @project_id;
+
+-- name: FirstCall :one
+-- The earliest call the worker joined that the console can open: the same servable rule as
+-- ListCalls and CallByID. calls_start_at serves the order.
+SELECT id, start_at::timestamptz AS started_at
+FROM call_list
+WHERE organisation_id = @organisation_id AND project_id = @project_id AND servable
+ORDER BY start_at, id
+LIMIT 1;
+
+-- name: MergeCallFields :one
+-- An SDK's custom fields onto its call (Postgres 00020); a key already there takes the new value. A
+-- call holds at most 64 keys: new keys past that are dropped, in key order, and the caller counts
+-- them from the fields returned.
+UPDATE calls SET fields = calls.fields || (
+    SELECT COALESCE(jsonb_object_agg(f.key, f.value), '{}'::jsonb)
+    FROM (
+        SELECT key, value FROM jsonb_each(@fields::jsonb) WHERE calls.fields ? key
+        UNION ALL
+        (SELECT key, value FROM jsonb_each(@fields::jsonb) WHERE NOT calls.fields ? key
+         ORDER BY key
+         LIMIT GREATEST(0, 64 - (SELECT count(*) FROM jsonb_object_keys(calls.fields))))
+    ) f
+), updated_at = now()
+WHERE id = @id
+RETURNING fields;

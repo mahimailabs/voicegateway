@@ -17,14 +17,23 @@ type ingestionProjects interface {
 }
 
 // mountIngestion resolves the destination from the URL before LiveKit verifies
-// credentials. Identical key strings on independent servers never choose a tenant.
-func mountIngestion(mux *http.ServeMux, projects ingestionProjects, stream ingest.Appender, quota ingest.Quota, audio ingest.Audio, log *slog.Logger, now func() time.Time) {
-	factories := map[string]func(ingest.Projects) http.Handler{
-		"/livekit/webhook": func(p ingest.Projects) http.Handler {
-			return &ingest.Webhooks{Quota: quota, Projects: p, Stream: stream, Log: log, Now: now}
+// credentials. Identical key strings on independent servers never choose a tenant. Each request's
+// outcome is recorded on the project its URL names (conns; nil records nothing).
+func mountIngestion(mux *http.ServeMux, projects ingestionProjects, stream ingest.Appender, quota ingest.Quota, audio ingest.Audio, conns *ingest.Connections, log *slog.Logger, now func() time.Time) {
+	type scope struct {
+		projects ingest.Projects
+		org, id  string
+	}
+	factories := map[string]func(scope) http.Handler{
+		"/livekit/webhook": func(s scope) http.Handler {
+			return &ingest.Webhooks{Quota: quota, Projects: s.projects, Stream: stream, Outcome: conns.For(s.org, s.id, store.SourceWebhook), Log: log, Now: now}
 		},
-		"/observability/recordings/v0": func(p ingest.Projects) http.Handler {
-			u := &ingest.Uploads{Quota: quota, Projects: p, Stream: stream, Audio: audio, Log: log, Now: now}
+		"/sdk/v1/events": func(s scope) http.Handler {
+			u := &ingest.Uploads{Quota: quota, Projects: s.projects, Stream: stream, Outcome: conns.For(s.org, s.id, store.SourceSDK), Log: log, Now: now}
+			return http.HandlerFunc(u.SDKEvents)
+		},
+		"/observability/recordings/v0": func(s scope) http.Handler {
+			u := &ingest.Uploads{Quota: quota, Projects: s.projects, Stream: stream, Audio: audio, Outcome: conns.For(s.org, s.id, store.SourceAgent), Log: log, Now: now}
 			return http.HandlerFunc(u.SessionReport)
 		},
 	}
@@ -33,16 +42,18 @@ func mountIngestion(mux *http.ServeMux, projects ingestionProjects, stream inges
 		"/observability/logs/otlp/v0":    event.KindAgentLogs,
 		"/observability/metrics/otlp/v0": event.KindAgentMetrics,
 	} {
-		factories[path] = func(p ingest.Projects) http.Handler {
-			u := &ingest.Uploads{Quota: quota, Projects: p, Stream: stream, Log: log, Now: now}
+		factories[path] = func(s scope) http.Handler {
+			u := &ingest.Uploads{Quota: quota, Projects: s.projects, Stream: stream, Outcome: conns.For(s.org, s.id, store.SourceAgent), Log: log, Now: now}
 			return u.OTLP(kind)
 		}
 	}
 	for path, factory := range factories {
 		handlePost(mux, map[string]http.Handler{
 			"/ingest/{organisationID}/{projectID}" + path: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				factory(ingest.ScopedProjects{
-					Store: projects, OrganisationID: r.PathValue("organisationID"), ProjectID: r.PathValue("projectID"),
+				org, id := r.PathValue("organisationID"), r.PathValue("projectID")
+				factory(scope{
+					projects: ingest.ScopedProjects{Store: projects, OrganisationID: org, ProjectID: id},
+					org:      org, id: id,
 				}).ServeHTTP(w, r)
 			}),
 		})

@@ -200,6 +200,17 @@ paths:
             items:
               type: string
               enum: [ answerMs, durationSeconds, turnCount ]
+        - name: field
+          in: query
+          description: "An SDK call field as key:value. Repeat to keep calls holding every listed pair; one key with two values matches nothing. At most 16. An embed token without transcriptsAndAudio gets 403 (decision 0034)."
+          style: form
+          explode: true
+          schema:
+            type: array
+            maxItems: 16
+            items:
+              type: string
+              pattern: "^[a-z0-9_.-]{1,64}:.{0,256}$"
         - name: tag
           in: query
           description: User tag. Repeat to match calls carrying any listed tag.
@@ -1192,6 +1203,44 @@ paths:
         "503":
           $ref: "#/components/responses/SourceUnavailable"
 
+  /api/v1/org/{orgId}/project/{projectId}/connection:
+    get:
+      operationId: getProjectConnection
+      security:
+        - consoleSession: []
+        - projectKey: []
+      summary: Read the project's ingestion URLs, the last outcome of each source and its first stored call
+      tags:
+        - Console reads
+      x-access:
+        principal: organisation_member
+        minimumRole: Viewer
+        projectIsolation: required
+        browserSessionTransport: session_cookie
+        scope: project
+      description: "Requires authenticated organisation membership and permission to read the named project. The URLs are built from VOICEGATEWAY_PUBLIC_URL and are null when it is unset. Each source reports when ingestion last accepted and last refused a request for this project, and why it refused. firstCall is the earliest call the worker joined from verified ingest; sample data never counts. No LiveKit secret is ever returned; API keys are not secret."
+      parameters:
+        - $ref: "#/components/parameters/OrganisationId"
+        - $ref: "#/components/parameters/ProjectId"
+      responses:
+        "200":
+          description: Authorised read result. Null means not yet seen, never zero.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectConnection"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/SourceUnavailable"
   /api/v1/org/{orgId}/project/{projectId}/settings/allowed-origins:
     put:
       operationId: updateAllowedOrigins
@@ -2342,8 +2391,52 @@ components:
             $ref: "#/components/schemas/Clock"
           description: Distinct retained source clocks for this call. Every clockId resolves to exactly one entry; IDs are unique within this array. Empty only when no relative timeline is present. Metadata is derived from capture/adapter evidence, not a field already stored in the preview fixtures.
           x-source: { kind: computed, file: docs/api/coverage.md, pointer: null, detail: "Distinct retained source clocks for this call. Every clockId resolves to exactly one entry; IDs are unique within this array. Empty only when no relative timeline is present. Metadata is derived from capture/adapter evidence, not a field already stored in the preview fixtures." }
+        fields:
+          type: object
+          additionalProperties: { type: string }
+          description: Custom fields the agent attached through a VoiceGateway SDK (attach(fields=...) or set_field), later values winning; at most 64 per call, new keys past that are dropped. Empty when no SDK attached any, and for an embed token without transcriptsAndAudio (decision 0034). Absent from captures made before the SDK.
+          x-source: { kind: computed, file: migrations/postgres/00020_sdk_fields.sql, pointer: null, detail: "calls.fields, merged by the worker from SDK fields events (docs/specs/python-sdk.md)." }
+        live:
+          oneOf:
+            - $ref: "#/components/schemas/CallLive"
+            - type: "null"
+          description: The latest user and agent state a VoiceGateway SDK reported. Null when no SDK reported state for this call.
+          x-source: { kind: computed, file: internal/turn/sdk.go, pointer: null, detail: "Latest SDK state event per actor (LiveKit user_state_changed and agent_state_changed)." }
+          x-null-reason: No SDK reported a state for this call.
       required: [ room, roomSid, startedAt, endedAt, durationSeconds, participantCount, endReason, spans, turns, id, endState, tags, archived, clocks ]
       x-source: { kind: agent_upload, file: dashboard/src/mocks/calls.json, pointer: /calls/0, detail: Normalised captured call data; consult fixture source note and upstream-source inventory for conversions }
+    CallLive:
+      type: object
+      additionalProperties: false
+      required: [ user, agent ]
+      x-source: { kind: computed, file: internal/turn/sdk.go, pointer: null, detail: "Latest SDK state event per actor." }
+      properties:
+        user:
+          oneOf:
+            - $ref: "#/components/schemas/LiveState"
+            - type: "null"
+          x-source: { kind: computed, file: internal/turn/sdk.go, pointer: null, detail: "Latest LiveKit user_state_changed state the SDK reported." }
+          x-null-reason: The SDK reported no user state.
+        agent:
+          oneOf:
+            - $ref: "#/components/schemas/LiveState"
+            - type: "null"
+          x-source: { kind: computed, file: internal/turn/sdk.go, pointer: null, detail: "Latest LiveKit agent_state_changed state the SDK reported." }
+          x-null-reason: The SDK reported no agent state.
+    LiveState:
+      type: object
+      additionalProperties: false
+      required: [ state, at ]
+      x-source: { kind: computed, file: internal/turn/sdk.go, pointer: null, detail: "One SDK state event." }
+      properties:
+        state:
+          type: string
+          description: The framework's state name, for example listening, thinking or speaking.
+          x-source: { kind: computed, file: internal/turn/sdk.go, pointer: null, detail: "data.state of the SDK state event." }
+        at:
+          type: string
+          format: date-time
+          x-source: { kind: computed, file: internal/turn/sdk.go, pointer: null, detail: "When the SDK reported the state." }
     Span:
       type: object
       additionalProperties: false
@@ -5491,6 +5584,96 @@ components:
       allOf:
         - $ref: "#/components/schemas/CallMetadata"
       description: Replace tags and archive state only when revision matches. Clear tags with an empty array. A stale revision returns 409 without changing persisted data.
+    ProjectConnection:
+      type: object
+      additionalProperties: false
+      required: [ urls, webhook, agent, sdk, firstCall ]
+      properties:
+        urls:
+          $ref: "#/components/schemas/ConnectionUrls"
+          x-source: { kind: configuration, file: internal/api/connection.go, pointer: null, detail: "Scoped ingestion URLs built from VOICEGATEWAY_PUBLIC_URL and the project's ids (decision 0032)." }
+        webhook:
+          $ref: "#/components/schemas/ConnectionSource"
+          x-source: { kind: computed, file: internal/ingest/connection.go, pointer: null, detail: "Last outcome web recorded for LiveKit webhooks posted to this project's webhook URL." }
+        agent:
+          $ref: "#/components/schemas/ConnectionSource"
+          x-source: { kind: computed, file: internal/ingest/connection.go, pointer: null, detail: "Last outcome web recorded for agent observability uploads posted under this project's observability URL." }
+        sdk:
+          $ref: "#/components/schemas/ConnectionSource"
+          x-source: { kind: computed, file: internal/ingest/connection.go, pointer: null, detail: "Last outcome web recorded for VoiceGateway SDK batches posted to this project's sdk/v1/events URL." }
+        firstCall:
+          oneOf:
+            - $ref: "#/components/schemas/FirstCall"
+            - type: "null"
+          x-source: { kind: computed, file: internal/store/pgstore/connection.go, pointer: null, detail: "Earliest row of the calls index, which only the worker writes from verified ingest." }
+          x-null-reason: No call has been stored for this project yet. Sample data never counts.
+    ConnectionUrls:
+      type: object
+      additionalProperties: false
+      x-source: { kind: configuration, file: internal/api/connection.go, pointer: null, detail: "Scoped ingestion URLs built from VOICEGATEWAY_PUBLIC_URL and the project ids (decision 0032)." }
+      required: [ observability, webhook ]
+      properties:
+        observability:
+          type: [ string, "null" ]
+          format: uri
+          description: The value for LIVEKIT_OBSERVABILITY_URL in the agent.
+          x-source: { kind: configuration, file: internal/api/connection.go, pointer: null, detail: "VOICEGATEWAY_PUBLIC_URL followed by /ingest/{orgId}/{projectId}." }
+          x-null-reason: VOICEGATEWAY_PUBLIC_URL is not set on this instance.
+        webhook:
+          type: [ string, "null" ]
+          format: uri
+          description: The webhook URL to add in LiveKit.
+          x-source: { kind: configuration, file: internal/api/connection.go, pointer: null, detail: "VOICEGATEWAY_PUBLIC_URL followed by /ingest/{orgId}/{projectId}/livekit/webhook." }
+          x-null-reason: VOICEGATEWAY_PUBLIC_URL is not set on this instance.
+    ConnectionSource:
+      type: object
+      additionalProperties: false
+      x-source: { kind: computed, file: internal/ingest/connection.go, pointer: null, detail: "Last outcome web recorded for one ingestion source of the project, in Postgres project_connections." }
+      required: [ lastAcceptedAt, lastRejectedAt, reason, usedKey, expectedKey ]
+      properties:
+        lastAcceptedAt:
+          type: [ string, "null" ]
+          format: date-time
+          description: When a request from this source was last accepted, to within 30 seconds.
+          x-source: { kind: computed, file: migrations/postgres/00019_project_connections.sql, pointer: null, detail: "Written by web when it appends a verified request; throttled to one write per outcome every 30 s." }
+          x-null-reason: No request from this source has been accepted.
+        lastRejectedAt:
+          type: [ string, "null" ]
+          format: date-time
+          description: When a request from this source was last refused, to within 30 seconds.
+          x-source: { kind: computed, file: migrations/postgres/00019_project_connections.sql, pointer: null, detail: "Written by web when it refuses a request addressed to this project." }
+          x-null-reason: No request from this source has been refused.
+        reason:
+          type: [ string, "null" ]
+          enum: [ token_missing, key_mismatch, signature_invalid, grant_missing, body_changed, plan_inactive, plan_cap, too_large, null ]
+          description: Why the last refused request was refused.
+          x-source: { kind: computed, file: internal/ingest/connection.go, pointer: null, detail: "Reason code picked from livekit/protocol's verification error, the entitlement check or the body limit." }
+          x-null-reason: No request from this source has been refused.
+        usedKey:
+          type: [ string, "null" ]
+          description: The LiveKit API key the refused token named, kept only when it has a LiveKit key's shape (letters, digits, _ and -, at most 64). API keys are not secret.
+          x-source: { kind: computed, file: internal/ingest/connection.go, pointer: null, detail: "Issuer of the refused token, kept only for key_mismatch and only in a LiveKit key's shape; the sender chooses it." }
+          x-null-reason: Only key_mismatch records the key used, and only when it is shaped like a LiveKit API key.
+        expectedKey:
+          type: [ string, "null" ]
+          description: This project's LiveKit API key, shown beside usedKey. The secret is never returned.
+          x-source: { kind: configuration, file: migrations/postgres/00001_projects.sql, pointer: null, detail: "The project's LiveKit API key, returned only with key_mismatch." }
+          x-null-reason: Only key_mismatch shows the key expected.
+    FirstCall:
+      type: object
+      additionalProperties: false
+      x-source: { kind: computed, file: internal/store/pgstore/connection.go, pointer: null, detail: "Earliest row of the calls index, which only the worker writes from verified ingest." }
+      required: [ id, startedAt ]
+      properties:
+        id:
+          type: string
+          format: uuid
+          x-source: { kind: computed, file: internal/store/pgstore/connection.go, pointer: null, detail: "Id of the earliest call in the calls index." }
+        startedAt:
+          type: [ string, "null" ]
+          format: date-time
+          x-source: { kind: computed, file: internal/store/pgstore/connection.go, pointer: null, detail: "The call's start, or when the worker first saw it when no source reported a start." }
+          x-null-reason: No source reported when the call started.
     UpdateProjectSettings:
       type: object
       additionalProperties: false
@@ -5559,7 +5742,7 @@ components:
           type: boolean
           default: false
           x-configuration: true
-          description: "Share what was said with the framing site: the one-call view's turn text, span attributes (prompts, transcripts, tool arguments) and recording audio. Off by default, when the call widget shows timings only. Needs the call widget, and an Admin or a project key (decision 0034)."
+          description: "Share what was said with the framing site: the one-call view's turn text, span attributes (prompts, transcripts, tool arguments), the SDK call fields and recording audio. Off by default, when the call widget shows timings only and listCalls refuses the field filter. Needs the call widget, and an Admin or a project key (decision 0034)."
           x-source: { kind: configuration, file: internal/api/embeds.go, pointer: null, detail: Content opt-in requested by the minter. }
     EmbedToken:
       type: object

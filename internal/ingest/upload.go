@@ -47,8 +47,11 @@ type Uploads struct {
 	Stream   Appender
 	// Audio stores the recording of a project with recordings on (phase 07a).
 	Audio Audio
-	Log   *slog.Logger
-	Now   func() time.Time
+	// Outcome records whether the upload was accepted or why it was refused; the zero value records
+	// nothing.
+	Outcome Outcome
+	Log     *slog.Logger
+	Now     func() time.Time
 }
 
 // Audio stores a recording in the S3 bucket and returns its key and size; size is -1 when unknown.
@@ -66,12 +69,14 @@ func (u *Uploads) OTLP(kind event.Kind) http.Handler {
 		body, err := readOTLP(http.MaxBytesReader(w, r.Body, maxOTLPBody), r.Header.Get("Content-Encoding"))
 		if err != nil {
 			u.Log.Warn("upload: unreadable OTLP body", "kind", kind, "project", keys.project.ID, "reason", err.Error())
+			u.refuseBody(r, err)
 			http.Error(w, "unreadable body", statusFor(err))
 			return
 		}
 		if !u.appendEnvelope(w, r, keys, event.Envelope{Kind: kind, Payload: body}) {
 			return
 		}
+		u.Outcome.Accepted(r.Context())
 		// An empty Export*ServiceResponse: full success, encoded as zero bytes.
 		w.Header().Set("Content-Type", "application/x-protobuf")
 		w.WriteHeader(http.StatusOK)
@@ -112,6 +117,7 @@ func (u *Uploads) SessionReport(w http.ResponseWriter, r *http.Request) {
 	}
 	if err != nil {
 		u.Log.Warn("upload: unreadable session report", "project", keys.project.ID, "reason", err.Error())
+		u.refuseBody(r, err)
 		http.Error(w, "unreadable session report", statusFor(err))
 		return
 	}
@@ -126,6 +132,7 @@ func (u *Uploads) SessionReport(w http.ResponseWriter, r *http.Request) {
 	if !u.appendEnvelope(w, r, keys, event.Envelope{ID: jobID, Kind: event.KindAgentSessionReport, Payload: payload}) {
 		return
 	}
+	u.Outcome.Accepted(r.Context())
 	w.WriteHeader(http.StatusOK)
 }
 
@@ -134,55 +141,73 @@ func (u *Uploads) SessionReport(w http.ResponseWriter, r *http.Request) {
 // proceed. A 401 body must never contain the phrases with which LiveKit Cloud tells the agent to
 // stop uploading for good ("data recording is disabled", "disabled by owner").
 func (u *Uploads) verify(w http.ResponseWriter, r *http.Request) (*projectKeys, bool) {
-	keys, code := u.check(r)
+	keys, code, reason := u.check(r)
 	switch code {
 	case http.StatusOK:
 		return keys, true
 	case http.StatusServiceUnavailable:
 		unavailable(w)
 	default:
+		usedKey := ""
+		if reason == store.ReasonKeyMismatch {
+			usedKey = keys.usedKey
+		}
+		u.Outcome.Rejected(r.Context(), reason, usedKey)
 		http.Error(w, http.StatusText(code), code)
 	}
 	return nil, false
 }
 
-func (u *Uploads) check(r *http.Request) (*projectKeys, int) {
+// check verifies the request and returns its status, with the reason code of a refusal. keys is
+// returned on a key mismatch too, to name the key the token used.
+func (u *Uploads) check(r *http.Request) (*projectKeys, int, string) {
 	raw, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
 	if !ok || raw == "" {
 		u.Log.Warn("upload: not verified", "path", r.URL.Path, "reason", "no bearer token")
-		return nil, http.StatusUnauthorized
+		return nil, http.StatusUnauthorized, store.ReasonTokenMissing
 	}
 	v, err := auth.ParseAPIToken(raw)
 	if err != nil {
 		u.Log.Warn("upload: not verified", "path", r.URL.Path, "reason", err.Error())
-		return nil, http.StatusUnauthorized
+		return nil, http.StatusUnauthorized, store.ReasonSignatureInvalid
 	}
 	keys := &projectKeys{ctx: r.Context(), projects: u.Projects}
 	secret := keys.GetSecret(v.APIKey())
 	if keys.err != nil {
 		u.Log.Error("upload: project lookup failed", "err", keys.err)
-		return nil, http.StatusServiceUnavailable
+		return nil, http.StatusServiceUnavailable, ""
 	}
 	if secret == "" {
 		u.Log.Warn("upload: not verified", "path", r.URL.Path, "reason", "unknown LiveKit API key")
-		return nil, http.StatusUnauthorized
+		return keys, http.StatusUnauthorized, store.ReasonKeyMismatch
 	}
 	_, grants, err := v.Verify(secret)
 	if err != nil {
 		u.Log.Warn("upload: not verified", "path", r.URL.Path, "reason", err.Error())
-		return nil, http.StatusUnauthorized
+		return nil, http.StatusUnauthorized, store.ReasonSignatureInvalid
 	}
 	if grants.Observability == nil || !grants.Observability.Write {
 		u.Log.Warn("upload: not verified", "path", r.URL.Path, "reason", "token lacks the observability write grant")
-		return nil, http.StatusForbidden
+		return nil, http.StatusForbidden, store.ReasonGrantMissing
 	}
-	return keys, http.StatusOK
+	return keys, http.StatusOK, ""
+}
+
+// refuseBody records a verified upload refused for its size. A malformed body is the agent's bug,
+// not a connection problem, and records nothing.
+func (u *Uploads) refuseBody(r *http.Request, err error) {
+	if statusFor(err) == http.StatusRequestEntityTooLarge {
+		u.Outcome.Rejected(r.Context(), store.ReasonTooLarge, "")
+	}
 }
 
 // appendEnvelope attributes e to the verified project and appends it, answering 503 on failure so
 // the agent retries. It reports whether the envelope was appended.
 func (u *Uploads) appendEnvelope(w http.ResponseWriter, r *http.Request, keys *projectKeys, e event.Envelope) bool {
-	if !checkEnvelopeQuota(w, r, u.Quota, keys.project.OrganisationID, keys.project.ID, e.Kind, e.Payload) {
+	if ok, reason := checkEnvelopeQuota(w, r, u.Quota, keys.project.OrganisationID, keys.project.ID, e.Kind, e.Payload); !ok {
+		if reason != "" {
+			u.Outcome.Rejected(r.Context(), reason, "")
+		}
 		return false
 	}
 	e.OrganisationID, e.ProjectID, e.ReceivedAt = keys.project.OrganisationID, keys.project.ID, u.Now()
@@ -229,6 +254,12 @@ func statusFor(err error) int {
 // readOTLP returns the export body, decompressed when the exporter gzipped it (the Agents
 // exporters do).
 func readOTLP(body io.Reader, encoding string) ([]byte, error) {
+	return readBody(body, encoding, maxOTLPDecoded)
+}
+
+// readBody returns a request body, decompressed when it was gzipped, refusing one that decodes
+// past limit.
+func readBody(body io.Reader, encoding string, limit int64) ([]byte, error) {
 	switch encoding {
 	case "", "identity":
 	case "gzip":
@@ -241,11 +272,11 @@ func readOTLP(body io.Reader, encoding string) ([]byte, error) {
 	default:
 		return nil, fmt.Errorf("content encoding %q not supported", encoding)
 	}
-	b, err := io.ReadAll(io.LimitReader(body, maxOTLPDecoded+1))
+	b, err := io.ReadAll(io.LimitReader(body, limit+1))
 	if err != nil {
 		return nil, err
 	}
-	if len(b) > maxOTLPDecoded {
+	if int64(len(b)) > limit {
 		return nil, errTooLarge
 	}
 	return b, nil

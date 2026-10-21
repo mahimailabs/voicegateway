@@ -33,6 +33,7 @@ type Call struct {
 	IssueRetryAt            pgtype.Timestamptz
 	IssueFailures           int32
 	IssueEvaluationRevision int64
+	Fields                  []byte
 }
 
 type CallList struct {
@@ -60,6 +61,7 @@ type CallList struct {
 	Pipeline        string
 	AgentKey        pgtype.Text
 	Recorded        bool
+	Fields          []byte
 }
 
 type CallParticipant struct {
@@ -246,6 +248,16 @@ type ProjectBucket struct {
 	AccessKey       string
 	SecretKeySealed []byte
 	CreatedAt       pgtype.Timestamptz
+}
+
+type ProjectConnection struct {
+	OrganisationID string
+	ProjectID      string
+	Source         string
+	LastAcceptedAt pgtype.Timestamptz
+	LastRejectedAt pgtype.Timestamptz
+	Reason         pgtype.Text
+	UsedKey        pgtype.Text
 }
 
 type ProjectKey struct {

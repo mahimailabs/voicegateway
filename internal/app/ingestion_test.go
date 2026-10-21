@@ -52,7 +52,7 @@ func TestScopedWebhookAndSessionAuthentication(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			stream := &scopedIngestionStream{}
 			mux := http.NewServeMux()
-			mountIngestion(mux, scopedIngestionStore{}, stream, nil, nil, slog.New(slog.NewTextHandler(io.Discard, nil)), time.Now)
+			mountIngestion(mux, scopedIngestionStore{}, stream, nil, nil, nil, slog.New(slog.NewTextHandler(io.Discard, nil)), time.Now)
 			req := httptest.NewRequest(http.MethodPost, tc.path, strings.NewReader(tc.body))
 			req.Header.Set("Authorization", tc.token)
 			rec := httptest.NewRecorder()
@@ -86,7 +86,7 @@ func TestScopedQuotaRunsOnlyAfterAuthentication(t *testing.T) {
 			q := &deniedScopedQuota{}
 			stream := &scopedIngestionStream{}
 			mux := http.NewServeMux()
-			mountIngestion(mux, scopedIngestionStore{}, stream, q, nil, slog.New(slog.NewTextHandler(io.Discard, nil)), time.Now)
+			mountIngestion(mux, scopedIngestionStore{}, stream, q, nil, nil, slog.New(slog.NewTextHandler(io.Discard, nil)), time.Now)
 			token, err := auth.NewAccessToken("same-key", "customer-secret").SetObservabilityGrant(&auth.ObservabilityGrant{Write: true}).ToJWT()
 			if err != nil {
 				t.Fatal(err)
@@ -123,7 +123,7 @@ func TestScopedIngestionRoutes(t *testing.T) {
 		t.Run(kind, func(t *testing.T) {
 			stream := &scopedIngestionStream{}
 			mux := http.NewServeMux()
-			mountIngestion(mux, scopedIngestionStore{}, stream, nil, nil, slog.New(slog.NewTextHandler(io.Discard, nil)), time.Now)
+			mountIngestion(mux, scopedIngestionStore{}, stream, nil, nil, nil, slog.New(slog.NewTextHandler(io.Discard, nil)), time.Now)
 			token, err := auth.NewAccessToken("same-key", "customer-secret").SetObservabilityGrant(&auth.ObservabilityGrant{Write: true}).ToJWT()
 			if err != nil {
 				t.Fatal(err)

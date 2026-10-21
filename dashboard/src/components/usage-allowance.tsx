@@ -2,6 +2,7 @@ import { Button } from "@/components/ui/button"
 import { useQuery } from "@tanstack/react-query"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { ApiError, entitlementQuery } from "@/lib/api"
+import { REQUEST_CAPACITY } from "@/lib/support"
 
 const periodDate = new Intl.DateTimeFormat("en", { timeZone: "UTC", dateStyle: "medium", timeStyle: "short" })
 
@@ -19,7 +20,7 @@ export function UsageAllowance() {
       <p>{Math.floor(usage.callSeconds / 60).toLocaleString()} / {usage.limitMinutes.toLocaleString()} minutes for {periodDate.format(new Date(usage.from))} until {periodDate.format(new Date(usage.to))} UTC (end exclusive).</p>
       <p>{usage.openCalls.toLocaleString()} open calls and {usage.unmeasuredCalls.toLocaleString()} closed calls with unknown duration, first seen in this period, are excluded from measured usage.</p>
       <p>Measured closed calls are counted. In-flight calls may take usage over the allowance. No automatic overage charges. Existing data stays readable and your voice calls continue.</p>
-      <Button variant="link" asChild><a href="https://voicegateway.dev/support" target="_blank" rel="noreferrer">Request more capacity</a></Button>
+      <Button variant="link" asChild><a href={REQUEST_CAPACITY.href} target="_blank" rel="noreferrer">{REQUEST_CAPACITY.label}</a></Button>
     </AlertDescription>
   </Alert>
 }

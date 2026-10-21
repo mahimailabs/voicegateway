@@ -1,13 +1,13 @@
 import { issueMetadataOf, saveIssueMetadata } from "./issue-metadata"
 import { metadataOf, saveMetadata } from "./dispositions"
 import { http, HttpResponse, type PathParams } from "msw"
-import type { AlertEvents, AlertSetup, Call, CallPage, CallStats, CreatedInvitation, CreatedPasswordReset, CreatedProjectKey, Invitations, ProjectCreate, WorkspaceProject, Member, Members, ProjectKeys, IssueList, ProjectSettings, ProviderProbes, Resources, Workers, CapacityRun, CloudAgents, Egress, Error as ApiErrorBody, Ingress, MediaServer, ProjectSnapshot, Sip, Workspaces } from "@/lib/api-types"
+import type { AlertEvents, AlertSetup, Call, CallPage, CallStats, CreatedInvitation, CreatedPasswordReset, CreatedProjectKey, Invitations, ProjectCreate, WorkspaceProject, Member, Members, ProjectConnection, ProjectKeys, IssueList, ProjectSettings, ProviderProbes, Resources, Workers, CapacityRun, CloudAgents, Egress, Error as ApiErrorBody, Ingress, MediaServer, ProjectSnapshot, Sip, Workspaces } from "@/lib/api-types"
 import { callStats } from "./call-stats"
 import { capturedCalls } from "./fixtures"
 import { alertEvents, issueList } from "./insights"
 import { capacity, cloudAgents, egress, ingress, mediaServer, projectSnapshot, providerProbes, sip, workers } from "./livekit"
 import { summarize } from "./summaries"
-import { matchesFilters, parseFilters, sortCalls, totals } from "./calls-query"
+import { matchesFields, matchesFilters, parseFilters, sortCalls, totals } from "./calls-query"
 import { playbackUrl, recordingMedia } from "./recordings"
 import { alertSetup, changeMember, createKey, invitations, invite, members, passwordReset, projectKeys, projectSettings, updateSettings, updateAllowedOrigins, normaliseOrigin, revokeInvitation, revokeKey } from "./settings"
 import { addProject, knownOrg, knownProject, workspaces } from "./workspaces"
@@ -31,6 +31,14 @@ const fail = (status: number, code: ApiErrorBody["code"], message: string) =>
 
 const settingsScope = (params: PathParams) => `${params.orgId}/${params.projectId}`
 const known = (params: PathParams) => knownProject(params.orgId, params.projectId)
+// A browser check's replacement fields for the connection read; none in Node or without storage.
+function connectionOverride(): Partial<ProjectConnection> {
+  try {
+    return JSON.parse(globalThis.localStorage?.getItem("vg.mock-connection") ?? "{}") as Partial<ProjectConnection>
+  } catch {
+    return {}
+  }
+}
 
 // Playback goes through the API in the project that was asked for, never to the captured file.
 function withPlayback<T extends { recording?: { id: string; url: string } | null }>(x: T, params: PathParams): T {
@@ -112,7 +120,7 @@ export const handlers = [
       if (!Number.isInteger(start) || start < 0 || key !== bound) return fail(400, "invalid_request", "The cursor does not belong to these filters.")
     }
 
-    const matching = sortCalls(capturedCalls().map(c=>summarize({...c,...metadataOf(settingsScope(params),c.id)})).filter((c) => matchesFilters(c, filters)), filters)
+    const matching = sortCalls(capturedCalls().filter((c) => matchesFields(c.fields, filters.field)).map(c=>summarize({...c,...metadataOf(settingsScope(params),c.id)})).filter((c) => matchesFilters(c, filters)), filters)
     const items = matching.slice(start, start + limit)
     const next = start + limit < matching.length ? `${start + limit}:${bound}` : null
     return HttpResponse.json<CallPage>({ items, page: { nextCursor: next, snapshot: SNAPSHOT }, totals: totals(matching, projectSettings(settingsScope(params)).thresholds.answerMs) })
@@ -178,6 +186,16 @@ export const handlers = [
     if (!(projectSettings(settingsScope(params)).allowedOrigins ?? []).includes(origin)) return fail(400, "origin_not_allowed", "This origin is not in the project's allowed origins.")
     const expiresAt = new Date(Date.now() + (body.expiresInSeconds ?? 3600) * 1000).toISOString()
     return HttpResponse.json({ token: "vge_mock-preview-token", expiresAt, widgets: [...new Set(body.widgets)], origin, transcriptsAndAudio: body.transcriptsAndAudio === true }, { status: 201 })
+  }),
+  // First-call setup. The mock receives no ingest, so every source is still waiting and no first
+  // call exists: a mock or a fixture never counts as the project's first stored call. The URLs use
+  // this page's origin, as web builds them from VOICEGATEWAY_PUBLIC_URL. A browser check can replace
+  // any top-level field through localStorage "vg.mock-connection" (a refusal, null URLs).
+  http.get<PathParams, never, ProjectConnection | ApiErrorBody>(`${project}/connection`, ({ params, request }) => {
+    if (!known(params)) return fail(404, "not_found", "No such project.")
+    const base = `${new URL(request.url).origin}/ingest/${encodeURIComponent(String(params.orgId))}/${encodeURIComponent(String(params.projectId))}`
+    const waiting = { lastAcceptedAt: null, lastRejectedAt: null, reason: null, usedKey: null, expectedKey: null }
+    return HttpResponse.json<ProjectConnection>({ urls: { observability: base, webhook: `${base}/livekit/webhook` }, webhook: waiting, agent: waiting, sdk: waiting, firstCall: null, ...connectionOverride() })
   }),
   http.get<PathParams, never, AlertSetup | ApiErrorBody>(`${project}/alert-setup`, ({ params }) => (known(params) ? HttpResponse.json(alertSetup()) : fail(404, "not_found", "No such project."))),
   http.get<PathParams, never, Workspaces>("*/api/v1/workspaces", () => HttpResponse.json(workspaces())),

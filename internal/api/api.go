@@ -39,6 +39,10 @@ type API struct {
 	// Recordings and Media serve a call's stored recording (phase 07a).
 	Recordings Recordings
 	Media      Media
+	// Connections reads each project's ingestion outcomes and first call; PublicURL,
+	// VOICEGATEWAY_PUBLIC_URL, is the base of the ingestion URLs it shows (empty: unknown).
+	Connections Connections
+	PublicURL   string
 	// Invitations lists and revokes invitations; Inviter makes them and reset links.
 	Invitations Invitations
 	Inviter     Inviter
@@ -111,6 +115,7 @@ func (a *API) Routes() http.Handler {
 	handle(r, http.MethodGet, project+"/workers", a.workers)
 	handle(r, http.MethodGet, project+"/resources", a.resources)
 	handle(r, http.MethodGet, project+"/live-events", a.liveEvents)
+	handle(r, http.MethodGet, project+"/connection", a.getConnection)
 	handle(r, http.MethodGet, project+"/recordings/{recordingId}", a.getRecordingMedia)
 	handle(r, http.MethodGet, project+"/keys", a.listProjectKeys)
 	handle(r, http.MethodPost, project+"/keys", a.createProjectKey)

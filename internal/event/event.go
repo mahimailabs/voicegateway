@@ -21,6 +21,9 @@ const (
 	// KindAgentSessionReport is a LiveKit agent's session upload (decisions 0014, 0015): a
 	// SessionReport encoded as JSON.
 	KindAgentSessionReport Kind = "livekit.agent.session_report"
+	// KindSDKEvents is a batch from a VoiceGateway SDK (decision 0033): the request decompressed,
+	// JSON valid against sdk/contract/v1.schema.json, decoded as SDKBatch.
+	KindSDKEvents Kind = "voicegateway.sdk.events"
 )
 
 // SessionReport is the Payload of KindAgentSessionReport.

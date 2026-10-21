@@ -98,6 +98,8 @@ type Result struct {
 	// NoReply is true when a session report's chat_history.json was read and holds no assistant
 	// message: then a call with no agent_turn span is known to have had no turn.
 	NoReply bool
+	// Live is the latest user and agent state an SDK reported (WithSDK); nil without one.
+	Live *Live
 }
 
 // Build builds the turns of one call from its spans and, when it has one, its session report's

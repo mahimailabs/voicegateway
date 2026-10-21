@@ -47,19 +47,36 @@ Before storing anything, VoiceGateway lists your LiveKit rooms once with that ke
 
 ## 4. Point your agent at VoiceGateway
 
+The console's **Connect your agent** panel (on the project's Overview until the first call, and always in **Settings > Connection**) shows the two URLs to copy and whether each connection works. It builds them from `VOICEGATEWAY_PUBLIC_URL`, so add the address LiveKit and your agent reach VoiceGateway on to `deploy/.env` and run `make up` again:
+
+```bash
+VOICEGATEWAY_PUBLIC_URL=http://localhost:8080   # an agent on this machine; use your public HTTPS address otherwise
+```
+
+Until it is set, the panel says the public URL is not set instead of showing the URLs.
+
 In the agent's environment, set:
 
 ```bash
 LIVEKIT_OBSERVABILITY_URL=http://<voicegateway-host>:8080/ingest/<organisation-id>/<project-id>
 ```
 
-and start the agent session with `record=True`. LiveKit Agents then uploads its traces, logs, metrics and session report to VoiceGateway, signed with the same LiveKit API key and secret. The agent's audio path is untouched: if VoiceGateway is down, calls carry on.
+and start the agent session with `record=True`; LiveKit Agents uploads nothing for a session that does not record. To keep the call audio out of the upload, use `record={"audio": False}` instead (Node: `record: { audio: false }`): traces, logs, metrics and the transcript still arrive. LiveKit Agents then uploads its traces, logs, metrics and session report to VoiceGateway, signed with the same LiveKit API key and secret. The agent's audio path is untouched: if VoiceGateway is down, calls carry on.
 
 This setting sends the uploads to VoiceGateway instead of LiveKit Cloud's own observability, so those sessions no longer appear in LiveKit Cloud's dashboard.
 
 ## 5. Send LiveKit's webhooks to VoiceGateway
 
-In your LiveKit project's webhook settings, add `https://<voicegateway-host>/ingest/<organisation-id>/<project-id>/livekit/webhook`, signed with the API key from step 3. Use the organisation and project IDs shown in the console URL. These IDs select the destination; LiveKit signatures still authenticate every request.
+In LiveKit Cloud, open **Settings > Webhooks** and create a webhook with `https://<voicegateway-host>/ingest/<organisation-id>/<project-id>/livekit/webhook`, signed with the API key from step 3. Use the organisation and project IDs shown in the console URL. These IDs select the destination; LiveKit signatures still authenticate every request.
+
+On a self-hosted LiveKit server, add the same URL to `livekit.yaml`, with the API key from step 3 as the signing key, then restart the LiveKit server:
+
+```yaml
+webhook:
+  api_key: <the API key from step 3>
+  urls:
+    - https://<voicegateway-host>/ingest/<organisation-id>/<project-id>/livekit/webhook
+```
 
 Without the webhook, calls still appear, but they have no start or observed end time, duration or participants, because those come from LiveKit's room events. They stay **open** until two hours pass with no activity. VoiceGateway then closes them as inferred, with the last reported activity as the end time when there is one.
 

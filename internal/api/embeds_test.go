@@ -239,6 +239,9 @@ func TestEmbedTokensFrameOneProjectForOneOrigin(t *testing.T) {
 		if status, _ := send(t, routes, http.MethodGet, base+"/recordings/RC_any", token, ""); status != http.StatusForbidden {
 			t.Errorf("recording audio without the opt-in = %d, want 403", status)
 		}
+		if status, _ := send(t, routes, http.MethodGet, base+"/calls?field=customer:42", token, ""); status != http.StatusForbidden {
+			t.Errorf("a field filter without the opt-in = %d, want 403", status)
+		}
 		status, shared, body := mint(t, key, f.project, `{"widgets":["recent-calls","call"],"origin":"https://app.example.com","transcriptsAndAudio":true}`)
 		if status != http.StatusCreated || !strings.Contains(string(body), `"transcriptsAndAudio":true`) {
 			t.Fatalf("mint with the opt-in = %d %s", status, body)
@@ -248,6 +251,9 @@ func TestEmbedTokensFrameOneProjectForOneOrigin(t *testing.T) {
 		}
 		if status, _ := send(t, routes, http.MethodGet, base+"/recordings/RC_any", shared, ""); status == http.StatusForbidden {
 			t.Error("recording audio with the opt-in was refused by the gate")
+		}
+		if status, body := send(t, routes, http.MethodGet, base+"/calls?field=customer:42", shared, ""); status != http.StatusOK {
+			t.Errorf("a field filter with the opt-in = %d %s, want 200", status, body)
 		}
 		if status, _, _ := mint(t, key, f.project, `{"widgets":["recent-calls"],"origin":"https://app.example.com","transcriptsAndAudio":true}`); status != http.StatusBadRequest {
 			t.Errorf("the opt-in without the call widget = %d, want 400", status)

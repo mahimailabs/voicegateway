@@ -170,6 +170,17 @@ describe("listCalls filters", () => {
   test("a value the contract does not allow is refused", async () => {
     expect((await fetch(`${base}/calls?channel=fax`)).status).toBe(400)
     expect((await fetch(`${base}/calls?turnsMin=1.5`)).status).toBe(400)
+    expect((await fetch(`${base}/calls?field=Customer%3Dacme`)).status).toBe(400)
+    expect((await fetch(`${base}/calls?${Array.from({ length: 17 }, (_, i) => `field=k${i}%3Av`).join("&")}`)).status).toBe(400)
+  })
+
+  test("SDK field filters keep calls holding every pair; one key with two values matches nothing", async () => {
+    const withSdk = capturedCalls().filter((c) => c.fields?.customer === "acme" && c.fields?.plan === "trial").map((c) => c.id).sort()
+    expect(withSdk.length).toBeGreaterThan(0)
+    expect((await all("field=customer%3Aacme")).items.map((c) => c.id).sort()).toEqual(withSdk)
+    expect((await all("field=customer%3Aacme&field=plan%3Atrial")).items.map((c) => c.id).sort()).toEqual(withSdk)
+    expect((await all("field=customer%3Aacme&field=customer%3Aother")).items).toEqual([])
+    expect((await all("field=customer%3Aother")).items).toEqual([])
   })
 })
 
@@ -181,6 +192,19 @@ describe("getCall", () => {
     const call = await res.json()
     expect(valid("Call", call)).toBe("")
     expect(call.id).toBe(id)
+  })
+
+  test("an SDK call carries its fields and live state in the contract shape; others are empty and null", async () => {
+    const sdk = capturedCalls().find((c) => c.live)!
+    const call = await (await fetch(`${base}/calls/${encodeURIComponent(sdk.id)}`)).json()
+    expect(valid("Call", call)).toBe("")
+    expect(Object.keys(call.fields).length).toBeGreaterThan(0)
+    expect(call.live.user.state).toBeTruthy()
+    expect(call.live.agent.state).toBeTruthy()
+    const plain = capturedCalls().find((c) => !c.live)!
+    const other = await (await fetch(`${base}/calls/${encodeURIComponent(plain.id)}`)).json()
+    expect(valid("Call", other)).toBe("")
+    expect([other.fields, other.live]).toEqual([{}, null])
   })
 
   test("the list's turn count is the number of turns the call view shows, for every captured call", async () => {
@@ -650,5 +674,15 @@ describe("createProject", () => {
     const res = await post(body)
     expect(res.status).toBe(400)
     expect(valid("Error", await res.json())).toBe("")
+  })
+})
+
+describe("getProjectConnection", () => {
+  test("every source waits, the SDK included, in the contract shape", async () => {
+    const res = await fetch(`${base}/connection`)
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(valid("ProjectConnection", body)).toBe("")
+    expect(body.sdk).toEqual({ lastAcceptedAt: null, lastRejectedAt: null, reason: null, usedKey: null, expectedKey: null })
   })
 })

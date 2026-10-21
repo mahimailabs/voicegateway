@@ -19,22 +19,35 @@ import (
 // call is the contract's Call. It holds no field the contract does not name
 // (additionalProperties: false).
 type call struct {
-	ID               string      `json:"id"`
-	Room             string      `json:"room"`
-	RoomSID          *string     `json:"roomSid"`
-	StartedAt        time.Time   `json:"startedAt"`
-	EndedAt          *time.Time  `json:"endedAt"`
-	DurationSeconds  *float64    `json:"durationSeconds"`
-	ParticipantCount *int64      `json:"participantCount"`
-	EndReason        *string     `json:"endReason"`
-	Spans            *[]span     `json:"spans"`
-	Turns            *[]callTurn `json:"turns"`
-	Usage            *usage      `json:"usage,omitempty"`
-	Recording        *recording  `json:"recording,omitempty"`
-	EndState         string      `json:"endState"`
-	Tags             []string    `json:"tags"`
-	Archived         bool        `json:"archived"`
-	Clocks           []clock     `json:"clocks"`
+	ID               string            `json:"id"`
+	Room             string            `json:"room"`
+	RoomSID          *string           `json:"roomSid"`
+	StartedAt        time.Time         `json:"startedAt"`
+	EndedAt          *time.Time        `json:"endedAt"`
+	DurationSeconds  *float64          `json:"durationSeconds"`
+	ParticipantCount *int64            `json:"participantCount"`
+	EndReason        *string           `json:"endReason"`
+	Spans            *[]span           `json:"spans"`
+	Turns            *[]callTurn       `json:"turns"`
+	Usage            *usage            `json:"usage,omitempty"`
+	Recording        *recording        `json:"recording,omitempty"`
+	EndState         string            `json:"endState"`
+	Tags             []string          `json:"tags"`
+	Archived         bool              `json:"archived"`
+	Clocks           []clock           `json:"clocks"`
+	Fields           map[string]string `json:"fields"`
+	Live             *callLive         `json:"live"`
+}
+
+// callLive is the latest user and agent state an SDK reported (docs/specs/python-sdk.md).
+type callLive struct {
+	User  *liveState `json:"user"`
+	Agent *liveState `json:"agent"`
+}
+
+type liveState struct {
+	State string    `json:"state"`
+	At    time.Time `json:"at"`
 }
 
 type span struct {
@@ -148,9 +161,11 @@ func (a *API) getCall(w http.ResponseWriter, r *http.Request) {
 
 // withholdContent drops what callers and the agent said from a call for an embed token without the
 // content opt-in (decision 0034): turn text, span attributes, which carry prompts, transcripts and
-// tool arguments, and the recording. Timings, models and usage stay.
+// tool arguments, the SDK's custom fields, which are the agent's own data, and the recording.
+// Timings, models, usage and live state stay.
 func withholdContent(c *call) {
 	c.Recording = nil
+	c.Fields = map[string]string{}
 	c.Clocks = slices.DeleteFunc(c.Clocks, func(k clock) bool { return k.ID == clockRecording })
 	if c.Turns != nil {
 		for i := range *c.Turns {
@@ -231,6 +246,13 @@ func buildCall(c store.Call, spans []store.Span, built turn.Result) (call, bool)
 		out.Turns = &t
 	}
 	out.Usage = toUsage(built.Usage)
+	out.Fields = c.Fields
+	if out.Fields == nil {
+		out.Fields = map[string]string{}
+	}
+	if l := built.Live; l != nil {
+		out.Live = &callLive{User: toLiveState(l.User), Agent: toLiveState(l.Agent)}
+	}
 	return out, true
 }
 
@@ -399,4 +421,11 @@ func earliestStart(spans []store.Span) *time.Time {
 		}
 	}
 	return out
+}
+
+func toLiveState(s *turn.LiveState) *liveState {
+	if s == nil {
+		return nil
+	}
+	return &liveState{State: s.State, At: s.At}
 }

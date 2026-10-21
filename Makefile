@@ -3,7 +3,7 @@ DASHBOARD := dashboard
 COMPOSE := docker compose -f deploy/compose.yaml
 
 .DEFAULT_GOAL := help
-.PHONY: help dev test lint dashboard-test dashboard-e2e dashboard-lint typecheck up down preflight user-add project-add project-recordings go-test go-lint sqlc api-lint api-sources api-types api-types-check api-check
+.PHONY: help dev test lint dashboard-test dashboard-e2e dashboard-lint typecheck up down preflight user-add project-add project-recordings example-call go-test go-lint sdk-test sdk-lint sqlc api-lint api-sources api-types api-types-check api-check
 
 help: ## List the targets
 	@grep -E '^[a-z][a-z0-9_-]*:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  make %-15s %s\n", $$1, $$2}'
@@ -11,9 +11,9 @@ help: ## List the targets
 dev: ## Start the dashboard dev server
 	npm --prefix $(DASHBOARD) run dev
 
-test: go-test dashboard-test ## Run the Go tests (race detector) and the dashboard tests
+test: go-test dashboard-test sdk-test ## Run the Go tests (race detector), the dashboard tests and the Python SDK tests
 
-lint: go-lint dashboard-lint ## Run Go lint and the dashboard lint and TypeScript checks
+lint: go-lint dashboard-lint sdk-lint ## Run Go lint, the dashboard lint and TypeScript checks, and the Python SDK checks
 
 dashboard-test: ## Run the dashboard tests
 	npm --prefix $(DASHBOARD) test
@@ -54,6 +54,15 @@ go-lint: ## Lint and format-check the Go code, and check go.mod and sqlc output 
 	go mod tidy -diff
 	cd internal/store/pgstore && go tool sqlc diff
 
+sdk-test: ## Run the Python SDK tests (sdk/python, needs uv)
+	cd sdk/python && uv run --locked pytest
+
+sdk-lint: ## Check the Python SDK: lockfile, ruff, ruff format and mypy (sdk/python, needs uv)
+	cd sdk/python && uv lock --check
+	cd sdk/python && uv run --locked ruff check
+	cd sdk/python && uv run --locked ruff format --check
+	cd sdk/python && uv run --locked mypy
+
 sqlc: ## Regenerate the typed Postgres queries in internal/store/pgstore
 	cd internal/store/pgstore && go tool sqlc generate
 
@@ -68,6 +77,9 @@ project-add: ## Add a LiveKit project to the running stack: make project-add NAM
 project-recordings: ## Keep or discard a project's call audio: make project-recordings PROJECT=production SET=on (or off)
 	@test -n "$(PROJECT)" || { echo 'PROJECT is required, for example: make project-recordings PROJECT=production SET=on'; exit 1; }
 	$(COMPOSE) --env-file deploy/.env run --rm --no-deps web project recordings "$(or $(SET),on)" --project "$(PROJECT)" --org "$(or $(ORG),default)"
+
+example-call: ## Run the example agent and one scripted caller against examples/livekit-agent/.env (needs uv and lk); ATTACH=1 runs the Python SDK variant instead of the uploader
+	ATTACH="$(ATTACH)" examples/livekit-agent/call.sh
 
 api-lint: ## Validate the pinned OpenAPI contract
 	cd $(DASHBOARD) && REDOCLY_TELEMETRY=off npx --no-install redocly lint ../docs/api/openapi.yaml --config ../redocly.yaml

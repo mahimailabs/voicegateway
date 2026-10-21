@@ -73,6 +73,29 @@ export type Call = {
      * Distinct retained source clocks for this call. Every clockId resolves to exactly one entry; IDs are unique within this array. Empty only when no relative timeline is present. Metadata is derived from capture/adapter evidence, not a field already stored in the preview fixtures.
      */
     clocks: Array<Clock>;
+    /**
+     * Custom fields the agent attached through a VoiceGateway SDK (attach(fields=...) or set_field), later values winning; at most 64 per call, new keys past that are dropped. Empty when no SDK attached any. Absent from captures made before the SDK.
+     */
+    fields?: {
+        [key: string]: string;
+    };
+    /**
+     * The latest user and agent state a VoiceGateway SDK reported. Null when no SDK reported state for this call.
+     */
+    live?: CallLive | null;
+};
+
+export type CallLive = {
+    user: LiveState | null;
+    agent: LiveState | null;
+};
+
+export type LiveState = {
+    /**
+     * The framework's state name, for example listening, thinking or speaking.
+     */
+    state: string;
+    at: string;
 };
 
 export type Span = {
@@ -1435,6 +1458,53 @@ export type CallMetadata = {
  */
 export type UpdateCallMetadata = CallMetadata;
 
+export type ProjectConnection = {
+    urls: ConnectionUrls;
+    webhook: ConnectionSource;
+    agent: ConnectionSource;
+    sdk: ConnectionSource;
+    firstCall: FirstCall | null;
+};
+
+export type ConnectionUrls = {
+    /**
+     * The value for LIVEKIT_OBSERVABILITY_URL in the agent.
+     */
+    observability: string | null;
+    /**
+     * The webhook URL to add in LiveKit.
+     */
+    webhook: string | null;
+};
+
+export type ConnectionSource = {
+    /**
+     * When a request from this source was last accepted, to within 30 seconds.
+     */
+    lastAcceptedAt: string | null;
+    /**
+     * When a request from this source was last refused, to within 30 seconds.
+     */
+    lastRejectedAt: string | null;
+    /**
+     * Why the last refused request was refused.
+     */
+    reason: 'token_missing' | 'key_mismatch' | 'signature_invalid' | 'grant_missing' | 'body_changed' | 'plan_inactive' | 'plan_cap' | 'too_large' | null;
+    /**
+     * The LiveKit API key the refused token named, kept only when it has a LiveKit key's shape (letters, digits, _ and -, at most 64). API keys are not secret.
+     */
+    usedKey: string | null;
+    /**
+     * This project's LiveKit API key, shown beside usedKey. The secret is never returned.
+     */
+    expectedKey: string | null;
+};
+
+export type FirstCall = {
+    id: string;
+    startedAt: string | null;
+};
+
 export type UpdateProjectSettings = {
     thresholds: Thresholds;
     /**
@@ -2205,6 +2275,10 @@ export type ListCallsData = {
          * Only calls where every listed value is unknown. This is how the console's "is empty" filter reaches the server; an unknown value is never matched as zero.
          */
         unknown?: Array<'answerMs' | 'durationSeconds' | 'turnCount'>;
+        /**
+         * An SDK call field as key:value. Repeat to keep calls holding every listed pair; one key with two values matches nothing. At most 16.
+         */
+        field?: Array<string>;
         /**
          * User tag. Repeat to match calls carrying any listed tag.
          */
@@ -3476,6 +3550,60 @@ export type UpdateProjectSettingsResponses = {
 };
 
 export type UpdateProjectSettingsResponse = UpdateProjectSettingsResponses[keyof UpdateProjectSettingsResponses];
+
+export type GetProjectConnectionData = {
+    body?: never;
+    path: {
+        /**
+         * Authorised orgId; the server must verify organisation/project ownership before any read.
+         */
+        orgId: string;
+        /**
+         * Authorised projectId; the server must verify organisation/project ownership before any read.
+         */
+        projectId: string;
+    };
+    query?: never;
+    url: '/api/v1/org/{orgId}/project/{projectId}/connection';
+};
+
+export type GetProjectConnectionErrors = {
+    /**
+     * invalid_request; never return an empty success result for this failure.
+     */
+    400: Error;
+    /**
+     * unauthenticated; never return an empty success result for this failure.
+     */
+    401: Error;
+    /**
+     * forbidden; never return an empty success result for this failure.
+     */
+    403: Error;
+    /**
+     * not_found; never return an empty success result for this failure.
+     */
+    404: Error;
+    /**
+     * internal_error; never return an empty success result for this failure.
+     */
+    500: Error;
+    /**
+     * source_unavailable; never return an empty success result for this failure.
+     */
+    503: Error;
+};
+
+export type GetProjectConnectionError = GetProjectConnectionErrors[keyof GetProjectConnectionErrors];
+
+export type GetProjectConnectionResponses = {
+    /**
+     * Authorised read result. Null means not yet seen, never zero.
+     */
+    200: ProjectConnection;
+};
+
+export type GetProjectConnectionResponse = GetProjectConnectionResponses[keyof GetProjectConnectionResponses];
 
 export type UpdateAllowedOriginsData = {
     body: UpdateAllowedOrigins;

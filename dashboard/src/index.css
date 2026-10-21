@@ -93,7 +93,9 @@
     --sidebar-accent-foreground: #0071e3;
     --sidebar-border: #d2d2d7;
     --sidebar-ring: #0071e3;
-    --destructive-foreground: var(--color-red-800);
+    /* Text on a destructive tint (the destructive Badge): the Failed red in light; a lighter red in dark,
+       since #ff6259 on its 20% tint over the popover grey measures 3.57:1. */
+    --destructive-foreground: var(--destructive);
     --success: var(--color-emerald-500);
     --success-foreground: var(--color-emerald-900);
     --info: var(--color-violet-500);
@@ -138,7 +140,7 @@
     --sidebar-accent-foreground: #2997ff;
     --sidebar-border: #38383a;
     --sidebar-ring: #2997ff;
-    --destructive-foreground: var(--color-red-600);
+    --destructive-foreground: var(--color-red-300);
     --success: var(--color-emerald-500);
     --success-foreground: var(--color-emerald-600);
     --info: var(--color-violet-500);
