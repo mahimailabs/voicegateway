@@ -214,6 +214,18 @@ export type Finding = { id: string; severity: "high" | "medium" | "info"; title:
 // Thresholds are settings (Settings → Thresholds), shared by every page.
 export { BUDGET_MS } from "@/lib/thresholds"
 
+// Match the persisted rule: exact native finish reason, never a substring match.
+function hasErrorReason(raw: string | undefined): boolean {
+  if (raw === "error") return true
+  if (!raw) return false
+  try {
+    const reasons: unknown = JSON.parse(raw)
+    return Array.isArray(reasons) && reasons.every((reason) => typeof reason === "string") && reasons.includes("error")
+  } catch {
+    return false
+  }
+}
+
 export function findingsFor(call: Call, model: CallModel): Finding[] {
   const f: Finding[] = []
   type Scored = TurnModel & { eot: { probability: number; threshold: number } }
@@ -221,11 +233,10 @@ export function findingsFor(call: Call, model: CallModel): Finding[] {
   const waits = model.turns.filter(scored).filter((t) => t.eot.probability < t.eot.threshold && (t.eotMs ?? 0) >= 1500)
   if (waits.length) {
     const avg = waits.reduce((a, t) => a + (t.eotMs ?? 0), 0) / waits.length
-    const share = waits.map((t) => (t.eotMs ?? 0) / (t.e2eMs ?? t.responseMs ?? Infinity)).filter(Number.isFinite)
     f.push({
       id: "eot", severity: "high",
       title: `The agent waited ${fmtMs(avg)} for the end of the turn on ${waits.length} of ${model.turns.filter((t) => t.userText !== null).length} turns`,
-      detail: `The turn detector scored every one of them below its threshold (${waits.map((t) => t.eot.probability.toFixed(2)).join(", ")} vs ${waits[0].eot.threshold.toFixed(2)}), so the agent sat out its full delay.${share.length ? ` That wait was ${Math.round((share.reduce((a, b) => a + b, 0) / share.length) * 100)}% of the response time.` : ""} Look at the endpointing delay or the detector threshold.`,
+      detail: `Reported end-of-turn delay averaged ${fmtMs(avg)}. Detector scores were below their reported thresholds (${waits.map((t) => `${t.eot.probability.toFixed(2)} < ${t.eot.threshold.toFixed(2)}`).join(", ")}). These measurements do not establish which endpointing setting caused the delay.`,
       turns: waits.map((t) => t.i),
     })
   }
@@ -244,14 +255,14 @@ export function findingsFor(call: Call, model: CallModel): Finding[] {
     if (answered) {
       f.push({
         id: `bc${answered.i}`, severity: "medium",
-        title: `A backchannel was answered as a turn (turn ${answered.i + 1})`,
-        detail: `The caller said "${answered.userText}" while the agent was speaking. It was classified as a backchannel, yet the agent replied to it after its own reply ended. The end-of-turn cooldown (backchannel_boundary) decides this.`,
+        title: `Possible backchannel response (turn ${answered.i + 1})`,
+        detail: `A reported backchannel overlaps the estimated start of the short utterance "${answered.userText}". This timing-based match suggests a response to a backchannel; it does not establish the cause or the effective backchannel_boundary setting.`,
         turns: [answered.i],
       })
     }
   }
   const slow = model.turns.filter((t) => t.responseMs !== null && t.responseMs > BUDGET_MS)
-  if (slow.length && !waits.length) {
+  if (slow.length) {
     f.push({ id: "slow", severity: "medium", title: `${slow.length} turns took longer than ${fmtMs(BUDGET_MS)} to answer`, detail: `Turns ${slow.map((t) => t.i + 1).join(", ")}. The budget is a setting, not a measurement.`, turns: slow.map((t) => t.i) })
   }
   const late = (call.turns ?? []).map((t, i) => ({ t, i })).filter(({ t }) => (t.transcriptionDelayMs ?? 0) > 1000)
@@ -259,7 +270,7 @@ export function findingsFor(call: Call, model: CallModel): Finding[] {
     f.push({ id: "late", severity: "medium", title: `The transcript arrived late on ${late.length === 1 ? `turn ${late[0].i + 1}` : `${late.length} turns`}`, detail: `Speech to text finished ${late.map(({ t }) => fmtMs(t.transcriptionDelayMs!)).join(", ")} after the caller stopped. Everything after it waits.`, turns: late.map(({ i }) => i) })
   }
   const reqs = (call.spans ?? []).filter((s) => s.name === "llm_request")
-  const discarded = reqs.filter((s) => s.attrs?.["gen_ai.response.finish_reasons"]?.includes("error"))
+  const discarded = reqs.filter((s) => hasErrorReason(s.attrs?.["gen_ai.response.finish_reasons"]))
   if (discarded.length) {
     f.push({ id: "discard", severity: "medium", title: `${discarded.length} of ${reqs.length} model calls reported an error`, detail: `They reported finish reason "error". Inspect the request and its parent turn to distinguish provider failure from canceled preemptive generation. This flag alone does not establish the cause.`, turns: model.turns.filter((t) => turnSpans(call, t.i).children.some((s) => discarded.some((r) => r.spanId === s.spanId))).map((t) => t.i) })
   }

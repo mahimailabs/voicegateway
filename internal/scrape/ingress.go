@@ -16,6 +16,8 @@ import (
 // IngressScraper reads the ingress endpoints of every project on a timer and stores their redacted
 // projection.
 type IngressScraper struct {
+	Findings Findings
+	Changed  func(context.Context, string, string)
 	Projects Projects
 	Samples  IngressSamples
 	Lock     Locker
@@ -99,6 +101,14 @@ func (s *IngressScraper) Ingress(ctx context.Context, p store.Project) error {
 	defer cancel()
 	if err := s.Samples.StoreIngressRead(sctx, read, samples); err != nil {
 		return fmt.Errorf("store ingress read: %w", err)
+	}
+	if s.Findings != nil {
+		if err := s.Findings.ApplyStandingFindings(sctx, read, ingressCoverage(read.OK, items)); err != nil {
+			return fmt.Errorf("store ingress coverage: %w", err)
+		}
+	}
+	if s.Changed != nil {
+		s.Changed(ctx, p.OrganisationID, p.ID)
 	}
 	return nil
 }

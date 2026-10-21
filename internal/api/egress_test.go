@@ -54,6 +54,14 @@ func (f *fixture) ioService(t *testing.T) rpc.IOInfoClient {
 		t.Fatal(err)
 	}
 	t.Cleanup(c.Close)
+	// The server answers HTTP before its IOInfo service claims requests on the bus, and psrpc gives
+	// up after one second without a claim. Wait until a read is answered, as an egress would retry.
+	waitFor(t, "the IOInfo service", func() bool {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		_, err := c.ListEgress(ctx, &livekit.ListEgressRequest{})
+		return err == nil
+	})
 	return c
 }
 

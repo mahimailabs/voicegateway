@@ -13,6 +13,14 @@ import (
 
 // Calls is the call index.
 type Calls interface {
+	PendingMediaBackfills(context.Context) ([]store.MediaBackfill, error)
+	AdvanceMediaBackfill(context.Context, store.MediaBackfill, int64, string, bool) error
+	DeferMediaBackfill(context.Context, store.MediaBackfill) error
+	PutMediaFinding(context.Context, store.MediaFinding) error
+	PendingCallFindings(context.Context, int) ([]store.PendingFindings, error)
+	PutCallFindings(context.Context, store.PendingFindings, []store.Finding, []string, int64, bool, time.Time) error
+	DeferCallFindings(context.Context, store.PendingFindings) error
+	ProjectSettings(context.Context, string, string) (store.ProjectSettings, error)
 	UpsertCall(ctx context.Context, c store.CallUpsert) (string, error)
 	UpsertCallByJob(ctx context.Context, organisationID, projectID, jobID string, activityAt, firstSeenAt *time.Time) (string, error)
 	CallByRoom(ctx context.Context, organisationID, projectID, roomSID string) (store.CallRef, error)
@@ -31,6 +39,7 @@ type Calls interface {
 // Traces counts traces that never linked to a call, and reads a call's spans and the turns built
 // from them, for its summary.
 type Traces interface {
+	MediaEvents(context.Context, store.MediaBackfill) ([]store.Event, error)
 	CountUnlinkedTraces(ctx context.Context, lastSpanBefore time.Time) (uint64, error)
 	CallTrace(ctx context.Context, organisationID, projectID, callID string) ([]store.Span, turn.Result, error)
 }
@@ -124,6 +133,9 @@ const SummaryBatch = 200
 
 // Stored marks the summaries of every call the rows joined stale, once the rows are in ClickHouse.
 func (j *Joiner) Stored(ctx context.Context, rows []store.Event) error {
+	if err := j.mediaFindings(ctx, rows); err != nil {
+		return err
+	}
 	seen := map[string]bool{}
 	var ids []string
 	add := func(id string) {
@@ -185,8 +197,21 @@ func (j *Joiner) summarizeOne(ctx context.Context, c store.StaleCall, now time.T
 		return err
 	}
 	s := turn.Summarize(spans, res)
+	var findings []store.Finding
+	var settingsRevision int64
+	if len(spans) > 0 || res.NoReply {
+		settings, err := j.Calls.ProjectSettings(ctx, c.OrganisationID, c.ProjectID)
+		if err != nil {
+			return fmt.Errorf("read finding thresholds: %w", err)
+		}
+		settingsRevision = settings.Revision
+		observed := turn.Findings(spans, res, settings.Thresholds)
+		if len(observed) > 0 || len(res.Turns) > 0 || res.NoReply {
+			findings = observed
+		}
+	}
 	return j.Calls.PutSummary(ctx, c, store.CallSummary{
-		TurnCount: s.TurnCount, AnswerMs: s.AnswerMs, AnswerMsMedian: s.AnswerMsMedian,
+		Findings: findings, EvaluatedFindingIDs: turn.FindingCoverage(res), FindingSettingsRevision: settingsRevision, FindingSourceAvailable: len(spans) > 0 || res.NoReply, TurnCount: s.TurnCount, AnswerMs: s.AnswerMs, AnswerMsMedian: s.AnswerMsMedian,
 		Models: s.Models, Pipeline: s.Pipeline, AgentKey: s.AgentKey,
 		RoomName: s.RoomName, FirstSeenAt: s.FirstSeenAt,
 	}, now)

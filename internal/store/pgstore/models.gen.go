@@ -9,24 +9,30 @@ import (
 )
 
 type Call struct {
-	ID               pgtype.UUID
-	OrganisationID   string
-	ProjectID        string
-	RoomName         pgtype.Text
-	RoomSid          pgtype.Text
-	JobID            pgtype.Text
-	StartedAt        pgtype.Timestamptz
-	EndedAt          pgtype.Timestamptz
-	EndState         string
-	LastActivityAt   pgtype.Timestamptz
-	UpdatedAt        pgtype.Timestamptz
-	FirstSeenAt      pgtype.Timestamptz
-	CreatedAt        pgtype.Timestamptz
-	SummaryStaleAt   pgtype.Timestamptz
-	SummaryFailures  int32
-	Tags             []string
-	Archived         bool
-	MetadataRevision int64
+	ID                      pgtype.UUID
+	OrganisationID          string
+	ProjectID               string
+	RoomName                pgtype.Text
+	RoomSid                 pgtype.Text
+	JobID                   pgtype.Text
+	StartedAt               pgtype.Timestamptz
+	EndedAt                 pgtype.Timestamptz
+	EndState                string
+	LastActivityAt          pgtype.Timestamptz
+	UpdatedAt               pgtype.Timestamptz
+	FirstSeenAt             pgtype.Timestamptz
+	CreatedAt               pgtype.Timestamptz
+	SummaryStaleAt          pgtype.Timestamptz
+	SummaryFailures         int32
+	Tags                    []string
+	Archived                bool
+	MetadataRevision        int64
+	IssueEvaluatedAt        pgtype.Timestamptz
+	IssueSettingsRevision   int64
+	IssueSourceAvailable    bool
+	IssueRetryAt            pgtype.Timestamptz
+	IssueFailures           int32
+	IssueEvaluationRevision int64
 }
 
 type CallList struct {
@@ -94,6 +100,80 @@ type Invitation struct {
 	EmailFailedAt  pgtype.Timestamptz
 }
 
+type Issue struct {
+	OrganisationID           string
+	ProjectID                string
+	ID                       string
+	Title                    string
+	Kind                     string
+	Source                   string
+	Severity                 string
+	EvidenceRevision         int64
+	MetadataRevision         int64
+	State                    string
+	ReviewedEvidenceRevision int64
+	DecidedAt                pgtype.Timestamptz
+	Tags                     []string
+	Archived                 bool
+}
+
+type IssueJobObservation struct {
+	OrganisationID               string
+	ProjectID                    string
+	JobID                        string
+	RoomSid                      string
+	DispatchID                   string
+	AgentName                    pgtype.Text
+	ParticipantIdentity          pgtype.Text
+	DispatchedAt                 pgtype.Timestamptz
+	Status                       string
+	ReportedFailedAt             pgtype.Timestamptz
+	FailureObservedAt            pgtype.Timestamptz
+	ObservedAt                   pgtype.Timestamptz
+	ObservationRevision          int64
+	EvaluatedObservationRevision int64
+	EvaluationRevision           int64
+	EvaluatedSettingsRevision    int64
+	EvaluatedCallID              pgtype.UUID
+	EvaluatedJoinedAt            pgtype.Timestamptz
+}
+
+type IssueMediaBackfill struct {
+	OrganisationID string
+	ProjectID      string
+	CursorNs       int64
+	CursorKey      string
+	Revision       int64
+	Done           bool
+	RetryAt        pgtype.Timestamptz
+	Failures       int32
+}
+
+type IssueOccurrence struct {
+	OrganisationID string
+	ProjectID      string
+	IssueID        string
+	SourceID       string
+	CallID         pgtype.UUID
+	OccurredAt     pgtype.Timestamptz
+	Detail         []byte
+	Active         bool
+	ObservedAt     pgtype.Timestamptz
+	SourceLayer    string
+}
+
+type IssueSource struct {
+	OrganisationID     string
+	ProjectID          string
+	Layer              string
+	ReadAt             pgtype.Timestamptz
+	GoodAt             pgtype.Timestamptz
+	FreshUntil         pgtype.Timestamptz
+	EvaluationComplete bool
+	Ok                 bool
+	ErrorClass         string
+}
+
 type ListSnapshot struct {
 	ID             string
 	OrganisationID string
@@ -141,6 +221,7 @@ type Project struct {
 	LivekitApiSecretSealed []byte
 	CreatedAt              pgtype.Timestamptz
 	CallMetadataRevision   int64
+	IssueRevision          int64
 }
 
 type ProjectKey struct {

@@ -71,7 +71,6 @@
       "getEgress",
       "getIngress",
       "getInvitations",
-      "getIssueDispositions",
       "getMediaServer",
       "getMembers",
       "getMyOrganisationEntitlement",
@@ -90,6 +89,7 @@
       "revokeInvitation",
       "revokeProjectKey",
       "updateCallMetadata",
+      "updateIssueMetadata",
       "updateMember",
       "updateProjectSettings"
     ]
@@ -101,11 +101,10 @@
     "browserStorage": true,
     "operations": [
       "getAlertSetup",
-      "getIssueDispositions",
       "getProjectSettings"
     ],
     "assetNotes": {},
-    "exclusion": "The console's writes (thresholds, issue decisions, alert setup) kept in this browser until web stores them; the console reads them back only through these operations, which the mock serves from the same storage."
+    "exclusion": "Remaining browser-local alert setup preview storage. Issue decisions and thresholds use scoped API writes."
   },
   {
     "file": "dashboard/src/mocks/browser.ts",
@@ -184,14 +183,15 @@
     "fixtures": [
       "call-stats",
       "calls-query",
+      "dispositions",
       "fixtures",
       "insights",
+      "issue-metadata",
       "livekit",
       "recordings",
       "settings",
       "summaries",
-      "workspaces",
-      "dispositions"
+      "workspaces"
     ],
     "assets": [],
     "browserStorage": false,
@@ -208,7 +208,6 @@
       "getEgress",
       "getIngress",
       "getInvitations",
-      "getIssueDispositions",
       "getMediaServer",
       "getMembers",
       "getProjectSettings",
@@ -236,6 +235,7 @@
     "file": "dashboard/src/mocks/insights.ts",
     "fixtures": [
       "fixtures",
+      "issue-metadata",
       "livekit"
     ],
     "assets": [],
@@ -382,5 +382,17 @@
     "assetNotes": {
       "<dynamic>": "Delegates the generated getLiveEvents request to native fetch, checking status before streaming to clear denied scoped telemetry. URL and parameters come from the generated SDK."
     }
+  },
+  {
+    "file": "dashboard/src/mocks/issue-metadata.ts",
+    "fixtures": [],
+    "assets": [],
+    "browserStorage": true,
+    "operations": [
+      "listIssues",
+      "updateIssueMetadata"
+    ],
+    "assetNotes": {},
+    "exclusion": "Development-only simulated issue metadata storage, behind the mock API. Production writes use Postgres."
   }
 ]

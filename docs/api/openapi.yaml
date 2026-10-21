@@ -386,7 +386,7 @@ paths:
         projectIsolation: required
         originAllowList: required
         readOnly: true
-      description: "The Issues page, the issues widget, issue counts and the command palette. Dispositions stay in getIssueDispositions. Requires authenticated organisation membership and permission to read the named project. Credential absence is 401, denied membership is 403. Computed on the server over every stored record in the range; the console never totals pages of listCalls itself."
+      description: "The Issues page, the issues widget, issue counts and the command palette. Decisions and metadata are included in each issue from the same database snapshot. Requires authenticated organisation membership and permission to read the named project. Credential absence is 401, denied membership is 403. Computed on the server over every stored record in the range; the console never totals pages of listCalls itself."
       parameters:
         - $ref: "#/components/parameters/OrganisationId"
         - $ref: "#/components/parameters/ProjectId"
@@ -404,6 +404,21 @@ paths:
           schema:
             type: string
             format: date-time
+        - name: q
+          in: query
+          description: Literal case-insensitive search over issue titles and occurrence details.
+          schema: { type: string, maxLength: 512 }
+        - name: tag
+          in: query
+          description: Match any persisted normalized issue tag.
+          schema:
+            type: array
+            maxItems: 32
+            items: { type: string, maxLength: 64 }
+        - name: archived
+          in: query
+          description: Filter persisted issue archive state. Omit to include both.
+          schema: { type: boolean }
       responses:
         "200":
           description: Authorised read result. Null means unreported or incomplete, never zero.
@@ -997,6 +1012,99 @@ paths:
           $ref: "#/components/responses/InternalError"
         "503":
           $ref: "#/components/responses/SourceUnavailable"
+  /api/v1/org/{orgId}/project/{projectId}/issues/{issueId}/metadata:
+    get:
+      operationId: getIssueMetadata
+      security:
+        - consoleSession: []
+        - projectKey: []
+      summary: Read persisted issue decisions, tags, archive state and revision
+      tags:
+        - Console reads
+      x-access:
+        principal: organisation_member
+        minimumRole: Viewer
+        projectIsolation: required
+        browserSessionTransport: session_cookie
+        scope: project
+      description: "Requires authenticated organisation membership and permission to read the named project. A browser signs in with the session cookie (decision 0027); the role gate admits the minimumRole and above. Credential absence is 401, denied membership is 403, cross-project resource ids are not_found. Server-side LiveKit credentials must never reach the browser."
+      parameters:
+        - $ref: "#/components/parameters/OrganisationId"
+        - $ref: "#/components/parameters/ProjectId"
+        - name: issueId
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Stable issue rule identity within the named project.
+      responses:
+        "200":
+          description: Authorised read result. Null means unreported, never zero. Source-specific coverage limits remain visible.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IssueMetadata"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/SourceUnavailable"
+    put:
+      operationId: updateIssueMetadata
+      summary: Save issue decisions, tags and archive state if the read revision is still current
+      tags: [ Console writes ]
+      security:
+        - consoleSession: []
+      x-access:
+        principal: organisation_member
+        minimumRole: Member
+        projectIsolation: required
+        browserSessionTransport: session_cookie
+        scope: project
+      description: Members and Admins can save issue metadata. Project keys and Viewers cannot write. A stale revision returns revision_conflict without overwriting a newer save.
+      parameters:
+        - $ref: "#/components/parameters/OrganisationId"
+        - $ref: "#/components/parameters/ProjectId"
+        - name: issueId
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Stable issue rule identity within the named project.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateIssueMetadata"
+      responses:
+        "200":
+          description: Persisted issue metadata with the new revision.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IssueMetadata"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/SourceUnavailable"
   /api/v1/org/{orgId}/project/{projectId}/settings:
     get:
       operationId: getProjectSettings
@@ -1078,44 +1186,7 @@ paths:
           $ref: "#/components/responses/InternalError"
         "503":
           $ref: "#/components/responses/SourceUnavailable"
-  /api/v1/org/{orgId}/project/{projectId}/issue-dispositions:
-    get:
-      operationId: getIssueDispositions
-      security:
-        - consoleSession: []
-        - projectKey: []
-      summary: Read saved issue decisions
-      tags:
-        - Console reads
-      x-access:
-        principal: organisation_member
-        minimumRole: Viewer
-        projectIsolation: required
-        browserSessionTransport: session_cookie
-        scope: project
-      description: "Requires authenticated organisation membership and permission to read the named project. A browser signs in with the session cookie (decision 0027); the role gate admits the minimumRole and above. Credential absence is 401, denied membership is 403, cross-project resource ids are not_found. Server-side LiveKit credentials must never reach the browser."
-      parameters:
-        - $ref: "#/components/parameters/OrganisationId"
-        - $ref: "#/components/parameters/ProjectId"
-      responses:
-        "200":
-          description: Authorised read result. Null means unreported, never zero. Source-specific coverage limits remain visible.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/IssueDispositions"
-        "400":
-          $ref: "#/components/responses/BadRequest"
-        "401":
-          $ref: "#/components/responses/Unauthenticated"
-        "403":
-          $ref: "#/components/responses/Forbidden"
-        "404":
-          $ref: "#/components/responses/NotFound"
-        "500":
-          $ref: "#/components/responses/InternalError"
-        "503":
-          $ref: "#/components/responses/SourceUnavailable"
+
   /api/v1/org/{orgId}/project/{projectId}/alert-setup:
     get:
       operationId: getAlertSetup
@@ -4902,7 +4973,7 @@ components:
     IssueList:
       type: object
       additionalProperties: false
-      required: [ from, to, complete, items ]
+      required: [ from, to, complete, coverage, items ]
       properties:
         from:
           type: string
@@ -4916,17 +4987,72 @@ components:
           x-source: { kind: computed, file: docs/api/coverage.md, pointer: null, detail: "Exclusive range end, UTC." }
         complete:
           type: boolean
-          description: "false when part of the range is not stored, so an issue may have more hits than listed."
-          x-source: { kind: computed, file: docs/api/coverage.md, pointer: null, detail: "false when part of the range is not stored, so an issue may have more hits than listed." }
+          description: "Whether retained calls in the selected range and project job observations are evaluated, and required component sources are fresh and fully evaluated. Does not prove complete upstream capture or absence of unreported failures."
+          x-source: { kind: computed, file: docs/api/coverage.md, pointer: null, detail: "Whether retained calls in the selected range and project job observations are evaluated, and required component sources are fresh and fully evaluated. Does not prove complete upstream capture or absence of unreported failures." }
+        coverage:
+          type: object
+          additionalProperties: false
+          required: [ pendingCalls, unavailableCalls, pendingJobs, sources ]
+          description: "Evaluation and source availability for retained evidence, independent of issue filters."
+          x-source: { kind: computed, file: internal/store/pgstore/issues.go, pointer: null, detail: "Read in the same snapshot as issue occurrences." }
+          properties:
+            pendingCalls:
+              type: [ integer, 'null' ]
+              x-unit: count
+              x-null-reason: "Evaluation counts could not be read."
+              minimum: 0
+              description: "Retained calls in the range awaiting evaluation, including retry backoff and changed thresholds."
+              x-source: { kind: computed, file: internal/store/pgstore/queries.sql, pointer: null, detail: "IssueEvaluationCoverage pending_calls." }
+            unavailableCalls:
+              type: [ integer, 'null' ]
+              x-unit: count
+              x-null-reason: "Evaluation counts could not be read."
+              minimum: 0
+              description: "Evaluated retained calls in the range whose source evidence was unavailable."
+              x-source: { kind: computed, file: internal/store/pgstore/queries.sql, pointer: null, detail: "IssueEvaluationCoverage unavailable_calls." }
+            pendingJobs:
+              type: [ integer, 'null' ]
+              x-unit: count
+              x-null-reason: "Evaluation counts could not be read."
+              minimum: 0
+              description: "Project job observations awaiting evaluation or correlation, across the retained history."
+              x-source: { kind: computed, file: internal/store/pgstore/queries.sql, pointer: null, detail: "IssueEvaluationCoverage pending_jobs." }
+            sources:
+              type: array
+              description: "Required component sources. Missing reads are unknown; successful reads with missing rule evidence are partial."
+              x-source: { kind: computed, file: internal/store/pgstore/issues.go, pointer: null, detail: "Explicit expected layer inventory, joined to latest stored source reads." }
+              items:
+                type: object
+                additionalProperties: false
+                required: [ layer, state, readAt ]
+                properties:
+                  layer:
+                    type: string
+                    enum: [ media_server, sip, cloud_agents, egress, ingress ]
+                    description: "Component source layer."
+                    x-source: { kind: computed, file: internal/store/layers.go, pointer: null, detail: "Native source layer identifiers." }
+                  state:
+                    type: string
+                    enum: [ unknown, current, partial, stale, unavailable ]
+                    description: "Current means fresh and evaluated, not healthy."
+                    x-source: { kind: computed, file: internal/store/pgstore/queries.sql, pointer: null, detail: "IssueSourceCoverage, with unknown for missing reads." }
+                  readAt:
+                    type: [ string, 'null' ]
+                    format: date-time
+                    description: "Latest source read time, or null when no read exists."
+                    x-source: { kind: computed, file: internal/store/pgstore/queries.sql, pointer: null, detail: "issue_sources.read_at." }
         items:
           type: array
-          description: "Event issues with a hit in the range, and every standing issue whatever the range, high severity first, then by hits. Grouping, titles and severities are the ones in issues-model.ts."
-          x-source: { kind: computed, file: dashboard/src/features/issues/issues-model.ts, pointer: null, detail: "Event issues with a hit in the range, and every standing issue whatever the range, high severity first, then by hits. Grouping, titles and severities are the ones in issues-model.ts." }
+          description: "Event issues with a hit in the range, and every standing issue whatever the range, high severity first, then by stable rule ID. Grouping, titles and severities come from persisted native evaluations."
+          x-source: { kind: computed, file: dashboard/src/features/issues/issues-model.ts, pointer: null, detail: "Event issues with a hit in the range, and every standing issue whatever the range, high severity first, then by stable rule ID. Grouping, titles and severities come from persisted native evaluations." }
           items:
             type: object
             additionalProperties: false
-            required: [ id, title, kind, severity, source, lastSeenAt, hits ]
+            required: [ id, title, kind, severity, source, lastSeenAt, hits, metadata ]
             properties:
+              metadata:
+                $ref: "#/components/schemas/IssueMetadata"
+                x-source: { kind: configuration, file: internal/store/issues.go, pointer: null, detail: Issue decision and metadata from the same snapshot as occurrences. }
               id:
                 type: string
                 description: "Stable grouping key; the issueId dispositions refer to."
@@ -4938,8 +5064,8 @@ components:
               kind:
                 type: string
                 enum: [ event, standing ]
-                description: "event: something that happened, each hit dated and kept only when from <= at < to. standing: a state true of the latest read (an agent worker or phone bridge check over what LiveKit lists now), listed in every range with undated hits and never counted as a problem in the range."
-                x-source: { kind: computed, file: dashboard/src/features/issues/issues-model.ts, pointer: null, detail: "Call findings are events dated by the call's start; Agent workers and Phone bridge checks run over the current read, so they are standing." }
+                description: "event: something that happened, each hit dated and kept only when from <= at < to. standing: a component finding listed in every range. Its evidenceState distinguishes confirmed, stale, unavailable and unknown observations; it is never counted as an event in the range."
+                x-source: { kind: computed, file: dashboard/src/features/issues/issues-model.ts, pointer: null, detail: "Call findings are events dated by the call's start; Component checks preserve prior findings when source reads fail or omit required fields." }
               severity:
                 type: string
                 enum: [ high, medium, low, info ]
@@ -4947,15 +5073,15 @@ components:
                 x-source: { kind: computed, file: dashboard/src/features/issues/issues-model.ts, pointer: null, detail: "Severity of the underlying check." }
               source:
                 type: string
-                enum: [ calls, agent_workers, phone_bridge ]
-                description: "The component the check runs on."
+                enum: [ calls, agent_workers, phone_bridge, delivery ]
+                description: "The component the check runs on. delivery is a recorded egress or ingress failure."
                 x-source: { kind: computed, file: dashboard/src/features/issues/issues-model.ts, pointer: null, detail: "The component the check runs on." }
               lastSeenAt:
                 type: [ string, "null" ]
                 format: date-time
-                description: "Most recent hit, UTC. Compared with a disposition's time to mark a resolved issue as regressed."
-                x-null-reason: "A standing issue, whose hits carry no time because it is true now."
-                x-source: { kind: computed, file: dashboard/src/features/issues/issues-model.ts, pointer: null, detail: "Most recent hit, UTC. Compared with a disposition's time to mark a resolved issue as regressed." }
+                description: "Most recent event hit, UTC. Regression uses the persisted evidence revision, independently of event time."
+                x-null-reason: "Standing findings use observedAt and evidenceState on each hit instead."
+                x-source: { kind: computed, file: dashboard/src/features/issues/issues-model.ts, pointer: null, detail: "Most recent event hit, UTC. Regression uses the persisted evidence revision, independently of event time." }
               hits:
                 type: array
                 description: "Where the issue was found, most recent first. Never empty."
@@ -4963,8 +5089,19 @@ components:
                 items:
                   type: object
                   additionalProperties: false
-                  required: [ at, where, detail, callId ]
+                  required: [ at, where, detail, callId, observedAt, evidenceState ]
                   properties:
+                    observedAt:
+                      type: [ string, "null" ]
+                      format: date-time
+                      description: Last source read that confirmed this standing finding.
+                      x-null-reason: Event hits use at instead.
+                      x-source: { kind: computed, file: internal/store/pgstore/issues.go, pointer: null, detail: Persisted last positive observation, not refreshed by unknown fields. }
+                    evidenceState:
+                      type: string
+                      enum: [ recorded, current, stale, unavailable, unknown ]
+                      description: Recorded event, currently confirmed standing finding, stale source, failed source, or unconfirmed latest read.
+                      x-source: { kind: computed, file: internal/store/pgstore/issues.go, pointer: null, detail: Source read health and expiry compared with the last confirmed finding. }
                     at:
                       type: [ string, "null" ]
                       format: date-time
@@ -5101,36 +5238,6 @@ components:
           minimum: 100
           maximum: 60000
           default: 1000
-    IssueDisposition:
-      type: object
-      additionalProperties: false
-      required: [ issueId, state, at ]
-      properties:
-        issueId:
-          type: string
-          description: Stable issue grouping key from issues-model.ts; disposition belongs to this project.
-          x-source: { kind: configuration, file: dashboard/src/features/issues/issue-state.ts, pointer: null, detail: Stable issue grouping key from issues-model.ts; disposition belongs to this project. }
-        state:
-          type: string
-          description: Explicit user disposition. No disposition means open, not resolved.
-          x-source: { kind: configuration, file: dashboard/src/features/issues/issue-state.ts, pointer: null, detail: "Explicit user disposition. No disposition means open, not resolved." }
-          enum: [ resolved, ignored ]
-        at:
-          type: string
-          format: date-time
-          description: User decision time, UTC. Compare with the issue's lastSeenAt to mark it regressed.
-          x-source: { kind: configuration, file: dashboard/src/features/issues/issue-state.ts, pointer: null, detail: "User decision time, UTC. Compare with the issue's lastSeenAt to mark it regressed." }
-          x-configuration: true
-    IssueDispositions:
-      type: object
-      additionalProperties: false
-      required: [ items ]
-      properties:
-        items:
-          type: array
-          items:
-            $ref: "#/components/schemas/IssueDisposition"
-          x-source: { kind: configuration, file: dashboard/src/features/issues/issue-state.ts, pointer: null, detail: "All saved dispositions for this project. Empty means none saved, not no issues." }
     AlertRuleSetup:
       type: object
       additionalProperties: false
@@ -5174,6 +5281,85 @@ components:
           items:
             type: string
           x-source: { kind: configuration, file: migrations/postgres/00016_call_metadata.sql, pointer: null, detail: Distinct persisted tags of readable calls in the named project. }
+    IssueMetadata:
+      x-source: { kind: configuration, file: internal/store/issues.go, pointer: null, detail: Persisted issue metadata and evidence revisions. }
+      type: object
+      additionalProperties: false
+      required: [ issueId, state, regressed, decidedAt, evidenceRevision, reviewedEvidenceRevision, tags, archived, revision ]
+      properties:
+        issueId:
+          type: string
+          x-source: { kind: configuration, file: internal/store/issues.go, pointer: null, detail: Persisted issue decision and evidence version. }
+        state:
+          type: string
+          enum: [open, resolved, ignored]
+          x-source: { kind: configuration, file: internal/store/issues.go, pointer: null, detail: Persisted issue decision and evidence version. }
+        regressed:
+          type: boolean
+          x-source: { kind: configuration, file: internal/store/issues.go, pointer: null, detail: Persisted issue decision and evidence version. }
+        decidedAt:
+          description: Null when no explicit decision has been saved.
+          type: [string, "null"]
+          format: date-time
+          x-source: { kind: configuration, file: internal/store/issues.go, pointer: null, detail: Persisted issue decision and evidence version. }
+        evidenceRevision:
+          type: integer
+          minimum: 0
+          maximum: 9007199254740991
+          x-unit: count
+          x-configuration: true
+          x-source: { kind: configuration, file: internal/store/issues.go, pointer: null, detail: Persisted issue decision and evidence version. }
+        reviewedEvidenceRevision:
+          type: integer
+          minimum: 0
+          maximum: 9007199254740991
+          x-unit: count
+          x-configuration: true
+          x-source: { kind: configuration, file: internal/store/issues.go, pointer: null, detail: Persisted issue decision and evidence version. }
+        tags:
+          type: array
+          maxItems: 32
+          uniqueItems: true
+          items:
+            type: string
+            minLength: 1
+            maxLength: 64
+          description: Normalized lowercase tags belonging to this immutable issue ID.
+          x-source: { kind: configuration, file: migrations/postgres/00017_issue_workflows.sql, pointer: null, detail: Persisted issue tags. }
+        archived:
+          type: boolean
+          description: Reversible archive state. Does not delete evidence or resolve findings.
+          x-source: { kind: configuration, file: migrations/postgres/00017_issue_workflows.sql, pointer: null, detail: Persisted issue archive state. }
+        revision:
+          type: integer
+          minimum: 0
+          maximum: 9007199254740991
+          x-unit: count
+          x-configuration: true
+          x-source: { kind: configuration, file: migrations/postgres/00017_issue_workflows.sql, pointer: null, detail: Atomic issue metadata revision. }
+    UpdateIssueMetadata:
+      type: object
+      additionalProperties: false
+      required: [tags, archived, revision, evidenceRevision]
+      description: Compare metadata and evidence revisions atomically. Omitted or null state preserves the decision, including regression; setting state explicitly acknowledges current evidence.
+      properties:
+        tags:
+          $ref: "#/components/schemas/IssueMetadata/properties/tags"
+          x-source: { kind: configuration, file: internal/store/issues.go, pointer: null, detail: Validated issue metadata edit. }
+        archived:
+          $ref: "#/components/schemas/IssueMetadata/properties/archived"
+          x-source: { kind: configuration, file: internal/store/issues.go, pointer: null, detail: Validated issue metadata edit. }
+        revision:
+          $ref: "#/components/schemas/IssueMetadata/properties/revision"
+          x-source: { kind: configuration, file: internal/store/issues.go, pointer: null, detail: Validated issue metadata edit. }
+        evidenceRevision:
+          $ref: "#/components/schemas/IssueMetadata/properties/evidenceRevision"
+          x-source: { kind: configuration, file: internal/store/issues.go, pointer: null, detail: Validated issue metadata edit. }
+        state:
+          description: Null or omitted preserves the existing decision without acknowledging new evidence.
+          type: [string, "null"]
+          enum: [open, resolved, ignored, null]
+          x-source: { kind: configuration, file: internal/store/issues.go, pointer: null, detail: Persisted issue decision and evidence version. }
     CallMetadata:
       type: object
       additionalProperties: false

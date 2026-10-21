@@ -7,7 +7,19 @@ A fresh session reads this to know where the project stands.
 
 ## Current Phase
 
-Live operations (2026-10-20): sampled refresh and permission-loss handling merged in #429. Project-scoped worker notifications merged in #430 as fcea3f94 after all hosted checks passed; 203 dashboard tests and native Redis/LiveKit/ClickHouse stream verification passed. The worker-pushed feed is complete. Container resource collection is in progress (docs/specs/resource-telemetry.md): parser, encrypted endpoint persistence, durable sample storage, CLI registration, collector and read API are implemented locally. Real Postgres/ClickHouse and HTTP collector failure/recovery tests pass. UI integration and API permission tests now pass. A pinned cAdvisor 0.60.6 container reported 0.5 CPU allocation and 64 MiB memory limit through the collector, ClickHouse and authenticated API; measured memory was 11,915,264 bytes. All 205 dashboard tests, Go/UI lint, TypeScript and API contract checks pass. Vitest worker concurrency is bounded at four after repeated startup timeouts under 27 workers; assertions and timeouts are unchanged. The full Docker-backed Go race suite passed with two package workers, followed by all 205 dashboard tests. All 72 browser/accessibility checks passed serially after the call drawer timed out in parallel runs and passed three isolated runs. PR #431 is open; hosted checks and review remain. A review follow-up bounds lookup, scrape and persistence to one collection lease. CPU/memory is not marked complete.
+Live operations (2026-10-20): sampled refresh and permission-loss handling merged in #429,
+project-scoped pushed notifications in #430, and real container resource collection in #431
+(81d978ef97ce6051f5753b92e4be1a67243f30ac). Native source, stale/disconnect/recovery,
+HTTP permission and browser checks passed before merge. This roadmap task is complete.
+
+Issue workflows (2026-10-20): call tags/archive merged in #435
+(82c15b084831fb2b66ca253a7789c5416c20939c). The current branch adds persisted call findings,
+scoped issue decisions/tags/archive, revision-safe Undo, snapshot-consistent reads and historical
+backfill without summary rewrites. Targeted native race checks and Go lint pass; 232 frontend and
+88 browser checks passed before the backfill addition, and a clean full final run is still required. The backfill test now explicitly covers a backlog
+larger than one sweep after the full run exposed its original first-batch assumption. Standing
+component evaluation and webhook delivery are unfinished. Complete remains 2/14; do not count
+these partial issue/settings changes as completed tasks.
 
 Call diagnosis (2026-10-19): turn-level latency comparison, trace-clock response breakdown, source-linked speech/tools and reported usage are implemented. Turn navigation stays in the fixed header and bounds comparison to six turns. Realtime calls show speech intervals, derived response gaps and interruptions without inventing STT/TTS stages. SIP termination remains separate evidence. The generic per-call architecture flow and topology were removed.
 
