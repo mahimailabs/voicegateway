@@ -2,8 +2,9 @@ name: Publish Python SDK
 
 # Publishes sdk/python (PyPI name voicegateway) when a sdk-python-v* tag is pushed, for example
 # sdk-python-v1.0.0rc6. It uses the repository's PYPI_API_TOKEN secret in the `pypi` environment, as
-# the retired publish.yml did (removed in #408). CI already gates main; this runs the SDK's own checks
-# once more on the tagged source, checks the tag names the package's version, and publishes.
+# the retired publish.yml did (removed in #408). sdk-python.yml checks every change to the SDK; this
+# runs the same checks once more on the tagged source, checks the tag names the package's version, and
+# publishes.
 
 on:
   push:
