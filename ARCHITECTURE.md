@@ -15,7 +15,8 @@ VoiceGateway is one Go binary, `voicegateway`, run in two roles (0013): `web` ta
 | --- | --- | --- |
 | web | Checks keys, accepts webhooks and LiveKit agents' observability uploads (0014, 0033), appends them to the stream and answers fast. Serves the API, MCP and the dashboard files. | Configuration and request state in Postgres only: list snapshots, from 0027 accounts, sessions and sign-in counts, and each project's last ingestion outcome per source. Reads Postgres and ClickHouse for queries; never writes ClickHouse |
 | worker | Reads the stream, joins events into calls, writes batches to ClickHouse, scrapes server metrics, closes stale calls, applies retention. | All telemetry writes to ClickHouse, and all writes to the call index and call summaries |
-| Example agent (`examples/livekit-agent`) | The documented LiveKit Agents voice agent and scripted caller. It connects through LiveKit's own uploader and `LIVEKIT_OBSERVABILITY_URL`; V1 ships no SDK package (0033). | Nothing |
+| Example agent (`examples/livekit-agent`) | The documented LiveKit Agents voice agent and scripted caller. It connects through LiveKit's own uploader and `LIVEKIT_OBSERVABILITY_URL`, the default agent connection (0033). | Nothing |
+| SDK (`sdk/python`) | Optional `attach()` add-on for what the uploader cannot do: keep LiveKit Cloud's own observability, custom call fields, live mid-call events (0002, 0033). Maps session events to the shared wire batch; fails open. Python first, other languages as needed. | Nothing |
 | Dashboard (`dashboard/`) | React app, built in its own Docker stage and served from disk by web (0011). | Nothing |
 | Postgres | Projects (each one LiveKit project, with its URL, key and encrypted secret, 0016), API keys, settings, the call index. | Configuration |
 | ClickHouse | Events, turns, spans, usage and server metrics. | Everything measured |
@@ -35,6 +36,7 @@ VoiceGateway is one Go binary, `voicegateway`, run in two roles (0013): `web` ta
 ## Boundaries
 
 - web never writes to ClickHouse; worker never answers HTTP traffic.
+- The SDK never blocks or fails the call; capture errors are dropped and counted.
 - The Redis stream format is the only contract between web and worker.
 - Nothing logs raw webhook bodies; they carry a TURN password.
 - A missing value is stored as unknown, never as zero.
@@ -50,7 +52,7 @@ VoiceGateway is one Go binary, `voicegateway`, run in two roles (0013): `web` ta
 | Storage | Postgres, ClickHouse, any S3 bucket (SeaweedFS in Compose, 0026) | docs/decisions/0005-self-hosted-platform-only.md |
 | Libraries | chi, go-redis v9, clickhouse-go v2, pgx v5 with sqlc, goose, livekit/protocol, OTel pdata, slog, errgroup, cobra | docs/decisions/0009-go-core.md |
 | Dashboard | React, served from files in the image | docs/decisions/0011-dashboard-served-from-files.md |
-| Agent connection | LiveKit Agents' own uploader through `LIVEKIT_OBSERVABILITY_URL`; no SDK package in V1 | docs/decisions/0033-livekit-uploader-is-the-agent-connection.md |
+| Agent connection | LiveKit Agents' own uploader through `LIVEKIT_OBSERVABILITY_URL` by default; optional `attach()` SDK, Python first | docs/decisions/0033-livekit-uploader-is-the-agent-connection.md |
 
 Exact versions are pinned in `go.mod`, `deploy/compose.yaml`, `dashboard/package-lock.json` and the example agent's `uv.lock`.
 
@@ -90,6 +92,7 @@ voicegateway/
 ├── ee/                    commercial code, same package names as internal/
 ├── dashboard/src/features/   one folder per page: calls/ call/ sfu/ sip/ live/ settings/
 ├── examples/livekit-agent/  the documented agent and scripted caller (make example-call)
+├── sdk/python/            optional attach(), with its own packaging and tests
 ├── migrations/            postgres/ and clickhouse/
 ├── test/                  end-to-end: full stack plus livekit-server --dev, fixtures
 ├── deploy/                compose.yaml, Dockerfile

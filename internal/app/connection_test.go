@@ -346,3 +346,30 @@ func TestFirstCallIgnoresFixtures(t *testing.T) {
 		t.Fatalf("first call %+v, want %s", c.FirstCall, first)
 	}
 }
+
+// TestConnectionRefusalKeepsAccepted: an unsigned request or a token naming a made-up key after a
+// verified upload records its refusal but leaves the accept, and never stores the made-up key.
+func TestConnectionRefusalKeepsAccepted(t *testing.T) {
+	s := newConnectionStack(t, lkProject("acme", "voice", "APIacme", "acme-secret"))
+	const traces = "/ingest/acme/voice/observability/traces/otlp/v0"
+	if got := s.post(traces, uploadToken(t, "APIacme", "acme-secret", true), emptyExport); got != 200 {
+		t.Fatalf("valid upload: %d", got)
+	}
+	accepted := s.connection(t, "acme", "voice").Agent.LastAcceptedAt
+	if accepted == nil {
+		t.Fatal("not accepted")
+	}
+	if got := s.post(traces, "", emptyExport); got != 401 {
+		t.Fatalf("no token: %d", got)
+	}
+	if got := s.post(traces, uploadToken(t, "<b>attacker key</b>", "x", true), emptyExport); got != 401 {
+		t.Fatalf("made-up key: %d", got)
+	}
+	a := s.connection(t, "acme", "voice").Agent
+	if a.LastAcceptedAt == nil || !a.LastAcceptedAt.Equal(*accepted) || a.LastRejectedAt == nil {
+		t.Fatalf("accept changed by a refusal: %+v", a)
+	}
+	if reasonOf(a) != store.ReasonKeyMismatch || a.UsedKey != nil || a.ExpectedKey == nil {
+		t.Fatalf("made-up key kept: reason %q, used %v", reasonOf(a), a.UsedKey)
+	}
+}

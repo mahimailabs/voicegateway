@@ -1,5 +1,6 @@
 import { infiniteQueryOptions } from "@tanstack/react-query"
 import { currentScope } from "@/lib/url-state"
+import { keepPolling } from "@/features/connection/connection-model"
 import { client } from "@/lib/api-types/client.gen"
 import {
   createInvitation as createInvitationCall,
@@ -260,14 +261,15 @@ export const projectSettingsQuery = () => {
 export const saveProjectSettings = (selected: ReturnType<typeof currentScope>, body: UpdateProjectSettings) =>
   data(updateProjectSettingsCall({ ...thrown, path: { orgId: selected.org, projectId: selected.project }, body }))
 // The project's ingestion URLs, each source's last outcome and its first stored call (first-call
-// setup). Asked again every 5 s until the first call is stored, then no more.
+// setup). Asked again every 5 s while no call is stored or a source is in Error, judged as of the
+// last read; no more once the first call is stored and every source is Connected or Waiting.
 export const CONNECTION_POLL_MS = 5_000
 export function connectionQuery(selected = currentScope()) {
   const bound = { ...selected }
   return {
     queryKey: ["connection", bound],
     queryFn: ({ signal }: { signal: AbortSignal }) => data(getProjectConnection({ ...thrown, path: { orgId: bound.org, projectId: bound.project }, signal })),
-    refetchInterval: (query: { state: { data?: ProjectConnection } }) => (query.state.data?.firstCall ? false : CONNECTION_POLL_MS),
+    refetchInterval: (query: { state: { data?: ProjectConnection; dataUpdatedAt: number } }) => (keepPolling(query.state.data, query.state.dataUpdatedAt) ? CONNECTION_POLL_MS : false),
   }
 }
 export const alertSetupQuery = () => ({ queryKey: ["alert-setup", currentScope()], queryFn: () => data(getAlertSetup({ ...thrown, path: scope() })) })

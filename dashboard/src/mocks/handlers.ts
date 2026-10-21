@@ -31,6 +31,14 @@ const fail = (status: number, code: ApiErrorBody["code"], message: string) =>
 
 const settingsScope = (params: PathParams) => `${params.orgId}/${params.projectId}`
 const known = (params: PathParams) => knownProject(params.orgId, params.projectId)
+// A browser check's replacement fields for the connection read; none in Node or without storage.
+function connectionOverride(): Partial<ProjectConnection> {
+  try {
+    return JSON.parse(globalThis.localStorage?.getItem("vg.mock-connection") ?? "{}") as Partial<ProjectConnection>
+  } catch {
+    return {}
+  }
+}
 
 // Playback goes through the API in the project that was asked for, never to the captured file.
 function withPlayback<T extends { recording?: { id: string; url: string } | null }>(x: T, params: PathParams): T {
@@ -164,12 +172,13 @@ export const handlers = [
   }),
   // First-call setup. The mock receives no ingest, so every source is still waiting and no first
   // call exists: a mock or a fixture never counts as the project's first stored call. The URLs use
-  // this page's origin, as web builds them from VOICEGATEWAY_PUBLIC_URL.
+  // this page's origin, as web builds them from VOICEGATEWAY_PUBLIC_URL. A browser check can replace
+  // any top-level field through localStorage "vg.mock-connection" (a refusal, null URLs).
   http.get<PathParams, never, ProjectConnection | ApiErrorBody>(`${project}/connection`, ({ params, request }) => {
     if (!known(params)) return fail(404, "not_found", "No such project.")
     const base = `${new URL(request.url).origin}/ingest/${encodeURIComponent(String(params.orgId))}/${encodeURIComponent(String(params.projectId))}`
     const waiting = { lastAcceptedAt: null, lastRejectedAt: null, reason: null, usedKey: null, expectedKey: null }
-    return HttpResponse.json<ProjectConnection>({ urls: { observability: base, webhook: `${base}/livekit/webhook` }, webhook: waiting, agent: waiting, firstCall: null })
+    return HttpResponse.json<ProjectConnection>({ urls: { observability: base, webhook: `${base}/livekit/webhook` }, webhook: waiting, agent: waiting, firstCall: null, ...connectionOverride() })
   }),
   http.get<PathParams, never, AlertSetup | ApiErrorBody>(`${project}/alert-setup`, ({ params }) => (known(params) ? HttpResponse.json(alertSetup()) : fail(404, "not_found", "No such project."))),
   http.get<PathParams, never, Workspaces>("*/api/v1/workspaces", () => HttpResponse.json(workspaces())),

@@ -5492,9 +5492,9 @@ components:
           x-null-reason: No request from this source has been refused.
         usedKey:
           type: [ string, "null" ]
-          description: The LiveKit API key the refused token named, truncated to 64 bytes. API keys are not secret.
-          x-source: { kind: computed, file: internal/ingest/connection.go, pointer: null, detail: "Issuer of the refused token, kept only for key_mismatch." }
-          x-null-reason: Only key_mismatch records the key used.
+          description: The LiveKit API key the refused token named, kept only when it has a LiveKit key's shape (letters, digits, _ and -, at most 64). API keys are not secret.
+          x-source: { kind: computed, file: internal/ingest/connection.go, pointer: null, detail: "Issuer of the refused token, kept only for key_mismatch and only in a LiveKit key's shape; the sender chooses it." }
+          x-null-reason: Only key_mismatch records the key used, and only when it is shaped like a LiveKit API key.
         expectedKey:
           type: [ string, "null" ]
           description: This project's LiveKit API key, shown beside usedKey. The secret is never returned.

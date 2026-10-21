@@ -3,7 +3,7 @@ package ingest
 import (
 	"context"
 	"log/slog"
-	"strings"
+	"regexp"
 	"sync"
 	"time"
 
@@ -26,8 +26,9 @@ const unknownProjects = 1_000
 // is about to be.
 const recordTimeout = 2 * time.Second
 
-// maxUsedKey bounds the refused token's key kept for the console; the column allows 64 bytes.
-const maxUsedKey = 64
+// liveKitKey is the shape of a LiveKit API key. A refused token's key is kept for the console only
+// in that shape: the sender chooses it, so anything else is stored as unknown, never shown.
+var liveKitKey = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
 
 // ConnectionStore records an ingestion outcome: accepted when reason is empty. It reports whether
 // the project exists, so an unknown project records nothing.
@@ -72,11 +73,11 @@ func (c *Connections) For(org, project, source string) Outcome {
 // Accepted records that the request was verified and appended.
 func (o Outcome) Accepted(ctx context.Context) { o.record(ctx, "", "") }
 
-// Rejected records why the request was refused. usedKey is kept only for a key mismatch.
+// Rejected records why the request was refused. usedKey is kept only for a key mismatch, and only
+// when it is shaped like a LiveKit API key.
 func (o Outcome) Rejected(ctx context.Context, reason, usedKey string) {
-	// The sender chooses the key; a cut inside a character is dropped so Postgres takes the text.
-	if len(usedKey) > maxUsedKey {
-		usedKey = strings.ToValidUTF8(usedKey[:maxUsedKey], "")
+	if !liveKitKey.MatchString(usedKey) {
+		usedKey = ""
 	}
 	o.record(ctx, reason, usedKey)
 }

@@ -1209,7 +1209,8 @@ export function SettingsDialog({ open, onOpenChange, page, onPageChange, orgOnly
                 </Select>
               )}
             </div>
-            <div className="flex-1 overflow-y-auto px-4 pt-6 pb-10 sm:px-8">
+            {/* The page scrolls here; it takes focus so a keyboard can scroll a page with no control in it. */}
+            <div role="region" aria-label={current.label} tabIndex={0} className="flex-1 overflow-y-auto px-4 pt-6 pb-10 outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:ring-inset sm:px-8">
               <Body />
             </div>
           </main>

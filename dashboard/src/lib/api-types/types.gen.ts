@@ -1467,7 +1467,7 @@ export type ConnectionSource = {
      */
     reason: 'token_missing' | 'key_mismatch' | 'signature_invalid' | 'grant_missing' | 'body_changed' | 'plan_inactive' | 'plan_cap' | 'too_large' | null;
     /**
-     * The LiveKit API key the refused token named, truncated to 64 bytes. API keys are not secret.
+     * The LiveKit API key the refused token named, kept only when it has a LiveKit key's shape (letters, digits, _ and -, at most 64). API keys are not secret.
      */
     usedKey: string | null;
     /**

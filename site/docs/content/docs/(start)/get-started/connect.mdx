@@ -21,16 +21,24 @@ export LIVEKIT_API_SECRET=...
 make project-add NAME="Production"
 ```
 
-Cloud: add the project in the console with the same three values.
+Cloud: in the console, choose **Add a LiveKit project** in the organisation switcher (top left) or in **Settings > Organisation**, and enter the same three values.
 
 The secret is stored encrypted and never shown again.
+
+Self-hosted only: the console builds the two URLs from `VOICEGATEWAY_PUBLIC_URL`. Add the address LiveKit and your agent reach VoiceGateway on to `deploy/.env`, then run `make up` again:
+
+```bash
+VOICEGATEWAY_PUBLIC_URL=https://voicegateway.example.com
+```
+
+For an agent on the same machine, `http://localhost:8080` is enough. Until it is set, the panel says the public URL is not set instead of showing the URLs. Cloud sets it for you.
 
 </Step>
 <Step>
 
 ### Copy the two URLs
 
-Open the project. The **Connect your agent** panel shows both:
+The **Connect your agent** panel is on the project's **Overview** until the first call is stored, and always in **Settings > Connection**. It shows both:
 
 - Agent upload: `https://<host>/ingest/<organisation-id>/<project-id>`
 - Webhook: `https://<host>/ingest/<organisation-id>/<project-id>/livekit/webhook`
@@ -49,16 +57,16 @@ LIVEKIT_OBSERVABILITY_URL=https://<host>/ingest/<organisation-id>/<project-id>
 - Python: livekit-agents 1.8.6 or later, `session.start(..., record=True)`.
 - Node: @livekit/agents 1.8.0 or later, `session.start({ ..., record: true })`.
 
-The agent uploads only sessions that record.
+The agent uploads only sessions that record. To send traces, logs, metrics and the transcript without the call audio, record without it: `record={"audio": False}` in Python, `record: { audio: false }` in Node. Every version that honours `LIVEKIT_OBSERVABILITY_URL` accepts these options.
 
-No agent yet? Run the example: copy `examples/livekit-agent/.env.example` to `.env`, fill in the LiveKit values and the agent upload URL, then run `make example-call`. It starts the example agent, places one call with the `lk` CLI and stops. The example uses LiveKit Inference, which needs a LiveKit Cloud project.
+No agent yet? Run the [example agent](https://github.com/mahimailabs/voicegateway/tree/main/examples/livekit-agent). It needs a clone of this repository, [uv](https://docs.astral.sh/uv/) and the [LiveKit CLI](https://docs.livekit.io/reference/developer-tools/livekit-cli/) (`lk`). Copy `examples/livekit-agent/.env.example` to `.env`, fill in the LiveKit values and the agent upload URL, then run `make example-call`. It starts the example agent, places one call with `lk` and stops. The example uses LiveKit Inference, which needs a LiveKit Cloud project.
 
 </Step>
 <Step>
 
 ### Send LiveKit's webhooks
 
-In LiveKit, add the webhook URL, signed with the same API key. Without it, a call closes only after 2 hours with no activity, and its end time is marked as inferred.
+In LiveKit Cloud, open **Settings > Webhooks**, choose **Create new webhook**, paste the webhook URL and pick the same API key as the signing key. On a self-hosted LiveKit server, add the URL under `webhook.urls` in its config. Without it, a call closes only after 2 hours with no activity, and its end time is marked as inferred.
 
 </Step>
 <Step>

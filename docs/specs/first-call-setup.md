@@ -23,10 +23,10 @@ A. Documented example (dev-sdk)
 
 B. Connection check (dev-first-call-verification)
 
-5. Ingest records each project's connection outcome per source (`webhook`, `agent`): last accepted at, last rejected at and the reason code. Postgres table `project_connections` (00019), written by web as request state. Throttled in process: per project and source, a write happens only when the outcome differs from the last one written or 30 s have passed since it, so a busy agent adds no per-upload database round trip. The throttle is a bounded expiring LRU (hashicorp/golang-lru `expirable`).
+5. Ingest records each project's connection outcome per source (`webhook`, `agent`): last accepted at, last rejected at and the reason code. Postgres table `project_connections` (00019), written by web as request state. Throttled in process: per project and source, a write happens only when the outcome differs from the last one written or 30 s have passed since it, so a busy agent adds no per-upload database round trip. The throttle is a bounded LRU (hashicorp/golang-lru) holding each outcome's write time; `expirable` was not used because its cleanup goroutine never exits, which `testing/synctest` cannot run. A project that does not exist is remembered for 30 s in its own small LRU, so made-up URLs cost one round trip per window and never evict a real project. Each write is bounded to 2 s.
 6. Reason codes, each with a fix shown in the console:
    - `token_missing`: no `Authorization` header or bearer token.
-   - `key_mismatch`: the token's LiveKit API key is not this project's. The console shows the key used and the key expected; API keys are not secret, secrets are never shown.
+   - `key_mismatch`: the token's LiveKit API key is not this project's. The console shows the key used and the key expected; API keys are not secret, secrets are never shown. The sender chooses the key, so it is kept only in a LiveKit key's shape (`^[A-Za-z0-9_-]{1,64}$`) and is otherwise unknown ("an unreadable key").
    - `signature_invalid`: the right key with the wrong secret, an expired token, or a token that does not parse.
    - `grant_missing`: an upload token without the observability write grant (LiveKit Agents too old).
    - `body_changed`: a webhook whose body no longer matches the signed hash.
@@ -35,11 +35,11 @@ B. Connection check (dev-first-call-verification)
    An unknown organisation or project is refused as today and records nothing: the write selects the project row, so it inserts nothing for a project that does not exist.
 7. `GET /api/v1/org/{orgId}/project/{projectId}/connection` (Viewer, project scope, through `handle` and roles.go): `{ urls: { observability, webhook }, webhook: Source, agent: Source, firstCall: { id, startedAt } | null }`. `Source` is `{ lastAcceptedAt, lastRejectedAt, reason, usedKey, expectedKey }`, every field nullable. URLs come from `VOICEGATEWAY_PUBLIC_URL`, null when unset; the console then says to set it. Contract in openapi.yaml with x-source and x-access, then `make api-types`.
 8. `firstCall` is the earliest row in the calls index, which only the worker writes from verified ingest. Fixtures, MSW mocks and demo data never touch it, so a sample trace never counts.
-9. Console: an empty project opens a "Connect your agent" panel on the project page: copy buttons for both URLs; three steps (Webhook, Agent upload, First call stored) each Waiting, Connected or Error; the error's fix text; a link to the first call. Polls every 5 s until `firstCall` exists (TanStack Query `refetchInterval`). Pre-built components only.
+9. Console: an empty project opens a "Connect your agent" panel on the project page: copy buttons for both URLs; three steps (Webhook, Agent upload, First call stored) each Waiting, Connected or Error; the error's fix text; a link to the first call. Polls every 5 s until `firstCall` exists and no source is in Error (TanStack Query `refetchInterval`). An unauthenticated request must not turn a working source red: a source whose last accept is newer than its last refusal is Connected; one with a later refusal but an accept in the last 10 minutes stays Connected and shows the refusal and its fix as a warning; Error is a refusal with no accept, or none in the last 10 minutes. Overview shows the panel while the project has no call or a source is in Error; Settings > Connection always has it. Pre-built components only.
 
 ## Out of Scope
 
-- An `attach()` package (0033), frameworks other than LiveKit Agents, changing call joining.
+- The optional `attach()` SDK (0033; its own spec), frameworks other than LiveKit Agents, changing call joining.
 
 ## Constraints
 

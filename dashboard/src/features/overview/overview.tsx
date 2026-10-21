@@ -7,7 +7,7 @@ import { ProviderLogo, providerOfModel } from "@/components/provider-logo"
 import { QueryState, errorText } from "@/components/page-state"
 import { presetRange } from "@/components/time-range-picker"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
-import { ApiError, callStatsQuery, cloudAgentsQuery, egressQuery, ingressQuery, latestCallQuery, mediaServerQuery, providerProbesQuery, sipQuery, workersQuery } from "@/lib/api"
+import { ApiError, callStatsQuery, cloudAgentsQuery, connectionQuery, egressQuery, ingressQuery, latestCallQuery, mediaServerQuery, providerProbesQuery, sipQuery, workersQuery } from "@/lib/api"
 import type { CallStats, CloudAgents, Egress, Ingress, MediaServer, ProviderProbes, Sip, Workers } from "@/lib/api-types"
 import { BUDGET_MS } from "@/lib/thresholds"
 import { cn } from "@/lib/utils"
@@ -26,6 +26,7 @@ import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import { useUrlState } from "@/lib/url-state"
 import { useIsPhone } from "@/hooks/use-mobile"
 import { ConnectAgentPanel } from "@/features/connection/connect-agent"
+import { anyError } from "@/features/connection/connection-model"
 
 // The whole stack at a glance: four numbers with their shape, the path a call takes with each part's
 // state, where a turn's time goes, and where the models are. Every figure comes from the same data and
@@ -138,23 +139,27 @@ export function OverviewPage() {
   const ingress = useQuery(ingressQuery())
   const workers = useQuery(workersQuery())
   const probes = useQuery(providerProbesQuery())
-  // A project with no calls yet opens on first-call setup, above whatever the overview can show.
+  // First-call setup shows under the page header while the project has no calls yet, or while a
+  // source is in Error (a rotated key or a used-up allowance), judged as of the last read.
   const latest = useQuery(latestCallQuery())
+  const connection = useQuery(connectionQuery())
   const empty = latest.isSuccess && latest.data === null
+  const setup = empty || (connection.data !== undefined && anyError(connection.data, connection.dataUpdatedAt)) ? <ConnectAgentPanel /> : null
   // The call figures carry the page; without them the page says why, as before.
-  const page = !stats.data ? <QueryState icon={Gauge} what="the overview" query={stats} /> : <OverviewView stats={stats.data as CallStats} cloud={cloud} media={media} sip={sip} egress={egress} ingress={ingress} workers={workers} probes={probes} />
-  if (!empty) return page
+  if (stats.data) return <OverviewView stats={stats.data as CallStats} cloud={cloud} media={media} sip={sip} egress={egress} ingress={ingress} workers={workers} probes={probes} setup={setup} />
+  const state = <QueryState icon={Gauge} what="the overview" query={stats} />
+  if (!setup) return state
   return (
     <div className="space-y-6">
-      <ConnectAgentPanel />
-      {page}
+      {state}
+      {setup}
     </div>
   )
 }
 
 type Reads = { cloud: UseQueryResult<CloudAgents>; media: UseQueryResult<MediaServer>; sip: UseQueryResult<Sip>; egress: UseQueryResult<Egress>; ingress: UseQueryResult<Ingress>; workers: UseQueryResult<Workers>; probes: UseQueryResult<ProviderProbes> }
 
-function OverviewView({ stats, cloud: cloudRead, media, sip: sipQ, egress: egressQ, ingress: ingressQ, workers: workersQ, probes: probesQ }: { stats: CallStats } & Reads) {
+function OverviewView({ stats, cloud: cloudRead, media, sip: sipQ, egress: egressQ, ingress: ingressQ, workers: workersQ, probes: probesQ, setup }: { stats: CallStats; setup: React.ReactNode } & Reads) {
   const navigate = useNavigate()
   // Phones have no room for the globe. A hidden globe still draws every frame, so it is not mounted.
   const phone = useIsPhone()
@@ -226,6 +231,7 @@ function OverviewView({ stats, cloud: cloudRead, media, sip: sipQ, egress: egres
           {`${rooms ? `${plural(rooms.rooms.length, "room")} watched · ` : ""}${stats.callCount === null ? "calls unknown" : `${plural(stats.callCount, "call")} captured`} in the last 7 days`}
         </span>
       </header>
+      {setup}
 
       <div className="grid gap-6 lg:grid-cols-[300px_minmax(0,1fr)]">
         <section className="flex flex-col items-center justify-center rounded-2xl border bg-background px-5 pt-4 pb-5">

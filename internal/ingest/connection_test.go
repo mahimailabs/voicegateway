@@ -10,7 +10,6 @@ import (
 	"testing"
 	"testing/synctest"
 	"time"
-	"unicode/utf8"
 
 	"github.com/mahimailabs/voicegateway/internal/store"
 )
@@ -85,19 +84,24 @@ func TestConnectionUnknownProject(t *testing.T) {
 	none.For("a", "b", store.SourceAgent).Accepted(context.Background())
 }
 
-func TestConnectionUsedKeyTruncated(t *testing.T) {
+// TestConnectionUsedKeyOnlyWellFormed: the key a refused token named is kept only in a LiveKit API
+// key's shape; text the sender made up, too long, or not UTF-8 is stored as unknown.
+func TestConnectionUsedKeyOnlyWellFormed(t *testing.T) {
 	var got string
 	db := connectionFunc(func(usedKey string) { got = usedKey })
 	c := &Connections{Store: db, Log: slog.New(slog.NewTextHandler(io.Discard, nil)), Now: time.Now}
-	for _, tc := range []struct{ name, key string }{
-		{"ascii", strings.Repeat("k", 200)},
-		// 63 bytes, then a 3-byte character cut after its first byte.
-		{"multibyte cut mid-rune", strings.Repeat("k", 63) + strings.Repeat("€", 10)},
+	for _, tc := range []struct{ name, key, want string }{
+		{"livekit key", "APIkpuATgWarLxL", "APIkpuATgWarLxL"},
+		{"64 characters", strings.Repeat("k", 64), strings.Repeat("k", 64)},
+		{"65 characters", strings.Repeat("k", 65), ""},
+		{"spaces and markup", "<b>use my key</b>", ""},
+		{"multibyte", strings.Repeat("k", 63) + "€", ""},
+		{"invalid UTF-8", "API\xff", ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			c.For("a", tc.name, store.SourceAgent).Rejected(context.Background(), store.ReasonKeyMismatch, tc.key)
-			if len(got) > maxUsedKey || !utf8.ValidString(got) || !strings.HasPrefix(tc.key, got) {
-				t.Fatalf("kept %q (%d bytes)", got, len(got))
+			if got != tc.want {
+				t.Fatalf("kept %q, want %q", got, tc.want)
 			}
 		})
 	}
