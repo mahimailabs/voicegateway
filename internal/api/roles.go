@@ -51,6 +51,7 @@ var routeAccess = map[string]access{
 	"GET /api/v1/org/{orgId}/project/{projectId}/agents":                    {"Viewer", scopeProject},
 	"GET /api/v1/org/{orgId}/project/{projectId}/resources":                 {"Viewer", scopeProject},
 	"GET /api/v1/org/{orgId}/project/{projectId}/workers":                   {"Viewer", scopeProject},
+	"GET /api/v1/org/{orgId}/project/{projectId}/recordings/{recordingId}":  {"Viewer", scopeProject},
 	"GET /api/v1/org/{orgId}/project/{projectId}/keys":                      {"Admin", scopeProject},
 	"POST /api/v1/org/{orgId}/project/{projectId}/keys":                     {"Admin", scopeProject},
 	"DELETE /api/v1/org/{orgId}/project/{projectId}/keys/{keyId}":           {"Admin", scopeProject},

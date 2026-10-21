@@ -1328,7 +1328,7 @@ export type Error = {
     /**
      * Stable error category.
      */
-    code: 'invalid_request' | 'revision_conflict' | 'unauthenticated' | 'forbidden' | 'not_found' | 'source_unavailable' | 'internal_error' | 'range_not_satisfiable' | 'last_admin' | 'already_member' | 'member_of_other_organisations' | 'project_exists' | 'livekit_secret_invalid' | 'livekit_unreachable';
+    code: 'invalid_request' | 'revision_conflict' | 'unauthenticated' | 'forbidden' | 'not_found' | 'source_unavailable' | 'internal_error' | 'range_not_satisfiable' | 'last_admin' | 'already_member' | 'member_of_other_organisations' | 'project_exists' | 'livekit_secret_invalid' | 'livekit_unreachable' | 'recording_bucket_refused' | 'recording_bucket_unreachable';
     /**
      * Safe human-readable explanation, excluding upstream credentials and request bodies.
      */
@@ -1768,6 +1768,33 @@ export type ProjectCreate = {
      * The LiveKit API secret. Sealed before it is stored; never answered or logged.
      */
     livekitApiSecret: string;
+    recordingBucket?: RecordingBucketCreate;
+};
+
+/**
+ * An S3 bucket the project keeps its recordings in instead of the instance's bucket. Set only when the project is created; it never changes afterwards, so recordings never move between buckets.
+ */
+export type RecordingBucketCreate = {
+    /**
+     * The S3 endpoint, an http or https URL with a host and no path, such as https://s3.us-east-1.amazonaws.com.
+     */
+    endpoint: string;
+    /**
+     * The bucket's name, by S3's naming rules.
+     */
+    bucket: string;
+    /**
+     * The bucket's region, such as us-east-1. When empty, it is asked of the bucket.
+     */
+    region?: string;
+    /**
+     * The S3 access key id; it needs to write, read, list and delete objects under recordings/.
+     */
+    accessKeyId: string;
+    /**
+     * The S3 secret access key. Sealed before it is stored; never answered or logged.
+     */
+    secretAccessKey: string;
 };
 
 export type WorkspaceProject = {
@@ -3639,7 +3666,7 @@ export type CreateProjectErrors = {
      */
     409: Error;
     /**
-     * livekit_secret_invalid, LiveKit refused a read signed with the given key and secret; livekit_unreachable, the LiveKit URL gave no LiveKit answer, without saying whether it did not answer, was refused by the address guard or is not a LiveKit server. Nothing is stored.
+     * livekit_secret_invalid, LiveKit refused a read signed with the given key and secret; livekit_unreachable, the LiveKit URL gave no LiveKit answer, without saying whether it did not answer, was refused by the address guard or is not a LiveKit server; recording_bucket_refused, the S3 endpoint refused a write or delete with the given access key, secret and bucket name; recording_bucket_unreachable, the S3 endpoint gave no S3 answer, without saying why. Nothing is stored.
      */
     422: Error;
     /**

@@ -11,6 +11,7 @@ import (
 
 	"github.com/mahimailabs/voicegateway/internal/api"
 	"github.com/mahimailabs/voicegateway/internal/auth"
+	"github.com/mahimailabs/voicegateway/internal/bucket"
 	"github.com/mahimailabs/voicegateway/internal/config"
 	"github.com/mahimailabs/voicegateway/internal/scrape"
 	"github.com/mahimailabs/voicegateway/internal/seal"
@@ -51,23 +52,36 @@ type ProjectInput struct {
 	// SkipVerify stores the project without first proving its secret against LiveKit, for an
 	// install that cannot reach its LiveKit server yet (--skip-verify).
 	SkipVerify bool
+	// The S3 bucket the project keeps its recordings in, when it brings its own; an empty
+	// BucketEndpoint uses the instance's bucket. It is always verified, since it never changes.
+	BucketEndpoint, BucketName, BucketRegion, BucketAccessKey, BucketSecretKey string
 }
 
 // projectFlags names each field of a new project as voicegateway project add asks for it.
 var projectFlags = map[string]string{
 	api.FieldName: "--name", api.FieldID: "--id", api.FieldLiveKitURL: "--livekit-url",
 	api.FieldLiveKitAPIKey: "--livekit-api-key", api.FieldLiveKitAPISecret: "LIVEKIT_API_SECRET",
+	api.FieldBucketEndpoint: "--recording-bucket-endpoint", api.FieldBucketName: "--recording-bucket",
+	api.FieldBucketRegion: "--recording-bucket-region", api.FieldBucketAccessKey: "--recording-bucket-access-key",
+	api.FieldBucketSecretKey: "RECORDING_BUCKET_SECRET_KEY",
 }
 
 // AddProject creates a project with its LiveKit secret sealed under the configured key. The fields
 // are checked by api.CheckProject, the rule createProject applies too, and the id defaults to the
 // name's api.Slug. Unless in.SkipVerify, one signed LiveKit read checks endpoint connectivity, as
-// createProject does.
+// createProject does. A bucket the project brings is always proven with a write and a delete, as
+// createProject does, since it can never be changed afterwards.
 func AddProject(ctx context.Context, c config.Config, in ProjectInput) (store.Project, error) {
-	p, err := api.CheckProject(store.NewProject{
+	np := store.NewProject{
 		OrganisationID: orgOrDefault(in.OrganisationID), ID: in.ID, Name: in.Name,
 		LiveKitURL: in.LiveKitURL, LiveKitAPIKey: in.LiveKitAPIKey, LiveKitAPISecret: in.LiveKitAPISecret,
-	})
+	}
+	if in.BucketEndpoint != "" || in.BucketName != "" || in.BucketAccessKey != "" || in.BucketRegion != "" {
+		np.Bucket = &store.ProjectBucket{
+			Endpoint: in.BucketEndpoint, Bucket: in.BucketName, Region: in.BucketRegion, AccessKey: in.BucketAccessKey, SecretKey: in.BucketSecretKey,
+		}
+	}
+	p, err := api.CheckProject(np)
 	var invalid *api.ProjectInputError
 	if errors.As(err, &invalid) {
 		return store.Project{}, errors.New(invalid.Describe(projectFlags))
@@ -80,6 +94,12 @@ func AddProject(ctx context.Context, c config.Config, in ProjectInput) (store.Pr
 	if !in.SkipVerify {
 		if err := scrape.NewVerifier(c.WorkerEndpointsPublicOnly).VerifyLiveKit(ctx, p.LiveKitURL, p.LiveKitAPIKey, p.LiveKitAPISecret); err != nil {
 			return store.Project{}, fmt.Errorf("%w (--skip-verify adds it without this check)", err)
+		}
+	}
+	if p.Bucket != nil {
+		transport := scrape.NewWorkerClient(c.WorkerEndpointsPublicOnly).Transport
+		if err := bucket.NewVerifier(transport).VerifyBucket(ctx, *p.Bucket); err != nil {
+			return store.Project{}, fmt.Errorf("recording bucket: %w", err)
 		}
 	}
 
@@ -250,6 +270,17 @@ func RemoveWorkerEndpoint(ctx context.Context, c config.Config, in WorkerEndpoin
 	}
 	defer done()
 	return s.RemoveWorkerEndpoint(ctx, orgOrDefault(in.OrganisationID), in.ProjectID, strings.TrimSpace(id))
+}
+
+// SetRecordings turns a project's recordings on or off (phase 07a). Off keeps what is stored until
+// it expires.
+func SetRecordings(ctx context.Context, c config.Config, in WorkerEndpointCommand, on bool) error {
+	s, done, err := workerEndpoints(ctx, c, in)
+	if err != nil {
+		return err
+	}
+	defer done()
+	return s.SetProjectRecordings(ctx, orgOrDefault(in.OrganisationID), in.ProjectID, on)
 }
 
 // ListWorkerEndpoints lists a project's endpoints by id and host, never their URLs.

@@ -50,6 +50,7 @@ func (s *Store) ListCalls(ctx context.Context, f store.CallFilter, after *store.
 		AnswerMin: float(f.AnswerMin), AnswerMax: float(f.AnswerMax), DurationMin: float(f.DurationMin), DurationMax: float(f.DurationMax),
 		TurnsMin: integer(f.TurnsMin), TurnsMax: integer(f.TurnsMax),
 		UnknownAnswer: f.UnknownAnswer, UnknownDuration: f.UnknownDuration, UnknownTurns: f.UnknownTurns, MatchNone: f.MatchNone,
+		Recorded: boolean(f.Recorded),
 	}
 	if after != nil {
 		id, err := uuid(after.ID)
@@ -79,6 +80,7 @@ func (s *Store) ListCalls(ctx context.Context, f store.CallFilter, after *store.
 			AnswerMin: p.AnswerMin, AnswerMax: p.AnswerMax, DurationMin: p.DurationMin, DurationMax: p.DurationMax,
 			TurnsMin: p.TurnsMin, TurnsMax: p.TurnsMax,
 			UnknownAnswer: p.UnknownAnswer, UnknownDuration: p.UnknownDuration, UnknownTurns: p.UnknownTurns, MatchNone: p.MatchNone,
+			Recorded: p.Recorded,
 			BudgetMs: f.BudgetMs, MaxValues: int32(min(maxValues, math.MaxInt32)), //nolint:gosec // bounded above
 		})
 		if err != nil {
@@ -89,7 +91,7 @@ func (s *Store) ListCalls(ctx context.Context, f store.CallFilter, after *store.
 			return nil, nil, time.Time{}, fmt.Errorf("call totals p50: %w", err)
 		}
 		totals = &store.CallTotals{
-			CallCount: t.CallCount, Phone: t.Phone, Web: t.Web, Unknown: t.UnknownChannel,
+			CallCount: t.CallCount, Phone: t.Phone, Web: t.Web, Unknown: t.UnknownChannel, Recorded: t.Recorded,
 			AnswerTurns: t.AnswerTurns, OverBudget: t.OverBudget, P50Ms: p50,
 			ValuesMs: t.ValuesMs, ValuesTruncated: t.AnswerTurns > int64(len(t.ValuesMs)),
 		}
@@ -114,7 +116,8 @@ func listRow(r ListCallsRow) (store.CallListRow, error) {
 		ID:       r.ID.String(), RoomName: r.RoomName.String, RoomSID: r.RoomSid.String, StartAt: r.StartAt.Time.UTC(),
 		StartedAt: timeOf(r.StartedAt), EndedAt: timeOf(r.EndedAt), EndState: r.EndState, DurationSeconds: duration,
 		Participants: r.Participants, Channel: r.Channel, AnswerMs: r.AnswerMs, Models: r.Models, Pipeline: r.Pipeline,
-		Cursor: store.CallCursor{Unknown: unknown, Value: r.SortValue, ID: r.ID.String()},
+		Recorded: r.Recorded,
+		Cursor:   store.CallCursor{Unknown: unknown, Value: r.SortValue, ID: r.ID.String()},
 	}
 	if r.TurnCount.Valid {
 		n := int(r.TurnCount.Int32)
@@ -153,6 +156,13 @@ func float(v *float64) pgtype.Float8 {
 		return pgtype.Float8{}
 	}
 	return pgtype.Float8{Float64: *v, Valid: true}
+}
+
+func boolean(v *bool) pgtype.Bool {
+	if v == nil {
+		return pgtype.Bool{}
+	}
+	return pgtype.Bool{Bool: *v, Valid: true}
 }
 
 func integer(v *int) pgtype.Int4 {

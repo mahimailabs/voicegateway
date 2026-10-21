@@ -34,6 +34,7 @@ type Calls interface {
 	MarkStale(ctx context.Context, callIDs []string) error
 	DeferStale(ctx context.Context, callID string) error
 	PutSummary(ctx context.Context, c store.StaleCall, sum store.CallSummary, computedAt time.Time) error
+	LinkRecording(ctx context.Context, l store.RecordingLink) error
 }
 
 // Traces counts traces that never linked to a call, and reads a call's spans and the turns built

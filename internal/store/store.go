@@ -15,6 +15,9 @@ type Project struct {
 	LiveKitURL     string
 	LiveKitAPIKey  string
 	CreatedAt      time.Time
+	// Recordings is whether the project keeps the audio its agents upload (phase 07a); off by
+	// default.
+	Recordings bool
 }
 
 // NewProject is what creating a project needs: voicegateway project add and createProject give the
@@ -26,7 +29,28 @@ type NewProject struct {
 	LiveKitURL       string
 	LiveKitAPIKey    string
 	LiveKitAPISecret string
+	// Bucket is the S3 bucket the project keeps its recordings in, when it brings its own; nil uses
+	// the instance's bucket. It is written with the project and never changes.
+	Bucket *ProjectBucket
 }
+
+// ProjectBucket is an S3 bucket a project brought for its recordings, chosen when the project was
+// created. Endpoint is a host with an optional port; SecretKey is sealed before it is written.
+type ProjectBucket struct {
+	OrganisationID, ProjectID string
+	Endpoint                  string
+	UseSSL                    bool
+	Bucket, Region            string
+	AccessKey, SecretKey      string
+}
+
+// ErrBucketRefused means the S3 endpoint answered but refused the access key or secret, or has no
+// bucket of that name.
+var ErrBucketRefused = errors.New("the S3 bucket refused this access key, secret or bucket name")
+
+// ErrBucketUnreachable means a write to the S3 endpoint got no S3 answer: the endpoint is down, the
+// name does not resolve, or the address guard refused it.
+var ErrBucketUnreachable = errors.New("could not reach this S3 endpoint")
 
 // ErrProjectExists means the organisation already has a project with that id.
 var ErrProjectExists = errors.New("a project with this id already exists")
@@ -180,6 +204,9 @@ type Call struct {
 	// Summarized is true once the summary sweep has built the call's summary, and with it healed
 	// any room or start missing from a call stored before phase 04d.
 	Summarized bool
+	// Recording is the call's latest stored recording, its id and start only; nil when none is
+	// stored.
+	Recording *Recording
 }
 
 // ListSnapshot is a listCalls snapshot kept server-side: the scope and filters it was taken for,
@@ -229,8 +256,11 @@ type CallFilter struct {
 	AnswerMin, AnswerMax, DurationMin, DurationMax *float64
 	TurnsMin, TurnsMax                             *int
 	UnknownAnswer, UnknownDuration, UnknownTurns   bool
-	// MatchNone is set when a filter no stored value can satisfy (issues,
-	// recorded=true), so the list is empty rather than the filter ignored.
+	// Recorded keeps only calls with a stored recording (true) or only calls without one (false);
+	// nil keeps both.
+	Recorded *bool
+	// MatchNone is set when a filter no stored value can satisfy (issues), so the list is empty
+	// rather than the filter ignored.
 	MatchNone bool
 	// SortBy is startedAt, durationSeconds, turnCount, answerMs or issues; issues has no stored
 	// value, so it orders by id.
@@ -264,6 +294,7 @@ type CallListRow struct {
 	Models             []string
 	Pipeline           string
 	AgentKey           *string
+	Recorded           bool
 	Cursor             CallCursor
 }
 
@@ -271,6 +302,7 @@ type CallListRow struct {
 type CallTotals struct {
 	CallCount, Phone, Web, Unknown int64
 	AnswerTurns, OverBudget        int64
+	Recorded                       int64
 	P50Ms                          *float64
 	ValuesMs                       []float64
 	// ValuesTruncated is true when more answers matched than ValuesMs holds.
@@ -473,4 +505,29 @@ type Usage struct {
 type OpenInvitation struct {
 	ID, Kind, OrganisationID, OrganisationName, Email string
 	Role, UserID                                      *string
+}
+
+// RecordingKeep is how long a recording is kept: 90 days, the raw call data retention of ClickHouse
+// migration 00010.
+const RecordingKeep = 90 * 24 * time.Hour
+
+// Recording is a call's audio as stored in the S3 bucket (phase 07a): the object and what the
+// upload reported. The audio itself is never read into the store.
+type Recording struct {
+	ID        string
+	ObjectKey string
+	SizeBytes int64
+	// StartedAt is the recording's wall-clock start, from the agent's host clock; nil when the
+	// upload reported none.
+	StartedAt *time.Time
+	StoredAt  time.Time
+}
+
+// RecordingLink is a stored recording the worker links to its call.
+type RecordingLink struct {
+	CallID    string
+	ObjectKey string
+	SizeBytes int64
+	StartedAt *time.Time
+	StoredAt  time.Time
 }

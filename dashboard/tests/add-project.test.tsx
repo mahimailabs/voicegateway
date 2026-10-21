@@ -8,6 +8,13 @@ import { setCurrentSession } from "../src/lib/session.ts"
 
 // Acceptance check 7 of phase 06f: an organisation's empty state when it has no project yet.
 
+// jsdom has no ResizeObserver; Radix's Switch measures its thumb with one.
+globalThis.ResizeObserver ??= class {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+} as unknown as typeof ResizeObserver
+
 const { NoProjectYet } = await import("../src/components/no-project-yet.tsx")
 
 afterEach(() => {
@@ -18,6 +25,7 @@ afterEach(() => {
 
 // Made up for the test; it reaches no LiveKit server.
 const SECRET = "test-secret-not-real"
+const BUCKET_SECRET = "bucket-secret-not-real"
 const org = { id: "acme", name: "Acme" }
 const json = (status: number, body: unknown) => new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } })
 
@@ -85,10 +93,30 @@ test("a submit sends the fields to createProject, clears the secret and opens th
   expect((screen.getByLabelText("API secret") as HTMLInputElement).value).toBe("")
 })
 
+test("an admin who brings a bucket sends it with the project and the bucket secret is cleared", async () => {
+  const calls = serve()
+  signedInAs("admin")
+  const onCreated = show()
+  const user = await fill()
+  expect(screen.queryByLabelText("S3 endpoint")).toBeNull()
+  await user.click(screen.getByLabelText("Keep recordings in my own S3 bucket"))
+  await user.type(screen.getByLabelText("S3 endpoint"), "https://s3.us-east-1.amazonaws.com")
+  await user.type(screen.getByLabelText("Bucket"), "acme-recordings")
+  await user.type(screen.getByLabelText("Access key ID"), "AKIAACME")
+  expect((screen.getByRole("button", { name: "Add project" }) as HTMLButtonElement).disabled).toBe(true)
+  await user.type(screen.getByLabelText("Secret access key"), BUCKET_SECRET)
+  await user.click(screen.getByRole("button", { name: "Add project" }))
+  await waitFor(() => expect(onCreated).toHaveBeenCalled())
+  expect(JSON.parse(calls[0].body ?? "").recordingBucket).toEqual({ endpoint: "https://s3.us-east-1.amazonaws.com", bucket: "acme-recordings", accessKeyId: "AKIAACME", secretAccessKey: BUCKET_SECRET })
+  expect((screen.getByLabelText("Secret access key") as HTMLInputElement).value).toBe("")
+})
+
 test.each([
   [409, "project_exists", "this organisation already has a project with the id production; choose another name"],
   [422, "livekit_secret_invalid", "the LiveKit API secret did not verify for this key"],
   [422, "livekit_unreachable", "could not reach this LiveKit URL"],
+  [422, "recording_bucket_refused", "the S3 endpoint refused a write or delete with this access key, secret and bucket name"],
+  [422, "recording_bucket_unreachable", "could not reach this S3 endpoint"],
 ])("the API's %i %s shows inline, and the secret is cleared", async (status, code, message) => {
   serve(() => json(status, { code, message, requestId: "r" }))
   signedInAs("admin")

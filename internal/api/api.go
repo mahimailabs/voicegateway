@@ -32,6 +32,9 @@ type API struct {
 	Accounts  Accounts
 	Stats     Stats
 	Keys      Keys
+	// Recordings and Media serve a call's stored recording (phase 07a).
+	Recordings Recordings
+	Media      Media
 	// Invitations lists and revokes invitations; Inviter makes them and reset links.
 	Invitations Invitations
 	Inviter     Inviter
@@ -41,6 +44,9 @@ type API struct {
 	// VerifyLiveKit proves a new project's LiveKit secret before NewProjects stores it; without it
 	// createProject is off.
 	VerifyLiveKit LiveKitVerifier
+	// VerifyBucket proves a bucket a new project brings for its recordings takes writes and deletes
+	// before NewProjects stores it. Without it, createProject refuses a project that brings one.
+	VerifyBucket BucketVerifier
 	// LinkBase is an invitation link's base for a request: VOICEGATEWAY_PUBLIC_URL, or the
 	// request's scheme and Host (auth.Service.LinkBase).
 	LinkBase func(r *http.Request) string
@@ -99,6 +105,7 @@ func (a *API) Routes() http.Handler {
 	handle(r, http.MethodGet, project+"/workers", a.workers)
 	handle(r, http.MethodGet, project+"/resources", a.resources)
 	handle(r, http.MethodGet, project+"/live-events", a.liveEvents)
+	handle(r, http.MethodGet, project+"/recordings/{recordingId}", a.getRecordingMedia)
 	handle(r, http.MethodGet, project+"/keys", a.listProjectKeys)
 	handle(r, http.MethodPost, project+"/keys", a.createProjectKey)
 	handle(r, http.MethodDelete, project+"/keys/{keyId}", a.revokeProjectKey)

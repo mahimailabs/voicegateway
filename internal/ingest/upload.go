@@ -2,13 +2,16 @@ package ingest
 
 import (
 	"compress/gzip"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"log/slog"
 	"mime"
+	"mime/multipart"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -23,10 +26,11 @@ import (
 	"google.golang.org/protobuf/types/known/durationpb"
 
 	"github.com/mahimailabs/voicegateway/internal/event"
+	"github.com/mahimailabs/voicegateway/internal/store"
 )
 
 // Limits on what an agent uploads. A batch of spans is tens of KiB; the session upload carries the
-// whole recording, which is read and discarded, never held.
+// whole recording, which is streamed to the bucket or discarded, never held.
 const (
 	maxOTLPBody        = 4 << 20
 	maxOTLPDecoded     = 16 << 20
@@ -41,8 +45,15 @@ type Uploads struct {
 	Quota    Quota
 	Projects Projects
 	Stream   Appender
-	Log      *slog.Logger
-	Now      func() time.Time
+	// Audio stores the recording of a project with recordings on (phase 07a).
+	Audio Audio
+	Log   *slog.Logger
+	Now   func() time.Time
+}
+
+// Audio stores a recording in the S3 bucket and returns its key and size; size is -1 when unknown.
+type Audio interface {
+	PutRecording(ctx context.Context, at time.Time, organisationID, projectID, jobID string, r io.Reader, size int64) (string, int64, error)
 }
 
 // OTLP answers one of the three OTLP over HTTP exports with the given kind.
@@ -68,14 +79,37 @@ func (u *Uploads) OTLP(kind event.Kind) http.Handler {
 }
 
 // SessionReport answers the multipart session upload: the recording header, chat_history.json and
-// recording.ogg. The audio is discarded until a project has a recordings bucket (0015).
+// recording.ogg. The audio streams to the bucket when the project has recordings on, and is
+// discarded otherwise (0015, phase 07a). A bucket that fails answers 503, so the agent retries.
 func (u *Uploads) SessionReport(w http.ResponseWriter, r *http.Request) {
 	keys, ok := u.verify(w, r)
 	if !ok {
 		return
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, maxSessionUpload)
-	report, jobID, err := readSessionReport(r)
+	// The quota is decided when the report is appended, after the audio has been read. An
+	// organisation at its cap therefore stores no audio: a refused report would leave it unlinked,
+	// and a report its quota still continues keeps only its transcript.
+	var keep audioSink
+	if keys.project.Recordings {
+		allowed, err := u.audioAllowed(r.Context(), keys.project.OrganisationID)
+		if err != nil {
+			// Unknown is not over the cap: the agent sends the report again, audio included.
+			u.Log.Error("upload: quota check before recording", "project", keys.project.ID, "err", err)
+			unavailable(w)
+			return
+		}
+		if allowed {
+			keep = u.storeAudio(r.Context(), keys.project)
+		}
+	}
+	report, jobID, err := readSessionReport(r, keep)
+	var stored *storeError
+	if errors.As(err, &stored) {
+		u.Log.Error("upload: recording not stored", "project", keys.project.ID, "err", stored.err)
+		unavailable(w)
+		return
+	}
 	if err != nil {
 		u.Log.Warn("upload: unreadable session report", "project", keys.project.ID, "reason", err.Error())
 		http.Error(w, "unreadable session report", statusFor(err))
@@ -217,9 +251,64 @@ func readOTLP(body io.Reader, encoding string) ([]byte, error) {
 	return b, nil
 }
 
+// audioSink stores the audio part of the report whose header is h; nil discards it.
+type audioSink func(h *livekit.MetricsRecordingHeader, part *multipart.Part) (*event.StoredRecording, error)
+
+// storeError marks a failure writing to the bucket, as opposed to reading the upload.
+type storeError struct{ err error }
+
+func (e *storeError) Error() string { return "store recording: " + e.err.Error() }
+
+// audioAllowed reports whether the organisation is under its cap. Without a quota (self-hosted)
+// audio is always allowed; a quota that cannot answer returns its error.
+func (u *Uploads) audioAllowed(ctx context.Context, org string) (bool, error) {
+	if u.Quota == nil {
+		return true, nil
+	}
+	allowed, _, err := u.Quota.Check(ctx, org)
+	return allowed, err
+}
+
+// storeAudio streams the audio part to the bucket, named by the header's job id. The part's own
+// Content-Length, which LiveKit Agents sends, lets the bucket take it in one request.
+func (u *Uploads) storeAudio(ctx context.Context, p store.Project) audioSink {
+	return func(h *livekit.MetricsRecordingHeader, part *multipart.Part) (*event.StoredRecording, error) {
+		size := int64(-1)
+		if n, err := strconv.ParseInt(part.Header.Get("Content-Length"), 10, 64); err == nil && n >= 0 {
+			size = n
+		}
+		at := u.Now()
+		src := &readTracker{r: part}
+		key, n, err := u.Audio.PutRecording(ctx, at, p.OrganisationID, p.ID, h.GetJobId(), src, size)
+		if src.err != nil {
+			return nil, src.err
+		}
+		if err != nil {
+			return nil, &storeError{err: err}
+		}
+		return &event.StoredRecording{Key: key, SizeBytes: n, StoredAt: at.UTC()}, nil
+	}
+}
+
+// readTracker remembers the first error its reader returned other than io.EOF, so a broken upload
+// is told apart from a failing bucket.
+type readTracker struct {
+	r   io.Reader
+	err error
+}
+
+func (t *readTracker) Read(p []byte) (int, error) {
+	n, err := t.r.Read(p)
+	if err != nil && !errors.Is(err, io.EOF) && t.err == nil {
+		t.err = err
+	}
+	return n, err
+}
+
 // readSessionReport reads the multipart parts by name. The header part is required and must be a
-// MetricsRecordingHeader; unknown parts are skipped.
-func readSessionReport(r *http.Request) (event.SessionReport, string, error) {
+// MetricsRecordingHeader; unknown parts are skipped. With keep set, the audio part is stored and
+// must come after the header, as LiveKit Agents sends it, since the header names it.
+func readSessionReport(r *http.Request, keep audioSink) (event.SessionReport, string, error) {
 	var report event.SessionReport
 	mt, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
 	if err != nil || mt != "multipart/form-data" {
@@ -258,10 +347,19 @@ func readSessionReport(r *http.Request) (event.SessionReport, string, error) {
 			}
 			report.ChatHistory = string(b)
 		case "audio":
-			if _, err := io.Copy(io.Discard, part); err != nil {
+			if keep == nil {
+				if _, err := io.Copy(io.Discard, part); err != nil {
+					return report, "", err
+				}
+				report.AudioDiscarded = true
+				break
+			}
+			if header == nil {
+				return report, "", errors.New("audio part before the header part")
+			}
+			if report.Recording, err = keep(header, part); err != nil {
 				return report, "", err
 			}
-			report.AudioDiscarded = true
 		default:
 			if _, err := io.Copy(io.Discard, part); err != nil {
 				return report, "", err

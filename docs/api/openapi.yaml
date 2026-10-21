@@ -1339,7 +1339,7 @@ paths:
         minimumRole: Admin
         browserSessionTransport: session_cookie
         scope: organisation
-      description: Requires Admin membership in the named organisation; a project API key is 403. Adds one LiveKit project (decision 0016) through the same checks and store as voicegateway project add (phase 06f). The id is the name as a slug, as the console makes it. The API secret is sealed under VOICEGATEWAY_SECRET_KEY before it is written and is never answered, logged or read back to the console. Before anything is stored, one LiveKit read (ListRooms under the room-list grant, signed with the given key and secret, through the worker's address guard, 5 s at most) checks connectivity to the supplied endpoint. This does not prove ownership of that server; project-scoped ingestion URLs enforce tenant isolation. LiveKit refusing it is 422 livekit_secret_invalid, and no LiveKit answer at all (no answer, an address the guard refuses, or not a LiveKit server) is 422 livekit_unreachable, which never says which. Only then are the uniqueness rules answered. A name whose id the organisation already has is 409 project_exists. Identical key strings are allowed across projects. The answer is not cached.
+      description: Requires Admin membership in the named organisation; a project API key is 403. Adds one LiveKit project (decision 0016) through the same checks and store as voicegateway project add (phase 06f). The id is the name as a slug, as the console makes it. The API secret is sealed under VOICEGATEWAY_SECRET_KEY before it is written and is never answered, logged or read back to the console. Before anything is stored, one LiveKit read (ListRooms under the room-list grant, signed with the given key and secret, through the worker's address guard, 5 s at most) checks connectivity to the supplied endpoint. This does not prove ownership of that server; project-scoped ingestion URLs enforce tenant isolation. LiveKit refusing it is 422 livekit_secret_invalid, and no LiveKit answer at all (no answer, an address the guard refuses, or not a LiveKit server) is 422 livekit_unreachable, which never says which. A project may bring its own S3 bucket for its recordings in recordingBucket; without it, recordings live in the instance's bucket. The bucket is chosen only here and never changes afterwards, so before anything is stored a write and a delete of one empty object, signed with the given key and secret, through the same address guard, 10 s at most, prove it takes what storing and expiring recordings need. The S3 endpoint refusing either is 422 recording_bucket_refused, and no S3 answer at all is 422 recording_bucket_unreachable, which never says which. An install with no bucket check refuses a recordingBucket with 403. Only then are the uniqueness rules answered. A name whose id the organisation already has is 409 project_exists. Identical key strings are allowed across projects. The answer is not cached.
       parameters:
         - $ref: "#/components/parameters/OrganisationId"
       requestBody:
@@ -1363,7 +1363,7 @@ paths:
         "409":
           $ref: "#/components/responses/Conflict"
         "422":
-          $ref: "#/components/responses/LiveKitNotVerified"
+          $ref: "#/components/responses/ProjectNotVerified"
         "400":
           $ref: "#/components/responses/BadRequest"
         "401":
@@ -5196,7 +5196,7 @@ components:
           type: string
           description: Stable error category.
           x-source: { kind: computed, file: docs/api/coverage.md, pointer: null, detail: Stable error category. }
-          enum: [ invalid_request, revision_conflict, unauthenticated, forbidden, not_found, source_unavailable, internal_error, range_not_satisfiable, last_admin, already_member, member_of_other_organisations, project_exists, livekit_secret_invalid, livekit_unreachable ]
+          enum: [ invalid_request, revision_conflict, unauthenticated, forbidden, not_found, source_unavailable, internal_error, range_not_satisfiable, last_admin, already_member, member_of_other_organisations, project_exists, livekit_secret_invalid, livekit_unreachable, recording_bucket_refused, recording_bucket_unreachable ]
         message:
           type: string
           description: Safe human-readable explanation, excluding upstream credentials and request bodies.
@@ -5890,6 +5890,44 @@ components:
           minLength: 1
           description: The LiveKit API secret. Sealed before it is stored; never answered or logged.
           x-source: { kind: configuration, file: dashboard/src/components/add-project-form.tsx, pointer: null, detail: The LiveKit API secret an admin pastes; the form clears it after submit. }
+        recordingBucket:
+          $ref: "#/components/schemas/RecordingBucketCreate"
+          x-source: { kind: configuration, file: dashboard/src/components/add-project-form.tsx, pointer: null, detail: "Present only when an admin brings their own bucket; without it, recordings live in the instance's bucket." }
+    RecordingBucketCreate:
+      type: object
+      additionalProperties: false
+      required: [ endpoint, bucket, accessKeyId, secretAccessKey ]
+      description: An S3 bucket the project keeps its recordings in instead of the instance's bucket. Set only when the project is created; it never changes afterwards, so recordings never move between buckets.
+      x-source: { kind: configuration, file: dashboard/src/components/add-project-form.tsx, pointer: null, detail: The bucket an admin brings, when they choose their own over the instance's. }
+      properties:
+        endpoint:
+          type: string
+          minLength: 1
+          maxLength: 2048
+          description: The S3 endpoint, an http or https URL with a host and no path, such as https://s3.us-east-1.amazonaws.com.
+          x-source: { kind: configuration, file: dashboard/src/components/add-project-form.tsx, pointer: null, detail: The S3 endpoint an admin pastes. }
+        bucket:
+          type: string
+          minLength: 3
+          maxLength: 63
+          description: The bucket's name, by S3's naming rules.
+          x-source: { kind: configuration, file: dashboard/src/components/add-project-form.tsx, pointer: null, detail: The bucket name an admin types. }
+        region:
+          type: string
+          maxLength: 256
+          description: The bucket's region, such as us-east-1. When empty, it is asked of the bucket.
+          x-source: { kind: configuration, file: dashboard/src/components/add-project-form.tsx, pointer: null, detail: The region an admin types, if any. }
+        accessKeyId:
+          type: string
+          minLength: 1
+          maxLength: 256
+          description: The S3 access key id; it needs to write, read, list and delete objects under recordings/.
+          x-source: { kind: configuration, file: dashboard/src/components/add-project-form.tsx, pointer: null, detail: The access key id an admin pastes. }
+        secretAccessKey:
+          type: string
+          minLength: 1
+          description: The S3 secret access key. Sealed before it is stored; never answered or logged.
+          x-source: { kind: configuration, file: dashboard/src/components/add-project-form.tsx, pointer: null, detail: The secret access key an admin pastes; the form clears it after submit. }
     WorkspaceProject:
       type: object
       additionalProperties: false
@@ -6405,8 +6443,8 @@ components:
         application/json:
           schema:
             $ref: "#/components/schemas/Error"
-    LiveKitNotVerified:
-      description: livekit_secret_invalid, LiveKit refused a read signed with the given key and secret; livekit_unreachable, the LiveKit URL gave no LiveKit answer, without saying whether it did not answer, was refused by the address guard or is not a LiveKit server. Nothing is stored.
+    ProjectNotVerified:
+      description: livekit_secret_invalid, LiveKit refused a read signed with the given key and secret; livekit_unreachable, the LiveKit URL gave no LiveKit answer, without saying whether it did not answer, was refused by the address guard or is not a LiveKit server; recording_bucket_refused, the S3 endpoint refused a write or delete with the given access key, secret and bucket name; recording_bucket_unreachable, the S3 endpoint gave no S3 answer, without saying why. Nothing is stored.
       content:
         application/json:
           schema:

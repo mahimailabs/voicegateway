@@ -2,6 +2,7 @@ package join_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -15,6 +16,8 @@ import (
 	"github.com/livekit/protocol/livekit"
 	"go.opentelemetry.io/collector/pdata/pmetric"
 	"go.opentelemetry.io/collector/pdata/pmetric/pmetricotlp"
+	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"github.com/mahimailabs/voicegateway/internal/event"
 	"github.com/mahimailabs/voicegateway/internal/join"
@@ -133,6 +136,51 @@ func TestSessionReportJoinsCall(t *testing.T) {
 	events, _ := f.eventCalls()
 	if events["AJ_W"] != calls["RM_W"].ID || events["AJ_N"] != calls["RM_N"].ID {
 		t.Errorf("report call ids = %+v", events)
+	}
+}
+
+// Phase 07a, acceptance check 3: a recording web stored is linked to the call its report joins,
+// once however often the report is delivered, with the header's start as the recording's; the
+// epoch the agent sends without a start is unknown.
+func TestSessionReportLinksRecording(t *testing.T) {
+	f := newFixture(t)
+	stored := base.Add(time.Minute).Truncate(time.Microsecond)
+	report := func(job string, start *timestamppb.Timestamp) []byte {
+		h, err := protojson.Marshal(&livekit.MetricsRecordingHeader{RoomId: "RM_" + job, JobId: job, StartTime: start})
+		if err != nil {
+			t.Fatal(err)
+		}
+		b, err := json.Marshal(event.SessionReport{Header: h, Recording: &event.StoredRecording{
+			Key: "recordings/k/" + job + ".ogg", SizeBytes: 42, StoredAt: stored,
+		}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return b
+	}
+	f.append(event.KindAgentSessionReport, "AJ_R", report("AJ_R", ts(base)))
+	f.append(event.KindAgentSessionReport, "AJ_R", report("AJ_R", ts(base)))
+	f.append(event.KindAgentSessionReport, "AJ_E", report("AJ_E", ts(time.Unix(0, 0))))
+	f.store("w1")
+
+	calls := f.calls()
+	for _, c := range []struct {
+		room  string
+		start *time.Time
+	}{{"RM_AJ_R", &base}, {"RM_AJ_E", nil}} {
+		var n int
+		var key string
+		var size int64
+		var started *time.Time
+		var at time.Time
+		if err := f.pool.QueryRow(context.Background(),
+			`SELECT count(*) OVER (), object_key, size_bytes, started_at, stored_at FROM call_recordings WHERE call_id = $1`, calls[c.room].ID,
+		).Scan(&n, &key, &size, &started, &at); err != nil {
+			t.Fatalf("%s: %v", c.room, err)
+		}
+		if n != 1 || size != 42 || !at.Equal(stored) || (c.start == nil) != (started == nil) || (c.start != nil && !started.Equal(*c.start)) {
+			t.Errorf("%s: %d links, %s %d bytes, started %v, stored %v", c.room, n, key, size, started, at)
+		}
 	}
 }
 

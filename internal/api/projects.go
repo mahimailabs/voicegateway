@@ -14,6 +14,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/minio/minio-go/v7/pkg/s3utils"
 
 	"github.com/mahimailabs/voicegateway/internal/store"
 )
@@ -31,8 +32,16 @@ type LiveKitVerifier interface {
 	VerifyLiveKit(ctx context.Context, url, apiKey, apiSecret string) error
 }
 
-// maxProjectBody bounds a createProject body, which holds a name, a URL, a key and a secret.
-const maxProjectBody = 4 << 10
+// BucketVerifier proves a bucket a new project brings for its recordings takes the writes and deletes
+// recordings need (bucket.Verifier). Its errors are store.ErrBucketRefused and
+// store.ErrBucketUnreachable.
+type BucketVerifier interface {
+	VerifyBucket(ctx context.Context, b store.ProjectBucket) error
+}
+
+// maxProjectBody bounds a createProject body, which holds a name, a URL, a key and a secret, and
+// optionally a bucket's endpoint, name, region, key and secret.
+const maxProjectBody = 8 << 10
 
 // Contract Error codes for createProject.
 const (
@@ -40,6 +49,9 @@ const (
 	// The two answers of a LiveKit secret that could not be shown to verify, both 422.
 	codeLiveKitSecretInvalid = "livekit_secret_invalid"
 	codeLiveKitUnreachable   = "livekit_unreachable"
+	// The two answers of a recording bucket that could not be shown to take writes and deletes, both 422.
+	codeBucketRefused     = "recording_bucket_refused"
+	codeBucketUnreachable = "recording_bucket_unreachable"
 )
 
 // The fields of a new project, by their contract names; ProjectInputError names them this way, and
@@ -50,6 +62,12 @@ const (
 	FieldLiveKitURL       = "livekitUrl"
 	FieldLiveKitAPIKey    = "livekitApiKey"
 	FieldLiveKitAPISecret = "livekitApiSecret"
+	// The fields of a recording bucket a project brings, under recordingBucket.
+	FieldBucketEndpoint  = "recordingBucket.endpoint"
+	FieldBucketName      = "recordingBucket.bucket"
+	FieldBucketRegion    = "recordingBucket.region"
+	FieldBucketAccessKey = "recordingBucket.accessKeyId"
+	FieldBucketSecretKey = "recordingBucket.secretAccessKey"
 )
 
 // ProjectInputError says which fields of a new project are missing, or which one breaks its rule.
@@ -136,10 +154,63 @@ func CheckProject(p store.NewProject) (store.NewProject, error) {
 	if !liveKitURL(p.LiveKitURL) {
 		return store.NewProject{}, &ProjectInputError{Field: FieldLiveKitURL, Rule: "must be a ws, wss, http or https URL with a host"}
 	}
-	if len(p.LiveKitAPIKey) > maxLiveKitKey || strings.ContainsFunc(p.LiveKitAPIKey, func(r rune) bool { return unicode.IsSpace(r) || unicode.IsControl(r) }) {
+	if len(p.LiveKitAPIKey) > maxLiveKitKey || !plainToken(p.LiveKitAPIKey) {
 		return store.NewProject{}, &ProjectInputError{Field: FieldLiveKitAPIKey, Rule: "must be at most 256 characters, with no spaces or control characters"}
 	}
+	if p.Bucket != nil {
+		b, err := checkBucket(*p.Bucket)
+		if err != nil {
+			return store.NewProject{}, err
+		}
+		b.OrganisationID, b.ProjectID = p.OrganisationID, p.ID
+		p.Bucket = &b
+	}
 	return p, nil
+}
+
+// plainToken reports whether s has no spaces or control characters.
+func plainToken(s string) bool {
+	return !strings.ContainsFunc(s, func(r rune) bool { return unicode.IsSpace(r) || unicode.IsControl(r) })
+}
+
+// maxBucketField bounds a recording bucket's region and access key.
+const maxBucketField = 256
+
+// checkBucket is the rule for a recording bucket a new project brings. Endpoint, bucket, access key
+// and secret are required; the region may be empty. The endpoint is an http or https URL with a
+// host and nothing after it, kept as the host and port minio-go dials, with its scheme as UseSSL.
+// The bucket name follows S3's rules (minio-go's s3utils). The region and access key are trimmed and
+// at most 256 characters with no spaces or control characters. The secret is kept exactly as given.
+func checkBucket(b store.ProjectBucket) (store.ProjectBucket, error) {
+	b.Endpoint, b.Bucket = strings.TrimSpace(b.Endpoint), strings.TrimSpace(b.Bucket)
+	b.Region, b.AccessKey = strings.TrimSpace(b.Region), strings.TrimSpace(b.AccessKey)
+	var missing []string
+	for _, f := range []struct{ name, value string }{
+		{FieldBucketEndpoint, b.Endpoint}, {FieldBucketName, b.Bucket}, {FieldBucketAccessKey, b.AccessKey}, {FieldBucketSecretKey, strings.TrimSpace(b.SecretKey)},
+	} {
+		if f.value == "" {
+			missing = append(missing, f.name)
+		}
+	}
+	if len(missing) > 0 {
+		return store.ProjectBucket{}, &ProjectInputError{Missing: missing}
+	}
+	u, err := url.Parse(b.Endpoint)
+	if err != nil || len(b.Endpoint) > maxLiveKitURL || (u.Scheme != "http" && u.Scheme != "https") || u.Hostname() == "" ||
+		u.User != nil || strings.Trim(u.Path, "/") != "" || u.RawQuery != "" || u.Fragment != "" {
+		return store.ProjectBucket{}, &ProjectInputError{Field: FieldBucketEndpoint, Rule: "must be an http or https URL with a host and no path, such as https://s3.us-east-1.amazonaws.com"}
+	}
+	b.Endpoint, b.UseSSL = u.Host, u.Scheme == "https"
+	if s3utils.CheckValidBucketNameStrict(b.Bucket) != nil {
+		return store.ProjectBucket{}, &ProjectInputError{Field: FieldBucketName, Rule: "must be a valid S3 bucket name: 3 to 63 characters of a to z, 0 to 9, . and -"}
+	}
+	if len(b.Region) > maxBucketField || !plainToken(b.Region) {
+		return store.ProjectBucket{}, &ProjectInputError{Field: FieldBucketRegion, Rule: "must be at most 256 characters, with no spaces or control characters"}
+	}
+	if len(b.AccessKey) > maxBucketField || !plainToken(b.AccessKey) {
+		return store.ProjectBucket{}, &ProjectInputError{Field: FieldBucketAccessKey, Rule: "must be at most 256 characters, with no spaces or control characters"}
+	}
+	return b, nil
 }
 
 // liveKitURL reports whether raw is a URL the LiveKit server SDK can dial: ws, wss, http or https,
@@ -173,24 +244,39 @@ func (a *API) createProject(w http.ResponseWriter, r *http.Request) {
 		LiveKitURL       string `json:"livekitUrl"`
 		LiveKitAPIKey    string `json:"livekitApiKey"`
 		LiveKitAPISecret string `json:"livekitApiSecret"`
+		RecordingBucket  *struct {
+			Endpoint        string `json:"endpoint"`
+			Bucket          string `json:"bucket"`
+			Region          string `json:"region"`
+			AccessKeyID     string `json:"accessKeyId"`
+			SecretAccessKey string `json:"secretAccessKey"`
+		} `json:"recordingBucket"`
 	}
 	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxProjectBody))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&body); err != nil {
-		writeError(w, r, http.StatusBadRequest, codeInvalidRequest, "the body must be one JSON object of name, livekitUrl, livekitApiKey and livekitApiSecret, at most 4 KiB")
+		writeError(w, r, http.StatusBadRequest, codeInvalidRequest, "the body must be one JSON object of name, livekitUrl, livekitApiKey, livekitApiSecret and an optional recordingBucket, at most 8 KiB")
 		return
 	}
 	var trailing any
 	if err := dec.Decode(&trailing); !errors.Is(err, io.EOF) {
-		writeError(w, r, http.StatusBadRequest, codeInvalidRequest, "the body must be one JSON object at most 4 KiB")
+		writeError(w, r, http.StatusBadRequest, codeInvalidRequest, "the body must be one JSON object at most 8 KiB")
 		return
 	}
 	org := chi.URLParam(r, "orgId")
-	in, err := CheckProject(store.NewProject{
+	np := store.NewProject{
 		OrganisationID: org, Name: body.Name, LiveKitURL: body.LiveKitURL, LiveKitAPIKey: body.LiveKitAPIKey, LiveKitAPISecret: body.LiveKitAPISecret,
-	})
+	}
+	if b := body.RecordingBucket; b != nil {
+		np.Bucket = &store.ProjectBucket{Endpoint: b.Endpoint, Bucket: b.Bucket, Region: b.Region, AccessKey: b.AccessKeyID, SecretKey: b.SecretAccessKey}
+	}
+	in, err := CheckProject(np)
 	if err != nil {
 		writeError(w, r, http.StatusBadRequest, codeInvalidRequest, err.Error())
+		return
+	}
+	if in.Bucket != nil && a.VerifyBucket == nil {
+		writeError(w, r, http.StatusForbidden, "forbidden", "bringing a recording bucket is off on this install")
 		return
 	}
 	// One signed LiveKit read first: a key is stored, and its 409 answered, only for a caller who
@@ -204,6 +290,18 @@ func (a *API) createProject(w http.ResponseWriter, r *http.Request) {
 	case err != nil:
 		writeError(w, r, http.StatusUnprocessableEntity, codeLiveKitUnreachable, "could not reach this LiveKit URL")
 		return
+	}
+	// The bucket cannot be changed once the project exists, so it is proven now: a write and a
+	// delete, what storing and expiring recordings need. As with LiveKit, the cause is not answered.
+	if in.Bucket != nil {
+		switch err := a.VerifyBucket.VerifyBucket(r.Context(), *in.Bucket); {
+		case errors.Is(err, store.ErrBucketRefused):
+			writeError(w, r, http.StatusUnprocessableEntity, codeBucketRefused, "the S3 endpoint refused a write or delete with this access key, secret and bucket name")
+			return
+		case err != nil:
+			writeError(w, r, http.StatusUnprocessableEntity, codeBucketUnreachable, "could not reach this S3 endpoint")
+			return
+		}
 	}
 	p, err := a.NewProjects.CreateProject(r.Context(), in)
 	switch {

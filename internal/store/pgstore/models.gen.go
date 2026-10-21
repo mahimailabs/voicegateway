@@ -59,6 +59,7 @@ type CallList struct {
 	Models          []string
 	Pipeline        string
 	AgentKey        pgtype.Text
+	Recorded        bool
 }
 
 type CallParticipant struct {
@@ -68,6 +69,16 @@ type CallParticipant struct {
 	Kind           string
 	JoinedAt       pgtype.Timestamptz
 	LeftAt         pgtype.Timestamptz
+}
+
+type CallRecording struct {
+	ID        pgtype.UUID
+	CallID    pgtype.UUID
+	ObjectKey string
+	SizeBytes int64
+	StartedAt pgtype.Timestamptz
+	StoredAt  pgtype.Timestamptz
+	CreatedAt pgtype.Timestamptz
 }
 
 type CallSummary struct {
@@ -222,6 +233,19 @@ type Project struct {
 	CreatedAt              pgtype.Timestamptz
 	CallMetadataRevision   int64
 	IssueRevision          int64
+	Recordings             bool
+}
+
+type ProjectBucket struct {
+	OrganisationID  string
+	ProjectID       string
+	Endpoint        string
+	UseSsl          bool
+	Bucket          string
+	Region          string
+	AccessKey       string
+	SecretKeySealed []byte
+	CreatedAt       pgtype.Timestamptz
 }
 
 type ProjectKey struct {

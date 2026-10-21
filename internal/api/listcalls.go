@@ -313,13 +313,14 @@ func (a *API) parseList(org, project string, q url.Values) (store.CallFilter, in
 	if err != nil {
 		return bad("%v", err)
 	}
-	// Issue and recording filters still have no stored value; metadata filters are persisted.
+	// Issue filters still have no stored value; recording and metadata filters are persisted.
 	f.Tags, err = store.NormalizeTags(tags)
 	if err != nil {
 		return bad("invalid tag filter")
 	}
 	f.Archived = archived
-	f.MatchNone = len(issueFilter) > 0 || (recorded != nil && *recorded)
+	f.Recorded = recorded
+	f.MatchNone = len(issueFilter) > 0
 
 	if v := q.Get("sort"); v != "" {
 		if !slices.Contains(sorts, v) {
@@ -416,7 +417,7 @@ func toSummary(r store.CallListRow) callSummary {
 		ID: r.ID, Room: r.RoomName, RoomSID: text(r.RoomSID), StartedAt: r.StartAt, EndedAt: r.EndedAt,
 		DurationSeconds: r.DurationSeconds, EndState: r.EndState, Channel: r.Channel, Pipeline: r.Pipeline,
 		Models: r.Models, AgentKey: r.AgentKey, TurnCount: r.TurnCount, AnswerMs: r.AnswerMs, AnswerMsMedian: r.AnswerMsMedian,
-		Issues: issueCount{Titles: []string{}}, Tags: append([]string{}, r.Metadata.Tags...), Archived: r.Metadata.Archived,
+		Issues: issueCount{Titles: []string{}}, Tags: append([]string{}, r.Metadata.Tags...), Archived: r.Metadata.Archived, Recorded: r.Recorded,
 	}
 	if s.Models == nil {
 		s.Models = []string{}
@@ -432,6 +433,7 @@ func toTotals(t *store.CallTotals, budget float64) callTotals {
 	n := func(v int64) *int64 { return &v }
 	out := callTotals{
 		CallCount: n(t.CallCount),
+		Recorded:  n(t.Recorded),
 		// Console and local are null, not 0: no stored source tells those channels apart yet, the
 		// same rule getCallStats follows.
 		ByChannel: channelCount{Phone: n(t.Phone), Web: n(t.Web), Unknown: n(t.Unknown)},

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -28,6 +29,7 @@ type call struct {
 	Spans            *[]span     `json:"spans"`
 	Turns            *[]callTurn `json:"turns"`
 	Usage            *usage      `json:"usage,omitempty"`
+	Recording        *recording  `json:"recording,omitempty"`
 	EndState         string      `json:"endState"`
 	Tags             []string    `json:"tags"`
 	Archived         bool        `json:"archived"`
@@ -76,6 +78,17 @@ type usage struct {
 	Note            string   `json:"note"`
 }
 
+// recording is the contract's Call.recording. Duration, segments and peaks are not extracted from
+// the audio yet, so they are null: unknown, never zero.
+type recording struct {
+	URL      string     `json:"url"`
+	Duration *float64   `json:"duration"`
+	Segments []struct{} `json:"segments"`
+	Peaks    *struct{}  `json:"peaks"`
+	ID       string     `json:"id"`
+	ClockID  string     `json:"clockId"`
+}
+
 type clock struct {
 	ID        string     `json:"id"`
 	Origin    string     `json:"origin"`
@@ -86,8 +99,9 @@ type clock struct {
 
 // Clock ids and the alignment of a clock to the call's start.
 const (
-	clockCall  = "call"
-	clockTrace = "trace"
+	clockCall      = "call"
+	clockTrace     = "trace"
+	clockRecording = "recording"
 
 	alignObserved = "observed"
 	alignInferred = "inferred"
@@ -113,6 +127,13 @@ func (a *API) getCall(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	body, ok := buildCall(c, spans, built)
+	if ok && c.Recording != nil {
+		body.Recording = &recording{
+			URL: "/api/v1/org/" + url.PathEscape(org) + "/project/" + url.PathEscape(project) + "/recordings/" + c.Recording.ID,
+			ID:  c.Recording.ID, ClockID: clockRecording,
+		}
+		body.Clocks = append(body.Clocks, recordingClock(body.StartedAt, c.Recording.StartedAt))
+	}
 	if !ok {
 		// No source named the room or reported a start: the contract requires both.
 		writeError(w, r, http.StatusNotFound, codeNotFound, "call not found")
@@ -221,6 +242,18 @@ func clocks(started time.Time, startObserved bool, traceStart *time.Time) []cloc
 		trace.OriginAt, trace.Offset, trace.Alignment = traceStart, &offset, alignInferred
 	}
 	return append(out, trace)
+}
+
+// recordingClock is the recording's timeline, anchored at the wall-clock start the agent's upload
+// reported. Like the trace clock it compares the agent host's clock with LiveKit's, so its offset is
+// inferred, and unknown when the upload reported no start.
+func recordingClock(callStart time.Time, recordingStart *time.Time) clock {
+	c := clock{ID: clockRecording, Origin: "recording_start", Alignment: alignUnknown}
+	if recordingStart != nil {
+		offset := recordingStart.Sub(callStart).Seconds()
+		c.OriginAt, c.Offset, c.Alignment = recordingStart, &offset, alignInferred
+	}
+	return c
 }
 
 func toSpans(spans []store.Span, origin *time.Time) []span {

@@ -1,7 +1,7 @@
 -- name: CreateProject :one
 INSERT INTO projects (organisation_id, id, name, livekit_url, livekit_api_key, livekit_api_secret_sealed)
 VALUES ($1, $2, $3, $4, $5, $6)
-RETURNING organisation_id, id, name, livekit_url, livekit_api_key, created_at;
+RETURNING organisation_id, id, name, livekit_url, livekit_api_key, created_at, recordings;
 
 -- name: SealedLiveKitSecret :one
 SELECT livekit_api_secret_sealed
@@ -12,7 +12,7 @@ WHERE organisation_id = $1 AND id = $2;
 SELECT EXISTS (SELECT 1 FROM organisations WHERE id = $1);
 
 -- name: ListProjects :many
-SELECT organisation_id, id, name, livekit_url, livekit_api_key, created_at
+SELECT organisation_id, id, name, livekit_url, livekit_api_key, created_at, recordings
 FROM projects
 ORDER BY organisation_id, id;
 
@@ -98,15 +98,22 @@ WHERE end_state = 'open' AND updated_at < @idle_since
   AND (last_activity_at IS NULL OR last_activity_at < @idle_since);
 
 -- name: ProjectByID :one
-SELECT organisation_id, id, name, livekit_url, livekit_api_key, created_at
+SELECT organisation_id, id, name, livekit_url, livekit_api_key, created_at, recordings
 FROM projects
 WHERE organisation_id = $1 AND id = $2;
 
 -- name: CallByID :one
 -- One call of a project as the API reads it, with the servable rule listCalls shares.
+-- With its latest recording: an agent that uploads twice for one call, from two jobs, leaves two,
+-- and the call view plays the latest.
 SELECT l.id, l.room_name, l.room_sid, l.job_id, l.started_at, l.ended_at, l.end_state, l.first_seen_at,
-       l.participants, l.servable, l.summarized::boolean AS summarized, c.tags, c.archived, c.metadata_revision
+       l.participants, l.servable, l.summarized::boolean AS summarized, c.tags, c.archived, c.metadata_revision,
+       r.id AS recording_id, r.started_at AS recording_started_at
 FROM call_list l JOIN calls c ON c.id = l.id
+LEFT JOIN LATERAL (
+    SELECT id, started_at FROM call_recordings
+    WHERE call_id = l.id ORDER BY stored_at DESC, id LIMIT 1
+) r ON true
 WHERE l.organisation_id = @organisation_id AND l.project_id = @project_id AND l.id = @id;
 
 -- name: StaleCalls :many
@@ -173,11 +180,12 @@ WITH f AS (
       AND (NOT @unknown_turns::bool OR l.turn_count IS NULL)
       AND (cardinality(@tags::text[]) = 0 OR c.tags && @tags::text[])
       AND (sqlc.narg(archived)::boolean IS NULL OR c.archived = sqlc.narg(archived)::boolean)
+      AND (sqlc.narg(recorded)::bool IS NULL OR l.recorded = sqlc.narg(recorded)::bool)
       AND NOT @match_none::bool
 )
 SELECT f.id, f.room_name, f.room_sid, f.start_at, f.started_at, f.ended_at, f.end_state, f.duration_seconds,
        f.participants, f.channel, f.turn_count, f.answer_ms, f.answer_ms_median, f.models, f.pipeline, f.agent_key, f.tags, f.archived, f.metadata_revision,
-       (f.sort_key IS NULL) AS key_unknown, COALESCE(f.sort_key, 0)::double precision AS sort_value
+       f.recorded, (f.sort_key IS NULL) AS key_unknown, COALESCE(f.sort_key, 0)::double precision AS sort_value
 FROM f
 WHERE NOT @after_cursor::bool
    OR ((f.sort_key IS NULL), COALESCE(f.sort_key, 0), f.id) > (@cursor_unknown::bool, @cursor_value::float8, @cursor_id::uuid)
@@ -207,6 +215,7 @@ WITH f AS (
       AND (NOT @unknown_turns::bool OR l.turn_count IS NULL)
       AND (cardinality(@tags::text[]) = 0 OR c.tags && @tags::text[])
       AND (sqlc.narg(archived)::boolean IS NULL OR c.archived = sqlc.narg(archived)::boolean)
+      AND (sqlc.narg(recorded)::bool IS NULL OR l.recorded = sqlc.narg(recorded)::bool)
       AND NOT @match_none::bool
 ), a AS (
     SELECT u.v, f.start_at, f.id, u.ord
@@ -217,6 +226,7 @@ SELECT
     (SELECT count(*) FROM f WHERE channel = 'phone') AS phone,
     (SELECT count(*) FROM f WHERE channel = 'web') AS web,
     (SELECT count(*) FROM f WHERE channel = 'unknown') AS unknown_channel,
+    (SELECT count(*) FROM f WHERE recorded) AS recorded,
     (SELECT count(*) FROM a) AS answer_turns,
     (SELECT count(*) FROM a WHERE a.v > @budget_ms::float8) AS over_budget,
     -- Null when no turn measured an answer.
@@ -608,6 +618,43 @@ SELECT DISTINCT unnest(c.tags)::text AS tag
 FROM calls c JOIN call_list l ON l.id = c.id
 WHERE c.organisation_id = @organisation_id AND c.project_id = @project_id AND l.servable
 ORDER BY tag;
+
+-- name: SetProjectRecordings :execrows
+-- Turns a project's recordings on or off (phase 07a). Off keeps what is stored until it expires.
+UPDATE projects SET recordings = @recordings WHERE organisation_id = @organisation_id AND id = @id;
+
+-- name: InsertCallRecording :exec
+-- Links a stored recording to its call. A redelivered session report names the same object, and
+-- adds nothing.
+INSERT INTO call_recordings (call_id, object_key, size_bytes, started_at, stored_at)
+VALUES (@call_id, @object_key, @size_bytes, sqlc.narg(started_at), @stored_at)
+ON CONFLICT (object_key) DO NOTHING;
+
+-- name: RecordingByID :one
+-- One recording, only within the project that owns its call, so an id from another project is not
+-- found.
+SELECT r.id, r.object_key, r.size_bytes, r.started_at, r.stored_at
+FROM call_recordings r JOIN calls c ON c.id = r.call_id
+WHERE r.id = @id AND c.organisation_id = @organisation_id AND c.project_id = @project_id;
+
+-- name: DeleteExpiredRecordings :execrows
+-- Forgets recordings stored before the cutoff; the worker removes their objects by day.
+DELETE FROM call_recordings WHERE stored_at < @cutoff;
+
+-- name: InsertProjectBucket :exec
+-- The bucket a project brought for its recordings, written with the project and never updated.
+INSERT INTO project_buckets (organisation_id, project_id, endpoint, use_ssl, bucket, region, access_key, secret_key_sealed)
+VALUES (@organisation_id, @project_id, @endpoint, @use_ssl, @bucket, @region, @access_key, @secret_key_sealed);
+
+-- name: ProjectBucket :one
+SELECT organisation_id, project_id, endpoint, use_ssl, bucket, region, access_key, secret_key_sealed
+FROM project_buckets
+WHERE organisation_id = @organisation_id AND project_id = @project_id;
+
+-- name: ListProjectBuckets :many
+SELECT organisation_id, project_id, endpoint, use_ssl, bucket, region, access_key, secret_key_sealed
+FROM project_buckets
+ORDER BY organisation_id, project_id;
 
 -- name: EnsureCallIssue :exec
 INSERT INTO issues (organisation_id, project_id, id, title, kind, source, severity)
