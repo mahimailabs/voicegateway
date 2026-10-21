@@ -403,6 +403,26 @@ func (f *fixture) get(a *API, path string, out any) int {
 // getAuth is get with an Authorization header, sent when auth is not empty.
 func (f *fixture) getAuth(a *API, path, auth string, out any) int {
 	f.t.Helper()
+	req := httptest.NewRequest(http.MethodGet, path, nil)
+	if auth != "" {
+		req.Header.Set("Authorization", auth)
+	}
+	rec := httptest.NewRecorder()
+	a.Routes().ServeHTTP(rec, req)
+	body := rec.Body.Bytes()
+	res := rec.Result()
+	f.validateResponse(f.t, req, res.StatusCode, res.Header, body)
+	if out != nil {
+		if err := json.Unmarshal(body, out); err != nil {
+			f.t.Fatalf("decode %s: %v", body, err)
+		}
+	}
+	return res.StatusCode
+}
+
+// validateResponse checks an answer to req against docs/api/openapi.yaml.
+func (f *fixture) validateResponse(t *testing.T, req *http.Request, status int, header http.Header, body []byte) {
+	t.Helper()
 	contractOnce.Do(func() {
 		spec, err := os.ReadFile("../../docs/api/openapi.yaml")
 		if err != nil {
@@ -422,29 +442,15 @@ func (f *fixture) getAuth(a *API, path, auth string, out any) int {
 		contract = v
 	})
 	if contractErr != nil {
-		f.t.Fatal(contractErr)
+		t.Fatal(contractErr)
 	}
-	req := httptest.NewRequest(http.MethodGet, path, nil)
-	if auth != "" {
-		req.Header.Set("Authorization", auth)
-	}
-	rec := httptest.NewRecorder()
-	a.Routes().ServeHTTP(rec, req)
-	body := rec.Body.Bytes()
-	res := rec.Result()
-	res.Body = io.NopCloser(bytes.NewReader(body))
+	res := &http.Response{StatusCode: status, Header: header, Body: io.NopCloser(bytes.NewReader(body))}
 	if ok, errs := contract.ValidateHttpResponse(req, res); !ok {
 		for _, e := range errs {
-			f.t.Errorf("contract: %s: %s", e.Message, e.Reason)
+			t.Errorf("contract: %s: %s", e.Message, e.Reason)
 			for _, se := range e.SchemaValidationErrors {
-				f.t.Errorf("  at %s: %s", se.FieldPath, se.Reason)
+				t.Errorf("  at %s: %s", se.FieldPath, se.Reason)
 			}
 		}
 	}
-	if out != nil {
-		if err := json.Unmarshal(body, out); err != nil {
-			f.t.Fatalf("decode %s: %v", body, err)
-		}
-	}
-	return res.StatusCode
 }
