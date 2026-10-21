@@ -8,23 +8,55 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { NumberTicker } from "@/components/ui/number-ticker"
 import { Ripple } from "@/components/ui/ripple"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
-import { CopyCommand } from "@/components/copy-command"
 import { CONNECTION_POLL_MS, callQuery, entitlementQuery, latestCallQuery } from "@/lib/api"
 import type { ProjectConnection } from "@/lib/api-types"
-import { fixText, sourceState } from "@/features/connection/connection-model"
+import { sourceState } from "@/features/connection/connection-model"
 import { cn } from "@/lib/utils"
-import { agentConnected, firstLook, planText, secs } from "./setup-model"
+import { agentConnected, agentProblem, firstLook, planText, secs } from "./setup-model"
 import { Eyebrow, Pill, Rise, Subtitle, Surface, Title } from "./setup-ui"
+
+// A code block with its own copy button. Long lines scroll sideways inside the block instead of
+// breaking a URL mid-token; the page itself never scrolls sideways.
+function CodeBlock({ label, code, note }: { label: string; code: string; note?: string }) {
+  const [copied, setCopied] = useState(false)
+  return (
+    <div className="space-y-1.5">
+      <div className="relative min-w-0 rounded-[22px] bg-neutral-900 text-neutral-100">
+        <pre aria-label={label} tabIndex={0} className="overflow-x-auto py-4 pr-14 pl-5 font-mono text-[13px] leading-relaxed whitespace-pre outline-none focus-visible:ring-3 focus-visible:ring-ring/50 sm:py-5 sm:pl-6 sm:text-[15px]">
+          {code}
+        </pre>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          aria-label={copied ? "Copied" : `Copy ${label.toLowerCase()}`}
+          className="absolute top-2.5 right-2.5 text-neutral-300 hover:bg-white/10 hover:text-white sm:top-3 sm:right-3"
+          onClick={() =>
+            navigator.clipboard
+              ?.writeText(code)
+              .then(() => {
+                setCopied(true)
+                setTimeout(() => setCopied(false), 2000)
+              })
+              .catch(() => {})
+          }
+        >
+          {copied ? <Check /> : <Copy />}
+        </Button>
+      </div>
+      {note && <p className="pl-1 text-[13px] text-muted-foreground">{note}</p>}
+    </div>
+  )
+}
 
 // Screen 2: the one variable the agent needs, and its status from getProjectConnection (read again
 // every 5 s by the caller). Connected when the agent's upload, or an SDK batch, was accepted.
 export function AgentScreen({ connection: c, now, onContinue }: { connection: ProjectConnection; now: number; onContinue: () => void }) {
   const [lang, setLang] = useState<"python" | "node">("python")
   const [late, setLate] = useState(false)
-  const [copied, setCopied] = useState(false)
   const connected = agentConnected(c, now)
   const agent = sourceState(c.agent, now)
-  const fix = agent.state === "error" ? fixText("agent", c.agent) : null
+  const fix = agent.state === "error" ? agentProblem(c) : null
   useEffect(() => {
     const t = setTimeout(() => setLate(true), 20_000)
     return () => clearTimeout(t)
@@ -36,47 +68,31 @@ export function AgentScreen({ connection: c, now, onContinue }: { connection: Pr
     return () => clearTimeout(t)
   }, [connected, onContinue])
   const upload = c.urls.observability
-  const code = upload === null ? null : `LIVEKIT_OBSERVABILITY_URL=${upload}\n\n${lang === "python" ? "await session.start(room=ctx.room, agent=agent, record=True)" : "await session.start({ room: ctx.room, agent, record: true })"}`
   return (
     <div className="space-y-10">
       <Rise className="space-y-4">
         <Title>Add one line to your agent.</Title>
-        <Subtitle>Set this variable and turn on recording. Your agent sends each session here when it ends.</Subtitle>
+        <Subtitle>Put this variable in your agent's .env, and turn on recording where it starts the session. Your agent sends each session here when it ends.</Subtitle>
       </Rise>
-      <Rise delay={0.1} className="space-y-3">
-        <ToggleGroup type="single" variant="outline" value={lang} onValueChange={(v) => v && setLang(v as "python" | "node")} aria-label="Agent language">
-          <ToggleGroupItem value="python">Python</ToggleGroupItem>
-          <ToggleGroupItem value="node">Node</ToggleGroupItem>
-        </ToggleGroup>
-        {code === null ? (
+      <Rise delay={0.1} className="space-y-5">
+        {upload === null ? (
           <Surface>
             <p className="text-[15px]">The upload URL is not available on this instance yet.</p>
           </Surface>
         ) : (
-          <div className="relative rounded-[22px] bg-neutral-900 p-5 pr-14 text-neutral-100 sm:p-6 sm:pr-16">
-            <pre aria-label="Agent setup" className="font-mono text-[13px] leading-relaxed break-all whitespace-pre-wrap sm:text-[15px]">
-              {code}
-            </pre>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              aria-label={copied ? "Copied" : "Copy"}
-              className="absolute top-3 right-3 text-neutral-300 hover:bg-white/10 hover:text-white"
-              onClick={() =>
-                navigator.clipboard
-                  ?.writeText(code)
-                  .then(() => {
-                    setCopied(true)
-                    setTimeout(() => setCopied(false), 2000)
-                  })
-                  .catch(() => {})
-              }
-            >
-              {copied ? <Check /> : <Copy />}
-            </Button>
-          </div>
+          <CodeBlock label=".env" code={`LIVEKIT_OBSERVABILITY_URL=${upload}`} />
         )}
+        <div className="space-y-3">
+          <ToggleGroup type="single" variant="outline" value={lang} onValueChange={(v) => v && setLang(v as "python" | "node")} aria-label="Agent language">
+            <ToggleGroupItem value="python">Python</ToggleGroupItem>
+            <ToggleGroupItem value="node">Node</ToggleGroupItem>
+          </ToggleGroup>
+          {lang === "python" ? (
+            <CodeBlock label="Python session start" code="await session.start(room=ctx.room, agent=agent, record=True)" note="livekit-agents 1.8.6 or later." />
+          ) : (
+            <CodeBlock label="Node session start" code="await session.start({ room: ctx.room, agent, record: true })" note="@livekit/agents 1.8.0 or later." />
+          )}
+        </div>
       </Rise>
       <Rise delay={0.2} className="space-y-3">
         <div role="status" className="flex items-start gap-3 rounded-[22px] bg-muted px-5 py-4">
@@ -90,7 +106,7 @@ export function AgentScreen({ connection: c, now, onContinue }: { connection: Pr
               <Collapsible>
                 <p className="text-[14px] text-muted-foreground">{fix.fix.split(". ")[0].replace(/\.$/, "")}.</p>
                 <CollapsibleTrigger asChild>
-                  <Button variant="link" size="sm" className="h-auto px-0">
+                  <Button variant="link" size="sm" className="h-auto px-0 text-foreground underline underline-offset-4">
                     Details
                   </Button>
                 </CollapsibleTrigger>
@@ -114,7 +130,7 @@ export function AgentScreen({ connection: c, now, onContinue }: { connection: Pr
           </div>
           <CollapsibleContent className="space-y-2 pt-3">
             <p className="text-[14px] text-muted-foreground">In LiveKit Cloud, open Settings, then Webhooks. Add this URL and pick this project's API key.</p>
-            {c.urls.webhook === null ? <p className="text-[14px] text-muted-foreground">The webhook URL is not available on this instance yet.</p> : <CopyCommand text={c.urls.webhook} label="Webhook URL" copyLabel="Copy webhook url" />}
+            {c.urls.webhook === null ? <p className="text-[14px] text-muted-foreground">The webhook URL is not available on this instance yet.</p> : <CodeBlock label="Webhook URL" code={c.urls.webhook} />}
           </CollapsibleContent>
         </Collapsible>
       </Rise>
@@ -131,13 +147,15 @@ const states = ["listening", "thinking", "speaking"] as const
 
 // Screen 3: the project waits for its first call, made with LiveKit's own Agents Playground. The
 // newest call is read every 5 s and an open one every 2 s for its live state; the chips follow the
-// agent's state and the transcript shows only lines the call carries.
+// agent's state, and the transcript shows only the turn text getCall carries.
 export function CallScreen() {
   const latest = useQuery({ ...latestCallQuery(), refetchInterval: CONNECTION_POLL_MS })
   const open = latest.data?.endState === "open" ? latest.data.id : null
   const detail = useQuery({ ...callQuery(open ?? ""), enabled: open !== null, refetchInterval: 2_000 })
   const agentState = detail.data?.live?.agent?.state ?? null
-  const lines = (detail.data?.events ?? []).flatMap((e) => (e.type === "transcript" && e.final !== false && e.text.trim() ? [e.text] : [])).slice(-3)
+  // Only what getCall carries: the turns' text, when the call reports it while it runs. No turns,
+  // no bubbles; the chips still follow the live state.
+  const lines = (detail.data?.turns ?? []).flatMap((t) => [...(t.userText?.trim() ? [{ who: "Caller", text: t.userText }] : []), ...(t.agentText?.trim() ? [{ who: "Agent", text: t.agentText }] : [])]).slice(-3)
   const hearing = open !== null
   return (
     <div className="space-y-10">
@@ -166,8 +184,9 @@ export function CallScreen() {
           {lines.length > 0 && (
             <ul aria-label="Transcript" className="space-y-2">
               {lines.map((l, k) => (
-                <li key={k} className="w-fit max-w-[80%] rounded-2xl bg-muted px-4 py-2 text-[15px]">
-                  {l}
+                <li key={k} className={cn("w-fit max-w-[80%] rounded-2xl px-4 py-2 text-[15px]", l.who === "Agent" ? "ml-auto bg-accent" : "bg-muted")}>
+                  <span className="sr-only">{`${l.who}: `}</span>
+                  {l.text}
                 </li>
               ))}
             </ul>
@@ -218,7 +237,7 @@ export function FirstLookScreen({ callId }: { callId: string }) {
           {total === null
             ? "No turn measured its answer time, so the breakdown is unknown."
             : f.slowest
-              ? `Most of the wait was ${f.slowest.name}: ${secs(f.slowest.ms)} of ${secs(total)}.`
+              ? `${f.slowest.ms > total / 2 ? "Most of the wait was" : "The biggest part was"} ${f.slowest.name}: ${secs(f.slowest.ms)} of ${secs(total)}.`
               : "This turn reported no stage times, so the breakdown is unknown."}
         </Subtitle>
       </Rise>

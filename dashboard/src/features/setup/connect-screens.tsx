@@ -9,7 +9,8 @@ import { Kbd, KbdGroup } from "@/components/ui/kbd"
 import { Spinner } from "@/components/ui/spinner"
 import { errorText } from "@/components/page-state"
 import { ApiError, createProject } from "@/lib/api"
-import type { ProjectCreated } from "@/lib/api-types"
+import type { ProjectCreated, ProjectLiveKit } from "@/lib/api-types"
+import { Link } from "@tanstack/react-router"
 import { type LiveKitEnv, namesLiveKit, parseLiveKitEnv, pasteLiveKit } from "@/lib/livekit-env"
 import { cn } from "@/lib/utils"
 import { maskedKey, projectLabel, projectName, roomsLine } from "./setup-model"
@@ -79,6 +80,9 @@ function refusal(error: unknown): { line: string; fix: string } {
   return { line: errorText(error), fix: "Try again in a moment." }
 }
 
+// A touch screen (coarse pointer, no hover) gets a Paste button instead of a keyboard hint.
+const isTouch = () => typeof window !== "undefined" && !!window.matchMedia?.("(pointer: coarse)").matches
+const isMac = () => typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent)
 const typing = (el: EventTarget | null) => el instanceof HTMLElement && (el.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(el.tagName))
 const suffix = () => Math.random().toString(36).slice(2, 6)
 
@@ -91,6 +95,8 @@ type Run = { state: "pending" } | { state: "ok"; project: ProjectCreated } | { s
 // subdomain; a taken name is retried once with a short suffix. The secret leaves the inputs as soon
 // as it is sent and is never shown.
 export function ConnectScreen({ orgId, onContinue }: { orgId: string; onContinue: (project: ProjectCreated) => void }) {
+  const [touch] = useState(isTouch)
+  const [mac] = useState(isMac)
   const [url, setUrl] = useState("")
   const [key, setKey] = useState("")
   const [secret, setSecret] = useState("")
@@ -225,17 +231,34 @@ export function ConnectScreen({ orgId, onContinue }: { orgId: string; onContinue
   }
 
   const onPaste = pasteLiveKit(fill)
+  // A touch screen has no shortcut: a Paste button reads the clipboard, and a refusal says so and
+  // opens the three fields.
+  const readClipboard = () => {
+    const blocked = () => {
+      setManual(true)
+      setNote("Paste was not allowed here. Enter the keys yourself below.")
+    }
+    if (!navigator.clipboard?.readText) return blocked()
+    navigator.clipboard.readText().then((text) => fill(parseLiveKitEnv(text)), blocked)
+  }
   return (
     <div className="space-y-8">
       {header}
       <Rise delay={0.1}>
-        <label className="relative flex h-[220px] cursor-text flex-col items-center justify-center gap-3 rounded-[22px] border-2 border-dashed border-border bg-muted text-center transition-colors focus-within:border-primary hover:border-primary/60">
+        {/* The textarea covers the target, so a click or tap anywhere on it focuses the paste field. */}
+        <div className="relative flex h-[220px] cursor-text flex-col items-center justify-center gap-3 rounded-[22px] border-2 border-dashed border-border bg-muted text-center transition-colors focus-within:border-primary hover:border-primary/60">
           <ClipboardText className="size-9 text-primary" />
           <span className="text-[21px] font-semibold">Paste your LiveKit keys</span>
-          <KbdGroup>
-            <Kbd>⌘</Kbd>
-            <Kbd>V</Kbd>
-          </KbdGroup>
+          {touch ? (
+            <Pill className="relative z-10" onClick={(e) => { e.preventDefault(); readClipboard() }}>
+              Paste
+            </Pill>
+          ) : (
+            <KbdGroup>
+              <Kbd>{mac ? "⌘" : "Ctrl"}</Kbd>
+              <Kbd>V</Kbd>
+            </KbdGroup>
+          )}
           <textarea
             aria-label="Paste your LiveKit keys"
             className="absolute inset-0 size-full cursor-text resize-none rounded-[22px] opacity-0"
@@ -246,7 +269,7 @@ export function ConnectScreen({ orgId, onContinue }: { orgId: string; onContinue
               fill(parseLiveKitEnv(e.clipboardData.getData("text")))
             }}
           />
-        </label>
+        </div>
         {note && (
           <p role="status" className="pt-3 text-[14px] text-muted-foreground">
             {note}
@@ -298,6 +321,45 @@ export function ConnectScreen({ orgId, onContinue }: { orgId: string; onContinue
             </form>
           </CollapsibleContent>
         </Collapsible>
+      </Rise>
+    </div>
+  )
+}
+
+// Step 1 seen again on a project that exists: the LiveKit project it reads, with a way to change its
+// key in Settings > Connection (which opens over the console) and on to the next step.
+export function ConnectedScreen({ livekit, onContinue }: { livekit: ProjectLiveKit | undefined; onContinue: () => void }) {
+  return (
+    <div className="space-y-10">
+      <Rise className="space-y-4">
+        <Title>Your LiveKit project is connected.</Title>
+        <Subtitle>VoiceGateway reads this LiveKit project with the key below. You can change the key at any time.</Subtitle>
+      </Rise>
+      <Rise delay={0.1}>
+        <Surface className="space-y-5">
+          {livekit ? (
+            <dl className="grid gap-4 sm:grid-cols-2">
+              <div className="min-w-0">
+                <dt className="text-[13px] text-muted-foreground">LiveKit project</dt>
+                <dd className="font-mono text-[15px] break-all">{projectLabel(livekit.url)}</dd>
+              </div>
+              <div className="min-w-0">
+                <dt className="text-[13px] text-muted-foreground">API key</dt>
+                <dd className="font-mono text-[15px] break-all">{maskedKey(livekit.apiKey)}</dd>
+              </div>
+            </dl>
+          ) : (
+            <p className="text-[15px] text-muted-foreground">The connection could not be read.</p>
+          )}
+          <Button variant="link" className="h-auto px-0 text-[15px] text-foreground underline underline-offset-4" asChild>
+            <Link to="/overview" search={{ settings: "connection" } as never}>
+              Change key
+            </Link>
+          </Button>
+        </Surface>
+      </Rise>
+      <Rise delay={0.2}>
+        <Pill onClick={onContinue}>Continue</Pill>
       </Rise>
     </div>
   )

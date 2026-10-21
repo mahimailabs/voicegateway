@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react"
-import { Link, Navigate, useNavigate } from "@tanstack/react-router"
+import { Link, Navigate, useNavigate, useRouterState } from "@tanstack/react-router"
+import { roleIn, useSession } from "@/lib/session"
 import { useHosted } from "@/lib/hosted"
 import { choseLater } from "@/features/setup/setup-later"
 import { type UseQueryResult, useQuery } from "@tanstack/react-query"
@@ -146,10 +147,13 @@ export function OverviewPage() {
   const latest = useQuery(latestCallQuery())
   const connection = useQuery(connectionQuery())
   const empty = latest.isSuccess && latest.data === null
-  // On Cloud a project with no stored call is in the setup journey, unless this viewer chose to set
-  // up later. Self-hosted installs keep the Connect panel below.
+  // On Cloud an Admin's project with no stored call is in the setup journey, unless they chose to set
+  // up later or asked for Settings (?settings= or /settings), which opens over the console instead.
+  // Members and Viewers, and self-hosted installs, keep the console with the Connect panel below.
   const install = useHosted()
-  if (install === "hosted" && connection.data && !connection.data.firstCall && !choseLater(currentScope().org, currentScope().project)) return <Navigate to="/setup" />
+  const admin = roleIn(currentScope().org, useSession()) === "Admin"
+  const settingsAsked = useRouterState({ select: (s) => s.location.pathname === "/settings" || (s.location.search as Record<string, unknown>).settings !== undefined })
+  if (install === "hosted" && admin && !settingsAsked && connection.data && !connection.data.firstCall && !choseLater(currentScope().org, currentScope().project)) return <Navigate to="/setup" />
   const setup = empty || (connection.data !== undefined && anyError(connection.data, connection.dataUpdatedAt)) ? <ConnectAgentPanel /> : null
   // The call figures carry the page; without them the page says why, as before.
   if (stats.data) return <OverviewView stats={stats.data as CallStats} cloud={cloud} media={media} sip={sip} egress={egress} ingress={ingress} workers={workers} probes={probes} setup={setup} />

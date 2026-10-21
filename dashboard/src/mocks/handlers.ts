@@ -67,6 +67,13 @@ function mockNoCalls(): boolean {
   }
 }
 
+// web's getCall has no events field (internal/api/getcall.go), so the mock's getCall answers none
+// either. The list and the call figures are web's own summaries, built from the stored events.
+const withoutEvents = <T extends { events?: unknown }>(c: T): Omit<T, "events"> => {
+  const { events: _events, ...rest } = c
+  return rest
+}
+
 // Playback goes through the API in the project that was asked for, never to the captured file.
 function withPlayback<T extends { recording?: { id: string; url: string } | null }>(x: T, params: PathParams): T {
   return x.recording ? { ...x, recording: { ...x.recording, url: playbackUrl(String(params.orgId), String(params.projectId), x.recording.id) } } : x
@@ -155,7 +162,8 @@ export const handlers = [
 
   http.get<PathParams, never, Call | ApiErrorBody>(`${project}/calls/:callId`, ({ params }) => {
     if (!known(params)) return fail(404, "not_found", "No such project.")
-    const call = capturedCalls().find((c) => c.id === params.callId)
+    const found = capturedCalls().find((c) => c.id === params.callId)
+    const call = found && withoutEvents(found)
     return call ? HttpResponse.json(withPlayback({...call,tags:metadataOf(settingsScope(params),call.id).tags,archived:metadataOf(settingsScope(params),call.id).archived}, params)) : fail(404, "not_found", "No such call in this project.")
   }),
 

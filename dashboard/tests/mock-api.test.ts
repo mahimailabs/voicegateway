@@ -213,7 +213,12 @@ describe("getCall", () => {
     for (const row of list) {
       const call = await (await fetch(`${base}/calls/${encodeURIComponent(row.id)}`)).json()
       // The drawer's count: a known count is the same number, and unknown is unknown on both sides.
-      expect(turnCount(call, buildModel(call)), row.id).toBe(row.turnCount)
+      // getCall carries no session events (internal/api/getcall.go), so a call whose turns exist only
+      // can be placed only from stored events (the console captures, with no spans or recording) has an
+      // unknown count in the drawer, never a guess.
+      const eventsOnly = !!capturedCalls().find((c) => c.id === row.id)?.events?.length && !call.spans?.length && !call.recording
+      expect(call.events, row.id).toBeUndefined()
+      expect(turnCount(call, buildModel(call)), row.id).toBe(eventsOnly ? null : row.turnCount)
     }
     // The phone test call has four agent_turn spans, but only two of them spoke.
     expect(list.find((r) => r.id.includes("937b5111"))?.turnCount).toBe(2)

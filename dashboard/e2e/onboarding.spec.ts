@@ -76,6 +76,17 @@ const cloudScreens: { name: string; path: string; storage: () => Record<string, 
     },
   },
   { name: "agent", path: "/org/default/project/default-project/setup", storage: () => ({ ...hosted, "vg.mock-no-calls": "true" }), heading: "Add one line to your agent." },
+  {
+    name: "agent error",
+    path: "/org/default/project/default-project/setup",
+    storage: () => ({ ...hosted, "vg.mock-no-calls": "true", "vg.mock-connection": JSON.stringify({ agent: { lastAcceptedAt: null, lastRejectedAt: new Date().toISOString(), reason: "key_mismatch", usedKey: "APIother", expectedKey: "APIexample123" } }) }),
+    heading: "Add one line to your agent.",
+    act: async (page) => {
+      await expect(page.getByText("Your agent uses a different LiveKit API key from this project's.")).toBeVisible()
+      await page.getByRole("button", { name: "Details" }).click()
+    },
+  },
+  { name: "connect again", path: "/org/default/project/default-project/setup?step=1", storage: () => ({ ...hosted, "vg.mock-no-calls": "true" }), heading: "Your LiveKit project is connected." },
   { name: "call", path: "/org/default/project/default-project/setup", storage: () => ({ ...hosted, "vg.mock-no-calls": "true", "vg.mock-connection": JSON.stringify({ agent: accepted() }) }), heading: "Now, call your agent." },
   {
     name: "first look",
@@ -126,6 +137,15 @@ for (const [label, width, height] of widths) {
       await accessible(page, testInfo, errors, `${s.name}-${label}`)
     })
   }
+
+  test(`Settings stay reachable on a Cloud project in setup at ${label} width`, async ({ page }, testInfo) => {
+    test.skip(testInfo.project.name.startsWith("phone-"), "the width is set by the test")
+    const errors = await open(page, testInfo, width, height, "/org/default/project/default-project/overview?settings=connection", { ...hosted, "vg.mock-no-calls": "true" })
+    await expect(page.getByRole("form", { name: "Change key and secret" })).toBeVisible({ timeout: 15_000 })
+    await expect(page).not.toHaveURL(/\/setup/)
+    expect(await fitsWidth(page)).toBe(true)
+    await accessible(page, testInfo, errors, `settings-in-setup-${label}`)
+  })
 
   test(`connection settings at ${label} width show the LiveKit project and change its key`, async ({ page }, testInfo) => {
     test.skip(testInfo.project.name.startsWith("phone-"), "the width is set by the test")

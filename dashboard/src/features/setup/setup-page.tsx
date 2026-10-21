@@ -4,12 +4,14 @@ import { useQuery } from "@tanstack/react-query"
 import { BrandWordmark } from "@/components/brand-wordmark"
 import { Button } from "@/components/ui/button"
 import { Spinner } from "@/components/ui/spinner"
-import { connectionQuery } from "@/lib/api"
+import { connectionQuery, fetchWorkspaces } from "@/lib/api"
+import type { ProjectCreated } from "@/lib/api-types"
+import { setWorkspaces } from "@/lib/workspaces"
 import { useHosted } from "@/lib/hosted"
 import { roleIn, useSession } from "@/lib/session"
 import { currentOrg, currentScope, scopeUnknown, useUrlState } from "@/lib/url-state"
 import { cn } from "@/lib/utils"
-import { ConnectScreen, WelcomeScreen } from "./connect-screens"
+import { ConnectScreen, ConnectedScreen, WelcomeScreen } from "./connect-screens"
 import { AgentScreen, CallScreen, FirstLookScreen } from "./run-screens"
 import { RAIL, type SetupStep, setupStep, viewedStep } from "./setup-model"
 import { setUpLater } from "./setup-later"
@@ -72,6 +74,20 @@ export function SetupPage() {
     [derived, setAsked, setCurrent],
   )
   const toAgent = useCallback(() => go(3), [go])
+  // The new project opens inside the app: the workspaces are read again so the router knows it, then
+  // the journey continues at Agent without a page load. A failed read falls back to a page load.
+  const openProject = async (p: ProjectCreated) => {
+    const org = currentScope().org
+    const href = `/org/${encodeURIComponent(org)}/project/${encodeURIComponent(p.id)}/setup`
+    try {
+      setWorkspaces((await fetchWorkspaces()).items)
+    } catch {
+      window.location.assign(href)
+      return
+    }
+    await navigate({ href })
+    setCurrent(null)
+  }
 
   // Cloud only, and adding a project is an Admin's.
   if (install === "self-hosted") return <Navigate to="/overview" />
@@ -112,9 +128,9 @@ export function SetupPage() {
           <WelcomeScreen onStart={() => go(1)} />
         ) : step === 1 ? (
           hasProject ? (
-            <p className="text-[17px] text-muted-foreground">This project is connected to LiveKit. Its key is in Settings, Connection.</p>
+            <ConnectedScreen livekit={read.data?.livekit} onContinue={() => go(Math.max(2, derived) as SetupStep)} />
           ) : (
-            <ConnectScreen orgId={currentScope().org} onContinue={(p) => window.location.assign(`/org/${currentScope().org}/project/${p.id}/setup`)} />
+            <ConnectScreen orgId={currentScope().org} onContinue={openProject} />
           )
         ) : step === 2 ? (
           read.data ? <AgentScreen connection={read.data} now={read.dataUpdatedAt} onContinue={toAgent} /> : <p className="text-[17px] text-muted-foreground">The connection could not be read.</p>

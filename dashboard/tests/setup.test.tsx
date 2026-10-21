@@ -31,7 +31,7 @@ vi.hoisted(() => {
     }
   } as unknown as typeof IntersectionObserver
 })
-const { ConnectScreen, WelcomeScreen } = await import("../src/features/setup/connect-screens.tsx")
+const { ConnectScreen, ConnectedScreen, WelcomeScreen } = await import("../src/features/setup/connect-screens.tsx")
 const { AgentScreen, CallScreen, FirstLookScreen } = await import("../src/features/setup/run-screens.tsx")
 
 const server = setupServer(...handlers)
@@ -111,7 +111,7 @@ describe("the step from the data", () => {
 
 const turn = (over: Partial<NonNullable<Call["turns"]>[number]>) => ({ userText: "hi", agentText: "hello", model: "example-llm", llmMs: null, ttftMs: null, sttMs: null, ttsMs: null, endOfTurnMs: null, inputTokens: null, outputTokens: null, audioSeconds: null, characters: null, clockId: "c", ...over })
 const callWith = (turns: ReturnType<typeof turn>[]): Call => ({
-  id: "call-1", room: "first-call", roomSid: null, startedAt: ago(5), endedAt: ago(4), durationSeconds: 60, participantCount: 2, endReason: null, spans: null, turns, events: null,
+  id: "call-1", room: "first-call", roomSid: null, startedAt: ago(5), endedAt: ago(4), durationSeconds: 60, participantCount: 2, endReason: null, spans: null, turns,
   recording: { url: "/r", duration: 60, segments: [], peaks: null, id: "r1", clockId: "c" }, endState: "observed", tags: [], archived: false, clocks: [],
 })
 
@@ -239,14 +239,20 @@ describe("Connect", () => {
 })
 
 describe("Agent", () => {
-  test("waiting: the variable with the real URL, Python and Node, the webhook folded away", async () => {
+  test("waiting: a .env block and a separate Python or Node block, each with its version; the webhook folded away", async () => {
     show(() => <AgentScreen connection={connection()} now={now} onContinue={vi.fn()} />)
-    const code = await screen.findByLabelText("Agent setup")
-    expect(code.textContent).toContain("LIVEKIT_OBSERVABILITY_URL=https://vg.example.com/ingest/acme/example-project")
-    expect(code.textContent).toContain("record=True")
+    const env = await screen.findByLabelText(".env")
+    expect(env.textContent).toBe("LIVEKIT_OBSERVABILITY_URL=https://vg.example.com/ingest/acme/example-project")
+    // Long lines scroll inside the block; nothing breaks the URL mid-token.
+    expect(env.className).toContain("overflow-x-auto")
+    expect(env.className).not.toContain("break-all")
+    expect(screen.getByLabelText("Python session start").textContent).toBe("await session.start(room=ctx.room, agent=agent, record=True)")
+    expect(screen.getByText("livekit-agents 1.8.6 or later.")).toBeTruthy()
+    expect(screen.getByRole("button", { name: "Copy .env" })).toBeTruthy()
     const user = userEvent.setup()
     await user.click(screen.getByRole("radio", { name: "Node" }))
-    expect(screen.getByLabelText("Agent setup").textContent).toContain("record: true")
+    expect(screen.getByLabelText("Node session start").textContent).toContain("record: true")
+    expect(screen.getByText("@livekit/agents 1.8.0 or later.")).toBeTruthy()
     expect(screen.getByRole("status").textContent).toContain("Waiting for your agent")
     expect(screen.queryByLabelText("Webhook URL")).toBeNull()
     await user.click(screen.getByRole("button", { name: "Show me how" }))
@@ -265,8 +271,18 @@ describe("Agent", () => {
     show(() => <AgentScreen connection={connection({ agent: { ...none, lastRejectedAt: ago(1), reason: "signature_invalid" } })} now={now} onContinue={vi.fn()} />)
     const status = await screen.findByRole("status")
     expect(within(status).getByText("The token did not verify")).toBeTruthy()
-    await userEvent.setup().click(within(status).getByRole("button", { name: "Details" }))
+    const details = within(status).getByRole("button", { name: "Details" })
+    // The link on the grey row uses the foreground token: primary blue on grey fails contrast.
+    expect(details.className).toContain("text-foreground")
+    await userEvent.setup().click(details)
     expect(status.textContent).toContain("Set LIVEKIT_API_SECRET in the agent to this project's LiveKit secret.")
+  })
+
+  test("a key from another LiveKit project is said in plain words", async () => {
+    show(() => <AgentScreen connection={connection({ agent: { ...none, lastRejectedAt: ago(1), reason: "key_mismatch", usedKey: "APIother", expectedKey: "APIexample123" } })} now={now} onContinue={vi.fn()} />)
+    const status = await screen.findByRole("status")
+    expect(within(status).getByText("Your agent uses a different LiveKit API key from this project's.")).toBeTruthy()
+    expect(status.textContent).not.toMatch(/token named/i)
   })
 })
 
@@ -281,18 +297,31 @@ describe("Call", () => {
     cloudClean()
   })
 
-  test("a live call: We can hear it, the agent's state and the transcript it carries", async () => {
+  test("a live call with no turn text: the chips follow the live state and no bubbles show", async () => {
+    const summary = { id: "live-2", room: "first-call", roomSid: null, startedAt: ago(1), endedAt: null, durationSeconds: null, participantCount: 2, endState: "open", channel: "web", pipeline: "cascaded", models: [], agentKey: null, turnCount: null, answerMs: null, answerMsMedian: null, issues: { high: null, medium: null, titles: [] }, tags: [], archived: false, recorded: false }
+    server.use(
+      http.get(`${project}/calls`, () => HttpResponse.json({ ...empty, items: [summary] })),
+      http.get(`${project}/calls/live-2`, () => HttpResponse.json({ ...callWith([]), turns: null, id: "live-2", endState: "open", endedAt: null, live: { user: null, agent: { state: "thinking", at: ago(0.2) } } })),
+    )
+    show(() => <CallScreen />)
+    const chips = await screen.findByLabelText("Agent state")
+    await waitFor(() => expect(within(chips).getByText("thinking").className).toContain("bg-primary"))
+    expect(screen.queryByLabelText("Transcript")).toBeNull()
+  })
+
+  test("a live call: We can hear it, the agent's state and the turn text getCall carries", async () => {
     const summary = { id: "live-1", room: "first-call", roomSid: null, startedAt: ago(1), endedAt: null, durationSeconds: null, participantCount: 2, endState: "open", channel: "web", pipeline: "cascaded", models: [], agentKey: null, turnCount: null, answerMs: null, answerMsMedian: null, issues: { high: null, medium: null, titles: [] }, tags: [], archived: false, recorded: false }
     server.use(
       http.get(`${project}/calls`, () => HttpResponse.json({ ...empty, items: [summary] })),
-      http.get(`${project}/calls/live-1`, () => HttpResponse.json({ ...callWith([]), id: "live-1", endState: "open", endedAt: null, events: [{ t: 1, type: "transcript", final: true, text: "Hello, how can I help?", clockId: "c" }], live: { user: { state: "listening", at: ago(0.5) }, agent: { state: "speaking", at: ago(0.2) } } })),
+      http.get(`${project}/calls/live-1`, () => HttpResponse.json({ ...callWith([turn({ userText: "Do you open on Sunday?", agentText: "Hello, how can I help?" })]), id: "live-1", endState: "open", endedAt: null, live: { user: { state: "listening", at: ago(0.5) }, agent: { state: "speaking", at: ago(0.2) } } })),
     )
     show(() => <CallScreen />)
     expect(await screen.findByRole("heading", { level: 1, name: "We can hear it." })).toBeTruthy()
     const chips = await screen.findByLabelText("Agent state")
     await waitFor(() => expect(within(chips).getByText("speaking").className).toContain("bg-primary"))
     expect(within(chips).getByText("thinking").className).not.toContain("bg-primary")
-    expect(screen.getByText("Hello, how can I help?")).toBeTruthy()
+    expect(await screen.findByText("Hello, how can I help?")).toBeTruthy()
+    expect(screen.getByText("Do you open on Sunday?")).toBeTruthy()
   })
 })
 
@@ -309,12 +338,19 @@ describe("First look", () => {
     serve(callWith([turn({ e2eMs: 2400, ttftMs: 1200, endOfTurnMs: 600, ttsMs: 300 }), turn({ e2eMs: 900 })]))
     show(() => <FirstLookScreen callId="call-1" />)
     expect(await screen.findByText("Your first call is in.")).toBeTruthy()
-    expect(screen.getByText("Most of the wait was the LLM's first token: 1.20 s of 2.40 s.")).toBeTruthy()
+    // 1.20 s of 2.40 s is half, not most.
+    expect(screen.getByText("The biggest part was the LLM's first token: 1.20 s of 2.40 s.")).toBeTruthy()
     expect(screen.getByRole("figure", { name: "Turn 1" })).toBeTruthy()
     expect(await screen.findByText("2 of 2,000 min")).toBeTruthy()
     expect(screen.getByRole("link", { name: "Open this call" }).getAttribute("href")).toBe("/calls/call-1")
     expect(screen.getByRole("link", { name: "Go to all calls" }).getAttribute("href")).toBe("/calls")
     cloudClean()
+  })
+
+  test("a stage over half the answer is most of the wait", async () => {
+    serve(callWith([turn({ e2eMs: 2000, ttftMs: 1500, endOfTurnMs: 300 })]))
+    show(() => <FirstLookScreen callId="call-1" />)
+    expect(await screen.findByText("Most of the wait was the LLM's first token: 1.50 s of 2.00 s.")).toBeTruthy()
   })
 
   test("unknown stays unknown: no measured turn, no plan read", async () => {
@@ -334,5 +370,49 @@ describe("rail", () => {
     const dots = Array.from(container.querySelectorAll("li > * > span[aria-hidden='true']"))
     expect(dots.map((d) => d.className.includes("bg-primary"))).toEqual([true, true, false, false])
     expect(screen.getByRole("button", { name: /Call/ })).toBeTruthy()
+  })
+})
+
+describe("Connect on a touch screen", () => {
+  const coarse = () =>
+    vi.spyOn(window, "matchMedia").mockImplementation((query: string) => ({ matches: query === "(pointer: coarse)", media: query, onchange: null, addEventListener: () => {}, removeEventListener: () => {}, addListener: () => {}, removeListener: () => {}, dispatchEvent: () => false }) as MediaQueryList)
+  afterEach(() => vi.restoreAllMocks())
+
+  test("a Paste button reads the clipboard and sends the keys; no keyboard hint", async () => {
+    coarse()
+    const read = vi.fn(async () => block)
+    const user = userEvent.setup()
+    // After userEvent.setup(), which installs its own clipboard.
+    Object.defineProperty(navigator, "clipboard", { value: { readText: read }, configurable: true })
+    server.use(http.post("*/api/v1/org/:org/projects", () => HttpResponse.json({ id: "example-project", name: "example-project", liveRooms: 2 }, { status: 201 })))
+    show(() => <ConnectScreen orgId="acme" onContinue={vi.fn()} />)
+    const paste = await screen.findByRole("button", { name: "Paste" })
+    expect(screen.queryByText("⌘")).toBeNull()
+    expect(screen.queryByText("Ctrl")).toBeNull()
+    await user.click(paste)
+    expect(read).toHaveBeenCalled()
+    expect(await screen.findByText("2 rooms live right now")).toBeTruthy()
+  })
+
+  test("a refused clipboard says so in one line and opens the three fields", async () => {
+    coarse()
+    const user = userEvent.setup()
+    Object.defineProperty(navigator, "clipboard", { value: { readText: () => Promise.reject(new DOMException("denied", "NotAllowedError")) }, configurable: true })
+    show(() => <ConnectScreen orgId="acme" onContinue={vi.fn()} />)
+    await user.click(await screen.findByRole("button", { name: "Paste" }))
+    expect(await screen.findByText("Paste was not allowed here. Enter the keys yourself below.")).toBeTruthy()
+    expect(screen.getByLabelText("LiveKit URL")).toBeTruthy()
+  })
+})
+
+describe("Connect, seen again on a project that exists", () => {
+  test("names the LiveKit project, links Change key to Settings > Connection, and continues", async () => {
+    const onContinue = vi.fn()
+    show(() => <ConnectedScreen livekit={{ url: "wss://example-project.livekit.cloud", apiKey: "APIexample123" }} onContinue={onContinue} />)
+    expect(await screen.findByRole("heading", { level: 1, name: "Your LiveKit project is connected." })).toBeTruthy()
+    expect(screen.getByText("example-project")).toBeTruthy()
+    expect(screen.getByRole("link", { name: "Change key" }).getAttribute("href")).toBe("/overview?settings=connection")
+    await userEvent.setup().click(screen.getByRole("button", { name: "Continue" }))
+    expect(onContinue).toHaveBeenCalled()
   })
 })

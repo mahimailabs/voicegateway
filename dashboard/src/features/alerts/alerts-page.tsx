@@ -1,4 +1,5 @@
 import { useMemo } from "react"
+import { useHosted } from "@/lib/hosted"
 import { Link } from "@tanstack/react-router"
 import { ArrowSquareOut, Bell, BellRinging, EnvelopeSimple, Plugs, ShieldWarning, WebhooksLogo } from "@phosphor-icons/react"
 import type { Icon } from "@phosphor-icons/react"
@@ -171,6 +172,8 @@ export function AlertsPage() {
 }
 
 function AlertsView({ list, setup }: { list: Rule[]; setup: Setup }) {
+  // "On the server" is said only on a self-hosted install; Cloud users have no server.
+  const selfHosted = useHosted() === "self-hosted"
   const [tab, setTab] = useUrlState("tab", "rules")
   const on = list.filter((r) => ruleSetup(setup, r.id).on)
   const events: Fired[] = on.flatMap((r) => r.events.map((e) => ({ ...e, rule: r }))).sort((a, b) => (a.at === null ? 1 : b.at === null ? -1 : b.at - a.at))
@@ -194,7 +197,7 @@ function AlertsView({ list, setup }: { list: Rule[]; setup: Setup }) {
       <header className="flex flex-wrap items-end justify-between gap-3">
         <div className="space-y-1">
           <h1 className="text-[28px] leading-tight font-semibold tracking-[-0.02em]">Alerts</h1>
-          <p className="text-[13px] text-muted-foreground">The checks this console runs, sent where your team works. Nothing is sent until a channel connects on the server.</p>
+          <p className="text-[13px] text-muted-foreground">{`The checks this console runs, sent where your team works. ${selfHosted ? "Nothing is sent until a channel connects on the server." : "Nothing is sent until you connect a channel."}`}</p>
         </div>
         <Link to="/settings" className="inline-flex h-8 items-center gap-1.5 rounded-lg border px-3 text-[13px] font-medium hover:bg-muted">
           <Plugs size={15} /> Set up channels

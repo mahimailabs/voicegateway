@@ -870,13 +870,15 @@ function Mcp() {
 }
 
 function AuditLog() {
+  // The open-source terms are said only on a self-hosted install.
+  const selfHosted = useHosted() === "self-hosted"
   return (
     <>
       <Header title="Audit log" description="Every change, who made it and when. Nobody can edit it." badge="Enterprise" />
       <div className="mt-6 flex flex-col items-center gap-2 rounded-2xl border border-dashed px-6 py-10 text-center">
         <Lock size={20} className="text-muted-foreground" />
         <p className="text-[14px] font-medium">Part of VoiceGateway Enterprise</p>
-        <p className="max-w-[46ch] text-[13px] text-muted-foreground">Who changed a setting, created a key or opened a recording. The open-source edition does not record changes (decision 0017).</p>
+        <p className="max-w-[46ch] text-[13px] text-muted-foreground">{`Who changed a setting, created a key or opened a recording.${selfHosted ? " The open-source edition does not record changes (decision 0017)." : ""}`}</p>
       </div>
     </>
   )

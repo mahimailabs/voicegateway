@@ -2,7 +2,7 @@ import { humanId } from "human-id"
 import type { Call } from "@/lib/api"
 import type { OrganisationEntitlement, ProjectConnection } from "@/lib/api-types"
 import { buildModel, interruptionCount, turnCount } from "@/features/call/call-model"
-import { sourceState } from "@/features/connection/connection-model"
+import { fixText, sourceState } from "@/features/connection/connection-model"
 
 // The Cloud setup journey: Welcome (0), Connect (1), Agent (2), Call (3), First look (4). The step
 // comes from what the API answered, never from browser state, so leaving and coming back resumes:
@@ -104,3 +104,12 @@ export function firstLook(call: Call): FirstLook {
 export const planText = (e: OrganisationEntitlement | undefined) => (e ? `${Math.floor(e.callSeconds / 60).toLocaleString()} of ${e.limitMinutes.toLocaleString()} min` : null)
 
 export const secs = (ms: number) => (ms >= 1000 ? `${(ms / 1000).toFixed(2)} s` : `${Math.round(ms)} ms`)
+
+// The agent refusals in the words of someone setting up: a key from another LiveKit project is
+// the common one. Other reasons keep the Connect panel's wording (connection-model.ts fixText).
+export function agentProblem(c: ProjectConnection): { title: string; fix: string } | null {
+  if (c.agent.reason === "key_mismatch")
+    return { title: "Your agent uses a different LiveKit API key from this project's.", fix: "Set LIVEKIT_API_KEY and LIVEKIT_API_SECRET in your agent to the key and secret of this LiveKit project, then restart it." }
+  const f = fixText("agent", c.agent)
+  return { title: f.title, fix: f.fix }
+}
