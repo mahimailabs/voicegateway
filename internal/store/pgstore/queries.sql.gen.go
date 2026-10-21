@@ -1117,10 +1117,10 @@ func (q *Queries) FinishCall(ctx context.Context, arg FinishCallParams) error {
 }
 
 const firstCall = `-- name: FirstCall :one
-SELECT id, COALESCE(started_at, first_seen_at)::timestamptz AS started_at
-FROM calls
-WHERE organisation_id = $1 AND project_id = $2
-ORDER BY COALESCE(started_at, first_seen_at), id
+SELECT id, start_at::timestamptz AS started_at
+FROM call_list
+WHERE organisation_id = $1 AND project_id = $2 AND servable
+ORDER BY start_at, id
 LIMIT 1
 `
 
@@ -1134,7 +1134,8 @@ type FirstCallRow struct {
 	StartedAt pgtype.Timestamptz
 }
 
-// The earliest call the worker joined. calls_start_at serves the order.
+// The earliest call the worker joined that the console can open: the same servable rule as
+// ListCalls and CallByID. calls_start_at serves the order.
 func (q *Queries) FirstCall(ctx context.Context, arg FirstCallParams) (FirstCallRow, error) {
 	row := q.db.QueryRow(ctx, firstCall, arg.OrganisationID, arg.ProjectID)
 	var i FirstCallRow

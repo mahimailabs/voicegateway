@@ -3,6 +3,7 @@ package ingest
 import (
 	"context"
 	"log/slog"
+	"strings"
 	"sync"
 	"time"
 
@@ -16,6 +17,14 @@ const connectionThrottle = 30 * time.Second
 // trackedConnections bounds the outcomes remembered for throttling. A source evicted early costs
 // one more write, never a lost outcome.
 const trackedConnections = 10_000
+
+// unknownProjects bounds the made-up projects remembered, so a stream of invented /ingest URLs
+// costs at most one database round trip per URL every 30 s and never evicts real projects.
+const unknownProjects = 1_000
+
+// recordTimeout bounds one outcome write; the request it describes has already been answered or
+// is about to be.
+const recordTimeout = 2 * time.Second
 
 // maxUsedKey bounds the refused token's key kept for the console; the column allows 64 bytes.
 const maxUsedKey = 64
@@ -37,6 +46,8 @@ type Connections struct {
 
 	once    sync.Once
 	written *lru.Cache[connectionKey, written]
+	// unknown remembers when a project was found not to exist.
+	unknown *lru.Cache[connectionKey, time.Time]
 }
 
 type connectionKey struct{ org, project, source string }
@@ -63,8 +74,9 @@ func (o Outcome) Accepted(ctx context.Context) { o.record(ctx, "", "") }
 
 // Rejected records why the request was refused. usedKey is kept only for a key mismatch.
 func (o Outcome) Rejected(ctx context.Context, reason, usedKey string) {
+	// The sender chooses the key; a cut inside a character is dropped so Postgres takes the text.
 	if len(usedKey) > maxUsedKey {
-		usedKey = usedKey[:maxUsedKey]
+		usedKey = strings.ToValidUTF8(usedKey[:maxUsedKey], "")
 	}
 	o.record(ctx, reason, usedKey)
 }
@@ -77,18 +89,28 @@ func (o Outcome) record(ctx context.Context, reason, usedKey string) {
 	c.once.Do(func() {
 		// lru.New fails only for a size below 1.
 		c.written, _ = lru.New[connectionKey, written](trackedConnections)
+		c.unknown, _ = lru.New[connectionKey, time.Time](unknownProjects)
 	})
 	now := c.Now()
 	if last, ok := c.written.Get(o.key); ok && last.reason == reason && now.Sub(last.at) < connectionThrottle {
 		return
 	}
-	exists, err := c.Store.RecordConnection(context.WithoutCancel(ctx), o.key.org, o.key.project, o.key.source, reason, usedKey, now)
+	if at, ok := c.unknown.Get(o.key); ok && now.Sub(at) < connectionThrottle {
+		return
+	}
+	// The write outlives a client that hangs up, but not a slow database.
+	wctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), recordTimeout)
+	defer cancel()
+	exists, err := c.Store.RecordConnection(wctx, o.key.org, o.key.project, o.key.source, reason, usedKey, now)
 	if err != nil {
 		c.Log.Warn("connection: outcome not recorded", "project", o.key.project, "source", o.key.source, "err", err)
 		return
 	}
-	// An unknown project is not remembered, so made-up URLs cannot fill the cache.
-	if exists {
-		c.written.Add(o.key, written{reason: reason, at: now})
+	// A project that does not exist goes in its own small cache, so made-up URLs never evict a
+	// real project's throttle.
+	if !exists {
+		c.unknown.Add(o.key, now)
+		return
 	}
+	c.written.Add(o.key, written{reason: reason, at: now})
 }

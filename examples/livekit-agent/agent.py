@@ -15,7 +15,9 @@ load_dotenv()
 # The caller dispatches the agent by this name (lk dispatch create --agent-name).
 AGENT_NAME = "voicegateway-example"
 
-server = AgentServer()
+# start mode refuses jobs above 70 % CPU load by default; a laptop running the
+# VoiceGateway stack beside the agent is often above that. One call needs little.
+server = AgentServer(load_threshold=0.95)
 
 
 @server.rtc_session(agent_name=AGENT_NAME)

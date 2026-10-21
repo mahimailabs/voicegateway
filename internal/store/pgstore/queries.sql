@@ -984,9 +984,10 @@ FROM project_connections
 WHERE organisation_id = @organisation_id AND project_id = @project_id;
 
 -- name: FirstCall :one
--- The earliest call the worker joined. calls_start_at serves the order.
-SELECT id, COALESCE(started_at, first_seen_at)::timestamptz AS started_at
-FROM calls
-WHERE organisation_id = @organisation_id AND project_id = @project_id
-ORDER BY COALESCE(started_at, first_seen_at), id
+-- The earliest call the worker joined that the console can open: the same servable rule as
+-- ListCalls and CallByID. calls_start_at serves the order.
+SELECT id, start_at::timestamptz AS started_at
+FROM call_list
+WHERE organisation_id = @organisation_id AND project_id = @project_id AND servable
+ORDER BY start_at, id
 LIMIT 1;

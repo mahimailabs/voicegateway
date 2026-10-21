@@ -62,12 +62,28 @@ grep -q "registered worker" "$log" || {
 
 lk dispatch create --room "$ROOM" --agent-name "$AGENT_NAME"
 
+# Join only once the agent has the job, so it hears the whole question.
+for _ in $(seq 30); do
+	grep -q "received job request" "$log" && break
+	sleep 1
+done
+grep -q "received job request" "$log" || {
+	echo "the agent did not receive the job within 30 s" >&2
+	exit 1
+}
+
 # caller.ogg is 2 s of silence, one question and 20 s of silence: time for the
 # agent to answer before the caller leaves and the call ends.
 lk room join --identity caller --publish caller.ogg --exit-after-publish "$ROOM"
 
 echo "caller left room $ROOM; stopping the agent after its session upload"
 kill -TERM "$agent_pid"
-wait "$agent_pid" || true
+status=0
+wait "$agent_pid" || status=$?
 agent_pid=""
+# 143 is the agent stopping on our SIGTERM; anything else is a failed shutdown.
+if [ "$status" -ne 0 ] && [ "$status" -ne 143 ]; then
+	echo "the agent exited with status $status while shutting down" >&2
+	exit "$status"
+fi
 echo "done: open the console to see the call in room $ROOM"

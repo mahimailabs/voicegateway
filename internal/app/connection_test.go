@@ -331,6 +331,12 @@ func TestFirstCallIgnoresFixtures(t *testing.T) {
 	if _, err := s.store.UpsertCall(ctx, store.CallUpsert{OrganisationID: "acme", ProjectID: "voice", RoomSID: "RM_late", RoomName: "late", StartedAt: &later}); err != nil {
 		t.Fatal(err)
 	}
+	// A span that named only its job opens a call with no room yet; the console cannot open it, so
+	// it is not the first call even though it is the earliest row.
+	earliest := earlier.Add(-time.Hour)
+	if _, err := s.store.UpsertCallByJob(ctx, "acme", "voice", "AJ_unroomed", &earliest, &earliest); err != nil {
+		t.Fatal(err)
+	}
 	first, err := s.store.UpsertCall(ctx, store.CallUpsert{OrganisationID: "acme", ProjectID: "voice", RoomSID: "RM_early", RoomName: "early", StartedAt: &earlier})
 	if err != nil {
 		t.Fatal(err)
