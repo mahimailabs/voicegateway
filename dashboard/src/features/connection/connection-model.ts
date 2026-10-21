@@ -15,18 +15,25 @@ export type StepState =
 // most this old: one stray request must not hide that the source works.
 export const RECENT_MS = 10 * 60_000
 
+// Refusals ingest returns only after the LiveKit signature verified, so they come from someone who
+// holds the project's secret. The others (token_missing, key_mismatch, signature_invalid, too_large,
+// or no reason) can come from anyone who knows the public URL.
+const VERIFIED: ReadonlySet<Reason> = new Set<Reason>(["grant_missing", "body_changed", "plan_inactive", "plan_cap"])
+const verified = (reason: Reason | null) => reason !== null && VERIFIED.has(reason)
+
 const time = (iso: string | null) => (iso === null ? null : Date.parse(iso))
 
-// Waiting when nothing was accepted or refused. Connected when the last accepted request is at least
-// as new as the last refused one, or older but within RECENT_MS of now (with the refusal as a
-// warning). Error when something was refused and nothing was accepted, or the last accepted request
-// is older than the refusal and than RECENT_MS.
+// Waiting when nothing was accepted or refused. Error when something was refused and nothing was ever
+// accepted, whatever the reason. Connected when the last accepted request is at least as new as the
+// last refused one. When a refusal is newer than the last accept:
+//   - an unverified refusal is a warning on Connected however old the accept is, since anyone can send it;
+//   - a verified refusal is a warning while the accept is at most RECENT_MS old, and Error after that.
 export function sourceState(s: ConnectionSource, now: number): StepState {
   const ok = time(s.lastAcceptedAt)
   const bad = time(s.lastRejectedAt)
   if (ok === null && bad === null) return { state: "waiting" }
   if (ok !== null && (bad === null || ok >= bad)) return { state: "connected", at: s.lastAcceptedAt!, refused: null }
-  if (ok !== null && now - ok <= RECENT_MS) return { state: "connected", at: s.lastAcceptedAt!, refused: { at: s.lastRejectedAt!, reason: s.reason } }
+  if (ok !== null && (!verified(s.reason) || now - ok <= RECENT_MS)) return { state: "connected", at: s.lastAcceptedAt!, refused: { at: s.lastRejectedAt!, reason: s.reason } }
   return { state: "error", at: s.lastRejectedAt!, reason: s.reason }
 }
 
@@ -44,8 +51,8 @@ const anyWarning = (c: ProjectConnection, now: number) =>
   })
 
 // Ask again until the first call is stored and no source is in Error or shows a refusal warning, so a
-// rotated key or a used-up allowance shows without a reload, and a warning turns into Error once its
-// accept is more than RECENT_MS old.
+// rotated key or a used-up allowance shows without a reload, any warning clears once the next accept
+// lands, and a verified warning turns into Error once its accept is more than RECENT_MS old.
 export const keepPolling = (c: ProjectConnection | undefined, now: number) => !c || !c.firstCall || anyError(c, now) || anyWarning(c, now)
 
 export type Fix = {

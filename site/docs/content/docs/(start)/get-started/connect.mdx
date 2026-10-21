@@ -54,7 +54,7 @@ In an existing agent, set one variable and turn session recording on. No VoiceGa
 LIVEKIT_OBSERVABILITY_URL=https://<host>/ingest/<organisation-id>/<project-id>
 ```
 
-- Python: livekit-agents 1.8.6 or later, `session.start(..., record=True)`.
+- Python: livekit-agents 1.8.0 or later (tested on 1.8.6 to 1.8.8), `session.start(..., record=True)`.
 - Node: @livekit/agents 1.8.0 or later, `session.start({ ..., record: true })`.
 
 The agent uploads only sessions that record. To send traces, logs, metrics and the transcript without the call audio, record without it: `record={"audio": False}` in Python, `record: { audio: false }` in Node. Every version that honours `LIVEKIT_OBSERVABILITY_URL` accepts these options.
@@ -68,7 +68,16 @@ No agent yet? Run the [example agent](https://github.com/mahimailabs/voicegatewa
 
 ### Send LiveKit's webhooks
 
-In LiveKit Cloud, open **Settings > Webhooks**, choose **Create new webhook**, paste the webhook URL and pick the same API key as the signing key. On a self-hosted LiveKit server, add the URL under `webhook.urls` in its config. Without it, a call closes only after 2 hours with no activity, and its end time is marked as inferred.
+In LiveKit Cloud, open **Settings > Webhooks**, choose **Create new webhook**, paste the webhook URL and pick the same API key as the signing key. On a self-hosted LiveKit server, put the URL under `webhook.urls` in `livekit.yaml` and the same API key under `webhook.api_key`, then restart the LiveKit server:
+
+```yaml
+webhook:
+  api_key: <your LiveKit API key>
+  urls:
+    - https://<host>/ingest/<organisation-id>/<project-id>/livekit/webhook
+```
+
+Without it, a call closes only after 2 hours with no activity, and its end time is marked as inferred.
 
 </Step>
 <Step>

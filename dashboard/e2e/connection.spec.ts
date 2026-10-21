@@ -62,6 +62,20 @@ for (const [label, width, height] of widths) {
     expect(await fitsWidth(page)).toBe(true)
     await accessible(page, testInfo, errors)
   })
+
+  test(`connection panel with sources in Error at ${label} width is accessible`, async ({ page }, testInfo) => {
+    test.skip(testInfo.project.name.startsWith("phone-"), "the width is set by the test")
+    // The destructive Error badge, in both themes: a refusal with no accept, and a verified refusal
+    // after an accept older than 10 minutes.
+    const refused = new Date().toISOString()
+    const { panel, errors } = await open(page, testInfo, width, height, {
+      webhook: { lastAcceptedAt: new Date(Date.now() - 60 * 60_000).toISOString(), lastRejectedAt: refused, reason: "body_changed", usedKey: null, expectedKey: null },
+      agent: { lastAcceptedAt: null, lastRejectedAt: refused, reason: "signature_invalid", usedKey: null, expectedKey: null },
+    })
+    for (const name of ["Webhook", "Agent upload"]) await expect(panel.getByRole("listitem", { name })).toContainText("Error")
+    expect(await fitsWidth(page)).toBe(true)
+    await accessible(page, testInfo, errors)
+  })
 }
 
 test("a 64-character key in key_mismatch wraps at 390 px", async ({ page }, testInfo) => {

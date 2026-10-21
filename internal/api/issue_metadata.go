@@ -7,6 +7,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"net/url"
 	"unicode/utf8"
 
 	"github.com/go-chi/chi/v5"
@@ -26,7 +27,11 @@ func (a *API) getIssueMetadata(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, http.StatusServiceUnavailable, codeSourceUnavailable, "issue metadata unavailable")
 		return
 	}
-	result, err := a.Issues.IssueMetadata(r.Context(), chi.URLParam(r, "orgId"), chi.URLParam(r, "projectId"), chi.URLParam(r, "issueId"))
+	id, ok := issueID(w, r)
+	if !ok {
+		return
+	}
+	result, err := a.Issues.IssueMetadata(r.Context(), chi.URLParam(r, "orgId"), chi.URLParam(r, "projectId"), id)
 	if err != nil {
 		a.fail(w, r, err, "issue not found")
 		return
@@ -38,6 +43,10 @@ func (a *API) updateIssueMetadata(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	if a.Issues == nil {
 		writeError(w, r, http.StatusServiceUnavailable, codeSourceUnavailable, "issue metadata unavailable")
+		return
+	}
+	id, ok := issueID(w, r)
+	if !ok {
 		return
 	}
 	raw, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 16384))
@@ -59,7 +68,7 @@ func (a *API) updateIssueMetadata(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, http.StatusBadRequest, codeInvalidRequest, "expected one JSON object with tags, archived, revision and evidenceRevision")
 		return
 	}
-	result, err := a.Issues.UpdateIssueMetadata(r.Context(), chi.URLParam(r, "orgId"), chi.URLParam(r, "projectId"), chi.URLParam(r, "issueId"), *body.Revision, *body.EvidenceRevision, body.State, *body.Tags, *body.Archived)
+	result, err := a.Issues.UpdateIssueMetadata(r.Context(), chi.URLParam(r, "orgId"), chi.URLParam(r, "projectId"), id, *body.Revision, *body.EvidenceRevision, body.State, *body.Tags, *body.Archived)
 	switch {
 	case errors.Is(err, store.ErrInvalidMetadata), errors.Is(err, store.ErrInvalidIssueState):
 		writeError(w, r, http.StatusBadRequest, codeInvalidRequest, err.Error())
@@ -70,4 +79,15 @@ func (a *API) updateIssueMetadata(w http.ResponseWriter, r *http.Request) {
 	default:
 		writeJSON(w, http.StatusOK, result)
 	}
+}
+
+// issueID is the path's issue id unescaped. Issue ids hold a colon (sip:phone-identity) and the
+// console's client escapes it, while chi matches on the raw path and returns the parameter as sent.
+func issueID(w http.ResponseWriter, r *http.Request) (string, bool) {
+	id, err := url.PathUnescape(chi.URLParam(r, "issueId"))
+	if err != nil {
+		writeError(w, r, http.StatusBadRequest, codeInvalidRequest, "issue id is not a valid path segment")
+		return "", false
+	}
+	return id, true
 }

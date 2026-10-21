@@ -13,7 +13,10 @@ import (
 func TestIssueMetadataPermissionsAndPersistence(t *testing.T) {
 	f := newFixture(t)
 	id := f.addProjectCall("org-a")
-	finding := []store.Finding{{ID: "slow", Title: "Slow answers", Severity: "medium", Detail: "Reported latency", Turns: []int{0}}}
+	finding := []store.Finding{
+		{ID: "slow", Title: "Slow answers", Severity: "medium", Detail: "Reported latency", Turns: []int{0}},
+		{ID: "sip:phone-identity", Title: "Caller number in identity", Severity: "low", Detail: "Phone number in identity", Turns: []int{0}},
+	}
 	if err := f.pg.ApplyCallFindings(context.Background(), "org-a", "p", id, finding); err != nil {
 		t.Fatal(err)
 	}
@@ -67,6 +70,20 @@ func TestIssueMetadataPermissionsAndPersistence(t *testing.T) {
 	}
 	check(call{method: http.MethodGet, path: strings.Replace(path, "/slow/", "/absent/", 1), cookie: member}, http.StatusNotFound)
 	check(call{method: http.MethodGet, path: strings.Replace(path, "/org-a/", "/org-b/", 1), token: key}, http.StatusForbidden)
+
+	// The console's client escapes the colon every source issue id holds; the route reads it unescaped.
+	for _, escaped := range []string{"sip%3Aphone-identity", "sip:phone-identity"} {
+		colon := "/api/v1/org/org-a/project/p/issues/" + escaped + "/metadata"
+		check(call{method: http.MethodGet, path: colon, cookie: viewer}, http.StatusOK)
+	}
+	check(call{method: http.MethodPut, path: "/api/v1/org/org-a/project/p/issues/sip%3Aphone-identity/metadata", body: `{"tags":["acceptance"],"archived":true,"revision":0,"evidenceRevision":1}`, cookie: member}, http.StatusOK)
+	var colon store.IssueMetadata
+	if err := json.Unmarshal(check(call{method: http.MethodGet, path: "/api/v1/org/org-a/project/p/issues/sip:phone-identity/metadata", cookie: viewer}, http.StatusOK), &colon); err != nil {
+		t.Fatal(err)
+	}
+	if !colon.Archived || len(colon.Tags) != 1 || colon.Tags[0] != "acceptance" {
+		t.Fatalf("escaped id saved elsewhere: %+v", colon)
+	}
 
 	listPath := "/api/v1/org/org-a/project/p/issues?from=1970-01-01T00:00:00Z&to=2100-01-01T00:00:00Z&archived=true&tag=follow-up&q=reported"
 	for _, c := range []call{{method: http.MethodGet, path: listPath, cookie: viewer}, {method: http.MethodGet, path: listPath, token: key}} {

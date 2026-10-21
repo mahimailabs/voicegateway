@@ -69,6 +69,15 @@ This setting sends the uploads to VoiceGateway instead of LiveKit Cloud's own ob
 
 In LiveKit Cloud, open **Settings > Webhooks** and create a webhook with `https://<voicegateway-host>/ingest/<organisation-id>/<project-id>/livekit/webhook`, signed with the API key from step 3. Use the organisation and project IDs shown in the console URL. These IDs select the destination; LiveKit signatures still authenticate every request.
 
+On a self-hosted LiveKit server, add the same URL to `livekit.yaml`, with the API key from step 3 as the signing key, then restart the LiveKit server:
+
+```yaml
+webhook:
+  api_key: <the API key from step 3>
+  urls:
+    - https://<voicegateway-host>/ingest/<organisation-id>/<project-id>/livekit/webhook
+```
+
 Without the webhook, calls still appear, but they have no start or observed end time, duration or participants, because those come from LiveKit's room events. They stay **open** until two hours pass with no activity. VoiceGateway then closes them as inferred, with the last reported activity as the end time when there is one.
 
 ## Keep call recordings

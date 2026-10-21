@@ -87,6 +87,17 @@ describe("sourceState", () => {
     { name: "accept 10 minutes and 1 ms old, then refused: error", s: { lastAcceptedAt: at(RECENT_MS + 1), lastRejectedAt: at(1000), reason: "plan_cap" }, want: "error" },
     { name: "refused, never accepted: error", s: { lastRejectedAt: at(1000), reason: "signature_invalid" }, want: "error" },
   ]
+  // After an accept, only a signature-verified refusal can turn a source to Error.
+  const unverified = ["token_missing", "key_mismatch", "signature_invalid", "too_large"] as const
+  const verifiedReasons = ["grant_missing", "body_changed", "plan_inactive", "plan_cap"] as const
+  const old = { lastAcceptedAt: at(7 * 24 * 60 * 60_000), lastRejectedAt: at(1000) }
+  for (const reason of unverified) cases.push({ name: `${reason} after an accept a week old: connected with a warning`, s: { ...old, reason }, want: "connected", warning: true })
+  cases.push({ name: "a refusal with no reason after an accept a week old: connected with a warning", s: { ...old, reason: null }, want: "connected", warning: true })
+  for (const reason of verifiedReasons) {
+    cases.push({ name: `${reason} after an accept a week old: error`, s: { ...old, reason }, want: "error" })
+    cases.push({ name: `${reason} after an accept within 10 minutes: connected with a warning`, s: { lastAcceptedAt: at(RECENT_MS), lastRejectedAt: at(1000), reason }, want: "connected", warning: true })
+  }
+  for (const reason of [...unverified, ...verifiedReasons, null]) cases.push({ name: `${reason ?? "no reason"}, never accepted: error`, s: { lastRejectedAt: at(1000), reason }, want: "error" })
   for (const c of cases)
     test(c.name, () => {
       const got = sourceState({ ...none, ...c.s }, now)
@@ -113,6 +124,11 @@ describe("keepPolling", () => {
       c: connection({ webhook: accepted, agent: { ...accepted, lastRejectedAt: "2026-10-20T11:59:30Z", reason: "token_missing" }, firstCall: first }),
       want: true,
     },
+    {
+      name: "first call, an unverified refusal after an accept a day old",
+      c: connection({ webhook: accepted, agent: { ...none, lastAcceptedAt: "2026-10-19T12:00:00Z", lastRejectedAt: "2026-10-20T11:59:30Z", reason: "signature_invalid" }, firstCall: first }),
+      want: true,
+    },
   ]
   for (const c of cases) test(c.name, () => expect(keepPolling(c.c, now)).toBe(c.want))
   test("an SDK that was never used is waiting and neither errors nor keeps the panel polling", () => {
@@ -133,6 +149,8 @@ describe("keepPolling", () => {
     expect(anyError(connection({ webhook: refused }), now)).toBe(true)
     expect(anyError(connection({ agent: refused }), now)).toBe(true)
     expect(anyError(connection({ webhook: accepted, agent: accepted }), now)).toBe(false)
+    expect(anyError(connection({ agent: { ...none, lastAcceptedAt: "2026-10-19T12:00:00Z", lastRejectedAt: "2026-10-20T11:59:30Z", reason: "token_missing" } }), now)).toBe(false)
+    expect(anyError(connection({ agent: { ...none, lastAcceptedAt: "2026-10-19T12:00:00Z", lastRejectedAt: "2026-10-20T11:59:30Z", reason: "plan_inactive" } }), now)).toBe(true)
   })
 })
 
@@ -164,12 +182,12 @@ describe("step state", () => {
     expect(warning.textContent).toMatch(/Refused /)
   })
 
-  test("error: refused, and the last accept is older than the refusal and than 10 minutes", async () => {
-    answer(connection({ webhook: { ...none, lastAcceptedAt: ago(30), lastRejectedAt: ago(1), reason: "token_missing" }, agent: { ...none, lastRejectedAt: ago(1), reason: "grant_missing" } }))
+  test("error: a verified refusal after an accept older than 10 minutes, or any refusal with no accept", async () => {
+    answer(connection({ webhook: { ...none, lastAcceptedAt: ago(30), lastRejectedAt: ago(1), reason: "body_changed" }, agent: { ...none, lastRejectedAt: ago(1), reason: "grant_missing" } }))
     show()
     const webhook = await step("Webhook")
     expect(within(webhook).getByText("Error")).toBeTruthy()
-    expect(within(webhook).getByText("Add the webhook URL in LiveKit, so LiveKit signs each webhook it sends.")).toBeTruthy()
+    expect(within(webhook).getByText(/rewrote the body\. Send it unmodified\./)).toBeTruthy()
     const agent = await step("Agent upload")
     expect(within(agent).getByText("Error")).toBeTruthy()
     expect(within(agent).getByText(/Python livekit-agents 1\.8\.6 or later, or Node @livekit\/agents 1\.8\.0 or later/)).toBeTruthy()
@@ -193,6 +211,15 @@ describe("step state", () => {
     expect(within(error).getByText("Error")).toBeTruthy()
     expect(within(error).getByText("The SDK batch carried no LiveKit token")).toBeTruthy()
     expect(error.textContent).toMatch(/LIVEKIT_API_KEY and LIVEKIT_API_SECRET/)
+  })
+
+  test("an unverified refusal after an old accept stays a warning", async () => {
+    answer(connection({ webhook: { ...none, lastAcceptedAt: ago(24 * 60), lastRejectedAt: ago(1), reason: "token_missing" } }))
+    show()
+    const webhook = await step("Webhook")
+    expect(within(webhook).getByText("Connected")).toBeTruthy()
+    expect(within(webhook).queryByText("Error")).toBeNull()
+    expect(within(webhook).getByRole("status").textContent).toMatch(/Add the webhook URL in LiveKit/)
   })
 
   test("key_mismatch names the key used and the key expected, as code", async () => {

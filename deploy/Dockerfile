@@ -18,6 +18,9 @@ COPY cmd ./cmd
 COPY internal ./internal
 COPY ee ./ee
 COPY migrations ./migrations
+# The MCP server builds its tools from the API contract, embedded from docs/api.
+COPY docs/api ./docs/api
+# ingest validates SDK batches against the contract's schema, embedded from sdk/contract.
 COPY sdk/contract ./sdk/contract
 # Cache mounts keep downloaded modules and build results between builds without baking them into a
 # layer, so a source change rebuilds only what changed.
