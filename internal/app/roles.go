@@ -131,7 +131,7 @@ func Web(ctx context.Context, c config.Config, log *slog.Logger) error {
 	mountIngestion(mux, projects, producer, quota, recordings, log, time.Now)
 	mux.Handle("/auth/", accounts.Routes())
 	mux.Handle("/api/v1/", (&api.API{
-		Settings: projects, Metadata: projects, StorageBucket: c.S3.Bucket,
+		Settings: projects, Metadata: projects, Issues: projects, StorageBucket: c.S3.Bucket,
 		Live:              live,
 		ResourceEndpoints: projects, ResourceSamples: events, Projects: projects, NewProjects: projects, VerifyLiveKit: scrape.NewVerifier(c.WorkerEndpointsPublicOnly), VerifyBucket: bucket.NewVerifier(bucketTransport), Calls: projects, Traces: events, Layers: events, Endpoints: projects, Accounts: projects, Stats: projects, Keys: projects, NewKey: auth.NewKey, Log: log, Now: time.Now, Gate: accounts.Gate,
 		Invitations: projects, Inviter: NewInviter(links), LinkBase: accounts.LinkBase,
@@ -231,6 +231,7 @@ func Worker(ctx context.Context, c config.Config, log *slog.Logger) error {
 	g, gctx := errgroup.WithContext(ctx)
 	g.Go(func() error {
 		return (&scrape.Scraper{
+			Jobs:      pgstore.NewStore(pool, nil),
 			Changed:   live.Notify,
 			Projects:  pgstore.NewStore(pool, sealer),
 			Samples:   events,
@@ -246,6 +247,8 @@ func Worker(ctx context.Context, c config.Config, log *slog.Logger) error {
 	})
 	g.Go(func() error {
 		return (&scrape.SIPScraper{
+			Findings: pgstore.NewStore(pool, nil),
+			Changed:  live.Notify,
 			Projects: pgstore.NewStore(pool, sealer),
 			Samples:  events,
 			Lock:     &scrape.RedisLock{Client: rdb},
@@ -258,6 +261,8 @@ func Worker(ctx context.Context, c config.Config, log *slog.Logger) error {
 	})
 	g.Go(func() error {
 		return (&scrape.EgressScraper{
+			Findings: pgstore.NewStore(pool, nil),
+			Changed:  live.Notify,
 			Projects: pgstore.NewStore(pool, sealer),
 			Samples:  events,
 			Lock:     &scrape.RedisLock{Client: rdb},
@@ -270,6 +275,8 @@ func Worker(ctx context.Context, c config.Config, log *slog.Logger) error {
 	})
 	g.Go(func() error {
 		return (&scrape.IngressScraper{
+			Findings: pgstore.NewStore(pool, nil),
+			Changed:  live.Notify,
 			Projects: pgstore.NewStore(pool, sealer),
 			Samples:  events,
 			Lock:     &scrape.RedisLock{Client: rdb},
@@ -282,6 +289,7 @@ func Worker(ctx context.Context, c config.Config, log *slog.Logger) error {
 	})
 	g.Go(func() error {
 		return (&scrape.CloudAgentScraper{
+			Findings: pgstore.NewStore(pool, nil),
 			Changed:  live.Notify,
 			Projects: pgstore.NewStore(pool, sealer),
 			Samples:  events,
@@ -318,6 +326,19 @@ func Worker(ctx context.Context, c config.Config, log *slog.Logger) error {
 	})
 	g.Go(func() error {
 		every(gctx, sweepEvery, "sweep", joiner.Sweep, log)
+		return nil
+	})
+	g.Go(func() error {
+		evaluator := &scrape.JobEvaluator{Store: pgstore.NewStore(pool, nil), Changed: live.Notify}
+		every(gctx, summarizeEvery, "job findings", evaluator.Tick, log)
+		return nil
+	})
+	g.Go(func() error {
+		every(gctx, summarizeEvery, "findings backfill", joiner.BackfillFindings, log)
+		return nil
+	})
+	g.Go(func() error {
+		every(gctx, summarizeEvery, "recording backfill", joiner.BackfillMediaFindings, log)
 		return nil
 	})
 	g.Go(func() error {

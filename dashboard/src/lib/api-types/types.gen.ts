@@ -1177,13 +1177,48 @@ export type IssueList = {
      */
     to: string;
     /**
-     * false when part of the range is not stored, so an issue may have more hits than listed.
+     * Whether retained calls in the selected range and project job observations are evaluated, and required component sources are fresh and fully evaluated. Does not prove complete upstream capture or absence of unreported failures.
      */
     complete: boolean;
     /**
-     * Event issues with a hit in the range, and every standing issue whatever the range, high severity first, then by hits. Grouping, titles and severities are the ones in issues-model.ts.
+     * Evaluation and source availability for retained evidence, independent of issue filters.
+     */
+    coverage: {
+        /**
+         * Retained calls in the range awaiting evaluation, including retry backoff and changed thresholds.
+         */
+        pendingCalls: number | null;
+        /**
+         * Evaluated retained calls in the range whose source evidence was unavailable.
+         */
+        unavailableCalls: number | null;
+        /**
+         * Project job observations awaiting evaluation or correlation, across the retained history.
+         */
+        pendingJobs: number | null;
+        /**
+         * Required component sources. Missing reads are unknown; successful reads with missing rule evidence are partial.
+         */
+        sources: Array<{
+            /**
+             * Component source layer.
+             */
+            layer: 'media_server' | 'sip' | 'cloud_agents' | 'egress' | 'ingress';
+            /**
+             * Current means fresh and evaluated, not healthy.
+             */
+            state: 'unknown' | 'current' | 'partial' | 'stale' | 'unavailable';
+            /**
+             * Latest source read time, or null when no read exists.
+             */
+            readAt: string | null;
+        }>;
+    };
+    /**
+     * Event issues with a hit in the range, and every standing issue whatever the range, high severity first, then by stable rule ID. Grouping, titles and severities come from persisted native evaluations.
      */
     items: Array<{
+        metadata: IssueMetadata;
         /**
          * Stable grouping key; the issueId dispositions refer to.
          */
@@ -1193,7 +1228,7 @@ export type IssueList = {
          */
         title: string;
         /**
-         * event: something that happened, each hit dated and kept only when from <= at < to. standing: a state true of the latest read (an agent worker or phone bridge check over what LiveKit lists now), listed in every range with undated hits and never counted as a problem in the range.
+         * event: something that happened, each hit dated and kept only when from <= at < to. standing: a component finding listed in every range. Its evidenceState distinguishes confirmed, stale, unavailable and unknown observations; it is never counted as an event in the range.
          */
         kind: 'event' | 'standing';
         /**
@@ -1201,17 +1236,25 @@ export type IssueList = {
          */
         severity: 'high' | 'medium' | 'low' | 'info';
         /**
-         * The component the check runs on.
+         * The component the check runs on. delivery is a recorded egress or ingress failure.
          */
-        source: 'calls' | 'agent_workers' | 'phone_bridge';
+        source: 'calls' | 'agent_workers' | 'phone_bridge' | 'delivery';
         /**
-         * Most recent hit, UTC. Compared with a disposition's time to mark a resolved issue as regressed.
+         * Most recent event hit, UTC. Regression uses the persisted evidence revision, independently of event time.
          */
         lastSeenAt: string | null;
         /**
          * Where the issue was found, most recent first. Never empty.
          */
         hits: Array<{
+            /**
+             * Last source read that confirmed this standing finding.
+             */
+            observedAt: string | null;
+            /**
+             * Recorded event, currently confirmed standing finding, stale source, failed source, or unconfirmed latest read.
+             */
+            evidenceState: 'recorded' | 'current' | 'stale' | 'unavailable' | 'unknown';
             /**
              * When the hit happened, UTC.
              */
@@ -1311,25 +1354,6 @@ export type Thresholds = {
     ttsStartMs: number;
 };
 
-export type IssueDisposition = {
-    /**
-     * Stable issue grouping key from issues-model.ts; disposition belongs to this project.
-     */
-    issueId: string;
-    /**
-     * Explicit user disposition. No disposition means open, not resolved.
-     */
-    state: 'resolved' | 'ignored';
-    /**
-     * User decision time, UTC. Compare with the issue's lastSeenAt to mark it regressed.
-     */
-    at: string;
-};
-
-export type IssueDispositions = {
-    items: Array<IssueDisposition>;
-};
-
 export type AlertRuleSetup = {
     /**
      * Identifier of an existing console rule.
@@ -1351,6 +1375,47 @@ export type AlertSetup = {
 
 export type CallTags = {
     tags: Array<string>;
+};
+
+export type IssueMetadata = {
+    issueId: string;
+    state: 'open' | 'resolved' | 'ignored';
+    regressed: boolean;
+    /**
+     * Null when no explicit decision has been saved.
+     */
+    decidedAt: string | null;
+    evidenceRevision: number;
+    reviewedEvidenceRevision: number;
+    /**
+     * Normalized lowercase tags belonging to this immutable issue ID.
+     */
+    tags: Array<string>;
+    /**
+     * Reversible archive state. Does not delete evidence or resolve findings.
+     */
+    archived: boolean;
+    revision: number;
+};
+
+/**
+ * Compare metadata and evidence revisions atomically. Omitted or null state preserves the decision, including regression; setting state explicitly acknowledges current evidence.
+ */
+export type UpdateIssueMetadata = {
+    /**
+     * Normalized lowercase tags belonging to this immutable issue ID.
+     */
+    tags: Array<string>;
+    /**
+     * Reversible archive state. Does not delete evidence or resolve findings.
+     */
+    archived: boolean;
+    revision: number;
+    evidenceRevision: number;
+    /**
+     * Null or omitted preserves the existing decision without acknowledging new evidence.
+     */
+    state?: 'open' | 'resolved' | 'ignored' | null;
 };
 
 export type CallMetadata = {
@@ -2287,6 +2352,18 @@ export type ListIssuesData = {
          * Exclusive UTC end of the range.
          */
         to: string;
+        /**
+         * Literal case-insensitive search over issue titles and occurrence details.
+         */
+        q?: string;
+        /**
+         * Match any persisted normalized issue tag.
+         */
+        tag?: Array<string>;
+        /**
+         * Filter persisted issue archive state. Omit to include both.
+         */
+        archived?: boolean;
     };
     url: '/api/v1/org/{orgId}/project/{projectId}/issues';
 };
@@ -3111,6 +3188,126 @@ export type UpdateCallMetadataResponses = {
 
 export type UpdateCallMetadataResponse = UpdateCallMetadataResponses[keyof UpdateCallMetadataResponses];
 
+export type GetIssueMetadataData = {
+    body?: never;
+    path: {
+        /**
+         * Authorised orgId; the server must verify organisation/project ownership before any read.
+         */
+        orgId: string;
+        /**
+         * Authorised projectId; the server must verify organisation/project ownership before any read.
+         */
+        projectId: string;
+        /**
+         * Stable issue rule identity within the named project.
+         */
+        issueId: string;
+    };
+    query?: never;
+    url: '/api/v1/org/{orgId}/project/{projectId}/issues/{issueId}/metadata';
+};
+
+export type GetIssueMetadataErrors = {
+    /**
+     * invalid_request; never return an empty success result for this failure.
+     */
+    400: Error;
+    /**
+     * unauthenticated; never return an empty success result for this failure.
+     */
+    401: Error;
+    /**
+     * forbidden; never return an empty success result for this failure.
+     */
+    403: Error;
+    /**
+     * not_found; never return an empty success result for this failure.
+     */
+    404: Error;
+    /**
+     * internal_error; never return an empty success result for this failure.
+     */
+    500: Error;
+    /**
+     * source_unavailable; never return an empty success result for this failure.
+     */
+    503: Error;
+};
+
+export type GetIssueMetadataError = GetIssueMetadataErrors[keyof GetIssueMetadataErrors];
+
+export type GetIssueMetadataResponses = {
+    /**
+     * Authorised read result. Null means unreported, never zero. Source-specific coverage limits remain visible.
+     */
+    200: IssueMetadata;
+};
+
+export type GetIssueMetadataResponse = GetIssueMetadataResponses[keyof GetIssueMetadataResponses];
+
+export type UpdateIssueMetadataData = {
+    body: UpdateIssueMetadata;
+    path: {
+        /**
+         * Authorised orgId; the server must verify organisation/project ownership before any read.
+         */
+        orgId: string;
+        /**
+         * Authorised projectId; the server must verify organisation/project ownership before any read.
+         */
+        projectId: string;
+        /**
+         * Stable issue rule identity within the named project.
+         */
+        issueId: string;
+    };
+    query?: never;
+    url: '/api/v1/org/{orgId}/project/{projectId}/issues/{issueId}/metadata';
+};
+
+export type UpdateIssueMetadataErrors = {
+    /**
+     * invalid_request; never return an empty success result for this failure.
+     */
+    400: Error;
+    /**
+     * unauthenticated; never return an empty success result for this failure.
+     */
+    401: Error;
+    /**
+     * forbidden; never return an empty success result for this failure.
+     */
+    403: Error;
+    /**
+     * not_found; never return an empty success result for this failure.
+     */
+    404: Error;
+    /**
+     * revision_conflict, settings changed since they were read; last_admin, the change would leave the organisation without an admin; already_member, the invited email's account is a member already; member_of_other_organisations, a reset's member belongs to an organisation the requester does not administer; project_exists, the organisation already has a project with the new name's id.
+     */
+    409: Error;
+    /**
+     * internal_error; never return an empty success result for this failure.
+     */
+    500: Error;
+    /**
+     * source_unavailable; never return an empty success result for this failure.
+     */
+    503: Error;
+};
+
+export type UpdateIssueMetadataError = UpdateIssueMetadataErrors[keyof UpdateIssueMetadataErrors];
+
+export type UpdateIssueMetadataResponses = {
+    /**
+     * Persisted issue metadata with the new revision.
+     */
+    200: IssueMetadata;
+};
+
+export type UpdateIssueMetadataResponse = UpdateIssueMetadataResponses[keyof UpdateIssueMetadataResponses];
+
 export type GetProjectSettingsData = {
     body?: never;
     path: {
@@ -3222,60 +3419,6 @@ export type UpdateProjectSettingsResponses = {
 };
 
 export type UpdateProjectSettingsResponse = UpdateProjectSettingsResponses[keyof UpdateProjectSettingsResponses];
-
-export type GetIssueDispositionsData = {
-    body?: never;
-    path: {
-        /**
-         * Authorised orgId; the server must verify organisation/project ownership before any read.
-         */
-        orgId: string;
-        /**
-         * Authorised projectId; the server must verify organisation/project ownership before any read.
-         */
-        projectId: string;
-    };
-    query?: never;
-    url: '/api/v1/org/{orgId}/project/{projectId}/issue-dispositions';
-};
-
-export type GetIssueDispositionsErrors = {
-    /**
-     * invalid_request; never return an empty success result for this failure.
-     */
-    400: Error;
-    /**
-     * unauthenticated; never return an empty success result for this failure.
-     */
-    401: Error;
-    /**
-     * forbidden; never return an empty success result for this failure.
-     */
-    403: Error;
-    /**
-     * not_found; never return an empty success result for this failure.
-     */
-    404: Error;
-    /**
-     * internal_error; never return an empty success result for this failure.
-     */
-    500: Error;
-    /**
-     * source_unavailable; never return an empty success result for this failure.
-     */
-    503: Error;
-};
-
-export type GetIssueDispositionsError = GetIssueDispositionsErrors[keyof GetIssueDispositionsErrors];
-
-export type GetIssueDispositionsResponses = {
-    /**
-     * Authorised read result. Null means unreported, never zero. Source-specific coverage limits remain visible.
-     */
-    200: IssueDispositions;
-};
-
-export type GetIssueDispositionsResponse = GetIssueDispositionsResponses[keyof GetIssueDispositionsResponses];
 
 export type GetAlertSetupData = {
     body?: never;

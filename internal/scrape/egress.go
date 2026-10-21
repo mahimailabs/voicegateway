@@ -20,6 +20,8 @@ import (
 
 // EgressScraper reads the egress of every project on a timer and stores their redacted projection.
 type EgressScraper struct {
+	Findings Findings
+	Changed  func(context.Context, string, string)
 	Projects Projects
 	Samples  EgressSamples
 	Lock     Locker
@@ -103,6 +105,14 @@ func (s *EgressScraper) Egress(ctx context.Context, p store.Project) error {
 	defer cancel()
 	if err := s.Samples.StoreEgressRead(sctx, read, samples); err != nil {
 		return fmt.Errorf("store egress read: %w", err)
+	}
+	if s.Findings != nil {
+		if err := s.Findings.ApplyStandingFindings(sctx, read, egressCoverage(read.OK, items)); err != nil {
+			return fmt.Errorf("store egress coverage: %w", err)
+		}
+	}
+	if s.Changed != nil {
+		s.Changed(ctx, p.OrganisationID, p.ID)
 	}
 	return nil
 }

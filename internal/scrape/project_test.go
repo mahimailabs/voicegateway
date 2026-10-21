@@ -88,3 +88,23 @@ func TestTrackNameMasksPhoneNumbers(t *testing.T) {
 		}
 	}
 }
+
+// Correlation uses LiveKit's reported identity, never a job-ID naming convention.
+// The identity must remain absent from persisted JSON and API projections.
+func TestJobParticipantIdentityPrivate(t *testing.T) {
+	for _, identity := range []string{"custom-agent-participant", ""} {
+		d := projectDispatch(&livekit.AgentDispatch{Id: "AD_one", State: &livekit.AgentDispatchState{
+			Jobs: []*livekit.Job{{Id: "AJ_one", State: &livekit.JobState{ParticipantIdentity: identity}}},
+		}})
+		if len(d.Jobs) != 1 || d.Jobs[0].ParticipantIdentity != identity {
+			t.Fatal("projection did not preserve the native participant identity")
+		}
+		body, err := json.Marshal(d)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(string(body), "participantIdentity") || strings.Contains(string(body), "ParticipantIdentity") || (identity != "" && strings.Contains(string(body), identity)) {
+			t.Fatal("private correlation identity leaked into the JSON projection")
+		}
+	}
+}

@@ -225,6 +225,12 @@ func (s *Store) PutSummary(ctx context.Context, c store.StaleCall, sum store.Cal
 	if err != nil {
 		return err
 	}
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	q := s.q.WithTx(tx)
 	var turns pgtype.Int4
 	if sum.TurnCount != nil {
 		turns = pgtype.Int4{Int32: int32(min(*sum.TurnCount, math.MaxInt32)), Valid: true} //nolint:gosec // bounded above
@@ -233,20 +239,26 @@ func (s *Store) PutSummary(ctx context.Context, c store.StaleCall, sum store.Cal
 	if sum.AnswerMsMedian != nil {
 		median = pgtype.Float8{Float64: *sum.AnswerMsMedian, Valid: true}
 	}
-	err = s.q.PutSummary(ctx, PutSummaryParams{
+	err = q.PutSummary(ctx, PutSummaryParams{
 		CallID: id, TurnCount: turns, AnswerMs: sum.AnswerMs, AnswerMsMedian: median,
 		Models: noNUL(sum.Models), Pipeline: sum.Pipeline, AgentKey: text(stripNUL(deref(sum.AgentKey))), ComputedAt: timestamp(&computedAt),
 	})
 	if err != nil {
 		return fmt.Errorf("put summary: %w", badRow(err))
 	}
-	if err := s.q.HealCall(ctx, HealCallParams{ID: id, RoomName: text(stripNUL(sum.RoomName)), FirstSeenAt: timestamp(sum.FirstSeenAt)}); err != nil {
+	if err := q.HealCall(ctx, HealCallParams{ID: id, RoomName: text(stripNUL(sum.RoomName)), FirstSeenAt: timestamp(sum.FirstSeenAt)}); err != nil {
 		return fmt.Errorf("heal call: %w", badRow(err))
 	}
-	if err := s.q.ClearStale(ctx, ClearStaleParams{ID: id, Seen: timestamp(&c.StaleAt)}); err != nil {
+	if err := q.ClearStale(ctx, ClearStaleParams{ID: id, Seen: timestamp(&c.StaleAt)}); err != nil {
 		return fmt.Errorf("clear stale: %w", err)
 	}
-	return nil
+	if err := applyCallFindings(ctx, q, c.OrganisationID, c.ProjectID, c.ID, sum.Findings, sum.EvaluatedFindingIDs); err != nil {
+		return fmt.Errorf("put call findings: %w", err)
+	}
+	if err := q.RecordSummaryFindings(ctx, RecordSummaryFindingsParams{ID: id, EvaluatedAt: timestamp(&computedAt), SettingsRevision: sum.FindingSettingsRevision, SourceAvailable: sum.FindingSourceAvailable}); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
 }
 
 func deref(s *string) string {

@@ -1,4 +1,4 @@
-import type { AlertRuleSetup, AlertSetup, CreatedInvitation, CreatedPasswordReset, CreatedProjectKey, Invitation, Invitations, Member, Members, ProjectKey, ProjectKeys, IssueDisposition, IssueDispositions, ProjectSettings, Thresholds } from "@/lib/api-types"
+import type { AlertRuleSetup, AlertSetup, CreatedInvitation, CreatedPasswordReset, CreatedProjectKey, Invitation, Invitations, Member, Members, ProjectKey, ProjectKeys, ProjectSettings, Thresholds } from "@/lib/api-types"
 import { readLocal } from "@/lib/local-store"
 
 // The settings reads, served from what the console saved in this browser (lib/local-store.ts) until
@@ -27,16 +27,6 @@ export function updateSettings(scope: string, input: unknown): ProjectSettings |
   const saved = { ...prior, thresholds: thresholds as Thresholds, revision: prior.revision + 1 }
   settingsByProject.set(scope, structuredClone(saved))
   return saved
-}
-
-// Saved as { [issueId]: { state, at } } with at in milliseconds.
-export function issueDispositions(): IssueDispositions {
-  const items: IssueDisposition[] = []
-  for (const [issueId, v] of Object.entries(record(readLocal("vg.issue-state")))) {
-    const { state, at } = record(v)
-    if ((state === "resolved" || state === "ignored") && typeof at === "number" && Number.isFinite(at)) items.push({ issueId, state, at: new Date(at).toISOString() })
-  }
-  return { items }
 }
 
 export const RULES: AlertRuleSetup["ruleId"][] = ["slow-answer", "cut-off", "job-failed", "slow-join", "plain-phone", "recording-lost", "ingress-error"]

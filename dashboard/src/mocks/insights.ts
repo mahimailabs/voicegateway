@@ -1,3 +1,4 @@
+import { issueMetadataOf } from "./issue-metadata"
 import type { AlertEvents, IssueList } from "@/lib/api-types"
 import { BUDGET_MS, JOIN_MS } from "@/lib/thresholds"
 import { buildModel } from "@/features/call/call-model"
@@ -21,7 +22,7 @@ const iso = (s: number | null) => (s === null || !Number.isFinite(s) || s <= 0 ?
 const secs = (t: string | null) => (t === null ? null : Date.parse(t) / 1000)
 const dated = (s: number | null): s is number => s !== null && Number.isFinite(s) && s > 0
 const inRange = (s: number | null, from: number, to: number) => !dated(s) || (s * 1000 >= from && s * 1000 < to)
-const source: Record<string, IssueList["items"][number]["source"]> = { Calls: "calls", "Agent workers": "agent_workers", "Phone bridge": "phone_bridge" }
+const source: Record<string, IssueList["items"][number]["source"]> = { Calls: "calls", "Agent workers": "agent_workers", "Phone bridge": "phone_bridge", "Recordings and ingress": "delivery" }
 
 const calls = () => capturedCalls().filter((c) => !c.recording?.preview)
 const rooms = () => fromContract(mediaServer())
@@ -46,23 +47,23 @@ const rank: Record<Severity, number> = { high: 0, medium: 1, low: 2, info: 3 }
 
 // Every issue group with all its hits: the call drawer's findings by kind, then the Agent workers
 // and Phone bridge checks by title.
-export function issues(): Issue[] {
-  const byKind = new Map<string, Issue>()
+export function issues(): Omit<Issue, "metadata">[] {
+  const byKind = new Map<string, Omit<Issue, "metadata">>()
   for (const c of calls()) {
     const at = Date.parse(c.startedAt) / 1000
     for (const f of findingsFor(c, buildModel(c))) {
       const kind = f.id.replace(/\d+$/, "")
       const i = byKind.get(kind) ?? { id: kind, title: kinds[kind] ?? f.title, kind: "event" as const, severity: f.severity, source: "Calls" as const, to: "/calls" as const, hits: [] }
       if (rank[f.severity] < rank[i.severity]) i.severity = f.severity
-      i.hits.push({ at: Number.isFinite(at) ? at : null, where: c.room, detail: f.title, callId: c.id })
+      i.hits.push({observedAt:null,evidenceState:"recorded", at: Number.isFinite(at) ? at : null, where: c.room, detail: f.title, callId: c.id })
       byKind.set(kind, i)
     }
   }
   const fromChecks = (source: Issue["source"], to: Issue["to"], list: { severity: Severity; title: string; where: string; why: string }[]) => {
-    const m = new Map<string, Issue>()
+    const m = new Map<string, Omit<Issue, "metadata">>()
     for (const c of list) {
       const i = m.get(c.title) ?? { id: `${to}:${c.title}`, title: c.title, kind: "standing" as const, severity: c.severity, source, to, hits: [] }
-      i.hits.push({ at: null, where: c.where, detail: c.why })
+      i.hits.push({observedAt:null,evidenceState:"unknown", at: null, where: c.where, detail: c.why })
       m.set(c.title, i)
     }
     return [...m.values()]
@@ -108,7 +109,7 @@ export function rules(): Rule[] {
   return RULE_IDS.map((id) => ({ id, ...meta(id), events: events[id], state: id === "plain-phone" && plain.length ? `${plain.length} ${plain.length === 1 ? "trunk" : "trunks"} now` : undefined }))
 }
 
-export function issueList(from: Date, to: Date): IssueList {
+export function issueList(from: Date, to: Date, scope = "default/default-project"): IssueList {
   const items = issues()
     .map((i) => {
       // Standing: every hit, undated, whatever the range. Event: the dated hits inside it.
@@ -117,17 +118,18 @@ export function issueList(from: Date, to: Date): IssueList {
       const times = standing ? [] : hits.flatMap((h) => (dated(h.at) ? [h.at] : []))
       return {
         id: i.id,
+        metadata: issueMetadataOf(scope, i.id),
         title: i.title,
         kind: i.kind,
         severity: i.severity,
         source: source[i.source],
         lastSeenAt: times.length ? iso(Math.max(...times)) : null,
         // Most recent first, as the contract orders them.
-        hits: [...hits].sort((a, b) => (b.at ?? -Infinity) - (a.at ?? -Infinity)).map((h) => ({ at: standing ? null : iso(h.at), where: h.where, detail: h.detail, callId: h.callId ?? null })),
+        hits: [...hits].sort((a, b) => (b.at ?? -Infinity) - (a.at ?? -Infinity)).map((h) => ({observedAt:iso(h.observedAt),evidenceState:h.evidenceState, at: standing ? null : iso(h.at), where: h.where, detail: h.detail, callId: h.callId ?? null })),
       }
     })
     .filter((i) => i.hits.length > 0)
-  return { from: from.toISOString(), to: to.toISOString(), complete: true, items }
+  return { from: from.toISOString(), to: to.toISOString(), complete: false, coverage: { pendingCalls: 0, unavailableCalls: 0, pendingJobs: 0, sources: [] }, items }
 }
 
 export function alertEvents(from: Date, to: Date): AlertEvents {
