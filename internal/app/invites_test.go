@@ -5,6 +5,8 @@ import (
 	"net/http/httptest"
 	"testing"
 	"testing/fstest"
+
+	"github.com/mahimailabs/voicegateway/internal/auth"
 )
 
 // Acceptance check 14 of phase 06d, for the /invite page; internal/auth checks the endpoints. The
@@ -12,7 +14,7 @@ import (
 // the console keeps its own caching.
 func TestInvitationHeaders(t *testing.T) {
 	mux := http.NewServeMux()
-	mountConsole(mux, fstest.MapFS{"index.html": {Data: []byte("<!doctype html><title>VoiceGateway</title>")}})
+	mountConsole(mux, fstest.MapFS{"index.html": {Data: []byte("<!doctype html><title>VoiceGateway</title>")}}, (&auth.Service{}).Frames)
 	for _, tt := range []struct {
 		path string
 		want bool

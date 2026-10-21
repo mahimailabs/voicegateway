@@ -3,6 +3,8 @@ import { currentScope } from "@/lib/url-state"
 import { keepPolling } from "@/features/connection/connection-model"
 import { client } from "@/lib/api-types/client.gen"
 import {
+  createEmbedToken as createEmbedTokenCall,
+  updateAllowedOrigins as updateAllowedOriginsCall,
   createInvitation as createInvitationCall,
   createPasswordReset as createPasswordResetCall,
   createProject as createProjectCall,
@@ -40,7 +42,7 @@ import {
   updateMember as updateMemberCall,
   updateProjectSettings as updateProjectSettingsCall,
 } from "@/lib/api-types"
-import type { Call as GeneratedCall, ProjectConnection, UpdateProjectSettings, CallPage, ProjectCreate, CallSummary, CallTotals, EndOfTurnEvent, ItemEvent, Member, OverlapEvent, RecordingSegment, Span, StateEvent, TranscriptEvent, Turn } from "@/lib/api-types"
+import type { Call as GeneratedCall, CreateEmbedToken, ProjectConnection, UpdateProjectSettings, CallPage, ProjectCreate, CallSummary, CallTotals, EndOfTurnEvent, ItemEvent, Member, OverlapEvent, RecordingSegment, Span, StateEvent, TranscriptEvent, Turn } from "@/lib/api-types"
 
 export type { CallSummary, CallTotals, RecordingSegment, Span, Turn }
 export type SessionEvent = StateEvent | TranscriptEvent | EndOfTurnEvent | OverlapEvent | ItemEvent
@@ -239,6 +241,11 @@ export const snapshotQuery = () => ({ queryKey: ["snapshot", currentScope()], qu
 // Issues and alert evaluation over all of time up to now: the pages have no range picker yet.
 const allTime = () => ({ from: new Date(0).toISOString(), to: new Date(Date.now() + 60_000).toISOString() })
 export const issuesQuery = () => ({ queryKey: ["issues", currentScope()], queryFn: () => data(listIssues({ ...thrown, path: scope(), query: allTime() })) })
+// Issues over a range, the same groups getCallStats counts in issueCounts for that range.
+export const issuesInQuery = (from: Date, to: Date) => ({
+  queryKey: ["issues", currentScope(), from.toISOString(), to.toISOString()],
+  queryFn: () => data(listIssues({ ...thrown, path: scope(), query: { from: from.toISOString(), to: to.toISOString() } })),
+})
 export const alertEventsQuery = () => ({ queryKey: ["alert-events", currentScope()], queryFn: () => data(listAlertEvents({ ...thrown, path: scope(), query: allTime() })) })
 
 // Overview's aggregates over a range, computed by the server over every call in it.
@@ -260,6 +267,11 @@ export const projectSettingsQuery = () => {
 }
 export const saveProjectSettings = (selected: ReturnType<typeof currentScope>, body: UpdateProjectSettings) =>
   data(updateProjectSettingsCall({ ...thrown, path: { orgId: selected.org, projectId: selected.project }, body }))
+// Allowed embed origins (Admin) and test embed tokens, decision 0034.
+export const saveAllowedOrigins = (selected: ReturnType<typeof currentScope>, allowedOrigins: string[], allowedOriginsRevision: number) =>
+  data(updateAllowedOriginsCall({ ...thrown, path: { orgId: selected.org, projectId: selected.project }, body: { allowedOrigins, allowedOriginsRevision } }))
+export const createEmbedToken = (body: CreateEmbedToken) => data(createEmbedTokenCall({ ...thrown, path: scope(), body }))
+
 // The project's ingestion URLs, each source's last outcome and its first stored call (first-call
 // setup). Asked again every 5 s while no call is stored or a source is in Error, judged as of the
 // last read; no more once the first call is stored and every source is Connected or Waiting.

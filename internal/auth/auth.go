@@ -33,6 +33,9 @@ type Users interface {
 	ForgetSignIns(ctx context.Context) error
 	ProjectKey(ctx context.Context, keyID string) (store.StoredKey, error)
 	TouchProjectKey(ctx context.Context, keyID string) error
+	// EmbedGrantActive reports whether an embed token's grant still holds: its minting key is
+	// unrevoked (or its minting user still a member) and the project still allows its origin.
+	EmbedGrantActive(ctx context.Context, g store.EmbedScope) (bool, error)
 	UpdatePasswordHash(ctx context.Context, userID, verifiedHash, passwordHash string) (bool, error)
 }
 
@@ -73,8 +76,10 @@ type Service struct {
 	// InstanceTokenSHA256 is the SHA-256 of VOICEGATEWAY_INSTANCE_TOKEN (phase 06e); nil when it is
 	// unset. A Bearer equal to the token is the instance principal, which names no user.
 	InstanceTokenSHA256 []byte
-	Log                 *slog.Logger
-	Now                 func() time.Time
+	// Embeds mints and checks embed tokens (decision 0034); nil refuses every embed token.
+	Embeds *EmbedTokens
+	Log    *slog.Logger
+	Now    func() time.Time
 
 	proxyWarning sync.Once
 }
@@ -341,7 +346,7 @@ func (s *Service) userPrincipal(r *http.Request) (store.Principal, bool, error) 
 }
 
 // Gate identifies a /api/v1 request's caller, with its session loaded: a signed-in user, or a
-// project API key sent as a Bearer token. It puts the principal on the context and refuses nothing
+// project API key, the instance token or an embed token sent as a Bearer token. It puts the principal on the context and refuses nothing
 // itself: the API router answers any request without a principal 401, and checks access per route.
 func (s *Service) Gate(next http.Handler) http.Handler {
 	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -353,6 +358,11 @@ func (s *Service) Gate(next http.Handler) http.Handler {
 		if v, isBearer := bearer(r.Header.Get("Authorization")); !ok && isBearer {
 			if s.isInstanceToken(v) {
 				p, ok = store.Principal{Instance: true}, true
+			} else if IsEmbedToken(v) {
+				if p, ok, err = s.embedPrincipal(r.Context(), v); err != nil {
+					s.fail(w, err)
+					return
+				}
 			} else if p, ok, err = s.keyPrincipal(r.Context(), v); err != nil {
 				s.fail(w, err)
 				return

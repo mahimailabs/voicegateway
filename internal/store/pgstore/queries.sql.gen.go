@@ -962,6 +962,52 @@ func (q *Queries) DeleteWorkerEndpoint(ctx context.Context, arg DeleteWorkerEndp
 	return result.RowsAffected(), nil
 }
 
+const embedGrantActive = `-- name: EmbedGrantActive :one
+SELECT (
+    EXISTS (
+        SELECT 1 FROM project_settings s
+        WHERE s.organisation_id = $1 AND s.project_id = $2 AND $3::text = ANY (s.allowed_origins)
+    )
+    AND (
+        EXISTS (
+            SELECT 1 FROM project_keys k
+            WHERE k.key_id = $4::text AND k.organisation_id = $1 AND k.project_id = $2 AND k.revoked_at IS NULL
+        )
+        OR EXISTS (
+            SELECT 1 FROM memberships m
+            WHERE m.user_id = NULLIF($5::text, '')::uuid AND m.organisation_id = $1
+              AND (NOT $6::boolean OR m.role = 'admin')
+        )
+    )
+)::boolean AS active
+`
+
+type EmbedGrantActiveParams struct {
+	OrganisationID string
+	ProjectID      string
+	Origin         string
+	KeyID          string
+	UserID         string
+	Content        bool
+}
+
+// Whether an embed token still holds, in one round trip: the project still allows its origin, and
+// the key that minted it is unrevoked, or the user who minted it is still a member, and still an
+// Admin when the token shares transcripts and audio.
+func (q *Queries) EmbedGrantActive(ctx context.Context, arg EmbedGrantActiveParams) (bool, error) {
+	row := q.db.QueryRow(ctx, embedGrantActive,
+		arg.OrganisationID,
+		arg.ProjectID,
+		arg.Origin,
+		arg.KeyID,
+		arg.UserID,
+		arg.Content,
+	)
+	var active bool
+	err := row.Scan(&active)
+	return active, err
+}
+
 const ensureCallIssue = `-- name: EnsureCallIssue :exec
 INSERT INTO issues (organisation_id, project_id, id, title, kind, source, severity)
 VALUES ($1, $2, $3, $4, 'event', 'calls', $5)
@@ -3007,7 +3053,9 @@ const readProjectSettings = `-- name: ReadProjectSettings :one
 SELECT COALESCE(s.answer_ms, 1500::double precision) AS answer_ms,
        COALESCE(s.join_ms, 2000::double precision) AS join_ms,
        COALESCE(s.tts_start_ms, 1000::double precision) AS tts_start_ms,
-       COALESCE(s.revision, 0::bigint) AS revision
+       COALESCE(s.revision, 0::bigint) AS revision,
+       s.allowed_origins,
+       COALESCE(s.allowed_origins_revision, 0::bigint) AS allowed_origins_revision
 FROM projects p LEFT JOIN project_settings s ON s.organisation_id = p.organisation_id AND s.project_id = p.id
 WHERE p.organisation_id= $1 AND p.id= $2
 `
@@ -3018,10 +3066,12 @@ type ReadProjectSettingsParams struct {
 }
 
 type ReadProjectSettingsRow struct {
-	AnswerMs   float64
-	JoinMs     float64
-	TtsStartMs float64
-	Revision   int64
+	AnswerMs               float64
+	JoinMs                 float64
+	TtsStartMs             float64
+	Revision               int64
+	AllowedOrigins         []string
+	AllowedOriginsRevision int64
 }
 
 func (q *Queries) ReadProjectSettings(ctx context.Context, arg ReadProjectSettingsParams) (ReadProjectSettingsRow, error) {
@@ -3032,6 +3082,8 @@ func (q *Queries) ReadProjectSettings(ctx context.Context, arg ReadProjectSettin
 		&i.JoinMs,
 		&i.TtsStartMs,
 		&i.Revision,
+		&i.AllowedOrigins,
+		&i.AllowedOriginsRevision,
 	)
 	return i, err
 }
@@ -3592,6 +3644,49 @@ func (q *Queries) UpdateAccountProfile(ctx context.Context, arg UpdateAccountPro
 	return i, err
 }
 
+const updateAllowedOrigins = `-- name: UpdateAllowedOrigins :one
+UPDATE project_settings SET allowed_origins = $1::text[], allowed_origins_revision = allowed_origins_revision + 1
+WHERE organisation_id= $2 AND project_id= $3 AND allowed_origins_revision= $4
+RETURNING answer_ms, join_ms, tts_start_ms, revision, allowed_origins, allowed_origins_revision
+`
+
+type UpdateAllowedOriginsParams struct {
+	AllowedOrigins   []string
+	OrganisationID   string
+	ProjectID        string
+	ExpectedRevision int64
+}
+
+type UpdateAllowedOriginsRow struct {
+	AnswerMs               float64
+	JoinMs                 float64
+	TtsStartMs             float64
+	Revision               int64
+	AllowedOrigins         []string
+	AllowedOriginsRevision int64
+}
+
+// NULL clears the list, which allows no origin. It moves only the list's own revision, never the
+// thresholds revision the issue engine compares against.
+func (q *Queries) UpdateAllowedOrigins(ctx context.Context, arg UpdateAllowedOriginsParams) (UpdateAllowedOriginsRow, error) {
+	row := q.db.QueryRow(ctx, updateAllowedOrigins,
+		arg.AllowedOrigins,
+		arg.OrganisationID,
+		arg.ProjectID,
+		arg.ExpectedRevision,
+	)
+	var i UpdateAllowedOriginsRow
+	err := row.Scan(
+		&i.AnswerMs,
+		&i.JoinMs,
+		&i.TtsStartMs,
+		&i.Revision,
+		&i.AllowedOrigins,
+		&i.AllowedOriginsRevision,
+	)
+	return i, err
+}
+
 const updateCallMetadata = `-- name: UpdateCallMetadata :one
 UPDATE calls SET tags = $1, archived = $2, metadata_revision = metadata_revision + 1
 WHERE organisation_id = $3 AND project_id = $4 AND id = $5
@@ -3710,7 +3805,7 @@ func (q *Queries) UpdatePasswordHash(ctx context.Context, arg UpdatePasswordHash
 const updateProjectSettings = `-- name: UpdateProjectSettings :one
 UPDATE project_settings SET answer_ms= $1, join_ms= $2, tts_start_ms= $3, revision = revision + 1
 WHERE organisation_id= $4 AND project_id= $5 AND revision= $6
-RETURNING answer_ms, join_ms, tts_start_ms, revision
+RETURNING answer_ms, join_ms, tts_start_ms, revision, allowed_origins, allowed_origins_revision
 `
 
 type UpdateProjectSettingsParams struct {
@@ -3723,10 +3818,12 @@ type UpdateProjectSettingsParams struct {
 }
 
 type UpdateProjectSettingsRow struct {
-	AnswerMs   float64
-	JoinMs     float64
-	TtsStartMs float64
-	Revision   int64
+	AnswerMs               float64
+	JoinMs                 float64
+	TtsStartMs             float64
+	Revision               int64
+	AllowedOrigins         []string
+	AllowedOriginsRevision int64
 }
 
 func (q *Queries) UpdateProjectSettings(ctx context.Context, arg UpdateProjectSettingsParams) (UpdateProjectSettingsRow, error) {
@@ -3744,6 +3841,8 @@ func (q *Queries) UpdateProjectSettings(ctx context.Context, arg UpdateProjectSe
 		&i.JoinMs,
 		&i.TtsStartMs,
 		&i.Revision,
+		&i.AllowedOrigins,
+		&i.AllowedOriginsRevision,
 	)
 	return i, err
 }

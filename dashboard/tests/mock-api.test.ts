@@ -478,7 +478,7 @@ describe("settings reads", () => {
     const { status, body } = await get(`${base}/settings`)
     expect(status).toBe(200)
     expect(valid("ProjectSettings", body)).toBe("")
-    expect(body).toEqual({ revision: 0, thresholds: { answerMs: 1500, joinMs: 2000, ttsStartMs: 1000 }, storageBucket: null, transcriptRetentionDays: null, traceRetentionDays: null, recordingRetentionDays: null, allowedOrigins: null })
+    expect(body).toEqual({ revision: 0, thresholds: { answerMs: 1500, joinMs: 2000, ttsStartMs: 1000 }, storageBucket: null, transcriptRetentionDays: null, traceRetentionDays: null, recordingRetentionDays: null, allowedOrigins: null, allowedOriginsRevision: 0 })
   })
 
   test("saved settings use the API, preserve revision conflicts and ignore browser storage", async () => {

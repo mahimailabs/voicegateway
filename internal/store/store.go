@@ -329,6 +329,9 @@ type Principal struct {
 	// Instance is true for the instance token (phase 06e), which names no user and no
 	// organisation: it calls the instance API only.
 	Instance bool
+	// Embed is set for an embed token (decision 0034), which names no user: it reads its widgets'
+	// routes of its one project.
+	Embed *EmbedScope
 }
 
 type principalKey struct{}
@@ -412,6 +415,18 @@ type StoredKey struct {
 // KeyScope is the project a request's API key reads.
 type KeyScope struct {
 	KeyID, OrganisationID, ProjectID string
+}
+
+// EmbedScope is what an embed token grants: one project's widgets, framed by one origin. KeyID or
+// UserID names who minted it, a project key or a member; it holds while they still may.
+type EmbedScope struct {
+	OrganisationID, ProjectID string
+	Widgets                   []string
+	Origin                    string
+	KeyID, UserID             string
+	// Content shares call transcripts, span attributes and recording audio. Off unless the minter
+	// opts in (decision 0034): without it the one-call view shows timings only.
+	Content bool
 }
 
 // ErrIdempotencyConflict means an invitation with that idempotency key exists already.

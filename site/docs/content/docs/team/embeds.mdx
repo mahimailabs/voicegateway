@@ -1,0 +1,52 @@
+---
+title: Embeds
+description: Put VoiceGateway widgets in your own product.
+---
+
+Show your customers how your agents perform, inside your product. Each widget is a small frame, like an iPhone widget.
+
+| Widget | Answers | Sizes |
+| --- | --- | --- |
+| Answer time | How fast do the agents answer? | small, medium |
+| Calls | How many calls, by day, phone or web? | small, medium |
+| Issues | Is anything wrong right now? | small, medium, large |
+| Recent calls | What just happened? A row opens the call. | medium, large |
+| Time per turn | Where does a turn's time go? | medium, large |
+
+## 1. Allow your site
+
+In **Settings, Embeds, Allowed sites**, an Admin adds the site that shows the widgets, for example `https://app.example.com`.
+
+## 2. Your backend asks for a token
+
+```bash
+curl -X POST https://voicegateway.example.com/api/v1/org/default/project/my-project/embed-tokens \
+  -H "Authorization: Bearer $VOICEGATEWAY_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"widgets": ["recent-calls", "call"], "origin": "https://app.example.com"}'
+```
+
+Use a [project API key](/docs/team/api-keys). Never put the key in your page. The token lasts an hour; pass `expiresInSeconds` (60 to 86400) to change that.
+
+## 3. Your page shows the frame
+
+```html
+<iframe
+  src="https://voicegateway.example.com/org/default/project/my-project/embed/recent-calls?token=TOKEN&size=medium&theme=light"
+  width="364" height="170" style="border: 0; border-radius: 22px"
+  title="Recent calls, VoiceGateway"></iframe>
+```
+
+Sizes: small 170 × 170, medium 364 × 170, large 364 × 382.
+
+The token is in the frame's address, so browser history and access logs on the way (your proxy, load balancer or CDN, and VoiceGateway's own) can record it. Keep `expiresInSeconds` short, and redact the `token` query parameter in any log you keep.
+
+## Transcripts and audio
+
+A recent call opens the call view inside the frame. By default it shows timings, models and issues only, never what was said. To share transcripts, prompts, tool arguments, your SDK call fields and the recording with your site, an Admin or a project key adds `"transcriptsAndAudio": true` to the token request. Everyone who can see your page then sees what callers said, so turn it on only where that is right for your users.
+
+## What a token can do
+
+- Read only the widgets it names, in one project, without transcripts or audio unless asked for.
+- Be shown only on its one site. Any other site sees a blocked frame.
+- Stop at its expiry, or as soon as its API key is revoked or its site removed.

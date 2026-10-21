@@ -285,12 +285,14 @@ type ProjectResourceEndpoint struct {
 }
 
 type ProjectSetting struct {
-	OrganisationID string
-	ProjectID      string
-	AnswerMs       float64
-	JoinMs         float64
-	TtsStartMs     float64
-	Revision       int64
+	OrganisationID         string
+	ProjectID              string
+	AnswerMs               float64
+	JoinMs                 float64
+	TtsStartMs             float64
+	Revision               int64
+	AllowedOrigins         []string
+	AllowedOriginsRevision int64
 }
 
 type ProjectWorkerEndpoint struct {

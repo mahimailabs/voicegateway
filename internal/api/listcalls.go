@@ -129,6 +129,12 @@ func (a *API) listCalls(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	q := r.URL.Query()
+	// SDK fields are the agent's own data, so an embed token without the content opt-in cannot
+	// probe them through the filter (decision 0034).
+	if p, _ := store.PrincipalFrom(ctx); p.Embed != nil && !p.Embed.Content && q.Has("field") {
+		writeError(w, r, http.StatusForbidden, codeForbidden, "this embed token does not share transcripts, audio or call fields")
+		return
+	}
 	f, limit, err := a.parseList(org, project, q)
 	if err != nil {
 		writeError(w, r, http.StatusBadRequest, codeInvalidRequest, err.Error())

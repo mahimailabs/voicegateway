@@ -16,9 +16,13 @@ import (
 
 // API serves the console's /api/v1 reads and its member writes.
 type API struct {
-	Issues            IssueMetadataStore
-	Metadata          CallMetadataStore
-	Settings          ProjectSettingsStore
+	Issues   IssueMetadataStore
+	Metadata CallMetadataStore
+	Settings ProjectSettingsStore
+	// Origins stores the allowed embed origins and Embeds signs embed tokens (decision 0034); without
+	// them those routes answer 503.
+	Origins           EmbedOrigins
+	Embeds            EmbedMinter
 	StorageBucket     string
 	ResourceEndpoints ResourceEndpoints
 	ResourceSamples   ResourceSamples
@@ -92,6 +96,8 @@ func (a *API) Routes() http.Handler {
 	handle(r, http.MethodGet, "/api/v1/workspaces", a.getWorkspaces)
 	handle(r, http.MethodGet, project+"/settings", a.getProjectSettings)
 	handle(r, http.MethodPut, project+"/settings", a.updateProjectSettings)
+	handle(r, http.MethodPut, project+"/settings/allowed-origins", a.updateAllowedOrigins)
+	handle(r, http.MethodPost, project+"/embed-tokens", a.createEmbedToken)
 	handle(r, http.MethodGet, project+"/calls", a.listCalls)
 	handle(r, http.MethodGet, project+"/call-tags", a.getCallTags)
 	handle(r, http.MethodGet, project+"/issues", a.listIssues)

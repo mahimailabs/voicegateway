@@ -12,6 +12,8 @@ The target typechecks the suite, builds Vite with the existing captured-data MSW
 
 Each internal sidebar destination, the Project page and a captured call detail open directly under the default organisation/project in light and dark themes at desktop and 390 px phone widths. The desktop overview check also rejects sidebar links missing from the test matrix. External documentation is outside this suite.
 
+Every embeddable widget is also opened at each of its sizes, in its own frame size, and scanned the same way (embeds.spec.ts).
+
 Each run verifies the deep URL, page content, applied theme, console errors and uncaught exceptions, then scans the whole rendered page with axe. Serious and critical violations fail the test. No rule, selector or console error is excluded. Reports include lower-severity findings for review, but axe is not a substitute for keyboard or screen-reader testing.
 
 Keyboard checks also exercise Calls, Issues and call-detail tabs in both directions and verify that the selected tab names and controls its visible panel. Finite entry animations finish before axe scans; continuous visual effects are not disabled.

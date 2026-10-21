@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 	"time"
 
@@ -152,7 +153,30 @@ func (a *API) getCall(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, http.StatusNotFound, codeNotFound, "call not found")
 		return
 	}
+	if p, _ := store.PrincipalFrom(ctx); p.Embed != nil && !p.Embed.Content {
+		withholdContent(&body)
+	}
 	writeJSON(w, http.StatusOK, body)
+}
+
+// withholdContent drops what callers and the agent said from a call for an embed token without the
+// content opt-in (decision 0034): turn text, span attributes, which carry prompts, transcripts and
+// tool arguments, the SDK's custom fields, which are the agent's own data, and the recording.
+// Timings, models, usage and live state stay.
+func withholdContent(c *call) {
+	c.Recording = nil
+	c.Fields = map[string]string{}
+	c.Clocks = slices.DeleteFunc(c.Clocks, func(k clock) bool { return k.ID == clockRecording })
+	if c.Turns != nil {
+		for i := range *c.Turns {
+			(*c.Turns)[i].UserText, (*c.Turns)[i].AgentText = nil, nil
+		}
+	}
+	if c.Spans != nil {
+		for i := range *c.Spans {
+			(*c.Spans)[i].Attrs = nil
+		}
+	}
 }
 
 // fail answers a storage error: not_found for a missing record, internal_error otherwise. The

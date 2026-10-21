@@ -9,6 +9,7 @@ import { fetchWorkspaces } from "@/lib/api"
 import { createQueryClient } from "@/lib/query-client"
 import { setWorkspaces } from "@/lib/workspaces"
 import { fetchSession, setCurrentSession, setMockApi } from "@/lib/session"
+import { startEmbed } from "@/lib/embed"
 import "./index.css"
 
 // Captured data never changes while the page is open; refetching on focus would only flicker.
@@ -43,9 +44,11 @@ async function start() {
       console.error("The mock API did not start; pages will show that no API answered.", e)
     }
   }
+  // A widget framed on another site reads with its embed token alone: no session, no workspaces.
+  const embedded = startEmbed() !== null
   // With the server, nobody reads anything before signing in (decision 0027). If no API answers,
   // the pages say so, as before.
-  if (!mockApi) {
+  if (!mockApi && !embedded) {
     const read = await fetchSession().catch(() => null)
     if (read && !read.signedIn) {
       const { SignInScreen } = await import("@/features/auth/sign-in-screen")
@@ -61,7 +64,7 @@ async function start() {
     if (read?.signedIn) setCurrentSession(read.session)
   }
   // The router decides which project a URL names, so it loads once the workspaces are read.
-  setWorkspaces(await fetchWorkspaces().then((w) => w.items, () => null))
+  setWorkspaces(embedded ? null : await fetchWorkspaces().then((w) => w.items, () => null))
   const { router } = await import("@/router")
   createRoot(document.getElementById("root")!).render(
     <StrictMode>

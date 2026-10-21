@@ -74,7 +74,7 @@ export type Call = {
      */
     clocks: Array<Clock>;
     /**
-     * Custom fields the agent attached through a VoiceGateway SDK (attach(fields=...) or set_field), later values winning; at most 64 per call, new keys past that are dropped. Empty when no SDK attached any. Absent from captures made before the SDK.
+     * Custom fields the agent attached through a VoiceGateway SDK (attach(fields=...) or set_field), later values winning; at most 64 per call, new keys past that are dropped. Empty when no SDK attached any, and for an embed token without transcriptsAndAudio (decision 0034). Absent from captures made before the SDK.
      */
     fields?: {
         [key: string]: string;
@@ -1351,7 +1351,7 @@ export type Error = {
     /**
      * Stable error category.
      */
-    code: 'invalid_request' | 'revision_conflict' | 'unauthenticated' | 'forbidden' | 'not_found' | 'source_unavailable' | 'internal_error' | 'range_not_satisfiable' | 'last_admin' | 'already_member' | 'member_of_other_organisations' | 'project_exists' | 'livekit_secret_invalid' | 'livekit_unreachable' | 'recording_bucket_refused' | 'recording_bucket_unreachable';
+    code: 'invalid_request' | 'revision_conflict' | 'unauthenticated' | 'forbidden' | 'not_found' | 'source_unavailable' | 'internal_error' | 'range_not_satisfiable' | 'last_admin' | 'already_member' | 'member_of_other_organisations' | 'project_exists' | 'livekit_secret_invalid' | 'livekit_unreachable' | 'recording_bucket_refused' | 'recording_bucket_unreachable' | 'origin_not_allowed';
     /**
      * Safe human-readable explanation, excluding upstream credentials and request bodies.
      */
@@ -1513,6 +1513,59 @@ export type UpdateProjectSettings = {
     revision: number;
 };
 
+export type UpdateAllowedOrigins = {
+    /**
+     * The sites allowed to frame the project's widgets. Empty or null allows none.
+     */
+    allowedOrigins: Array<string> | null;
+    /**
+     * The allowedOriginsRevision read with the settings, checked atomically on save to prevent lost updates. It versions the sites alone; the thresholds revision does not move.
+     */
+    allowedOriginsRevision: number;
+};
+
+export type CreateEmbedToken = {
+    /**
+     * The widgets the token opens. A recent-calls frame whose rows open a call needs both recent-calls and call.
+     */
+    widgets: Array<'answer-time' | 'calls' | 'issues' | 'recent-calls' | 'time-per-turn' | 'call'>;
+    /**
+     * The one site that may frame the widgets, one of the project's allowedOrigins.
+     */
+    origin: string;
+    /**
+     * How long the token is valid.
+     */
+    expiresInSeconds?: number;
+    /**
+     * Share what was said with the framing site: the one-call view's turn text, span attributes (prompts, transcripts, tool arguments), the SDK call fields and recording audio. Off by default, when the call widget shows timings only and listCalls refuses the field filter. Needs the call widget, and an Admin or a project key (decision 0034).
+     */
+    transcriptsAndAudio?: boolean;
+};
+
+export type EmbedToken = {
+    /**
+     * vge_ followed by a signed JWT. Put it in the frame's address as ?token=. Shown once; VoiceGateway does not store it.
+     */
+    token: string;
+    /**
+     * When the token stops working.
+     */
+    expiresAt: string;
+    /**
+     * The widgets the token opens.
+     */
+    widgets: Array<'answer-time' | 'calls' | 'issues' | 'recent-calls' | 'time-per-turn' | 'call'>;
+    /**
+     * The origin the token may be framed by, normalised.
+     */
+    origin: string;
+    /**
+     * Whether the token shares turn text, span attributes and recording audio.
+     */
+    transcriptsAndAudio: boolean;
+};
+
 export type ProjectSettings = {
     /**
      * Revision checked atomically on save to prevent lost updates.
@@ -1539,6 +1592,10 @@ export type ProjectSettings = {
      * Configured embed framing origin allow-list, null when not configured. Missing configuration never authorises arbitrary origins.
      */
     allowedOrigins: Array<string> | null;
+    /**
+     * Version of allowedOrigins alone, sent back with updateAllowedOrigins. Saving sites never moves revision, which versions the thresholds.
+     */
+    allowedOriginsRevision: number;
 };
 
 export type Invitation = {
@@ -2219,7 +2276,7 @@ export type ListCallsData = {
          */
         unknown?: Array<'answerMs' | 'durationSeconds' | 'turnCount'>;
         /**
-         * An SDK call field as key:value. Repeat to keep calls holding every listed pair; one key with two values matches nothing. At most 16.
+         * An SDK call field as key:value. Repeat to keep calls holding every listed pair; one key with two values matches nothing. At most 16. An embed token without transcriptsAndAudio gets 403 (decision 0034).
          */
         field?: Array<string>;
         /**
@@ -3547,6 +3604,118 @@ export type GetProjectConnectionResponses = {
 };
 
 export type GetProjectConnectionResponse = GetProjectConnectionResponses[keyof GetProjectConnectionResponses];
+
+export type UpdateAllowedOriginsData = {
+    body: UpdateAllowedOrigins;
+    path: {
+        /**
+         * Authorised orgId; the server must verify organisation/project ownership before any read.
+         */
+        orgId: string;
+        /**
+         * Authorised projectId; the server must verify organisation/project ownership before any read.
+         */
+        projectId: string;
+    };
+    query?: never;
+    url: '/api/v1/org/{orgId}/project/{projectId}/settings/allowed-origins';
+};
+
+export type UpdateAllowedOriginsErrors = {
+    /**
+     * invalid_request; never return an empty success result for this failure.
+     */
+    400: Error;
+    /**
+     * unauthenticated; never return an empty success result for this failure.
+     */
+    401: Error;
+    /**
+     * forbidden; never return an empty success result for this failure.
+     */
+    403: Error;
+    /**
+     * not_found; never return an empty success result for this failure.
+     */
+    404: Error;
+    /**
+     * revision_conflict, settings changed since they were read; last_admin, the change would leave the organisation without an admin; already_member, the invited email's account is a member already; member_of_other_organisations, a reset's member belongs to an organisation the requester does not administer; project_exists, the organisation already has a project with the new name's id.
+     */
+    409: Error;
+    /**
+     * internal_error; never return an empty success result for this failure.
+     */
+    500: Error;
+    /**
+     * source_unavailable; never return an empty success result for this failure.
+     */
+    503: Error;
+};
+
+export type UpdateAllowedOriginsError = UpdateAllowedOriginsErrors[keyof UpdateAllowedOriginsErrors];
+
+export type UpdateAllowedOriginsResponses = {
+    /**
+     * Persisted settings with the new revision.
+     */
+    200: ProjectSettings;
+};
+
+export type UpdateAllowedOriginsResponse = UpdateAllowedOriginsResponses[keyof UpdateAllowedOriginsResponses];
+
+export type CreateEmbedTokenData = {
+    body: CreateEmbedToken;
+    path: {
+        /**
+         * Authorised orgId; the server must verify organisation/project ownership before any read.
+         */
+        orgId: string;
+        /**
+         * Authorised projectId; the server must verify organisation/project ownership before any read.
+         */
+        projectId: string;
+    };
+    query?: never;
+    url: '/api/v1/org/{orgId}/project/{projectId}/embed-tokens';
+};
+
+export type CreateEmbedTokenErrors = {
+    /**
+     * invalid_request; never return an empty success result for this failure.
+     */
+    400: Error;
+    /**
+     * unauthenticated; never return an empty success result for this failure.
+     */
+    401: Error;
+    /**
+     * forbidden; never return an empty success result for this failure.
+     */
+    403: Error;
+    /**
+     * not_found; never return an empty success result for this failure.
+     */
+    404: Error;
+    /**
+     * internal_error; never return an empty success result for this failure.
+     */
+    500: Error;
+    /**
+     * source_unavailable; never return an empty success result for this failure.
+     */
+    503: Error;
+};
+
+export type CreateEmbedTokenError = CreateEmbedTokenErrors[keyof CreateEmbedTokenErrors];
+
+export type CreateEmbedTokenResponses = {
+    /**
+     * The token, shown in this answer only.
+     */
+    201: EmbedToken;
+};
+
+export type CreateEmbedTokenResponse = CreateEmbedTokenResponses[keyof CreateEmbedTokenResponses];
 
 export type GetAlertSetupData = {
     body?: never;

@@ -9,7 +9,7 @@ import { capacity, cloudAgents, egress, ingress, mediaServer, projectSnapshot, p
 import { summarize } from "./summaries"
 import { matchesFields, matchesFilters, parseFilters, sortCalls, totals } from "./calls-query"
 import { playbackUrl, recordingMedia } from "./recordings"
-import { alertSetup, changeMember, createKey, invitations, invite, members, passwordReset, projectKeys, projectSettings, updateSettings, revokeInvitation, revokeKey } from "./settings"
+import { alertSetup, changeMember, createKey, invitations, invite, members, passwordReset, projectKeys, projectSettings, updateSettings, updateAllowedOrigins, normaliseOrigin, revokeInvitation, revokeKey } from "./settings"
 import { addProject, knownOrg, knownProject, workspaces } from "./workspaces"
 
 // Everything but the paging parameters, in a stable order, so a cursor can name what it was issued for.
@@ -168,7 +168,24 @@ export const handlers = [
     let body: unknown
     try { body = await request.json() } catch { return fail(400, "invalid_request", "Expected JSON settings.") }
     const saved = updateSettings(settingsScope(params), body)
-    return typeof saved === "string" ? fail(saved === "revision_conflict" ? 409 : 400, saved, saved === "revision_conflict" ? "Settings changed; reload before saving." : "Invalid thresholds or revision.") : HttpResponse.json(saved)
+    return typeof saved === "string" ? fail(saved === "revision_conflict" ? 409 : 400, saved, saved === "revision_conflict" ? "The allowed sites changed; reload before saving." : "Invalid thresholds or revision.") : HttpResponse.json(saved)
+  }),
+  http.put(`${project}/settings/allowed-origins`, async ({ params, request }) => {
+    if (!known(params)) return fail(404, "not_found", "No such project.")
+    let body: unknown
+    try { body = await request.json() } catch { return fail(400, "invalid_request", "Expected JSON allowed origins.") }
+    const saved = updateAllowedOrigins(settingsScope(params), body)
+    return typeof saved === "string" ? fail(saved === "revision_conflict" ? 409 : 400, saved, saved === "revision_conflict" ? "Settings changed; reload before saving." : "An origin is https://host[:port], or http://localhost[:port], with no path.") : HttpResponse.json(saved)
+  }),
+  // The mock signs nothing: its token only fills the snippet. web mints real ones (decision 0034).
+  http.post(`${project}/embed-tokens`, async ({ params, request }) => {
+    if (!known(params)) return fail(404, "not_found", "No such project.")
+    const body = (await request.json().catch(() => null)) as { widgets?: string[]; origin?: unknown; expiresInSeconds?: number; transcriptsAndAudio?: boolean } | null
+    const origin = normaliseOrigin(body?.origin)
+    if (!body || !Array.isArray(body.widgets) || !body.widgets.length || !origin) return fail(400, "invalid_request", "Name widgets and an origin.")
+    if (!(projectSettings(settingsScope(params)).allowedOrigins ?? []).includes(origin)) return fail(400, "origin_not_allowed", "This origin is not in the project's allowed origins.")
+    const expiresAt = new Date(Date.now() + (body.expiresInSeconds ?? 3600) * 1000).toISOString()
+    return HttpResponse.json({ token: "vge_mock-preview-token", expiresAt, widgets: [...new Set(body.widgets)], origin, transcriptsAndAudio: body.transcriptsAndAudio === true }, { status: 201 })
   }),
   // First-call setup. The mock receives no ingest, so every source is still waiting and no first
   // call exists: a mock or a fixture never counts as the project's first stored call. The URLs use

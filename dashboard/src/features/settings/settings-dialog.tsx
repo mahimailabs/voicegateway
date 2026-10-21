@@ -17,13 +17,14 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue, SelectGr
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Sidebar, SidebarContent, SidebarGroup, SidebarGroupContent, SidebarGroupLabel, SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarProvider } from "@/components/ui/sidebar"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
+import { Switch } from "@/components/ui/switch"
 import { useTheme } from "@/components/theme"
 import { NewProjectDialog } from "@/components/new-project-dialog"
 import { currentOrg, currentScope, scopePrefix, useUrlState } from "@/lib/url-state"
-import { type WidgetId, widgets } from "@/features/embed/widgets"
+import { type Size, type WidgetId, sizes, widgets } from "@/features/embed/widgets"
 import { DEFAULTS, type Thresholds as T } from "@/lib/thresholds"
-import { ApiError, callTotalsQuery, createInvitation, createPasswordReset, createProjectKey, projectKeysQuery, revokeInvitation, revokeProjectKey, invitationsQuery, latestMatchingCallQuery, mediaServerQuery, membersQuery, projectSettingsQuery, saveProjectSettings, removeMember, updateMember } from "@/lib/api"
-import type { Invitation, Member, ProjectKey, ProjectSettings } from "@/lib/api-types"
+import { ApiError, callTotalsQuery, createInvitation, createPasswordReset, createProjectKey, projectKeysQuery, revokeInvitation, revokeProjectKey, invitationsQuery, latestMatchingCallQuery, mediaServerQuery, membersQuery, projectSettingsQuery, saveProjectSettings, removeMember, updateMember, saveAllowedOrigins, createEmbedToken } from "@/lib/api"
+import type { CreateEmbedToken, Invitation, Member, ProjectKey, ProjectSettings } from "@/lib/api-types"
 import { DataTable, type Columns, type Field as FilterField } from "@/components/data-table"
 import { DataGridColumnHeader } from "@/components/reui/data-grid/data-grid-column-header"
 import { mod } from "@/components/command-palette"
@@ -1009,25 +1010,35 @@ function ThresholdsForm({ settings }: { settings: ProjectSettings }) {
   )
 }
 
-// Widgets a platform puts in its own product (decision 0023). The preview is the real widget in a frame.
+// Widgets a platform puts in its own product (decisions 0023, 0034). The preview is the real widget
+// in a frame of its real size, read with this session; on another site it reads with an embed token.
 function Embeds() {
-  const origins = useQuery(projectSettingsQuery())
   const [pick, setPick] = useUrlState<WidgetId>("widget", "answer-time")
-  const [theme, setTheme] = useState<"light" | "dark">("light")
   const w = widgets.find((x) => x.id === pick) ?? widgets[0]
+  const [sizePick, setSize] = useUrlState<string>("size", w.sizes[0])
+  const size: Size = (w.sizes as readonly string[]).includes(sizePick) ? (sizePick as Size) : w.sizes[0]
+  const [theme, setTheme] = useState<"light" | "dark">("light")
+  const frame = sizes[size]
   // The call widget previews the newest call with a turn; other widgets need no call.
   const latest = useQuery({ ...latestMatchingCallQuery(new URLSearchParams({ turnsMin: "1" })), enabled: pick === "call" })
   const callId = latest.data?.id
   const src = `${window.location.origin}${scopePrefix()}/embed/${w.id}`
-  const preview = `${src}?theme=${theme}${w.id === "call" && callId ? `&call=${encodeURIComponent(callId)}` : ""}`
-  const snippet = `<iframe\n  src="${src}?token=EMBED_TOKEN&theme=${theme}${w.id === "call" ? "&call=CALL_ID" : ""}"\n  width="100%"\n  height="${w.height}"\n  style="border: 0"\n  title="${w.title}, VoiceGateway"\n></iframe>`
+  const query = (token: string) => `?token=${token}&theme=${theme}${w.sizes.length > 1 ? `&size=${size}` : ""}${w.id === "call" ? "&call=CALL_ID" : ""}`
+  const preview = `${src}?theme=${theme}${w.sizes.length > 1 ? `&size=${size}` : ""}${w.id === "call" && callId ? `&call=${encodeURIComponent(callId)}` : ""}`
+  const snippet = `<iframe\n  src="${src}${query("EMBED_TOKEN")}"\n  width="${frame.width}"\n  height="${frame.height}"\n  style="border: 0; border-radius: 22px"\n  title="${w.title}, VoiceGateway"\n></iframe>`
+  const grant = [w.id, ...w.with]
+  // Transcripts and audio reach the other site only when asked for (decision 0034).
+  const [contentPick, setContent] = useUrlState<string>("content", "off")
+  const hasCall = grant.includes("call")
+  const content = hasCall && contentPick === "on"
+  const mint = `curl -X POST ${window.location.origin}/api/v1${scopePrefix()}/embed-tokens \\\n  -H "Authorization: Bearer $VOICEGATEWAY_KEY" \\\n  -H "Content-Type: application/json" \\\n  -d '{"widgets": ${JSON.stringify(grant)}, "origin": "https://your-app.example.com"${content ? `, "transcriptsAndAudio": true` : ""}}'`
   return (
     <>
-      <Header title="Embeds" description="Put this project's views in your own product. Each widget is a frame behind a short-lived, read-only token, so your API key never reaches the page." />
+      <Header title="Embeds" description="Put this project's widgets in your own product. Each one is a small frame behind a short-lived, read-only token, so your API key never reaches the page." />
       <section className="space-y-3 pt-6">
-        <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           <Select value={w.id} onValueChange={(v) => setPick(v as WidgetId)}>
-            <SelectTrigger size="sm" className="w-56" aria-label="Widget">
+            <SelectTrigger size="sm" className="w-48" aria-label="Widget">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -1038,6 +1049,15 @@ function Embeds() {
               ))}
             </SelectContent>
           </Select>
+          {w.sizes.length > 1 && (
+            <ToggleGroup type="single" variant="outline" size="sm" value={size} onValueChange={(v) => v && setSize(v)} aria-label="Widget size">
+              {w.sizes.map((x) => (
+                <ToggleGroupItem key={x} value={x} className="px-3 capitalize data-[state=on]:bg-accent">
+                  {x}
+                </ToggleGroupItem>
+              ))}
+            </ToggleGroup>
+          )}
           <ToggleGroup type="single" variant="outline" size="sm" value={theme} onValueChange={(v) => v && setTheme(v as "light" | "dark")} aria-label="Widget theme">
             <ToggleGroupItem value="light" className="px-3 data-[state=on]:bg-accent">
               Light
@@ -1047,37 +1067,156 @@ function Embeds() {
             </ToggleGroupItem>
           </ToggleGroup>
         </div>
-        <p className="text-[13px] text-muted-foreground">{w.description}</p>
+        <p className="text-[13px] text-muted-foreground">{w.question}</p>
         {w.id === "call" && !callId ? (
           <p className="rounded-xl border px-4 py-10 text-center text-[13px] text-muted-foreground">
             {latest.isPending ? "Loading a call for the preview." : latest.isError ? `A call for the preview could not be read. ${errorText(latest.error)}` : "No call with a turn yet, so there is nothing to preview."}
           </p>
         ) : (
-          <iframe key={preview} src={preview} title={`${w.title} preview`} className="block w-full rounded-xl border" style={{ height: Math.min(w.height, 420) }} />
+          <div className="overflow-x-auto rounded-2xl bg-muted/50 p-6">
+            <iframe key={preview} src={preview} title={`${w.title} preview`} className="mx-auto block max-w-full rounded-[22px] shadow-sm" width={frame.width} height={Math.min(frame.height, 520)} />
+          </div>
         )}
       </section>
       <section className="pt-6">
-        <h3 className="pb-1 text-[14px] font-semibold">Snippet</h3>
-        <p className="pb-3 text-[13px] text-muted-foreground">Your backend asks VoiceGateway for a token and puts it in place of EMBED_TOKEN.</p>
+        <h3 className="pb-1 text-[14px] font-semibold">1. Your backend asks for a token</h3>
+        <p className="pb-3 text-[13px] text-muted-foreground">With a project API key, for the widgets the frame shows and the site that shows them. A token lasts an hour unless you pass expiresInSeconds (1 minute to 1 day).</p>
+        {hasCall && (
+          <Group label="What the call view shares">
+            <Row
+              title="Share transcripts and audio"
+              description="Off: the one-call view shows timings, models and issues only. On: the other site sees what callers and the agent said, prompts and tool arguments, and can play the recording. Needs an Admin or a project key."
+              last
+              value={<Switch checked={content} onCheckedChange={(on) => setContent(on ? "on" : "off")} aria-label="Share transcripts and audio" />}
+            />
+          </Group>
+        )}
+        <CopyCommand text={mint} label="Token request" />
+      </section>
+      <section className="pt-6">
+        <h3 className="pb-1 text-[14px] font-semibold">2. Your page shows the frame</h3>
+        <p className="pb-3 text-[13px] text-muted-foreground">Put the token in place of EMBED_TOKEN.</p>
         <CopyCommand text={snippet} label="Embed snippet" />
       </section>
-      <Group label="Access" footer="Tokens and allowed origins are kept on the server, from Phase 2. Until then widgets show captured data and say they are a preview.">
-        <Row
-          title="Embed tokens"
-          description="Read-only, one project, and they expire."
-          value={
-            <Button variant="outline" size="sm" disabled>
-              <Plus /> Create token
-            </Button>
-          }
-        />
-        <Row title="Allowed origins" description="Only these sites can show the widgets." value={origins.data ? (origins.data.allowedOrigins?.join(", ") ?? <NotSet />) : origins.isError ? "Could not be read" : "Loading"} last />
-      </Group>
+      <AllowedOrigins />
+      <TestToken key={`${grant.join(",")}|${content}`} grant={grant} content={content} query={query} src={src} />
       <Group label="Enterprise">
         <Row icon={Lock} muted title="Per-customer tokens" description="A token that shows only one of your customers' calls." />
         <Row icon={Lock} muted title="Remove VoiceGateway branding" description="Widgets without Powered by VoiceGateway." value={<span className="text-[12px] text-muted-foreground">Open source: always shown.</span>} last />
       </Group>
     </>
+  )
+}
+
+// The sites allowed to show the widgets. Admins change them; removing a site stops its tokens at
+// their next request.
+function AllowedOrigins() {
+  const client = useQueryClient()
+  const read = useQuery(projectSettingsQuery())
+  const isAdmin = roleIn(org().id, useSession()) === "Admin"
+  const [draft, setDraft] = useState("")
+  const save = useMutation({
+    mutationFn: (origins: string[]) => saveAllowedOrigins(currentScope(), origins, read.data!.allowedOriginsRevision),
+    onSuccess: (settings) => {
+      client.setQueryData(projectSettingsQuery().queryKey, settings)
+      setDraft("")
+      toast("Allowed sites saved")
+    },
+    onError: (error) => {
+      if (error instanceof ApiError && error.status === 409) void client.invalidateQueries({ queryKey: projectSettingsQuery().queryKey })
+      toast.error(errorText(error))
+    },
+  })
+  const origins = read.data?.allowedOrigins ?? []
+  return (
+    <Group label="Allowed sites" footer={isAdmin ? "An origin is https://host or https://host:port, with no path. http works only for localhost." : "Only an Admin changes the allowed sites."}>
+      {!read.data ? (
+        <Row title="Sites" value={read.isError ? "Could not be read" : "Loading"} last />
+      ) : (
+        <>
+          {origins.length === 0 && <Row title="No site yet" description="Until you add one, no token can be made and no site can show the widgets." />}
+          {origins.map((o) => (
+            <Row
+              key={o}
+              title={o}
+              value={
+                isAdmin && (
+                  <Button variant="ghost" size="sm" disabled={save.isPending} onClick={() => save.mutate(origins.filter((x) => x !== o))} aria-label={`Remove ${o}`}>
+                    <X /> Remove
+                  </Button>
+                )
+              }
+            />
+          ))}
+          {isAdmin && (
+            <Row
+              title="Add a site"
+              last
+              value={
+                <form
+                  className="flex w-full items-center gap-2"
+                  onSubmit={(e) => {
+                    e.preventDefault()
+                    if (draft.trim()) save.mutate([...origins, draft.trim()])
+                  }}
+                >
+                  <InputGroup>
+                    <InputGroupInput aria-label="Site origin" placeholder="https://app.example.com" value={draft} disabled={save.isPending} onChange={(e) => setDraft(e.target.value)} />
+                  </InputGroup>
+                  <Button size="sm" type="submit" disabled={save.isPending || !draft.trim()}>
+                    <Plus /> Add
+                  </Button>
+                </form>
+              }
+            />
+          )}
+        </>
+      )}
+    </Group>
+  )
+}
+
+// A token made here, for trying the snippet on an allowed site. It is shown once and never stored.
+function TestToken({ grant, content, query, src }: { grant: string[]; content: boolean; query: (token: string) => string; src: string }) {
+  const read = useQuery(projectSettingsQuery())
+  const origins = read.data?.allowedOrigins ?? []
+  const [origin, setOrigin] = useState<string | null>(null)
+  const chosen = origin && origins.includes(origin) ? origin : (origins[0] ?? null)
+  const mint = useMutation({ mutationFn: () => createEmbedToken({ widgets: grant as CreateEmbedToken["widgets"], origin: chosen!, expiresInSeconds: 3600, transcriptsAndAudio: content }), onError: (error) => toast.error(errorText(error)) })
+  return (
+    <Group label="Try it" footer={mint.data ? `For ${mint.data.origin}, until ${new Date(mint.data.expiresAt).toLocaleTimeString()}. It opens ${mint.data.widgets.join(" and ")}${mint.data.transcriptsAndAudio ? ", with transcripts and audio" : ", without transcripts or audio"}.` : "A test token for one hour, made with your sign-in. Your product's backend makes its own with an API key."}>
+      <Row
+        title="Test token"
+        last
+        value={
+          !origins.length ? (
+            <Muted>Add an allowed site first.</Muted>
+          ) : mint.data ? (
+            <div className="w-full min-w-0">
+              <CopyCommand text={`${src}${query(mint.data.token)}`} label="Widget address with a test token" />
+            </div>
+          ) : (
+            <div className="flex flex-wrap items-center gap-2">
+              <Select value={chosen ?? undefined} onValueChange={setOrigin}>
+                <SelectTrigger size="sm" className="w-64" aria-label="Site for the token">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {origins.map((o) => (
+                    <SelectItem key={o} value={o}>
+                      {o}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Button variant="outline" size="sm" disabled={mint.isPending || !chosen} onClick={() => mint.mutate()}>
+                <Plus /> {mint.isPending ? "Making…" : "Make a test token"}
+              </Button>
+            </div>
+          )
+        }
+      />
+    </Group>
   )
 }
 

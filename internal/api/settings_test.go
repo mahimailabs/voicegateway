@@ -62,7 +62,7 @@ func TestSettingsHTTPPersistenceAndValidation(t *testing.T) {
 		send(body, http.StatusBadRequest)
 	}
 	var after projectSettingsRead
-	if code := f.get(a, path, &after); code != http.StatusOK || after.ProjectSettings != saved.ProjectSettings {
+	if code := f.get(a, path, &after); code != http.StatusOK || after.Thresholds != saved.Thresholds || after.Revision != saved.Revision {
 		t.Fatalf("invalid writes changed settings: %d %+v", code, after)
 	}
 	other := f.addProject(t.Name() + "-other")
