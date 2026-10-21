@@ -55,3 +55,28 @@ test.each([
 ])("%s matches nothing", (_name, rules) => {
   expect(toServerParams(q(rules), labels).nothing).toBe(true)
 })
+
+test("custom field chips become repeated field=key:value parameters", () => {
+  const { params, dropped, nothing } = toServerParams(q([rule("field", "is", "customer:acme"), rule("field", "is", "plan:trial"), rule("field", "is", "customer:acme")]), { field: "Custom field" })
+  expect(dropped).toEqual([])
+  expect(nothing).toBe(false)
+  expect(params.getAll("field")).toEqual(["customer:acme", "plan:trial"])
+})
+
+test("a field value keeps its own colons, and a malformed chip is named, not sent", () => {
+  expect(toServerParams(q([rule("field", "is", "url:https://x.test:8080")]), {}).params.getAll("field")).toEqual(["url:https://x.test:8080"])
+  const bad = toServerParams(q([rule("field", "is", "Customer=acme")]), { field: "Custom field" })
+  expect(bad.params.getAll("field")).toEqual([])
+  expect(bad.dropped).toEqual([`Custom field "Customer=acme" (not key:value)`])
+})
+
+test("one field key asked with two values matches nothing", () => {
+  expect(toServerParams(q([rule("field", "is", "plan:trial"), rule("field", "is", "plan:pro")]), {}).nothing).toBe(true)
+})
+
+test("more than 16 field chips sends the first 16 and names the rest once", () => {
+  const rules = Array.from({ length: 18 }, (_, i) => ({ ...rule("field", "is", `k${i}:v`), id: `f${i}` }))
+  const { params, dropped } = toServerParams(q(rules), { field: "Custom field" })
+  expect(params.getAll("field")).toHaveLength(16)
+  expect(dropped).toEqual(["Custom field filters past the first 16"])
+})

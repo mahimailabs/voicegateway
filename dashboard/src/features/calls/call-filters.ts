@@ -15,7 +15,17 @@ export const serverOperators = {
   number: [op("eq", "is"), op("gte", "at least"), op("lte", "at most"), op("between", "between", "range"), op("empty", "is unknown", "none")],
   boolean: [op("is", "is")],
   tags: [op("has_any_of", "has any of", "many")],
+  field: [op("is", "is")],
 } satisfies Record<string, FilterOperator[]>
+
+// An SDK call field chip holds "key:value", the shape listCalls' field parameter takes: the key as the
+// SDK allows it (lower case letters, digits, _ . -, up to 64), the value up to 256 characters.
+const FIELD = /^([a-z0-9_.-]{1,64}):(.{0,256})$/u
+export const MAX_FIELDS = 16
+export const parseField = (v: string): { key: string; value: string } | null => {
+  const m = FIELD.exec(v.trim())
+  return m ? { key: m[1], value: m[2] } : null
+}
 
 const CHANNELS = ["phone", "web", "console", "local", "unknown"]
 const bounds: Record<string, { min: string; max: string; unknown: string }> = {
@@ -43,6 +53,9 @@ export function toServerParams(query: FilterQuery, labels: Record<string, string
     lists.set(key, new Set(prev ? values.filter((v) => prev.has(v)) : values))
   }
   let roomConflict = false
+  // SDK fields: every pair must hold, so one key asked with two values matches nothing.
+  const fieldPairs = new Map<string, string>()
+  let fieldConflict = false
   const min = new Map<string, number>()
   const max = new Map<string, number>()
   for (const c of conditions) {
@@ -82,9 +95,20 @@ export function toServerParams(query: FilterQuery, labels: Record<string, string
       if (lists.has("tag")) dropped.push(`a second ${name} filter`)
       else lists.set("tag", new Set(vs))
     }
+    else if (c.field === "field" && c.operator === "is") {
+      const f = parseField(vs[0] ?? "")
+      if (!f) dropped.push(`${name} "${vs[0] ?? ""}" (not key:value)`)
+      else if (fieldPairs.has(f.key)) fieldConflict ||= fieldPairs.get(f.key) !== f.value
+      else if (fieldPairs.size >= MAX_FIELDS) {
+        const extra = `${name} filters past the first ${MAX_FIELDS}`
+        if (!dropped.includes(extra)) dropped.push(extra)
+      }
+      else fieldPairs.set(f.key, f.value)
+    }
     else dropped.push(`${name} ${c.operator}`)
   }
-  let nothing = roomConflict
+  for (const [k, v] of fieldPairs) params.append("field", `${k}:${v}`)
+  let nothing = roomConflict || fieldConflict
   for (const b of Object.values(bounds)) {
     // A floor above the ceiling, or a bound on a value asked to be unknown, matches nothing.
     const lo = min.get(b.min)

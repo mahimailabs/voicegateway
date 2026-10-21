@@ -7,7 +7,7 @@ import { capturedCalls } from "./fixtures"
 import { alertEvents, issueList } from "./insights"
 import { capacity, cloudAgents, egress, ingress, mediaServer, projectSnapshot, providerProbes, sip, workers } from "./livekit"
 import { summarize } from "./summaries"
-import { matchesFilters, parseFilters, sortCalls, totals } from "./calls-query"
+import { matchesFields, matchesFilters, parseFilters, sortCalls, totals } from "./calls-query"
 import { playbackUrl, recordingMedia } from "./recordings"
 import { alertSetup, changeMember, createKey, invitations, invite, members, passwordReset, projectKeys, projectSettings, updateSettings, revokeInvitation, revokeKey } from "./settings"
 import { addProject, knownOrg, knownProject, workspaces } from "./workspaces"
@@ -120,7 +120,7 @@ export const handlers = [
       if (!Number.isInteger(start) || start < 0 || key !== bound) return fail(400, "invalid_request", "The cursor does not belong to these filters.")
     }
 
-    const matching = sortCalls(capturedCalls().map(c=>summarize({...c,...metadataOf(settingsScope(params),c.id)})).filter((c) => matchesFilters(c, filters)), filters)
+    const matching = sortCalls(capturedCalls().filter((c) => matchesFields(c.fields, filters.field)).map(c=>summarize({...c,...metadataOf(settingsScope(params),c.id)})).filter((c) => matchesFilters(c, filters)), filters)
     const items = matching.slice(start, start + limit)
     const next = start + limit < matching.length ? `${start + limit}:${bound}` : null
     return HttpResponse.json<CallPage>({ items, page: { nextCursor: next, snapshot: SNAPSHOT }, totals: totals(matching, projectSettings(settingsScope(params)).thresholds.answerMs) })
@@ -178,7 +178,7 @@ export const handlers = [
     if (!known(params)) return fail(404, "not_found", "No such project.")
     const base = `${new URL(request.url).origin}/ingest/${encodeURIComponent(String(params.orgId))}/${encodeURIComponent(String(params.projectId))}`
     const waiting = { lastAcceptedAt: null, lastRejectedAt: null, reason: null, usedKey: null, expectedKey: null }
-    return HttpResponse.json<ProjectConnection>({ urls: { observability: base, webhook: `${base}/livekit/webhook` }, webhook: waiting, agent: waiting, firstCall: null, ...connectionOverride() })
+    return HttpResponse.json<ProjectConnection>({ urls: { observability: base, webhook: `${base}/livekit/webhook` }, webhook: waiting, agent: waiting, sdk: waiting, firstCall: null, ...connectionOverride() })
   }),
   http.get<PathParams, never, AlertSetup | ApiErrorBody>(`${project}/alert-setup`, ({ params }) => (known(params) ? HttpResponse.json(alertSetup()) : fail(404, "not_found", "No such project."))),
   http.get<PathParams, never, Workspaces>("*/api/v1/workspaces", () => HttpResponse.json(workspaces())),

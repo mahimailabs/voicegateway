@@ -73,6 +73,29 @@ export type Call = {
      * Distinct retained source clocks for this call. Every clockId resolves to exactly one entry; IDs are unique within this array. Empty only when no relative timeline is present. Metadata is derived from capture/adapter evidence, not a field already stored in the preview fixtures.
      */
     clocks: Array<Clock>;
+    /**
+     * Custom fields the agent attached through a VoiceGateway SDK (attach(fields=...) or set_field), later values winning. Empty when no SDK attached any. Absent from captures made before the SDK.
+     */
+    fields?: {
+        [key: string]: string;
+    };
+    /**
+     * The latest user and agent state a VoiceGateway SDK reported. Null when no SDK reported state for this call.
+     */
+    live?: CallLive | null;
+};
+
+export type CallLive = {
+    user: LiveState | null;
+    agent: LiveState | null;
+};
+
+export type LiveState = {
+    /**
+     * The framework's state name, for example listening, thinking or speaking.
+     */
+    state: string;
+    at: string;
 };
 
 export type Span = {
@@ -1439,6 +1462,7 @@ export type ProjectConnection = {
     urls: ConnectionUrls;
     webhook: ConnectionSource;
     agent: ConnectionSource;
+    sdk: ConnectionSource;
     firstCall: FirstCall | null;
 };
 
@@ -2194,6 +2218,10 @@ export type ListCallsData = {
          * Only calls where every listed value is unknown. This is how the console's "is empty" filter reaches the server; an unknown value is never matched as zero.
          */
         unknown?: Array<'answerMs' | 'durationSeconds' | 'turnCount'>;
+        /**
+         * An SDK call field as key:value. Repeat to keep calls holding every listed pair; one key with two values matches nothing. At most 16.
+         */
+        field?: Array<string>;
         /**
          * User tag. Repeat to match calls carrying any listed tag.
          */

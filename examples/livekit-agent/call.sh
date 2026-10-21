@@ -5,6 +5,7 @@
 #
 # ATTACH=1 runs agent_attach.py instead: the Python SDK, voicegateway.attach(),
 # with LiveKit's uploader off, so the call reaches VoiceGateway through the SDK only.
+# ATTACH=upload runs agent_attach.py with the uploader on as well.
 set -euo pipefail
 
 cd "$(dirname "$0")"
@@ -23,14 +24,19 @@ set +a
 if [ -n "${ATTACH:-}" ]; then
 	agent_script=agent_attach.py
 	connection=VOICEGATEWAY_URL
-	# SDK only: LiveKit Agents treats an empty LIVEKIT_OBSERVABILITY_URL as unset, and
-	# load_dotenv in the agent does not override a variable that exists.
-	export LIVEKIT_OBSERVABILITY_URL=
+	if [ "$ATTACH" = upload ]; then
+		connection="VOICEGATEWAY_URL LIVEKIT_OBSERVABILITY_URL"
+	else
+		# SDK only: LiveKit Agents treats an empty LIVEKIT_OBSERVABILITY_URL as unset, and
+		# load_dotenv in the agent does not override a variable that exists.
+		export LIVEKIT_OBSERVABILITY_URL=
+	fi
 else
 	agent_script=agent.py
 	connection=LIVEKIT_OBSERVABILITY_URL
 fi
-for name in LIVEKIT_URL LIVEKIT_API_KEY LIVEKIT_API_SECRET "$connection"; do
+# shellcheck disable=SC2086 # connection names one or two variables
+for name in LIVEKIT_URL LIVEKIT_API_KEY LIVEKIT_API_SECRET $connection; do
 	if [ -z "${!name:-}" ]; then
 		echo "$name is empty in examples/livekit-agent/.env" >&2
 		exit 1

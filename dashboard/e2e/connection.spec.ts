@@ -44,7 +44,7 @@ for (const [label, width, height] of widths) {
     // Each width is set here, so the theme projects run it once each and the phone projects not at all.
     test.skip(testInfo.project.name.startsWith("phone-"), "the width is set by the test")
     const { panel, errors } = await open(page, testInfo, width, height)
-    for (const name of ["Webhook", "Agent upload", "First call stored"]) await expect(panel.getByRole("listitem", { name })).toContainText("Waiting")
+    for (const name of ["Webhook", "Agent upload", "First call stored", "SDK (optional)"]) await expect(panel.getByRole("listitem", { name })).toContainText("Waiting")
     await expect(panel.getByRole("button", { name: "Copy agent upload url" })).toBeVisible()
     await expect(panel.getByRole("button", { name: "Copy webhook url" })).toBeVisible()
     await expect(panel.getByLabel("Webhook URL", { exact: true })).toHaveText(/\/ingest\/default\/default-project\/livekit\/webhook$/)

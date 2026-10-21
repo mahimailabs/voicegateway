@@ -5,6 +5,8 @@ with their metrics, usage, tool calls and the custom field below to VOICEGATEWAY
 LIVEKIT_API_KEY and LIVEKIT_API_SECRET. Run it with `make example-call ATTACH=1`.
 """
 
+import os
+
 import voicegateway
 from dotenv import load_dotenv
 from livekit import agents
@@ -26,9 +28,12 @@ async def entrypoint(ctx: agents.JobContext) -> None:
     )
     # Before start, so the first states are captured. Flushes on close and job shutdown.
     voicegateway.attach(session, fields={"example": "attach"})
+    # With LiveKit's uploader also pointed at VoiceGateway, record so it uploads spans and the
+    # recording; the SDK then adds the fields and live state.
     await session.start(
         room=ctx.room,
         agent=Agent(instructions="You answer for a small bakery in one short sentence."),
+        record=bool(os.environ.get("LIVEKIT_OBSERVABILITY_URL")),
         room_options=room_io.RoomOptions(delete_room_on_close=True),
     )
 
