@@ -1,7 +1,7 @@
 import { issueMetadataOf, saveIssueMetadata } from "./issue-metadata"
 import { metadataOf, saveMetadata } from "./dispositions"
 import { http, HttpResponse, type PathParams } from "msw"
-import type { AlertEvents, AlertSetup, Call, CallPage, CallStats, CreatedInvitation, CreatedPasswordReset, CreatedProjectKey, Invitations, ProjectCreate, WorkspaceProject, Member, Members, ProjectConnection, ProjectKeys, IssueList, ProjectSettings, ProviderProbes, Resources, Workers, CapacityRun, CloudAgents, Egress, Error as ApiErrorBody, Ingress, MediaServer, ProjectSnapshot, Sip, Workspaces } from "@/lib/api-types"
+import type { AlertEvents, AlertSetup, Call, CallPage, CallStats, CreatedInvitation, CreatedPasswordReset, CreatedProjectKey, Invitations, LiveKitCredentialsUpdate, OrganisationEntitlement, ProjectCreate, ProjectCreated, Member, Members, ProjectConnection, ProjectKeys, IssueList, ProjectSettings, ProviderProbes, Resources, Workers, CapacityRun, CloudAgents, Egress, Error as ApiErrorBody, Ingress, MediaServer, ProjectSnapshot, Sip, Workspaces } from "@/lib/api-types"
 import { callStats } from "./call-stats"
 import { capturedCalls } from "./fixtures"
 import { alertEvents, issueList } from "./insights"
@@ -38,6 +38,41 @@ function connectionOverride(): Partial<ProjectConnection> {
   } catch {
     return {}
   }
+}
+
+// The LiveKit project each mock project reads: fake values, since the mock reaches no LiveKit. The key
+// is the one the project was created with or last changed to (updateProjectLiveKitCredentials), kept
+// in memory only, never in browser storage, so the next connection read shows it.
+const MOCK_LIVEKIT_URL = "wss://example-project.livekit.cloud"
+const livekitKeys = new Map<string, string>()
+const livekitOf = (params: PathParams) => ({ url: MOCK_LIVEKIT_URL, apiKey: livekitKeys.get(settingsScope(params)) ?? "APIexample123" })
+export const resetMockLiveKit = () => livekitKeys.clear()
+
+// The entitlement API exists only on a hosted install; the mock is a self-hosted one and answers
+// web's 404, unless a browser check sets localStorage "vg.mock-entitlement" to "hosted".
+function mockHosted(): boolean {
+  try {
+    return globalThis.localStorage?.getItem("vg.mock-entitlement") === "hosted"
+  } catch {
+    return false
+  }
+}
+
+// Mock only: a browser check of the first-run journey sets localStorage "vg.mock-no-calls" to
+// "true", and the calls list answers as a project with no call yet.
+function mockNoCalls(): boolean {
+  try {
+    return globalThis.localStorage?.getItem("vg.mock-no-calls") === "true"
+  } catch {
+    return false
+  }
+}
+
+// web's getCall has no events field (internal/api/getcall.go), so the mock's getCall answers none
+// either. The list and the call figures are web's own summaries, built from the stored events.
+const withoutEvents = <T extends { events?: unknown }>(c: T): Omit<T, "events"> => {
+  const { events: _events, ...rest } = c
+  return rest
 }
 
 // Playback goes through the API in the project that was asked for, never to the captured file.
@@ -120,7 +155,7 @@ export const handlers = [
       if (!Number.isInteger(start) || start < 0 || key !== bound) return fail(400, "invalid_request", "The cursor does not belong to these filters.")
     }
 
-    const matching = sortCalls(capturedCalls().filter((c) => matchesFields(c.fields, filters.field)).map(c=>summarize({...c,...metadataOf(settingsScope(params),c.id)})).filter((c) => matchesFilters(c, filters)), filters)
+    const matching = sortCalls((mockNoCalls() ? [] : capturedCalls()).filter((c) => matchesFields(c.fields, filters.field)).map(c=>summarize({...c,...metadataOf(settingsScope(params),c.id)})).filter((c) => matchesFilters(c, filters)), filters)
     const items = matching.slice(start, start + limit)
     const next = start + limit < matching.length ? `${start + limit}:${bound}` : null
     return HttpResponse.json<CallPage>({ items, page: { nextCursor: next, snapshot: SNAPSHOT }, totals: totals(matching, projectSettings(settingsScope(params)).thresholds.answerMs) })
@@ -128,7 +163,8 @@ export const handlers = [
 
   http.get<PathParams, never, Call | ApiErrorBody>(`${project}/calls/:callId`, ({ params }) => {
     if (!known(params)) return fail(404, "not_found", "No such project.")
-    const call = capturedCalls().find((c) => c.id === params.callId)
+    const found = capturedCalls().find((c) => c.id === params.callId)
+    const call = found && withoutEvents(found)
     return call ? HttpResponse.json(withPlayback({...call,tags:metadataOf(settingsScope(params),call.id).tags,archived:metadataOf(settingsScope(params),call.id).archived}, params)) : fail(404, "not_found", "No such call in this project.")
   }),
 
@@ -195,7 +231,27 @@ export const handlers = [
     if (!known(params)) return fail(404, "not_found", "No such project.")
     const base = `${new URL(request.url).origin}/ingest/${encodeURIComponent(String(params.orgId))}/${encodeURIComponent(String(params.projectId))}`
     const waiting = { lastAcceptedAt: null, lastRejectedAt: null, reason: null, usedKey: null, expectedKey: null }
-    return HttpResponse.json<ProjectConnection>({ urls: { observability: base, webhook: `${base}/livekit/webhook` }, webhook: waiting, agent: waiting, sdk: waiting, firstCall: null, ...connectionOverride() })
+    return HttpResponse.json<ProjectConnection>({ livekit: livekitOf(params), urls: { observability: base, webhook: `${base}/livekit/webhook` }, webhook: waiting, agent: waiting, sdk: waiting, firstCall: null, ...connectionOverride() })
+  }),
+  // A new LiveKit key and secret, with web's checks. The mock reaches no LiveKit, so it accepts every
+  // pair except a key that starts with APIinvalid, which it refuses as LiveKit would refuse a pair
+  // that does not verify (the 422 a test exercises). Nothing but the key is kept.
+  http.put<PathParams, Partial<LiveKitCredentialsUpdate>, ApiErrorBody>(`${project}/livekit-credentials`, async ({ params, request }) => {
+    if (!known(params)) return fail(404, "not_found", "No such project.")
+    const body = await request.json().catch(() => null)
+    const key = typeof body?.livekitApiKey === "string" ? body.livekitApiKey : ""
+    const secret = typeof body?.livekitApiSecret === "string" ? body.livekitApiSecret : ""
+    if (key.trim() === "" || secret.trim() === "" || /[\s\p{Cc}]/u.test(key)) return fail(400, "invalid_request", "livekitApiKey and livekitApiSecret are required, and the key has no spaces or control characters")
+    if (key.startsWith("APIinvalid")) return fail(422, "livekit_secret_invalid", "the LiveKit API secret did not verify for this key")
+    livekitKeys.set(settingsScope(params), key)
+    return new HttpResponse(null, { status: 204 })
+  }),
+  http.get<PathParams, never, OrganisationEntitlement | ApiErrorBody>("*/api/v1/org/:orgId/entitlement", ({ params }) => {
+    if (!knownOrg(params.orgId) || !mockHosted()) return fail(404, "not_found", "no entitlement API")
+    const now = new Date()
+    const from = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).toISOString()
+    const to = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1)).toISOString()
+    return HttpResponse.json<OrganisationEntitlement>({ from, to, limitMinutes: 2000, active: true, revision: 1, callSeconds: 0, unmeasuredCalls: 0, openCalls: 0, warningPercent: 0, ingestAllowed: true })
   }),
   http.get<PathParams, never, AlertSetup | ApiErrorBody>(`${project}/alert-setup`, ({ params }) => (known(params) ? HttpResponse.json(alertSetup()) : fail(404, "not_found", "No such project."))),
   http.get<PathParams, never, Workspaces>("*/api/v1/workspaces", () => HttpResponse.json(workspaces())),
@@ -214,7 +270,7 @@ export const handlers = [
   }),
 
   // Projects added in the console (phase 06f), kept in this browser (workspaces.ts), with web's checks.
-  http.post<PathParams, Partial<ProjectCreate>, WorkspaceProject | ApiErrorBody>("*/api/v1/org/:orgId/projects", async ({ params, request }) => {
+  http.post<PathParams, Partial<ProjectCreate>, ProjectCreated | ApiErrorBody>("*/api/v1/org/:orgId/projects", async ({ params, request }) => {
     if (!knownOrg(params.orgId)) return fail(404, "not_found", "organisation not found")
     const body = await request.json().catch(() => null)
     const text = (v: unknown) => (typeof v === "string" ? v.trim() : "")
@@ -250,7 +306,10 @@ export const handlers = [
     }
     const out = await addProject(String(params.orgId), name, text(body?.livekitApiKey))
     if (out === "project_exists") return fail(409, "project_exists", "this organisation already has a project with that id; choose another name")
-    return HttpResponse.json(out, { status: 201, headers: { "Cache-Control": "no-store" } })
+    livekitKeys.set(`${params.orgId}/${out.id}`, text(body?.livekitApiKey))
+    // liveRooms: the mock reaches no LiveKit, so it counts the rooms in the captured media server
+    // snapshot, which is what a verify read of that LiveKit project would have listed.
+    return HttpResponse.json<ProjectCreated>({ ...out, liveRooms: mediaServer().rooms.length }, { status: 201, headers: { "Cache-Control": "no-store" } })
   }),
 
   // Invitations and reset links, in memory (settings.ts), as web without SMTP answers them.

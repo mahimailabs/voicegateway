@@ -140,7 +140,7 @@ func Web(ctx context.Context, c config.Config, log *slog.Logger) error {
 	v1 := &api.API{
 		Settings: projects, Origins: projects, Embeds: embeds, Metadata: projects, Issues: projects, StorageBucket: c.S3.Bucket,
 		Live:              live,
-		ResourceEndpoints: projects, ResourceSamples: events, Projects: projects, NewProjects: projects, VerifyLiveKit: scrape.NewVerifier(c.WorkerEndpointsPublicOnly), VerifyBucket: bucket.NewVerifier(bucketTransport), Calls: projects, Traces: events, Layers: events, Endpoints: projects, Accounts: projects, Stats: projects, Keys: projects, NewKey: auth.NewKey, Log: log, Now: time.Now, Gate: accounts.Gate,
+		ResourceEndpoints: projects, ResourceSamples: events, Projects: projects, NewProjects: projects, Credentials: projects, VerifyLiveKit: scrape.NewVerifier(c.WorkerEndpointsPublicOnly), VerifyBucket: bucket.NewVerifier(bucketTransport), Calls: projects, Traces: events, Layers: events, Endpoints: projects, Accounts: projects, Stats: projects, Keys: projects, NewKey: auth.NewKey, Log: log, Now: time.Now, Gate: accounts.Gate,
 		Invitations: projects, Inviter: NewInviter(links), LinkBase: accounts.LinkBase,
 		Recordings: projects, Media: recordings,
 		Connections: projects, PublicURL: c.PublicURL,

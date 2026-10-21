@@ -60,7 +60,7 @@
       "createEmbedToken",
       "createInvitation",
       "createPasswordReset",
-      "createProject",
+      "createProject", "updateProjectLiveKitCredentials",
       "createProjectKey",
       "getAlertSetup",
       "getCall",
@@ -201,7 +201,7 @@
     "operations": [
       "createInvitation",
       "createPasswordReset",
-      "createProject",
+      "createProject", "updateProjectLiveKitCredentials",
       "createProjectKey",
       "getAlertSetup",
       "getCall",

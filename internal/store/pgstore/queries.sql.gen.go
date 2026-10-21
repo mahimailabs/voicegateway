@@ -3781,6 +3781,32 @@ func (q *Queries) UpdateIssueMetadata(ctx context.Context, arg UpdateIssueMetada
 	return i, err
 }
 
+const updateLiveKitCredentials = `-- name: UpdateLiveKitCredentials :execrows
+UPDATE projects SET livekit_api_key = $1, livekit_api_secret_sealed = $2
+WHERE organisation_id = $3 AND id = $4
+`
+
+type UpdateLiveKitCredentialsParams struct {
+	LivekitApiKey          string
+	LivekitApiSecretSealed []byte
+	OrganisationID         string
+	ID                     string
+}
+
+// A project's new LiveKit key and sealed secret; its URL never changes.
+func (q *Queries) UpdateLiveKitCredentials(ctx context.Context, arg UpdateLiveKitCredentialsParams) (int64, error) {
+	result, err := q.db.Exec(ctx, updateLiveKitCredentials,
+		arg.LivekitApiKey,
+		arg.LivekitApiSecretSealed,
+		arg.OrganisationID,
+		arg.ID,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const updatePasswordHash = `-- name: UpdatePasswordHash :execrows
 UPDATE users SET password_hash = $1 WHERE id = $2 AND password_hash = $3
 `

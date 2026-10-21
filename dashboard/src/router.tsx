@@ -12,11 +12,14 @@ import { EgressPage } from "@/features/egress/egress-page"
 import { SipPage } from "@/features/sip/sip-page"
 import { MediaServerPage } from "@/features/media-server/media-server-page"
 import { EmbedPage } from "@/features/embed/embed-page"
+import { SetupPage } from "@/features/setup/setup-page"
 import { entryPath, scopeRewrite } from "@/lib/url-state"
 
 // The console pages sit inside the app shell; embeddable widgets (decision 0023) render on their own.
 const root = createRootRoute({ component: Outlet })
 const app = createRoute({ getParentRoute: () => root, id: "app", component: AppShell })
+// The Cloud setup journey is full screen, outside the shell.
+const setup = createRoute({ getParentRoute: () => root, path: "/setup", component: SetupPage })
 const embed = createRoute({ getParentRoute: () => root, path: "/embed/$widget", component: EmbedPage })
 // The API reference stands alone like a widget, loaded only when opened: Scalar is large.
 const apiDocs = createRoute({
@@ -54,7 +57,7 @@ const settings = createRoute({ getParentRoute: () => app, path: "/settings", com
 
 export const router = createRouter({
   rewrite: scopeRewrite,
-  routeTree: root.addChildren([app.addChildren([index, project, overview, calls, callRoute, live, issues, alerts, agents, sfu, sip, egress, ingress, settings]), embed, apiDocs]),
+  routeTree: root.addChildren([app.addChildren([index, project, overview, calls, callRoute, live, issues, alerts, agents, sfu, sip, egress, ingress, settings]), setup, embed, apiDocs]),
 })
 
 declare module "@tanstack/react-router" {

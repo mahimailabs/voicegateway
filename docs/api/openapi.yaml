@@ -1493,7 +1493,7 @@ paths:
               $ref: "#/components/schemas/ProjectCreate"
       responses:
         "201":
-          description: The new project, as getWorkspaces lists it. Never its LiveKit key or secret.
+          description: The new project, as getWorkspaces lists it, and how many rooms its LiveKit project had live at the verify. Never its LiveKit key or secret.
           headers:
             Cache-Control:
               description: Always no-store, so no cache keeps the answer.
@@ -1502,9 +1502,53 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/WorkspaceProject"
+                $ref: "#/components/schemas/ProjectCreated"
         "409":
           $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/ProjectNotVerified"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/SourceUnavailable"
+  /api/v1/org/{orgId}/project/{projectId}/livekit-credentials:
+    put:
+      operationId: updateProjectLiveKitCredentials
+      summary: Replace the project's LiveKit API key and secret
+      tags:
+        - Console writes
+      x-access:
+        principal: organisation_member
+        minimumRole: Admin
+        projectIsolation: required
+        browserSessionTransport: session_cookie
+        scope: project
+      description: Requires Admin membership in the named organisation; a project API key is 403. Replaces the LiveKit API key and secret of an existing project. The LiveKit URL stays as it is, since one VoiceGateway project is one LiveKit project; to use another LiveKit server, add another project. The key and secret follow createProject's rules and are checked the same way first, with one signed LiveKit read against the project's stored URL; LiveKit refusing it is 422 livekit_secret_invalid and no LiveKit answer is 422 livekit_unreachable. The secret is sealed under VOICEGATEWAY_SECRET_KEY and is never answered, logged or read back. Ingestion and the LiveKit readers load the key on every request and poll, so the old key is refused and the new one accepted at once; agents and LiveKit webhooks must then sign with the new key. The answer is not cached.
+      parameters:
+        - $ref: "#/components/parameters/OrganisationId"
+        - $ref: "#/components/parameters/ProjectId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LiveKitCredentialsUpdate"
+      responses:
+        "204":
+          description: The project now uses the new key and secret.
+          headers:
+            Cache-Control:
+              description: Always no-store, so no cache keeps the answer.
+              schema:
+                type: string
         "422":
           $ref: "#/components/responses/ProjectNotVerified"
         "400":
@@ -5587,8 +5631,11 @@ components:
     ProjectConnection:
       type: object
       additionalProperties: false
-      required: [ urls, webhook, agent, sdk, firstCall ]
+      required: [ livekit, urls, webhook, agent, sdk, firstCall ]
       properties:
+        livekit:
+          $ref: "#/components/schemas/ProjectLiveKit"
+          x-source: { kind: configuration, file: internal/api/connection.go, pointer: null, detail: "The project's LiveKit URL and API key as stored; never its secret." }
         urls:
           $ref: "#/components/schemas/ConnectionUrls"
           x-source: { kind: configuration, file: internal/api/connection.go, pointer: null, detail: "Scoped ingestion URLs built from VOICEGATEWAY_PUBLIC_URL and the project's ids (decision 0032)." }
@@ -5607,6 +5654,56 @@ components:
             - type: "null"
           x-source: { kind: computed, file: internal/store/pgstore/connection.go, pointer: null, detail: "Earliest row of the calls index, which only the worker writes from verified ingest." }
           x-null-reason: No call has been stored for this project yet. Sample data never counts.
+    ProjectCreated:
+      type: object
+      additionalProperties: false
+      required: [ id, name, liveRooms ]
+      x-source: { kind: computed, file: internal/api/projects.go, pointer: null, detail: "createProject's answer: the stored project and the verify read's room count." }
+      properties:
+        id:
+          type: string
+          x-source: { kind: configuration, file: internal/api/projects.go, pointer: null, detail: "The project id, the name as a slug." }
+        name:
+          type: string
+          x-source: { kind: configuration, file: internal/api/projects.go, pointer: null, detail: "The project name as stored." }
+        liveRooms:
+          type: [ integer, "null" ]
+          minimum: 0
+          x-unit: count
+          description: Rooms live on the LiveKit project at the verify, from the same signed ListRooms read. Null when the verifier did not count them; never a guessed zero.
+          x-source: { kind: computed, file: internal/scrape/verify.go, pointer: null, detail: "The number of rooms the verify's signed ListRooms read listed (server-sdk-go RoomServiceClient.ListRooms)." }
+          x-null-reason: The verifier did not count the rooms.
+    ProjectLiveKit:
+      type: object
+      additionalProperties: false
+      required: [ url, apiKey ]
+      x-source: { kind: configuration, file: migrations/postgres/00001_projects.sql, pointer: null, detail: "The project's LiveKit URL and API key; the secret is sealed and never returned." }
+      properties:
+        url:
+          type: string
+          description: The project's LiveKit URL. It never changes; another LiveKit server is another project.
+          x-source: { kind: configuration, file: migrations/postgres/00001_projects.sql, pointer: null, detail: "projects.livekit_url." }
+        apiKey:
+          type: string
+          description: The LiveKit API key agents and LiveKit webhooks must sign with. API keys are not secret.
+          x-source: { kind: configuration, file: migrations/postgres/00001_projects.sql, pointer: null, detail: "projects.livekit_api_key." }
+    LiveKitCredentialsUpdate:
+      type: object
+      additionalProperties: false
+      required: [ livekitApiKey, livekitApiSecret ]
+      x-source: { kind: configuration, file: internal/api/credentials.go, pointer: null, detail: "A new LiveKit key and secret for an existing project." }
+      properties:
+        livekitApiKey:
+          type: string
+          minLength: 1
+          maxLength: 256
+          description: The new LiveKit API key, with no spaces or control characters.
+          x-source: { kind: configuration, file: internal/api/credentials.go, pointer: null, detail: "Checked like createProject's key." }
+        livekitApiSecret:
+          type: string
+          minLength: 1
+          description: The new LiveKit API secret. Sealed before it is stored; never answered or logged.
+          x-source: { kind: configuration, file: internal/api/credentials.go, pointer: null, detail: "Checked like createProject's secret, then sealed." }
     ConnectionUrls:
       type: object
       additionalProperties: false

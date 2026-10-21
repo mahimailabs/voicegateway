@@ -1041,3 +1041,8 @@ UPDATE calls SET fields = calls.fields || (
 ), updated_at = now()
 WHERE id = @id
 RETURNING fields;
+
+-- name: UpdateLiveKitCredentials :execrows
+-- A project's new LiveKit key and sealed secret; its URL never changes.
+UPDATE projects SET livekit_api_key = @livekit_api_key, livekit_api_secret_sealed = @livekit_api_secret_sealed
+WHERE organisation_id = @organisation_id AND id = @id;

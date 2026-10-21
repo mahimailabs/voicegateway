@@ -22,8 +22,17 @@ const added = (): Added[] => {
   return Array.isArray(saved) ? saved.filter((a): a is Added => typeof a?.orgId === "string" && typeof a?.id === "string" && typeof a?.name === "string") : []
 }
 
+// A browser check of the "No project yet" screen sets localStorage "vg.mock-empty-org", which adds a
+// second organisation, "new-voice-team", with no project until one is added to it.
+const EMPTY_ORG = "new-voice-team"
+const emptyOrgWanted = () => readLocal("vg.mock-empty-org") === true
+const projectsOf = (orgId: string) => added().filter((a) => a.orgId === orgId).map(({ id, name }) => ({ id, name }))
+
 export const workspaces = (): Workspaces => ({
-  items: [{ id: "default", name: "Your organization", projects: [project("Default project"), ...added().filter((a) => a.orgId === "default").map(({ id, name }) => ({ id, name }))] }],
+  items: [
+    { id: "default", name: "Your organization", projects: [project("Default project"), ...projectsOf("default")] },
+    ...(emptyOrgWanted() ? [{ id: EMPTY_ORG, name: "New voice team", projects: projectsOf(EMPTY_ORG) }] : []),
+  ],
 })
 
 // A project the mock does not know is not found, as on the server.

@@ -214,3 +214,22 @@ func (s *Store) openBucket(row ProjectBucketRow) (store.ProjectBucket, error) {
 		Bucket: row.Bucket, Region: row.Region, AccessKey: row.AccessKey, SecretKey: string(plain),
 	}, nil
 }
+
+// UpdateLiveKitCredentials replaces a project's LiveKit key and secret, the secret sealed in the
+// project's own scope as at create. An unknown project is store.ErrNotFound.
+func (s *Store) UpdateLiveKitCredentials(ctx context.Context, organisationID, projectID, apiKey, apiSecret string) error {
+	sealed, err := s.sealer.Seal([]byte(apiSecret), sealContext(organisationID, projectID))
+	if err != nil {
+		return fmt.Errorf("seal LiveKit secret: %w", err)
+	}
+	n, err := s.q.UpdateLiveKitCredentials(ctx, UpdateLiveKitCredentialsParams{
+		OrganisationID: organisationID, ID: projectID, LivekitApiKey: apiKey, LivekitApiSecretSealed: sealed,
+	})
+	if err != nil {
+		return fmt.Errorf("update LiveKit credentials: %w", err)
+	}
+	if n == 0 {
+		return store.ErrNotFound
+	}
+	return nil
+}

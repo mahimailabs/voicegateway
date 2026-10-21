@@ -29,12 +29,21 @@ const BUCKET_SECRET = "bucket-secret-not-real"
 const org = { id: "acme", name: "Acme" }
 const json = (status: number, body: unknown) => new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } })
 
-function serve(answer: () => Response = () => json(201, { id: "production", name: "Production" })) {
+// The install kind comes from the entitlement read: 404 is self-hosted, an answer is hosted, and
+// "pending" never answers, as while it loads. Only the other requests are recorded.
+type Install = "self-hosted" | "hosted" | "pending"
+const entitlement = { from: "2026-10-01T00:00:00Z", to: "2026-11-01T00:00:00Z", limitMinutes: 2000, active: true, revision: 1, callSeconds: 60, unmeasuredCalls: 0, openCalls: 0, warningPercent: 0, ingestAllowed: true }
+function serve(answer: () => Response = () => json(201, { id: "production", name: "Production" }), install: Install = "self-hosted") {
   const calls: { method: string; url: string; body: string | null }[] = []
   vi.stubGlobal(
     "fetch",
     vi.fn(async (input: Request | string | URL, init?: RequestInit) => {
-      calls.push(await seen(input, init))
+      const call = await seen(input, init)
+      if (call.url.endsWith("/entitlement")) {
+        if (install === "pending") return new Promise<Response>(() => {})
+        return install === "hosted" ? json(200, entitlement) : json(404, { code: "not_found", message: "no entitlement API", requestId: "r" })
+      }
+      calls.push(call)
       return answer()
     }),
   )
@@ -53,6 +62,7 @@ const show = (onCreated = vi.fn()) => {
 
 async function fill() {
   const user = userEvent.setup()
+  await user.clear(screen.getByLabelText("Name"))
   await user.type(screen.getByLabelText("Name"), "Production")
   await user.type(screen.getByLabelText("LiveKit URL"), "wss://acme.livekit.cloud")
   await user.type(screen.getByLabelText("API key"), "APIacme")
@@ -60,13 +70,86 @@ async function fill() {
   return user
 }
 
-test("an Admin sees the Add project form, with the server command below it", () => {
-  serve()
+test.each([["self-hosted"], ["hosted"], ["pending"]] as const)("on a %s install an Admin sees the Add project form and no self-hosted command or text", async (install) => {
+  serve(undefined, install)
   signedInAs("admin")
   show()
   expect(screen.getByRole("form", { name: "Add project" })).toBeTruthy()
   expect((screen.getByLabelText("API secret") as HTMLInputElement).type).toBe("password")
-  expect(screen.getByLabelText("Project add command").textContent).toContain('--org "acme"')
+  // Let any read settle (or stay pending) before looking.
+  await new Promise((r) => setTimeout(r, 20))
+  expect(document.body.textContent).not.toMatch(/docker|self-hosted|open-source|voicegateway project add/i)
+})
+
+test("the name starts as a generated readable name the user can edit", async () => {
+  serve()
+  signedInAs("admin")
+  show()
+  const name = screen.getByLabelText("Name") as HTMLInputElement
+  expect(name.value).toMatch(/^[a-z]+(-[a-z]+)+$/)
+  const user = userEvent.setup()
+  await user.clear(name)
+  await user.type(name, "Staging")
+  expect(name.value).toBe("Staging")
+})
+
+// LiveKit Cloud's "Environment variables" block, with made-up values that reach no LiveKit.
+const block = "LIVEKIT_URL=wss://example-project.livekit.cloud\nLIVEKIT_API_KEY=APIexample123\nLIVEKIT_API_SECRET=secretexample"
+const value = (label: string) => (screen.getByLabelText(label) as HTMLInputElement).value
+
+test("pasting the block into Paste from LiveKit fills URL, key and secret and leaves the box empty", async () => {
+  const calls = serve()
+  signedInAs("admin")
+  const onCreated = show()
+  const user = userEvent.setup()
+  await user.click(screen.getByLabelText("Paste from LiveKit"))
+  await user.paste(block)
+  expect(value("LiveKit URL")).toBe("wss://example-project.livekit.cloud")
+  expect(value("API key")).toBe("APIexample123")
+  expect(value("API secret")).toBe("secretexample")
+  expect(value("Paste from LiveKit")).toBe("")
+  expect(screen.getByText("Filled URL, key and secret from the pasted variables.")).toBeTruthy()
+  // With the generated name, Add project is the only click left.
+  const name = value("Name")
+  await user.click(screen.getByRole("button", { name: "Add project" }))
+  await waitFor(() => expect(onCreated).toHaveBeenCalled())
+  const sent = JSON.parse(calls[0].body ?? "")
+  expect(sent).toMatchObject({ livekitUrl: "wss://example-project.livekit.cloud", livekitApiKey: "APIexample123", livekitApiSecret: "secretexample" })
+  expect(sent.name).toBe(name)
+})
+
+test("pasting the block into the API key input fills all three", async () => {
+  serve()
+  signedInAs("admin")
+  show()
+  const user = userEvent.setup()
+  await user.click(screen.getByLabelText("API key"))
+  await user.paste(block)
+  expect(value("LiveKit URL")).toBe("wss://example-project.livekit.cloud")
+  expect(value("API key")).toBe("APIexample123")
+  expect(value("API secret")).toBe("secretexample")
+})
+
+test("pasting a bare key into the API key input pastes it as usual", async () => {
+  serve()
+  signedInAs("admin")
+  show()
+  const user = userEvent.setup()
+  await user.click(screen.getByLabelText("API key"))
+  await user.paste("APIexample123")
+  expect(value("API key")).toBe("APIexample123")
+  expect(value("LiveKit URL")).toBe("")
+})
+
+test("a paste that names none of the variables says so and keeps nothing in the box", async () => {
+  serve()
+  signedInAs("admin")
+  show()
+  const user = userEvent.setup()
+  await user.click(screen.getByLabelText("Paste from LiveKit"))
+  await user.paste("hello")
+  expect(value("Paste from LiveKit")).toBe("")
+  expect(screen.getByText("No LIVEKIT_URL, LIVEKIT_API_KEY or LIVEKIT_API_SECRET in the pasted text.")).toBeTruthy()
 })
 
 test("a Member sees that an admin must add a project, and no form", () => {
@@ -77,6 +160,7 @@ test("a Member sees that an admin must add a project, and no form", () => {
   expect(screen.queryByRole("form", { name: "Add project" })).toBeNull()
   expect(screen.queryByLabelText("API secret")).toBeNull()
   expect(calls.length).toBe(0)
+  expect(screen.queryByLabelText("Project add command")).toBeNull()
 })
 
 test("a submit sends the fields to createProject, clears the secret and opens the new project", async () => {

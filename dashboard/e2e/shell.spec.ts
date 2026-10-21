@@ -1,5 +1,6 @@
 import { test, expect } from "@playwright/test"
 import AxeBuilder from "@axe-core/playwright"
+import { watchErrors } from "./console-errors.ts"
 import capture from "../src/mocks/capture-session.json" with { type: "json" }
 
 const scope = "/org/default/project/default-project/"
@@ -23,9 +24,7 @@ const pages = [
 
 for (const [path, heading] of pages) {
   test(path + " deep link and accessibility", async ({ page }, testInfo) => {
-    const errors: string[] = []
-    page.on("pageerror", (error) => errors.push(error.message))
-    page.on("console", (message) => { if (message.type() === "error") errors.push(message.text()) })
+    const { errors, unexpected } = watchErrors(page)
     await page.addInitScript((theme) => localStorage.setItem("vg-theme", theme), testInfo.project.use.colorScheme ?? "light")
     const response = await page.goto(scope + path)
     expect(response?.status()).toBe(200)
@@ -53,7 +52,7 @@ for (const [path, heading] of pages) {
     const results = await new AxeBuilder({ page }).analyze()
     await testInfo.attach("axe", { body: JSON.stringify(results, null, 2), contentType: "application/json" })
     await testInfo.attach("browser-errors", { body: JSON.stringify(errors), contentType: "application/json" })
-    expect.soft(errors, "browser console and uncaught errors").toEqual([])
+    expect.soft(unexpected(), "browser console and uncaught errors").toEqual([])
     expect(results.violations.filter((v) => v.impact === "serious" || v.impact === "critical").map(({ id, impact, nodes }) => ({ id, impact, targets: nodes.map((node) => node.target) })), "serious/critical axe violations").toEqual([])
   })
 }

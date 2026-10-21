@@ -41,6 +41,7 @@ import {
   revokeProjectKey as revokeProjectKeyCall,
   updateMember as updateMemberCall,
   updateProjectSettings as updateProjectSettingsCall,
+  updateProjectLiveKitCredentials as updateProjectLiveKitCredentialsCall,
 } from "@/lib/api-types"
 import type { Call as GeneratedCall, CreateEmbedToken, ProjectConnection, UpdateProjectSettings, CallPage, ProjectCreate, CallSummary, CallTotals, EndOfTurnEvent, ItemEvent, Member, OverlapEvent, RecordingSegment, Span, StateEvent, TranscriptEvent, Turn } from "@/lib/api-types"
 
@@ -284,6 +285,11 @@ export function connectionQuery(selected = currentScope()) {
     refetchInterval: (query: { state: { data?: ProjectConnection; dataUpdatedAt: number } }) => (keepPolling(query.state.data, query.state.dataUpdatedAt) ? CONNECTION_POLL_MS : false),
   }
 }
+// Replaces the project's LiveKit API key and secret, Admin only. web checks them with one LiveKit
+// read against the stored URL first (422 livekit_secret_invalid or livekit_unreachable); a 204 has
+// no body. The secret is sealed and never answered.
+export const updateLiveKitCredentials = (selected: ReturnType<typeof currentScope>, livekitApiKey: string, livekitApiSecret: string) =>
+  updateProjectLiveKitCredentialsCall({ ...thrown, path: { orgId: selected.org, projectId: selected.project }, body: { livekitApiKey, livekitApiSecret } }).then(() => undefined)
 export const alertSetupQuery = () => ({ queryKey: ["alert-setup", currentScope()], queryFn: () => data(getAlertSetup({ ...thrown, path: scope() })) })
 export const fetchWorkspaces = () => data(getWorkspaces(thrown))
 

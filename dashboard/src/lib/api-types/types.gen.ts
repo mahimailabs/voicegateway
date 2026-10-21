@@ -1459,11 +1459,43 @@ export type CallMetadata = {
 export type UpdateCallMetadata = CallMetadata;
 
 export type ProjectConnection = {
+    livekit: ProjectLiveKit;
     urls: ConnectionUrls;
     webhook: ConnectionSource;
     agent: ConnectionSource;
     sdk: ConnectionSource;
     firstCall: FirstCall | null;
+};
+
+export type ProjectCreated = {
+    id: string;
+    name: string;
+    /**
+     * Rooms live on the LiveKit project at the verify, from the same signed ListRooms read. Null when the verifier did not count them; never a guessed zero.
+     */
+    liveRooms: number | null;
+};
+
+export type ProjectLiveKit = {
+    /**
+     * The project's LiveKit URL. It never changes; another LiveKit server is another project.
+     */
+    url: string;
+    /**
+     * The LiveKit API key agents and LiveKit webhooks must sign with. API keys are not secret.
+     */
+    apiKey: string;
+};
+
+export type LiveKitCredentialsUpdate = {
+    /**
+     * The new LiveKit API key, with no spaces or control characters.
+     */
+    livekitApiKey: string;
+    /**
+     * The new LiveKit API secret. Sealed before it is stored; never answered or logged.
+     */
+    livekitApiSecret: string;
 };
 
 export type ConnectionUrls = {
@@ -3980,12 +4012,70 @@ export type CreateProjectError = CreateProjectErrors[keyof CreateProjectErrors];
 
 export type CreateProjectResponses = {
     /**
-     * The new project, as getWorkspaces lists it. Never its LiveKit key or secret.
+     * The new project, as getWorkspaces lists it, and how many rooms its LiveKit project had live at the verify. Never its LiveKit key or secret.
      */
-    201: WorkspaceProject;
+    201: ProjectCreated;
 };
 
 export type CreateProjectResponse = CreateProjectResponses[keyof CreateProjectResponses];
+
+export type UpdateProjectLiveKitCredentialsData = {
+    body: LiveKitCredentialsUpdate;
+    path: {
+        /**
+         * Authorised orgId; the server must verify organisation/project ownership before any read.
+         */
+        orgId: string;
+        /**
+         * Authorised projectId; the server must verify organisation/project ownership before any read.
+         */
+        projectId: string;
+    };
+    query?: never;
+    url: '/api/v1/org/{orgId}/project/{projectId}/livekit-credentials';
+};
+
+export type UpdateProjectLiveKitCredentialsErrors = {
+    /**
+     * invalid_request; never return an empty success result for this failure.
+     */
+    400: Error;
+    /**
+     * unauthenticated; never return an empty success result for this failure.
+     */
+    401: Error;
+    /**
+     * forbidden; never return an empty success result for this failure.
+     */
+    403: Error;
+    /**
+     * not_found; never return an empty success result for this failure.
+     */
+    404: Error;
+    /**
+     * livekit_secret_invalid, LiveKit refused a read signed with the given key and secret; livekit_unreachable, the LiveKit URL gave no LiveKit answer, without saying whether it did not answer, was refused by the address guard or is not a LiveKit server; recording_bucket_refused, the S3 endpoint refused a write or delete with the given access key, secret and bucket name; recording_bucket_unreachable, the S3 endpoint gave no S3 answer, without saying why. Nothing is stored.
+     */
+    422: Error;
+    /**
+     * internal_error; never return an empty success result for this failure.
+     */
+    500: Error;
+    /**
+     * source_unavailable; never return an empty success result for this failure.
+     */
+    503: Error;
+};
+
+export type UpdateProjectLiveKitCredentialsError = UpdateProjectLiveKitCredentialsErrors[keyof UpdateProjectLiveKitCredentialsErrors];
+
+export type UpdateProjectLiveKitCredentialsResponses = {
+    /**
+     * The project now uses the new key and secret.
+     */
+    204: void;
+};
+
+export type UpdateProjectLiveKitCredentialsResponse = UpdateProjectLiveKitCredentialsResponses[keyof UpdateProjectLiveKitCredentialsResponses];
 
 export type GetMembersData = {
     body?: never;

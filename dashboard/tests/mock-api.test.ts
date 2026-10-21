@@ -8,7 +8,7 @@ import { setupServer } from "msw/node"
 import { afterAll, afterEach, beforeAll, describe, expect, test, vi } from "vitest"
 import { parse } from "yaml"
 import { resetProjectSettings } from "../src/mocks/settings.ts"
-import { handlers } from "../src/mocks/handlers.ts"
+import { handlers, resetMockLiveKit } from "../src/mocks/handlers.ts"
 import { capturedCalls } from "../src/mocks/fixtures.ts"
 import { buildModel, turnCount } from "../src/features/call/call-model.ts"
 import { QueryClient } from "@tanstack/react-query"
@@ -213,7 +213,12 @@ describe("getCall", () => {
     for (const row of list) {
       const call = await (await fetch(`${base}/calls/${encodeURIComponent(row.id)}`)).json()
       // The drawer's count: a known count is the same number, and unknown is unknown on both sides.
-      expect(turnCount(call, buildModel(call)), row.id).toBe(row.turnCount)
+      // getCall carries no session events (internal/api/getcall.go), so a call whose turns exist only
+      // can be placed only from stored events (the console captures, with no spans or recording) has an
+      // unknown count in the drawer, never a guess.
+      const eventsOnly = !!capturedCalls().find((c) => c.id === row.id)?.events?.length && !call.spans?.length && !call.recording
+      expect(call.events, row.id).toBeUndefined()
+      expect(turnCount(call, buildModel(call)), row.id).toBe(eventsOnly ? null : row.turnCount)
     }
     // The phone test call has four agent_turn spans, but only two of them spoke.
     expect(list.find((r) => r.id.includes("937b5111"))?.turnCount).toBe(2)
@@ -634,10 +639,14 @@ describe("createProject", () => {
     expect(res.status).toBe(201)
     expect(res.headers.get("Cache-Control")).toBe("no-store")
     const created = await res.json()
-    expect(valid("WorkspaceProject", created)).toBe("")
-    expect(created).toEqual({ id: "mock-staging", name: "Mock Staging" })
+    expect(valid("ProjectCreated", created)).toBe("")
+    // The mock counts the rooms in its captured media server snapshot; it reaches no LiveKit.
+    expect(created).toEqual({ id: "mock-staging", name: "Mock Staging", liveRooms: expect.any(Number) })
     const ws = await (await fetch("http://console.test/api/v1/workspaces")).json()
-    expect(ws.items[0].projects).toContainEqual(created)
+    expect(ws.items[0].projects).toContainEqual({ id: created.id, name: created.name })
+    // The new project reads the LiveKit key it was created with, not the built-in project's.
+    const connection = await (await fetch(`http://console.test/api/v1/org/default/project/${created.id}/connection`)).json()
+    expect(connection.livekit.apiKey).toBe("APImockstaging")
     const again = await post(fields)
     expect(again.status).toBe(409)
     const e = await again.json()
@@ -684,5 +693,36 @@ describe("getProjectConnection", () => {
     const body = await res.json()
     expect(valid("ProjectConnection", body)).toBe("")
     expect(body.sdk).toEqual({ lastAcceptedAt: null, lastRejectedAt: null, reason: null, usedKey: null, expectedKey: null })
+    expect(body.livekit).toEqual({ url: "wss://example-project.livekit.cloud", apiKey: "APIexample123" })
+  })
+})
+
+describe("updateProjectLiveKitCredentials", () => {
+  afterEach(() => resetMockLiveKit())
+  const put = (body: unknown) => fetch(`${base}/livekit-credentials`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })
+  test("a new key is 204 and the next connection read shows it", async () => {
+    const res = await put({ livekitApiKey: "APInewexample456", livekitApiSecret: "secretexample" })
+    expect(res.status).toBe(204)
+    expect((await (await fetch(`${base}/connection`)).json()).livekit.apiKey).toBe("APInewexample456")
+  })
+  test.each([
+    [422, "livekit_secret_invalid", { livekitApiKey: "APIinvalidexample", livekitApiSecret: "secretexample" }],
+    [400, "invalid_request", { livekitApiKey: "APIexample123", livekitApiSecret: "" }],
+    [400, "invalid_request", { livekitApiKey: "API example", livekitApiSecret: "secretexample" }],
+  ])("%i %s in the Error shape, and the key is unchanged", async (status, code, body) => {
+    const res = await put(body)
+    expect(res.status).toBe(status)
+    const err = await res.json()
+    expect(valid("Error", err)).toBe("")
+    expect(err.code).toBe(code)
+    expect((await (await fetch(`${base}/connection`)).json()).livekit.apiKey).toBe("APIexample123")
+  })
+})
+
+describe("getMyOrganisationEntitlement", () => {
+  test("the mock is a self-hosted install: 404 in the Error shape", async () => {
+    const res = await fetch("http://console.test/api/v1/org/default/entitlement")
+    expect(res.status).toBe(404)
+    expect(valid("Error", await res.json())).toBe("")
   })
 })

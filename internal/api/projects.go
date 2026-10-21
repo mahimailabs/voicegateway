@@ -32,6 +32,24 @@ type LiveKitVerifier interface {
 	VerifyLiveKit(ctx context.Context, url, apiKey, apiSecret string) error
 }
 
+// liveKitRoomCounter is a LiveKitVerifier that also returns how many rooms its signed read listed.
+type liveKitRoomCounter interface {
+	VerifyLiveKitRooms(ctx context.Context, url, apiKey, apiSecret string) (int, error)
+}
+
+// verifyLiveKit verifies a key and secret and returns the rooms live on that LiveKit project now,
+// nil when the verifier cannot count them: unknown, never zero.
+func (a *API) verifyLiveKit(ctx context.Context, url, apiKey, apiSecret string) (*int, error) {
+	if c, ok := a.VerifyLiveKit.(liveKitRoomCounter); ok {
+		n, err := c.VerifyLiveKitRooms(ctx, url, apiKey, apiSecret)
+		if err != nil {
+			return nil, err
+		}
+		return &n, nil
+	}
+	return nil, a.VerifyLiveKit.VerifyLiveKit(ctx, url, apiKey, apiSecret)
+}
+
 // BucketVerifier proves a bucket a new project brings for its recordings takes the writes and deletes
 // recordings need (bucket.Verifier). Its errors are store.ErrBucketRefused and
 // store.ErrBucketUnreachable.
@@ -283,7 +301,8 @@ func (a *API) createProject(w http.ResponseWriter, r *http.Request) {
 	// holds its secret. API keys are not secret, so without this anyone could claim another
 	// customer's key with a made-up secret, or learn from the 409 which keys this server holds. The
 	// cause is not logged or answered: it can name addresses the guard refused.
-	switch err := a.VerifyLiveKit.VerifyLiveKit(r.Context(), in.LiveKitURL, in.LiveKitAPIKey, in.LiveKitAPISecret); {
+	rooms, err := a.verifyLiveKit(r.Context(), in.LiveKitURL, in.LiveKitAPIKey, in.LiveKitAPISecret)
+	switch {
 	case errors.Is(err, store.ErrLiveKitSecretInvalid):
 		writeError(w, r, http.StatusUnprocessableEntity, codeLiveKitSecretInvalid, "the LiveKit API secret did not verify for this key")
 		return
@@ -313,5 +332,13 @@ func (a *API) createProject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Cache-Control", "no-store")
-	writeJSON(w, http.StatusCreated, workspaceProject{ID: p.ID, Name: p.Name})
+	writeJSON(w, http.StatusCreated, createdProject{ID: p.ID, Name: p.Name, LiveRooms: rooms})
+}
+
+// createdProject is createProject's answer: the project as getWorkspaces lists it, and the rooms its
+// LiveKit project had live when the key was verified (nil when not counted).
+type createdProject struct {
+	ID        string `json:"id"`
+	Name      string `json:"name"`
+	LiveRooms *int   `json:"liveRooms"`
 }
