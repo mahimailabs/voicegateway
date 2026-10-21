@@ -9,6 +9,7 @@
       "getEgress",
       "getIngress",
       "getProviderProbes",
+      "getProjectConnection",
       "getProjectSettings",
       "getCallStats",
       "listIssues"
@@ -22,6 +23,7 @@
       "getEgress",
       "getIngress",
       "getProviderProbes",
+      "getProjectConnection",
       "getProjectSettings",
       "getCallStats",
       "listIssues"
@@ -35,6 +37,7 @@
       "getEgress",
       "getIngress",
       "getProviderProbes",
+      "getProjectConnection",
       "getProjectSettings",
       "getInvitations",
       "getWorkspaces",

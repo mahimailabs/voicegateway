@@ -1116,6 +1116,32 @@ func (q *Queries) FinishCall(ctx context.Context, arg FinishCallParams) error {
 	return err
 }
 
+const firstCall = `-- name: FirstCall :one
+SELECT id, COALESCE(started_at, first_seen_at)::timestamptz AS started_at
+FROM calls
+WHERE organisation_id = $1 AND project_id = $2
+ORDER BY COALESCE(started_at, first_seen_at), id
+LIMIT 1
+`
+
+type FirstCallParams struct {
+	OrganisationID string
+	ProjectID      string
+}
+
+type FirstCallRow struct {
+	ID        pgtype.UUID
+	StartedAt pgtype.Timestamptz
+}
+
+// The earliest call the worker joined. calls_start_at serves the order.
+func (q *Queries) FirstCall(ctx context.Context, arg FirstCallParams) (FirstCallRow, error) {
+	row := q.db.QueryRow(ctx, firstCall, arg.OrganisationID, arg.ProjectID)
+	var i FirstCallRow
+	err := row.Scan(&i.ID, &i.StartedAt)
+	return i, err
+}
+
 const forgetListSnapshots = `-- name: ForgetListSnapshots :exec
 DELETE FROM list_snapshots WHERE created_at < now() - interval '1 day'
 `
@@ -2666,6 +2692,51 @@ func (q *Queries) ProjectConnected(ctx context.Context, arg ProjectConnectedPara
 	return i, err
 }
 
+const projectConnections = `-- name: ProjectConnections :many
+SELECT source, last_accepted_at, last_rejected_at, reason, used_key
+FROM project_connections
+WHERE organisation_id = $1 AND project_id = $2
+`
+
+type ProjectConnectionsParams struct {
+	OrganisationID string
+	ProjectID      string
+}
+
+type ProjectConnectionsRow struct {
+	Source         string
+	LastAcceptedAt pgtype.Timestamptz
+	LastRejectedAt pgtype.Timestamptz
+	Reason         pgtype.Text
+	UsedKey        pgtype.Text
+}
+
+func (q *Queries) ProjectConnections(ctx context.Context, arg ProjectConnectionsParams) ([]ProjectConnectionsRow, error) {
+	rows, err := q.db.Query(ctx, projectConnections, arg.OrganisationID, arg.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ProjectConnectionsRow
+	for rows.Next() {
+		var i ProjectConnectionsRow
+		if err := rows.Scan(
+			&i.Source,
+			&i.LastAcceptedAt,
+			&i.LastRejectedAt,
+			&i.Reason,
+			&i.UsedKey,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const projectKey = `-- name: ProjectKey :one
 SELECT key_id, organisation_id, project_id, secret_sha256, revoked_at, last_used_at FROM project_keys WHERE key_id = $1
 `
@@ -2924,6 +2995,70 @@ func (q *Queries) ReadProjectSettings(ctx context.Context, arg ReadProjectSettin
 		&i.Revision,
 	)
 	return i, err
+}
+
+const recordConnectionAccepted = `-- name: RecordConnectionAccepted :execrows
+INSERT INTO project_connections (organisation_id, project_id, source, last_accepted_at)
+SELECT p.organisation_id, p.id, $1, $2
+FROM projects p WHERE p.organisation_id = $3 AND p.id = $4
+ON CONFLICT (organisation_id, project_id, source) DO UPDATE SET
+    last_accepted_at = GREATEST(project_connections.last_accepted_at, EXCLUDED.last_accepted_at)
+`
+
+type RecordConnectionAcceptedParams struct {
+	Source         string
+	At             pgtype.Timestamptz
+	OrganisationID string
+	ProjectID      string
+}
+
+// Selecting the project inserts nothing for a project that does not exist, so a request addressed
+// to an unknown project records nothing.
+func (q *Queries) RecordConnectionAccepted(ctx context.Context, arg RecordConnectionAcceptedParams) (int64, error) {
+	result, err := q.db.Exec(ctx, recordConnectionAccepted,
+		arg.Source,
+		arg.At,
+		arg.OrganisationID,
+		arg.ProjectID,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const recordConnectionRejected = `-- name: RecordConnectionRejected :execrows
+INSERT INTO project_connections (organisation_id, project_id, source, last_rejected_at, reason, used_key)
+SELECT p.organisation_id, p.id, $1, $2, $3, $4
+FROM projects p WHERE p.organisation_id = $5 AND p.id = $6
+ON CONFLICT (organisation_id, project_id, source) DO UPDATE SET
+    last_rejected_at = EXCLUDED.last_rejected_at,
+    reason           = EXCLUDED.reason,
+    used_key         = EXCLUDED.used_key
+`
+
+type RecordConnectionRejectedParams struct {
+	Source         string
+	At             pgtype.Timestamptz
+	Reason         pgtype.Text
+	UsedKey        pgtype.Text
+	OrganisationID string
+	ProjectID      string
+}
+
+func (q *Queries) RecordConnectionRejected(ctx context.Context, arg RecordConnectionRejectedParams) (int64, error) {
+	result, err := q.db.Exec(ctx, recordConnectionRejected,
+		arg.Source,
+		arg.At,
+		arg.Reason,
+		arg.UsedKey,
+		arg.OrganisationID,
+		arg.ProjectID,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const recordSignInAttempt = `-- name: RecordSignInAttempt :one

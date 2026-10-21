@@ -37,6 +37,7 @@ var routeAccess = map[string]access{
 	"GET /api/v1/org/{orgId}/project/{projectId}/settings":                  {"Viewer", scopeProject},
 	"PUT /api/v1/org/{orgId}/project/{projectId}/settings":                  {"Member", scopeProject},
 	"GET /api/v1/org/{orgId}/project/{projectId}/live-events":               {"Viewer", scopeProject},
+	"GET /api/v1/org/{orgId}/project/{projectId}/connection":                {"Viewer", scopeProject},
 	"GET /api/v1/org/{orgId}/entitlement":                                   {"Viewer", scopeOrganisation},
 	"GET /api/v1/instance/organisations/{orgId}/entitlement":                {"Instance", scopeInstance},
 	"PUT /api/v1/instance/organisations/{orgId}/entitlement":                {"Instance", scopeInstance},

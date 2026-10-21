@@ -21,6 +21,7 @@ import {
   getMediaServer,
   getMembers,
   getMyOrganisationEntitlement,
+  getProjectConnection,
   getProjectSettings,
   getProjectSnapshot,
   getProviderProbes,
@@ -38,7 +39,7 @@ import {
   updateMember as updateMemberCall,
   updateProjectSettings as updateProjectSettingsCall,
 } from "@/lib/api-types"
-import type { Call as GeneratedCall, UpdateProjectSettings, CallPage, ProjectCreate, CallSummary, CallTotals, EndOfTurnEvent, ItemEvent, Member, OverlapEvent, RecordingSegment, Span, StateEvent, TranscriptEvent, Turn } from "@/lib/api-types"
+import type { Call as GeneratedCall, ProjectConnection, UpdateProjectSettings, CallPage, ProjectCreate, CallSummary, CallTotals, EndOfTurnEvent, ItemEvent, Member, OverlapEvent, RecordingSegment, Span, StateEvent, TranscriptEvent, Turn } from "@/lib/api-types"
 
 export type { CallSummary, CallTotals, RecordingSegment, Span, Turn }
 export type SessionEvent = StateEvent | TranscriptEvent | EndOfTurnEvent | OverlapEvent | ItemEvent
@@ -258,6 +259,17 @@ export const projectSettingsQuery = () => {
 }
 export const saveProjectSettings = (selected: ReturnType<typeof currentScope>, body: UpdateProjectSettings) =>
   data(updateProjectSettingsCall({ ...thrown, path: { orgId: selected.org, projectId: selected.project }, body }))
+// The project's ingestion URLs, each source's last outcome and its first stored call (first-call
+// setup). Asked again every 5 s until the first call is stored, then no more.
+export const CONNECTION_POLL_MS = 5_000
+export function connectionQuery(selected = currentScope()) {
+  const bound = { ...selected }
+  return {
+    queryKey: ["connection", bound],
+    queryFn: ({ signal }: { signal: AbortSignal }) => data(getProjectConnection({ ...thrown, path: { orgId: bound.org, projectId: bound.project }, signal })),
+    refetchInterval: (query: { state: { data?: ProjectConnection } }) => (query.state.data?.firstCall ? false : CONNECTION_POLL_MS),
+  }
+}
 export const alertSetupQuery = () => ({ queryKey: ["alert-setup", currentScope()], queryFn: () => data(getAlertSetup({ ...thrown, path: scope() })) })
 export const fetchWorkspaces = () => data(getWorkspaces(thrown))
 

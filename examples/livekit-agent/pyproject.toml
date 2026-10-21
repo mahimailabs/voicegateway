@@ -1,0 +1,30 @@
+[project]
+name = "voicegateway-livekit-agent-example"
+version = "0.1.0"
+description = "The smallest LiveKit Agents voice agent, connected to VoiceGateway through LIVEKIT_OBSERVABILITY_URL."
+requires-python = "==3.13.*"
+dependencies = [
+    "livekit-agents==1.8.8",
+    "python-dotenv==1.2.4",
+]
+
+[dependency-groups]
+dev = [
+    "mypy==2.4.0",
+    "ruff==0.17.1",
+]
+
+[tool.uv]
+package = false
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "W"]
+
+[tool.mypy]
+python_version = "3.13"
+strict = true
+files = ["agent.py"]

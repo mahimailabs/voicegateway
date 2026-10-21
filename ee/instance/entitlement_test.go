@@ -46,6 +46,15 @@ func TestQuotaBoundaries(t *testing.T) {
 			if got != tt.allow || w != tt.warning || err != nil {
 				t.Fatalf("got %v,%d,%v", got, w, err)
 			}
+			// A refusal names its reason for the console: the cap within an active period, the
+			// plan otherwise.
+			want := store.ReasonPlanInactive
+			if tt.active && tt.now.Equal(now) {
+				want = store.ReasonPlanCap
+			}
+			if !got && q.Refusal(t.Context(), "org") != want {
+				t.Fatalf("refusal %q, want %q", q.Refusal(t.Context(), "org"), want)
+			}
 		})
 	}
 	for _, err := range []error{store.ErrNotFound, errors.New("database unavailable")} {
@@ -53,6 +62,9 @@ func TestQuotaBoundaries(t *testing.T) {
 		ok, _, got := q.Check(t.Context(), "org")
 		if ok || ((got == nil) != (err == store.ErrNotFound)) {
 			t.Fatalf("error outcome %v %v", ok, got)
+		}
+		if r := q.Refusal(t.Context(), "org"); r != store.ReasonPlanInactive {
+			t.Fatalf("refusal without a plan %q", r)
 		}
 	}
 }

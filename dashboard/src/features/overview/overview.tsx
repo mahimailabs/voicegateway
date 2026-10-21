@@ -25,6 +25,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import { useUrlState } from "@/lib/url-state"
 import { useIsPhone } from "@/hooks/use-mobile"
+import { ConnectAgentPanel } from "@/features/connection/connect-agent"
 
 // The whole stack at a glance: four numbers with their shape, the path a call takes with each part's
 // state, where a turn's time goes, and where the models are. Every figure comes from the same data and
@@ -137,9 +138,18 @@ export function OverviewPage() {
   const ingress = useQuery(ingressQuery())
   const workers = useQuery(workersQuery())
   const probes = useQuery(providerProbesQuery())
+  // A project with no calls yet opens on first-call setup, above whatever the overview can show.
+  const latest = useQuery(latestCallQuery())
+  const empty = latest.isSuccess && latest.data === null
   // The call figures carry the page; without them the page says why, as before.
-  if (!stats.data) return <QueryState icon={Gauge} what="the overview" query={stats} />
-  return <OverviewView stats={stats.data as CallStats} cloud={cloud} media={media} sip={sip} egress={egress} ingress={ingress} workers={workers} probes={probes} />
+  const page = !stats.data ? <QueryState icon={Gauge} what="the overview" query={stats} /> : <OverviewView stats={stats.data as CallStats} cloud={cloud} media={media} sip={sip} egress={egress} ingress={ingress} workers={workers} probes={probes} />
+  if (!empty) return page
+  return (
+    <div className="space-y-6">
+      <ConnectAgentPanel />
+      {page}
+    </div>
+  )
 }
 
 type Reads = { cloud: UseQueryResult<CloudAgents>; media: UseQueryResult<MediaServer>; sip: UseQueryResult<Sip>; egress: UseQueryResult<Egress>; ingress: UseQueryResult<Ingress>; workers: UseQueryResult<Workers>; probes: UseQueryResult<ProviderProbes> }

@@ -1,6 +1,6 @@
 import { useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { CircleHalf, DotsThree, Stack, EnvelopeSimple as Envelope, WebhooksLogo, Buildings, Database, Key as KeyIcon, Clock, EnvelopeSimple, GearSix, FrameCorners, Lock, UsersThree, X, Plug, Plus, TreeStructure, User } from "@phosphor-icons/react"
+import { CircleHalf, DotsThree, Stack, EnvelopeSimple as Envelope, WebhooksLogo, Buildings, Database, Key as KeyIcon, Clock, EnvelopeSimple, GearSix, FrameCorners, Lock, UsersThree, X, Plug, PlugsConnected, Plus, TreeStructure, User } from "@phosphor-icons/react"
 import type { Icon } from "@phosphor-icons/react"
 import { toast } from "sonner"
 import { Badge } from "@/components/ui/badge"
@@ -31,6 +31,7 @@ import { CopyCommand } from "@/components/copy-command"
 import { type AccountProfile, ProfileError, readAccountProfile, saveAccountProfile, refreshSession, roleIn, useSession } from "@/lib/session"
 import { UsageAllowance } from "@/components/usage-allowance"
 import { errorText } from "@/components/page-state"
+import { ConnectAgentPanel } from "@/features/connection/connect-agent"
 
 // Settings as a modal over the page you are on (layout from shadcn's sidebar-13 block). Three groups,
 // as in ShipVoice Pro's settings: the project picked at the top of the sidebar (integrations, data,
@@ -42,7 +43,7 @@ import { errorText } from "@/components/page-state"
 // none, the scope's id stands in and no project is listed.
 const org = () => currentOrg() ?? { id: currentScope().org, name: currentScope().org, projects: [] }
 
-type Key = "account" | "organisation" | "access" | "integrations" | "embeds" | "data" | "thresholds"
+type Key = "account" | "organisation" | "access" | "connection" | "integrations" | "embeds" | "data" | "thresholds"
 type Page = { key: Key; label: string; icon: Icon; scope: "project" | "organisation" | "you" }
 const groups: { label: string; scope: Page["scope"]; pages: Page[] }[] = [
   {
@@ -50,6 +51,7 @@ const groups: { label: string; scope: Page["scope"]; pages: Page[] }[] = [
     scope: "project",
     pages: [
       { key: "integrations", label: "Integrations", icon: Plug, scope: "project" },
+      { key: "connection", label: "Connection", icon: PlugsConnected, scope: "project" },
       { key: "embeds", label: "Embeds", icon: FrameCorners, scope: "project" },
       { key: "data", label: "Data", icon: Database, scope: "project" },
       { key: "thresholds", label: "Thresholds", icon: Clock, scope: "project" },
@@ -616,6 +618,17 @@ const notifications: Integration[] = [
   { logo: "", icon: Envelope, name: "Email", description: "Send alerts to an address or a list.", status: "", connect: true },
   { logo: "", icon: WebhooksLogo, name: "Webhook", description: "POST each alert as JSON to your endpoint.", status: "", connect: true },
 ]
+function Connection() {
+  return (
+    <>
+      <Header title="Connection" description="The URLs your agent and LiveKit send to, and the last outcome of each." />
+      <div className="pt-6">
+        <ConnectAgentPanel framed={false} />
+      </div>
+    </>
+  )
+}
+
 function Integrations() {
   return (
     <>
@@ -1068,7 +1081,7 @@ function Embeds() {
   )
 }
 
-const body: Record<Key, () => React.ReactNode> = { account: Account, organisation: Organisation, access: Access, integrations: Integrations, embeds: Embeds, data: Data, thresholds: Thresholds }
+const body: Record<Key, () => React.ReactNode> = { account: Account, organisation: Organisation, access: Access, connection: Connection, integrations: Integrations, embeds: Embeds, data: Data, thresholds: Thresholds }
 
 export type SettingsPage = Key
 export function SettingsDialog({ open, onOpenChange, page, onPageChange, orgOnly = false }: { open: boolean; onOpenChange: (o: boolean) => void; page: string | null; onPageChange: (p: Key) => void; orgOnly?: boolean }) {

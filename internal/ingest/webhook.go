@@ -35,8 +35,11 @@ type Webhooks struct {
 	Quota    Quota
 	Projects Projects
 	Stream   Appender
-	Log      *slog.Logger
-	Now      func() time.Time
+	// Outcome records whether the webhook was accepted or why it was refused; the zero value
+	// records nothing.
+	Outcome Outcome
+	Log     *slog.Logger
+	Now     func() time.Time
 }
 
 func (h *Webhooks) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -50,17 +53,23 @@ func (h *Webhooks) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if mbe := (*http.MaxBytesError)(nil); errors.As(err, &mbe) {
 		h.Log.Warn("webhook: body too large", "limit", mbe.Limit)
+		h.Outcome.Rejected(r.Context(), store.ReasonTooLarge, "")
 		http.Error(w, "body too large", http.StatusRequestEntityTooLarge)
 		return
 	}
 	if err != nil {
 		// The reason is safe to log: it names the check that failed, never the body or a secret.
 		h.Log.Warn("webhook: not verified", "reason", err.Error())
+		reason, usedKey := webhookRefusal(err, keys)
+		h.Outcome.Rejected(r.Context(), reason, usedKey)
 		http.Error(w, "webhook not verified", http.StatusUnauthorized)
 		return
 	}
 
-	if !checkEnvelopeQuota(w, r, h.Quota, keys.project.OrganisationID, keys.project.ID, event.KindLiveKitWebhook, body) {
+	if ok, reason := checkEnvelopeQuota(w, r, h.Quota, keys.project.OrganisationID, keys.project.ID, event.KindLiveKitWebhook, body); !ok {
+		if reason != "" {
+			h.Outcome.Rejected(r.Context(), reason, "")
+		}
 		return
 	}
 
@@ -84,8 +93,23 @@ func (h *Webhooks) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "stream unavailable", http.StatusServiceUnavailable)
 		return
 	}
+	h.Outcome.Accepted(r.Context())
 	h.Log.Debug("webhook appended", "project", keys.project.ID, "event", ev.GetEvent(), "event_id", ev.GetId(), "entry", id)
 	w.WriteHeader(http.StatusOK)
+}
+
+// webhookRefusal names the reason code for an error from webhook.Receive, by livekit/protocol's own
+// error values. Any other error is from parsing or verifying the token.
+func webhookRefusal(err error, keys *projectKeys) (reason, usedKey string) {
+	switch {
+	case errors.Is(err, webhook.ErrNoAuthHeader):
+		return store.ReasonTokenMissing, ""
+	case errors.Is(err, webhook.ErrSecretNotFound):
+		return store.ReasonKeyMismatch, keys.usedKey
+	case errors.Is(err, webhook.ErrInvalidChecksum):
+		return store.ReasonBodyChanged, ""
+	}
+	return store.ReasonSignatureInvalid, ""
 }
 
 // projectKeys is the auth.KeyProvider for one request. It remembers which project owns the key, so
@@ -96,9 +120,12 @@ type projectKeys struct {
 	projects Projects
 	project  store.Project
 	err      error
+	// usedKey is the key the token named, kept for a key mismatch.
+	usedKey string
 }
 
 func (k *projectKeys) GetSecret(key string) string {
+	k.usedKey = key
 	p, err := k.projects.ProjectByLiveKitKey(k.ctx, key)
 	if errors.Is(err, store.ErrNotFound) {
 		return ""

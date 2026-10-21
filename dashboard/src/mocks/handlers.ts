@@ -1,7 +1,7 @@
 import { issueMetadataOf, saveIssueMetadata } from "./issue-metadata"
 import { metadataOf, saveMetadata } from "./dispositions"
 import { http, HttpResponse, type PathParams } from "msw"
-import type { AlertEvents, AlertSetup, Call, CallPage, CallStats, CreatedInvitation, CreatedPasswordReset, CreatedProjectKey, Invitations, ProjectCreate, WorkspaceProject, Member, Members, ProjectKeys, IssueList, ProjectSettings, ProviderProbes, Resources, Workers, CapacityRun, CloudAgents, Egress, Error as ApiErrorBody, Ingress, MediaServer, ProjectSnapshot, Sip, Workspaces } from "@/lib/api-types"
+import type { AlertEvents, AlertSetup, Call, CallPage, CallStats, CreatedInvitation, CreatedPasswordReset, CreatedProjectKey, Invitations, ProjectCreate, WorkspaceProject, Member, Members, ProjectConnection, ProjectKeys, IssueList, ProjectSettings, ProviderProbes, Resources, Workers, CapacityRun, CloudAgents, Egress, Error as ApiErrorBody, Ingress, MediaServer, ProjectSnapshot, Sip, Workspaces } from "@/lib/api-types"
 import { callStats } from "./call-stats"
 import { capturedCalls } from "./fixtures"
 import { alertEvents, issueList } from "./insights"
@@ -161,6 +161,15 @@ export const handlers = [
     try { body = await request.json() } catch { return fail(400, "invalid_request", "Expected JSON settings.") }
     const saved = updateSettings(settingsScope(params), body)
     return typeof saved === "string" ? fail(saved === "revision_conflict" ? 409 : 400, saved, saved === "revision_conflict" ? "Settings changed; reload before saving." : "Invalid thresholds or revision.") : HttpResponse.json(saved)
+  }),
+  // First-call setup. The mock receives no ingest, so every source is still waiting and no first
+  // call exists: a mock or a fixture never counts as the project's first stored call. The URLs use
+  // this page's origin, as web builds them from VOICEGATEWAY_PUBLIC_URL.
+  http.get<PathParams, never, ProjectConnection | ApiErrorBody>(`${project}/connection`, ({ params, request }) => {
+    if (!known(params)) return fail(404, "not_found", "No such project.")
+    const base = `${new URL(request.url).origin}/ingest/${encodeURIComponent(String(params.orgId))}/${encodeURIComponent(String(params.projectId))}`
+    const waiting = { lastAcceptedAt: null, lastRejectedAt: null, reason: null, usedKey: null, expectedKey: null }
+    return HttpResponse.json<ProjectConnection>({ urls: { observability: base, webhook: `${base}/livekit/webhook` }, webhook: waiting, agent: waiting, firstCall: null })
   }),
   http.get<PathParams, never, AlertSetup | ApiErrorBody>(`${project}/alert-setup`, ({ params }) => (known(params) ? HttpResponse.json(alertSetup()) : fail(404, "not_found", "No such project."))),
   http.get<PathParams, never, Workspaces>("*/api/v1/workspaces", () => HttpResponse.json(workspaces())),

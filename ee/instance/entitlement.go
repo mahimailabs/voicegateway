@@ -39,6 +39,17 @@ func (q *Quota) Check(ctx context.Context, org string) (bool, int, error) {
 	return allowed(u, q.Now()), warning(u), nil
 }
 
+// Refusal names why Check refused org: plan_cap when its plan is active and in its window but the
+// minutes are used up, plan_inactive otherwise, including a plan that cannot be read.
+func (q *Quota) Refusal(ctx context.Context, org string) string {
+	u, err := q.Store.EntitlementUsage(ctx, org)
+	now := q.Now()
+	if err != nil || !u.Active || now.Before(u.From) || !now.Before(u.To) {
+		return store.ReasonPlanInactive
+	}
+	return store.ReasonPlanCap
+}
+
 func allowed(u store.EntitlementUsage, now time.Time) bool {
 	return u.Active && !now.Before(u.From) && now.Before(u.To) && u.CallSeconds < u.LimitMinutes*60
 }

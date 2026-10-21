@@ -41,8 +41,33 @@ repos:
         language: system
         files: ^go\.(mod|sum)$
         pass_filenames: false
+# The example agent. ruff and mypy come from its own dev group in uv.lock, so
+# the hooks run the pinned versions; ruff and mypy read its pyproject.toml.
+-   repo: local
+    hooks:
+    -   id: example-uv-lock
+        name: example agent uv.lock is current
+        entry: uv lock --check --project examples/livekit-agent
+        language: system
+        files: ^examples/livekit-agent/(pyproject\.toml|uv\.lock)$
+        pass_filenames: false
+    -   id: example-ruff
+        name: example agent ruff
+        entry: uv run --locked --project examples/livekit-agent ruff check
+        language: system
+        files: ^examples/livekit-agent/.*\.py$
+    -   id: example-ruff-format
+        name: example agent ruff format
+        entry: uv run --locked --project examples/livekit-agent ruff format --check
+        language: system
+        files: ^examples/livekit-agent/.*\.py$
+    -   id: example-mypy
+        name: example agent mypy
+        entry: uv run --locked --project examples/livekit-agent mypy --config-file examples/livekit-agent/pyproject.toml
+        language: system
+        files: ^examples/livekit-agent/.*\.py$
 
 ci:
-    skip: [go-fmt, go-lint, go-mod-tidy]
+    skip: [go-fmt, go-lint, go-mod-tidy, example-uv-lock, example-ruff, example-ruff-format, example-mypy]
     autofix_commit_msg: 🎨 [pre-commit.ci] Auto format from pre-commit.com hooks
     autoupdate_commit_msg: ⬆ [pre-commit.ci] pre-commit autoupdate
