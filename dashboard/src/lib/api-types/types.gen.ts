@@ -74,7 +74,7 @@ export type Call = {
      */
     clocks: Array<Clock>;
     /**
-     * Custom fields the agent attached through a VoiceGateway SDK (attach(fields=...) or set_field), later values winning; at most 64 per call, new keys past that are dropped. Empty when no SDK attached any. Absent from captures made before the SDK.
+     * Custom fields the agent attached through a VoiceGateway SDK (attach(fields=...) or set_field), later values winning; at most 64 per call, new keys past that are dropped. Empty when no SDK attached any, and for an embed token without transcriptsAndAudio (decision 0034). Absent from captures made before the SDK.
      */
     fields?: {
         [key: string]: string;
@@ -1538,7 +1538,7 @@ export type CreateEmbedToken = {
      */
     expiresInSeconds?: number;
     /**
-     * Share what was said with the framing site: the one-call view's turn text, span attributes (prompts, transcripts, tool arguments) and recording audio. Off by default, when the call widget shows timings only. Needs the call widget, and an Admin or a project key (decision 0034).
+     * Share what was said with the framing site: the one-call view's turn text, span attributes (prompts, transcripts, tool arguments), the SDK call fields and recording audio. Off by default, when the call widget shows timings only and listCalls refuses the field filter. Needs the call widget, and an Admin or a project key (decision 0034).
      */
     transcriptsAndAudio?: boolean;
 };
@@ -2276,7 +2276,7 @@ export type ListCallsData = {
          */
         unknown?: Array<'answerMs' | 'durationSeconds' | 'turnCount'>;
         /**
-         * An SDK call field as key:value. Repeat to keep calls holding every listed pair; one key with two values matches nothing. At most 16.
+         * An SDK call field as key:value. Repeat to keep calls holding every listed pair; one key with two values matches nothing. At most 16. An embed token without transcriptsAndAudio gets 403 (decision 0034).
          */
         field?: Array<string>;
         /**
