@@ -7,7 +7,7 @@
 
 Decision 0002 made `attach()` in a Python SDK the way an agent reports to VoiceGateway, and 0014 added LiveKit's observability endpoints beside it. Both LiveKit Agents runtimes now upload by themselves when `LIVEKIT_OBSERVABILITY_URL` is set, keeping the URL's path prefix:
 
-- Python, 1.8.6 and later: `livekit-agents/livekit/agents/job.py`, `_observability_url` returns the variable when set (livekit/agents commit de40bb25, read 2026-10-21 through the LiveKit Docs MCP).
+- Python: `livekit-agents/livekit/agents/job.py`, `_observability_url` returns the variable when set. Read 2026-10-21 at the tags `livekit-agents@1.7.1` and `livekit-agents@1.8.0` and at commit de40bb25 (LiveKit Docs MCP and the tagged source). We tested 1.8.6 to 1.8.8; older releases read the variable too, but their upload paths and payloads are untested here.
 - Node: `agents-js` `job.ts` honours `LIVEKIT_OBSERVABILITY_URL` (commit e3babc6c, read 2026-10-21 through the LiveKit Docs MCP).
 
 Both post OTLP traces, logs and metrics and the session report to that URL. Project-scoped ingestion (0032) already serves those paths under `/ingest/<organisation>/<project>`.

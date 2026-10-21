@@ -66,7 +66,14 @@ No agent yet? Run the [example agent](https://github.com/mahimailabs/voicegatewa
 
 ### Send LiveKit's webhooks
 
-In LiveKit Cloud, open **Settings > Webhooks**, choose **Create new webhook**, paste the webhook URL and pick the same API key as the signing key. On a self-hosted LiveKit server, add the URL under `webhook.urls` in its config. Without it, a call closes only after 2 hours with no activity, and its end time is marked as inferred.
+In LiveKit Cloud, open **Settings > Webhooks**, choose **Create new webhook**, paste the webhook URL and pick the same API key as the signing key. On a self-hosted LiveKit server, put the URL under `webhook.urls` in `livekit.yaml` and the same API key under `webhook.api_key`, then restart the LiveKit server:
+
+```yaml
+webhook:
+  api_key: <your LiveKit API key>
+  urls:
+    - https://<host>/ingest/<organisation-id>/<project-id>/livekit/webhook
+``` Without it, a call closes only after 2 hours with no activity, and its end time is marked as inferred.
 
 </Step>
 <Step>
