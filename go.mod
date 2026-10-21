@@ -8,6 +8,7 @@ require (
 	github.com/alexedwards/scs/pgxstore v0.0.0-20251002162104-209de6e426de
 	github.com/alexedwards/scs/v2 v2.9.0
 	github.com/go-chi/chi/v5 v5.5.0
+	github.com/google/jsonschema-go v0.4.3
 	github.com/gorilla/websocket v1.5.4-0.20250319132907-e064f32e3674
 	github.com/jackc/pgx/v5 v5.11.0
 	github.com/klauspost/compress v1.20.1
@@ -15,6 +16,7 @@ require (
 	github.com/livekit/psrpc v0.8.0
 	github.com/livekit/server-sdk-go/v2 v2.19.0
 	github.com/minio/minio-go/v7 v7.4.1
+	github.com/modelcontextprotocol/go-sdk v1.8.0
 	github.com/pb33f/libopenapi v0.41.6
 	github.com/pb33f/libopenapi-validator v0.16.1
 	github.com/pressly/goose/v3 v3.29.0
@@ -325,6 +327,7 @@ require (
 	github.com/sashamelentyev/usestdlibvars v1.29.0 // indirect
 	github.com/securego/gosec/v2 v2.29.0 // indirect
 	github.com/segmentio/asm v1.2.1 // indirect
+	github.com/segmentio/encoding v0.5.4 // indirect
 	github.com/sethvargo/go-retry v0.5.0 // indirect
 	github.com/shirou/gopsutil/v4 v4.26.9 // indirect
 	github.com/shopspring/decimal v1.5.0 // indirect
@@ -373,6 +376,7 @@ require (
 	github.com/ydb-platform/ydb-go-yc-metadata v0.6.2 // indirect
 	github.com/yeya24/promlinter v0.3.0 // indirect
 	github.com/ykadowak/zerologlint v0.1.5 // indirect
+	github.com/yosida95/uritemplate/v3 v3.0.2 // indirect
 	github.com/yusufpapurcu/wmi v1.2.4 // indirect
 	github.com/zeebo/xxh3 v1.1.0 // indirect
 	github.com/ziutek/mymysql v1.5.4 // indirect
@@ -397,6 +401,7 @@ require (
 	golang.org/x/exp/typeparams v0.0.0-20260811152304-ee035b5b010f // indirect
 	golang.org/x/mod v0.42.0 // indirect
 	golang.org/x/net v0.61.0 // indirect
+	golang.org/x/oauth2 v0.36.0 // indirect
 	golang.org/x/sys v0.49.0 // indirect
 	golang.org/x/text v0.43.0 // indirect
 	golang.org/x/time v0.15.0 // indirect

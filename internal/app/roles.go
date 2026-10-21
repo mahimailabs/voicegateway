@@ -18,6 +18,7 @@ import (
 	"github.com/redis/go-redis/v9"
 	"golang.org/x/sync/errgroup"
 
+	apicontract "github.com/mahimailabs/voicegateway/docs/api"
 	"github.com/mahimailabs/voicegateway/ee/instance"
 	"github.com/mahimailabs/voicegateway/internal/api"
 	"github.com/mahimailabs/voicegateway/internal/auth"
@@ -28,6 +29,7 @@ import (
 	"github.com/mahimailabs/voicegateway/internal/invite"
 	"github.com/mahimailabs/voicegateway/internal/join"
 	"github.com/mahimailabs/voicegateway/internal/mailer"
+	"github.com/mahimailabs/voicegateway/internal/mcp"
 	"github.com/mahimailabs/voicegateway/internal/obs"
 	"github.com/mahimailabs/voicegateway/internal/scrape"
 	"github.com/mahimailabs/voicegateway/internal/seal"
@@ -130,14 +132,28 @@ func Web(ctx context.Context, c config.Config, log *slog.Logger) error {
 	mux.HandleFunc("GET /healthz", obs.Health)
 	mountIngestion(mux, projects, producer, quota, recordings, log, time.Now)
 	mux.Handle("/auth/", accounts.Routes())
-	mux.Handle("/api/v1/", (&api.API{
+	v1 := &api.API{
 		Settings: projects, Metadata: projects, Issues: projects, StorageBucket: c.S3.Bucket,
 		Live:              live,
 		ResourceEndpoints: projects, ResourceSamples: events, Projects: projects, NewProjects: projects, VerifyLiveKit: scrape.NewVerifier(c.WorkerEndpointsPublicOnly), VerifyBucket: bucket.NewVerifier(bucketTransport), Calls: projects, Traces: events, Layers: events, Endpoints: projects, Accounts: projects, Stats: projects, Keys: projects, NewKey: auth.NewKey, Log: log, Now: time.Now, Gate: accounts.Gate,
 		Invitations: projects, Inviter: NewInviter(links), LinkBase: accounts.LinkBase,
 		Recordings: projects, Media: recordings,
 		Instance: instanceAPI,
-	}).Routes())
+	}
+	mux.Handle("/api/v1/", v1.Routes())
+	// MCP (PRODUCT.md): its tools call the /api/v1 router in process, as the key the same gate
+	// identified in front of /mcp, so that router runs without a gate of its own.
+	tools := *v1
+	tools.Gate = nil
+	inProcess, ok := tools.Routes().(mcp.API)
+	if !ok {
+		return errors.New("the API router is not a chi router")
+	}
+	agents, err := mcp.New(apicontract.OpenAPI, inProcess, log)
+	if err != nil {
+		return err
+	}
+	mux.Handle("/mcp", agents.Handler(accounts.Gate))
 	if c.ConsoleDir != "" {
 		dist := os.DirFS(c.ConsoleDir)
 		if _, err := fs.Stat(dist, "index.html"); err != nil {
