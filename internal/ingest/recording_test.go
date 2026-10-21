@@ -198,6 +198,8 @@ func TestUploadAtCapStoresNoAudio(t *testing.T) {
 		{"refused", quotaResult{warning: 100}, http.StatusPaymentRequired, 0},
 		{"continued", continuedQuota{quotaResult{warning: 100}}, http.StatusOK, 1},
 		{"quota down", quotaResult{err: errors.New("down")}, http.StatusServiceUnavailable, 0},
+		// One failed check is unknown, not over the cap: the upload is retried rather than kept without audio.
+		{"quota blip", &blipQuota{}, http.StatusServiceUnavailable, 0},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			body, ctype := sessionUpload(t, headerPart(t), part{"audio", "recording.ogg", []byte("ogg")})
@@ -213,4 +215,15 @@ func TestUploadAtCapStoresNoAudio(t *testing.T) {
 			}
 		})
 	}
+}
+
+// blipQuota fails its first check and allows every later one.
+type blipQuota struct{ calls int }
+
+func (q *blipQuota) Check(context.Context, string) (bool, int, error) {
+	q.calls++
+	if q.calls == 1 {
+		return false, 0, errors.New("connection reset")
+	}
+	return true, 0, nil
 }

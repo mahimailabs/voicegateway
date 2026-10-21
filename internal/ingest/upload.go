@@ -91,8 +91,17 @@ func (u *Uploads) SessionReport(w http.ResponseWriter, r *http.Request) {
 	// organisation at its cap therefore stores no audio: a refused report would leave it unlinked,
 	// and a report its quota still continues keeps only its transcript.
 	var keep audioSink
-	if keys.project.Recordings && u.audioAllowed(r.Context(), keys.project.OrganisationID) {
-		keep = u.storeAudio(r.Context(), keys.project)
+	if keys.project.Recordings {
+		allowed, err := u.audioAllowed(r.Context(), keys.project.OrganisationID)
+		if err != nil {
+			// Unknown is not over the cap: the agent sends the report again, audio included.
+			u.Log.Error("upload: quota check before recording", "project", keys.project.ID, "err", err)
+			unavailable(w)
+			return
+		}
+		if allowed {
+			keep = u.storeAudio(r.Context(), keys.project)
+		}
 	}
 	report, jobID, err := readSessionReport(r, keep)
 	var stored *storeError
@@ -251,13 +260,13 @@ type storeError struct{ err error }
 func (e *storeError) Error() string { return "store recording: " + e.err.Error() }
 
 // audioAllowed reports whether the organisation is under its cap. Without a quota (self-hosted)
-// audio is always allowed; a quota that cannot answer allows none, and the append answers 503.
-func (u *Uploads) audioAllowed(ctx context.Context, org string) bool {
+// audio is always allowed; a quota that cannot answer returns its error.
+func (u *Uploads) audioAllowed(ctx context.Context, org string) (bool, error) {
 	if u.Quota == nil {
-		return true
+		return true, nil
 	}
 	allowed, _, err := u.Quota.Check(ctx, org)
-	return err == nil && allowed
+	return allowed, err
 }
 
 // storeAudio streams the audio part to the bucket, named by the header's job id. The part's own
