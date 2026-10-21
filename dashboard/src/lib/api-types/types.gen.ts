@@ -1449,9 +1449,9 @@ export type UpdateAllowedOrigins = {
      */
     allowedOrigins: Array<string> | null;
     /**
-     * Revision checked atomically on save to prevent lost updates.
+     * The allowedOriginsRevision read with the settings, checked atomically on save to prevent lost updates. It versions the sites alone; the thresholds revision does not move.
      */
-    revision: number;
+    allowedOriginsRevision: number;
 };
 
 export type CreateEmbedToken = {
@@ -1522,6 +1522,10 @@ export type ProjectSettings = {
      * Configured embed framing origin allow-list, null when not configured. Missing configuration never authorises arbitrary origins.
      */
     allowedOrigins: Array<string> | null;
+    /**
+     * Version of allowedOrigins alone, sent back with updateAllowedOrigins. Saving sites never moves revision, which versions the thresholds.
+     */
+    allowedOriginsRevision: number;
 };
 
 export type Invitation = {

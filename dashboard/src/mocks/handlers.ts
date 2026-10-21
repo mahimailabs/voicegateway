@@ -160,7 +160,7 @@ export const handlers = [
     let body: unknown
     try { body = await request.json() } catch { return fail(400, "invalid_request", "Expected JSON settings.") }
     const saved = updateSettings(settingsScope(params), body)
-    return typeof saved === "string" ? fail(saved === "revision_conflict" ? 409 : 400, saved, saved === "revision_conflict" ? "Settings changed; reload before saving." : "Invalid thresholds or revision.") : HttpResponse.json(saved)
+    return typeof saved === "string" ? fail(saved === "revision_conflict" ? 409 : 400, saved, saved === "revision_conflict" ? "The allowed sites changed; reload before saving." : "Invalid thresholds or revision.") : HttpResponse.json(saved)
   }),
   http.put(`${project}/settings/allowed-origins`, async ({ params, request }) => {
     if (!known(params)) return fail(404, "not_found", "No such project.")

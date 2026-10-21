@@ -32,4 +32,7 @@ type ProjectSettings struct {
 	// AllowedOrigins are the sites allowed to frame the project's widgets; nil is not configured,
 	// which allows none.
 	AllowedOrigins []string `json:"-"`
+	// AllowedOriginsRevision versions AllowedOrigins alone, so saving sites leaves Revision, the
+	// thresholds' version, alone.
+	AllowedOriginsRevision int64 `json:"-"`
 }

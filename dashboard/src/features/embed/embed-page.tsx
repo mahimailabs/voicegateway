@@ -216,7 +216,11 @@ function since(iso: string) {
   for (const [unit, n] of [["day", 86400], ["hour", 3600], ["minute", 60]] as const) if (Math.abs(s) >= n) return ago.format(Math.round(s / n), unit)
   return "just now"
 }
-const length = (s: number | null) => (s === null ? "unknown" : `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, "0")}`)
+const length = (s: number | null) => {
+  if (s === null) return "unknown"
+  const t = Math.round(s)
+  return `${Math.floor(t / 60)}:${String(t % 60).padStart(2, "0")}`
+}
 const channel: Record<CallSummary["channel"], string> = { phone: "Phone", web: "Web", console: "Console", local: "Local", unknown: "Channel unknown" }
 const worst = (c: CallSummary) => (c.issues.high ? "bg-destructive" : c.issues.medium ? "bg-amber-500" : c.issues.high === null || c.issues.medium === null ? "bg-muted-foreground/30" : "bg-emerald-500")
 

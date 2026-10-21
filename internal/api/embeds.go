@@ -11,6 +11,7 @@ import (
 	"net/netip"
 	"net/url"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -74,6 +75,15 @@ func NormaliseOrigin(s string) (string, error) {
 	if host == "" || len(host) > 253 || strings.ContainsAny(host, "*%") || strings.HasSuffix(host, ".") {
 		return "", errOrigin
 	}
+	// url.Parse checks only that a port is digits; a browser refuses 0 and anything over 65535,
+	// and writes 0443 as 443.
+	if port != "" {
+		n, err := strconv.Atoi(port)
+		if err != nil || n < 1 || n > 65535 {
+			return "", errOrigin
+		}
+		port = strconv.Itoa(n)
+	}
 	switch {
 	case scheme == "https" && port == "443", scheme == "http" && port == "80":
 		port = ""
@@ -135,10 +145,10 @@ func (a *API) updateAllowedOrigins(w http.ResponseWriter, r *http.Request) {
 	}
 	var body struct {
 		AllowedOrigins *[]string `json:"allowedOrigins"`
-		Revision       *int64    `json:"revision"`
+		Revision       *int64    `json:"allowedOriginsRevision"`
 	}
 	if !decodeOne(w, r, maxEmbedBody, &body) || body.Revision == nil || *body.Revision < 0 || *body.Revision >= 9007199254740991 {
-		writeError(w, r, http.StatusBadRequest, codeInvalidRequest, "expected one JSON object with allowedOrigins and revision, at most 4 KiB")
+		writeError(w, r, http.StatusBadRequest, codeInvalidRequest, "expected one JSON object with allowedOrigins and allowedOriginsRevision, at most 4 KiB")
 		return
 	}
 	var origins []string
@@ -151,7 +161,7 @@ func (a *API) updateAllowedOrigins(w http.ResponseWriter, r *http.Request) {
 	}
 	settings, err := a.Origins.UpdateAllowedOrigins(r.Context(), chi.URLParam(r, "orgId"), chi.URLParam(r, "projectId"), *body.Revision, origins)
 	if errors.Is(err, store.ErrSettingsConflict) {
-		writeError(w, r, http.StatusConflict, "revision_conflict", "settings changed; reload before saving")
+		writeError(w, r, http.StatusConflict, "revision_conflict", "the allowed sites changed; reload before saving")
 		return
 	}
 	if err != nil {

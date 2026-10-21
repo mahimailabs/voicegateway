@@ -18,7 +18,7 @@ func (s *Store) ProjectSettings(ctx context.Context, org, project string) (store
 	if err != nil {
 		return store.ProjectSettings{}, fmt.Errorf("read project settings: %w", err)
 	}
-	return store.ProjectSettings{Thresholds: store.Thresholds{AnswerMs: row.AnswerMs, JoinMs: row.JoinMs, TTSStartMs: row.TtsStartMs}, Revision: row.Revision, AllowedOrigins: row.AllowedOrigins}, nil
+	return store.ProjectSettings{Thresholds: store.Thresholds{AnswerMs: row.AnswerMs, JoinMs: row.JoinMs, TTSStartMs: row.TtsStartMs}, Revision: row.Revision, AllowedOrigins: row.AllowedOrigins, AllowedOriginsRevision: row.AllowedOriginsRevision}, nil
 }
 
 // UpdateProjectSettings atomically compares the read revision and replaces all thresholds.
@@ -50,7 +50,7 @@ func (s *Store) UpdateProjectSettings(ctx context.Context, org, project string, 
 		if err != nil {
 			return err
 		}
-		result = store.ProjectSettings{Thresholds: store.Thresholds{AnswerMs: row.AnswerMs, JoinMs: row.JoinMs, TTSStartMs: row.TtsStartMs}, Revision: row.Revision, AllowedOrigins: row.AllowedOrigins}
+		result = store.ProjectSettings{Thresholds: store.Thresholds{AnswerMs: row.AnswerMs, JoinMs: row.JoinMs, TTSStartMs: row.TtsStartMs}, Revision: row.Revision, AllowedOrigins: row.AllowedOrigins, AllowedOriginsRevision: row.AllowedOriginsRevision}
 		return nil
 	})
 	if err != nil {
@@ -87,7 +87,7 @@ func (s *Store) UpdateAllowedOrigins(ctx context.Context, org, project string, r
 		if err != nil {
 			return err
 		}
-		result = store.ProjectSettings{Thresholds: store.Thresholds{AnswerMs: row.AnswerMs, JoinMs: row.JoinMs, TTSStartMs: row.TtsStartMs}, Revision: row.Revision, AllowedOrigins: row.AllowedOrigins}
+		result = store.ProjectSettings{Thresholds: store.Thresholds{AnswerMs: row.AnswerMs, JoinMs: row.JoinMs, TTSStartMs: row.TtsStartMs}, Revision: row.Revision, AllowedOrigins: row.AllowedOrigins, AllowedOriginsRevision: row.AllowedOriginsRevision}
 		return nil
 	})
 	if err != nil {
@@ -98,7 +98,7 @@ func (s *Store) UpdateAllowedOrigins(ctx context.Context, org, project string, r
 
 // EmbedGrantActive reports whether an embed token's grant still holds (auth.Users).
 func (s *Store) EmbedGrantActive(ctx context.Context, g store.EmbedScope) (bool, error) {
-	active, err := s.q.EmbedGrantActive(ctx, EmbedGrantActiveParams{OrganisationID: g.OrganisationID, ProjectID: g.ProjectID, Origin: g.Origin, KeyID: g.KeyID, UserID: g.UserID})
+	active, err := s.q.EmbedGrantActive(ctx, EmbedGrantActiveParams{OrganisationID: g.OrganisationID, ProjectID: g.ProjectID, Origin: g.Origin, KeyID: g.KeyID, UserID: g.UserID, Content: g.Content})
 	if err != nil {
 		return false, fmt.Errorf("embed grant: %w", err)
 	}

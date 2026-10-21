@@ -24,6 +24,7 @@ type projectSettingsRead struct {
 	TraceRetentionDays      *int      `json:"traceRetentionDays"`
 	RecordingRetentionDays  *int      `json:"recordingRetentionDays"`
 	AllowedOrigins          *[]string `json:"allowedOrigins"`
+	AllowedOriginsRevision  int64     `json:"allowedOriginsRevision"`
 }
 
 func (a *API) settingsResponse(settings store.ProjectSettings) projectSettingsRead {
@@ -31,7 +32,7 @@ func (a *API) settingsResponse(settings store.ProjectSettings) projectSettingsRe
 	// Transcript and recording policies are not implemented here. Allowed origins are null until an
 	// Admin sets them (decision 0034).
 	days := 90
-	out := projectSettingsRead{ProjectSettings: settings, TraceRetentionDays: &days}
+	out := projectSettingsRead{ProjectSettings: settings, TraceRetentionDays: &days, AllowedOriginsRevision: settings.AllowedOriginsRevision}
 	if settings.AllowedOrigins != nil {
 		origins := settings.AllowedOrigins
 		out.AllowedOrigins = &origins

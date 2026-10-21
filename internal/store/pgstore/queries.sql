@@ -577,7 +577,8 @@ SELECT COALESCE(s.answer_ms, 1500::double precision) AS answer_ms,
        COALESCE(s.join_ms, 2000::double precision) AS join_ms,
        COALESCE(s.tts_start_ms, 1000::double precision) AS tts_start_ms,
        COALESCE(s.revision, 0::bigint) AS revision,
-       s.allowed_origins
+       s.allowed_origins,
+       COALESCE(s.allowed_origins_revision, 0::bigint) AS allowed_origins_revision
 FROM projects p LEFT JOIN project_settings s ON s.organisation_id = p.organisation_id AND s.project_id = p.id
 WHERE p.organisation_id= @organisation_id AND p.id= @project_id;
 
@@ -591,17 +592,19 @@ ON CONFLICT (organisation_id, project_id) DO NOTHING;
 -- name: UpdateProjectSettings :one
 UPDATE project_settings SET answer_ms= @answer_ms, join_ms= @join_ms, tts_start_ms= @tts_start_ms, revision = revision + 1
 WHERE organisation_id= @organisation_id AND project_id= @project_id AND revision= @expected_revision
-RETURNING answer_ms, join_ms, tts_start_ms, revision, allowed_origins;
+RETURNING answer_ms, join_ms, tts_start_ms, revision, allowed_origins, allowed_origins_revision;
 
 -- name: UpdateAllowedOrigins :one
--- NULL clears the list, which allows no origin.
-UPDATE project_settings SET allowed_origins = sqlc.narg(allowed_origins)::text[], revision = revision + 1
-WHERE organisation_id= @organisation_id AND project_id= @project_id AND revision= @expected_revision
-RETURNING answer_ms, join_ms, tts_start_ms, revision, allowed_origins;
+-- NULL clears the list, which allows no origin. It moves only the list's own revision, never the
+-- thresholds revision the issue engine compares against.
+UPDATE project_settings SET allowed_origins = sqlc.narg(allowed_origins)::text[], allowed_origins_revision = allowed_origins_revision + 1
+WHERE organisation_id= @organisation_id AND project_id= @project_id AND allowed_origins_revision= @expected_revision
+RETURNING answer_ms, join_ms, tts_start_ms, revision, allowed_origins, allowed_origins_revision;
 
 -- name: EmbedGrantActive :one
 -- Whether an embed token still holds, in one round trip: the project still allows its origin, and
--- the key that minted it is unrevoked, or the user who minted it is still a member.
+-- the key that minted it is unrevoked, or the user who minted it is still a member, and still an
+-- Admin when the token shares transcripts and audio.
 SELECT (
     EXISTS (
         SELECT 1 FROM project_settings s
@@ -615,6 +618,7 @@ SELECT (
         OR EXISTS (
             SELECT 1 FROM memberships m
             WHERE m.user_id = NULLIF(@user_id::text, '')::uuid AND m.organisation_id = @organisation_id
+              AND (NOT @content::boolean OR m.role = 'admin')
         )
     )
 )::boolean AS active;

@@ -27,6 +27,11 @@ func TestNormaliseOrigin(t *testing.T) {
 		{"http://127.0.0.1", "http://127.0.0.1"},
 		{"http://[::1]:80", "http://[::1]"},
 		{"https://bücher.example", "https://xn--bcher-kva.example"},
+		{"https://app.example.com:0443", "https://app.example.com"},
+		{"https://app.example.com:08443", "https://app.example.com:8443"},
+		{"https://app.example.com:0", ""},
+		{"https://app.example.com:65536", ""},
+		{"https://app.example.com:99999", ""},
 		{"http://app.example.com", ""},
 		{"https://app.example.com/path", ""},
 		{"https://app.example.com?x=1", ""},
@@ -130,11 +135,11 @@ func TestEmbedTokensFrameOneProjectForOneOrigin(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		return s.Revision
+		return s.AllowedOriginsRevision
 	}
 	setOrigins := func(t *testing.T, origins string) (int, []byte) {
 		t.Helper()
-		return send(t, admin, http.MethodPut, base+"/settings/allowed-origins", "", `{"allowedOrigins":`+origins+`,"revision":`+jsonInt(revision(t))+`}`)
+		return send(t, admin, http.MethodPut, base+"/settings/allowed-origins", "", `{"allowedOrigins":`+origins+`,"allowedOriginsRevision":`+jsonInt(revision(t))+`}`)
 	}
 	app := `"https://app.example.com"`
 	calls := `{"widgets":["recent-calls","call"],"origin":"https://App.Example.com:443","expiresInSeconds":60}`
@@ -146,6 +151,17 @@ func TestEmbedTokensFrameOneProjectForOneOrigin(t *testing.T) {
 	})
 
 	t.Run("admins set allowed origins", func(t *testing.T) {
+		// The thresholds revision versions issue evaluation; saving sites leaves it alone.
+		before, err := f.pg.ProjectSettings(ctx, "default", f.project)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() {
+			after, err := f.pg.ProjectSettings(ctx, "default", f.project)
+			if err != nil || after.Revision != before.Revision {
+				t.Errorf("thresholds revision %d -> %d after saving sites (%v)", before.Revision, after.Revision, err)
+			}
+		}()
 		for _, bad := range []string{`["https://*.example.com"]`, `["https://app.example.com/path"]`, `["http://app.example.com"]`, `"https://app.example.com"`} {
 			if status, body := setOrigins(t, bad); status != http.StatusBadRequest {
 				t.Errorf("allowedOrigins %s = %d %s, want 400", bad, status, body)
@@ -156,11 +172,11 @@ func TestEmbedTokensFrameOneProjectForOneOrigin(t *testing.T) {
 		if err := json.Unmarshal(body, &s); status != http.StatusOK || err != nil || s.AllowedOrigins == nil || strings.Join(*s.AllowedOrigins, " ") != "https://app.example.com http://localhost:5173" {
 			t.Fatalf("set origins = %d %s", status, body)
 		}
-		if status, body := send(t, admin, http.MethodPut, base+"/settings/allowed-origins", "", `{"allowedOrigins":[],"revision":0}`); status != http.StatusConflict {
+		if status, body := send(t, admin, http.MethodPut, base+"/settings/allowed-origins", "", `{"allowedOrigins":[],"allowedOriginsRevision":0}`); status != http.StatusConflict {
 			t.Errorf("stale revision = %d %s, want 409", status, body)
 		}
 		// A project key never sets them.
-		if status, _ := send(t, routes, http.MethodPut, base+"/settings/allowed-origins", key, `{"allowedOrigins":[],"revision":`+jsonInt(revision(t))+`}`); status != http.StatusForbidden {
+		if status, _ := send(t, routes, http.MethodPut, base+"/settings/allowed-origins", key, `{"allowedOrigins":[],"allowedOriginsRevision":`+jsonInt(revision(t))+`}`); status != http.StatusForbidden {
 			t.Errorf("a key set origins: %d", status)
 		}
 	})
@@ -329,6 +345,31 @@ func TestEmbedTokensFrameOneProjectForOneOrigin(t *testing.T) {
 		g := store.EmbedScope{OrganisationID: "default", ProjectID: f.project, Widgets: []string{"recent-calls"}, Origin: "https://app.example.com", UserID: userID}
 		if ok, err := f.pg.EmbedGrantActive(ctx, g); err != nil || !ok {
 			t.Fatalf("a member's grant = %v %v", ok, err)
+		}
+		// Sharing transcripts and audio holds only while the minter is an Admin. A second Admin lets
+		// this one be demoted.
+		if _, err := f.pg.AddUser(ctx, "embeds-admin-"+f.project+"@example.com", "x", "default", "admin"); err != nil {
+			t.Fatal(err)
+		}
+		shared := g
+		shared.Content = true
+		if ok, err := f.pg.EmbedGrantActive(ctx, shared); err != nil || ok {
+			t.Errorf("a Viewer's content grant = %v %v, want inactive", ok, err)
+		}
+		if _, err := f.pg.UpdateMember(ctx, "default", userID, "admin"); err != nil {
+			t.Fatal(err)
+		}
+		if ok, err := f.pg.EmbedGrantActive(ctx, shared); err != nil || !ok {
+			t.Errorf("an Admin's content grant = %v %v, want active", ok, err)
+		}
+		if _, err := f.pg.UpdateMember(ctx, "default", userID, "member"); err != nil {
+			t.Fatal(err)
+		}
+		if ok, err := f.pg.EmbedGrantActive(ctx, shared); err != nil || ok {
+			t.Errorf("a demoted Admin's content grant = %v %v, want inactive", ok, err)
+		}
+		if ok, err := f.pg.EmbedGrantActive(ctx, g); err != nil || !ok {
+			t.Errorf("a member's grant without content = %v %v, want active", ok, err)
 		}
 		if err := f.pg.RemoveMember(ctx, "default", userID); err != nil {
 			t.Fatal(err)

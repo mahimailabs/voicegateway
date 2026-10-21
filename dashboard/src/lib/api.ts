@@ -266,8 +266,8 @@ export const projectSettingsQuery = () => {
 export const saveProjectSettings = (selected: ReturnType<typeof currentScope>, body: UpdateProjectSettings) =>
   data(updateProjectSettingsCall({ ...thrown, path: { orgId: selected.org, projectId: selected.project }, body }))
 // Allowed embed origins (Admin) and test embed tokens, decision 0034.
-export const saveAllowedOrigins = (selected: ReturnType<typeof currentScope>, allowedOrigins: string[], revision: number) =>
-  data(updateAllowedOriginsCall({ ...thrown, path: { orgId: selected.org, projectId: selected.project }, body: { allowedOrigins, revision } }))
+export const saveAllowedOrigins = (selected: ReturnType<typeof currentScope>, allowedOrigins: string[], allowedOriginsRevision: number) =>
+  data(updateAllowedOriginsCall({ ...thrown, path: { orgId: selected.org, projectId: selected.project }, body: { allowedOrigins, allowedOriginsRevision } }))
 export const createEmbedToken = (body: CreateEmbedToken) => data(createEmbedTokenCall({ ...thrown, path: scope(), body }))
 export const alertSetupQuery = () => ({ queryKey: ["alert-setup", currentScope()], queryFn: () => data(getAlertSetup({ ...thrown, path: scope() })) })
 export const fetchWorkspaces = () => data(getWorkspaces(thrown))

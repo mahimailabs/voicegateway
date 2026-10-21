@@ -5510,7 +5510,7 @@ components:
     UpdateAllowedOrigins:
       type: object
       additionalProperties: false
-      required: [ allowedOrigins, revision ]
+      required: [ allowedOrigins, allowedOriginsRevision ]
       properties:
         allowedOrigins:
           type: [ array, "null" ]
@@ -5520,14 +5520,14 @@ components:
           items:
             type: string
             maxLength: 300
-        revision:
+        allowedOriginsRevision:
           x-unit: count
           x-configuration: true
           type: integer
           minimum: 0
           maximum: 9007199254740991
-          description: Revision checked atomically on save to prevent lost updates.
-          x-source: { kind: configuration, file: migrations/postgres/00014_project_settings.sql, pointer: null, detail: Project settings revision. }
+          description: The allowedOriginsRevision read with the settings, checked atomically on save to prevent lost updates. It versions the sites alone; the thresholds revision does not move.
+          x-source: { kind: configuration, file: migrations/postgres/00021_embed_origins.sql, pointer: null, detail: project_settings.allowed_origins_revision. }
     CreateEmbedToken:
       type: object
       additionalProperties: false
@@ -5593,7 +5593,7 @@ components:
     ProjectSettings:
       type: object
       additionalProperties: false
-      required: [ thresholds, revision, storageBucket, transcriptRetentionDays, traceRetentionDays, recordingRetentionDays, allowedOrigins ]
+      required: [ thresholds, revision, storageBucket, transcriptRetentionDays, traceRetentionDays, recordingRetentionDays, allowedOrigins, allowedOriginsRevision ]
       properties:
         revision:
           x-unit: count
@@ -5644,6 +5644,14 @@ components:
             type: string
             format: uri
           uniqueItems: true
+        allowedOriginsRevision:
+          x-unit: count
+          x-configuration: true
+          type: integer
+          minimum: 0
+          maximum: 9007199254740991
+          description: Version of allowedOrigins alone, sent back with updateAllowedOrigins. Saving sites never moves revision, which versions the thresholds.
+          x-source: { kind: configuration, file: migrations/postgres/00021_embed_origins.sql, pointer: null, detail: project_settings.allowed_origins_revision. }
     Invitation:
       type: object
       x-source: { kind: configuration, file: migrations/postgres/00009_invitations.sql, pointer: null, detail: One invitations row, never its token. }

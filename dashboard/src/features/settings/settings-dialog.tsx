@@ -1086,7 +1086,7 @@ function Embeds() {
         <CopyCommand text={snippet} label="Embed snippet" />
       </section>
       <AllowedOrigins />
-      <TestToken grant={grant} content={content} query={query} src={src} />
+      <TestToken key={`${grant.join(",")}|${content}`} grant={grant} content={content} query={query} src={src} />
       <Group label="Enterprise">
         <Row icon={Lock} muted title="Per-customer tokens" description="A token that shows only one of your customers' calls." />
         <Row icon={Lock} muted title="Remove VoiceGateway branding" description="Widgets without Powered by VoiceGateway." value={<span className="text-[12px] text-muted-foreground">Open source: always shown.</span>} last />
@@ -1103,7 +1103,7 @@ function AllowedOrigins() {
   const isAdmin = roleIn(org().id, useSession()) === "Admin"
   const [draft, setDraft] = useState("")
   const save = useMutation({
-    mutationFn: (origins: string[]) => saveAllowedOrigins(currentScope(), origins, read.data!.revision),
+    mutationFn: (origins: string[]) => saveAllowedOrigins(currentScope(), origins, read.data!.allowedOriginsRevision),
     onSuccess: (settings) => {
       client.setQueryData(projectSettingsQuery().queryKey, settings)
       setDraft("")

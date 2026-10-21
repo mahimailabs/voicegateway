@@ -52,7 +52,15 @@ export function CallTimeline({ call, model, selected, zoom, onSelect }: { call: 
   const rec = call.recording
   const embedded = useEmbedded()
   // In a widget framed on another site the audio is read with the embed token (lib/embed.ts).
-  const playable = useQuery({ queryKey: ["recording-src", rec?.url], queryFn: () => playableUrl(rec!.url), enabled: !!rec, staleTime: Infinity })
+  // A blob: address holds the whole recording in memory: free it when the call or the view goes,
+  // and keep none in the cache, where a freed one could come back.
+  const playable = useQuery({ queryKey: ["recording-src", rec?.url], queryFn: () => playableUrl(rec!.url), enabled: !!rec, staleTime: Infinity, gcTime: 0 })
+  useEffect(() => {
+    const src = playable.data
+    return () => {
+      if (src?.startsWith("blob:")) URL.revokeObjectURL(src)
+    }
+  }, [playable.data])
   const player = useAudioPlayer()
   const now = useAudioPlayerTime()
   const whole: Iv = { start: 0, end: Math.max(...[callLength(call, model), model.duration].filter((x): x is number => x !== null), 0.5) }
