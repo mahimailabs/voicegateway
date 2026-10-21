@@ -84,6 +84,12 @@ var embedAccess = map[string][]string{
 	"GET /api/v1/org/{orgId}/project/{projectId}/issues":                   {"issues"},
 }
 
+// embedContent are the embed routes that serve only call content, a recording's audio: an embed
+// token reads them only when its minter opted in to transcripts and audio (decision 0034).
+var embedContent = map[string]bool{
+	"GET /api/v1/org/{orgId}/project/{projectId}/recordings/{recordingId}": true,
+}
+
 // roleRank orders the contract's role names, and the stored ones, Viewer < Member < Admin; an
 // unknown role ranks 0.
 func roleRank(role string) int {
@@ -130,7 +136,7 @@ func handle(r chi.Router, method, pattern string, h http.HandlerFunc) {
 		}))
 		return
 	}
-	r.Method(method, pattern, allow(acc, embedAccess[method+" "+pattern], h))
+	r.Method(method, pattern, allow(acc, embedAccess[method+" "+pattern], embedContent[method+" "+pattern], h))
 }
 
 // keyMay reports whether a project API key may call a route at all: the signed-in principal's own
@@ -144,8 +150,9 @@ func keyMay(acc access) bool {
 // the organisation in the path is told so. A project API key names no user: it is a read-only
 // Viewer of its one project, and is refused every other project and every organisation operation.
 // The instance token calls the instance routes and nothing else, and nothing else calls them. An
-// embed token reads a route only when it names one of the route's widgets, in its one project.
-func allow(acc access, widgets []string, next http.Handler) http.Handler {
+// embed token reads a route only when it names one of the route's widgets, in its one project, and a
+// content route only when it carries the content opt-in.
+func allow(acc access, widgets []string, content bool, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		p, _ := store.PrincipalFrom(r.Context())
 		if p.Instance != (acc.scope == scopeInstance) {
@@ -162,6 +169,10 @@ func allow(acc access, widgets []string, next http.Handler) http.Handler {
 			own := acc.scope == scopeProject && e.OrganisationID == chi.URLParam(r, "orgId") && e.ProjectID == chi.URLParam(r, "projectId")
 			if !own || r.Method != http.MethodGet || !slices.ContainsFunc(widgets, func(w string) bool { return slices.Contains(e.Widgets, w) }) {
 				writeError(w, r, http.StatusForbidden, codeForbidden, "this embed token reads its own widgets only")
+				return
+			}
+			if content && !e.Content {
+				writeError(w, r, http.StatusForbidden, codeForbidden, "this embed token does not share transcripts or audio")
 				return
 			}
 			next.ServeHTTP(w, r)

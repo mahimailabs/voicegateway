@@ -11,7 +11,7 @@ import { CategoryBar } from "@/components/tremor/CategoryBar"
 import { type AvailableChartColorsKeys, getColorClassName } from "@/components/tremor/chartColors"
 import { ApiError, callQuery, callStatsQuery, fetchCallPage, issuesInQuery } from "@/lib/api"
 import type { CallStats, CallSummary } from "@/lib/api-types"
-import { embedToken } from "@/lib/embed"
+import { embedToken, sharesContent } from "@/lib/embed"
 import { cn } from "@/lib/utils"
 import { fmtMs } from "@/features/call/call-model"
 import { CallView } from "@/features/call/call-view"
@@ -192,9 +192,9 @@ function Issues({ size }: { size: Size }) {
           ) : (
             <ItemGroup className="gap-0">
               {items.slice(0, shown).map((i) => (
-                <Item key={i.id} size="sm" className="px-0 py-1.5">
+                <Item key={i.id} role="listitem" size="sm" className="px-0 py-1.5">
                   <ItemMedia>
-                    <span className={cn("size-2 rounded-full", sevDot[i.severity])} aria-label={`${i.severity} severity`} />
+                    <span role="img" className={cn("size-2 rounded-full", sevDot[i.severity])} aria-label={`${i.severity} severity`} />
                   </ItemMedia>
                   <ItemContent className="min-w-0">
                     <ItemTitle className="block w-full truncate text-[12.5px] font-normal">{i.title}</ItemTitle>
@@ -233,17 +233,19 @@ function RecentCalls({ size, open }: { size: Size; open: (id: string) => void })
       ) : (
         <ItemGroup className="gap-0">
           {q.data.items.map((c) => (
-            <Item key={c.id} size="sm" asChild className="px-0 py-1.5">
-              <button type="button" onClick={() => open(c.id)} className="w-full text-left">
-                <ItemMedia>
-                  <span className={cn("size-2 rounded-full", worst(c))} aria-hidden />
-                </ItemMedia>
-                <ItemContent className="min-w-0">
-                  <ItemTitle className="block w-full truncate text-[12.5px] font-normal">{`${channel[c.channel]} · ${since(c.startedAt)}${size === "large" && c.turnCount !== null ? ` · ${c.turnCount} turns` : ""}`}</ItemTitle>
-                </ItemContent>
-                <ItemActions className="text-[11.5px] text-muted-foreground tnum">{`${length(c.durationSeconds)} · ${c.answerMsMedian === null ? "unknown" : fmtMs(c.answerMsMedian)}`}</ItemActions>
-              </button>
-            </Item>
+            <div key={c.id} role="listitem">
+              <Item size="sm" asChild className="px-0 py-1.5">
+                <button type="button" onClick={() => open(c.id)} className="w-full text-left">
+                  <ItemMedia>
+                    <span className={cn("size-2 rounded-full", worst(c))} aria-hidden />
+                  </ItemMedia>
+                  <ItemContent className="min-w-0">
+                    <ItemTitle className="block w-full truncate text-[12.5px] font-normal">{`${channel[c.channel]} · ${since(c.startedAt)}${size === "large" && c.turnCount !== null ? ` · ${c.turnCount} turns` : ""}`}</ItemTitle>
+                  </ItemContent>
+                  <ItemActions className="text-[11.5px] text-muted-foreground tnum">{`${length(c.durationSeconds)} · ${c.answerMsMedian === null ? "unknown" : fmtMs(c.answerMsMedian)}`}</ItemActions>
+                </button>
+              </Item>
+            </div>
           ))}
         </ItemGroup>
       )}
@@ -312,6 +314,7 @@ function OneCall({ callId, back }: { callId: string | undefined; back: () => voi
       <button type="button" onClick={back} className="mb-2 flex w-fit items-center gap-1 text-[12px] text-muted-foreground hover:text-foreground">
         <ArrowLeft size={13} /> Recent calls
       </button>
+      {!sharesContent() && <p className="mb-2 text-[12px] text-muted-foreground">Timings only: this embed does not share transcripts or audio.</p>}
       <div className="min-h-0 flex-1 overflow-hidden rounded-xl border">
         {read.data ? (
           <CallView call={read.data} />

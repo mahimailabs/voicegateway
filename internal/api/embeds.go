@@ -166,6 +166,8 @@ type embedToken struct {
 	ExpiresAt time.Time `json:"expiresAt"`
 	Widgets   []string  `json:"widgets"`
 	Origin    string    `json:"origin"`
+	// TranscriptsAndAudio is the content opt-in the token carries.
+	TranscriptsAndAudio bool `json:"transcriptsAndAudio"`
 }
 
 // createEmbedToken serves operationId createEmbedToken: a token for some of the project's widgets,
@@ -182,6 +184,9 @@ func (a *API) createEmbedToken(w http.ResponseWriter, r *http.Request) {
 		Widgets          []string `json:"widgets"`
 		Origin           string   `json:"origin"`
 		ExpiresInSeconds *int     `json:"expiresInSeconds"`
+		// TranscriptsAndAudio opts in to sharing the one-call view's transcript, span attributes
+		// and recording audio with the framing site (decision 0034). Off by default.
+		TranscriptsAndAudio bool `json:"transcriptsAndAudio"`
 	}
 	known := embedWidgets()
 	ttl := embedTTLDefault
@@ -213,6 +218,9 @@ func (a *API) createEmbedToken(w http.ResponseWriter, r *http.Request) {
 	case ttl < embedTTLMin || ttl > embedTTLMax:
 		writeError(w, r, http.StatusBadRequest, codeInvalidRequest, "expiresInSeconds must be between 60 and 86400")
 		return
+	case body.TranscriptsAndAudio && !slices.Contains(widgets, "call"):
+		writeError(w, r, http.StatusBadRequest, codeInvalidRequest, "transcriptsAndAudio shares the one-call view's content, so name the call widget too")
+		return
 	}
 	org, proj := chi.URLParam(r, "orgId"), chi.URLParam(r, "projectId")
 	settings, err := a.Settings.ProjectSettings(r.Context(), org, proj)
@@ -226,9 +234,15 @@ func (a *API) createEmbedToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	p, _ := store.PrincipalFrom(r.Context())
-	grant := store.EmbedScope{OrganisationID: org, ProjectID: proj, Widgets: widgets, Origin: origin, UserID: p.UserID}
+	grant := store.EmbedScope{OrganisationID: org, ProjectID: proj, Widgets: widgets, Origin: origin, UserID: p.UserID, Content: body.TranscriptsAndAudio}
 	if p.Key != nil {
 		grant.KeyID, grant.UserID = p.Key.KeyID, ""
+	}
+	// Sharing what callers said with another site is an Admin's call; a project key is the
+	// integration an Admin made for that.
+	if grant.Content && p.Key == nil && roleRank(p.Roles[org]) < roleRank("Admin") {
+		writeError(w, r, http.StatusForbidden, codeForbidden, "an Admin or a project key shares transcripts and audio in an embed")
+		return
 	}
 	if grant.KeyID == "" && grant.UserID == "" {
 		writeError(w, r, http.StatusForbidden, codeForbidden, "a project key or a member mints embed tokens")
@@ -239,5 +253,5 @@ func (a *API) createEmbedToken(w http.ResponseWriter, r *http.Request) {
 		a.fail(w, r, err, "")
 		return
 	}
-	writeJSON(w, http.StatusCreated, embedToken{Token: token, ExpiresAt: expiresAt.UTC(), Widgets: widgets, Origin: origin})
+	writeJSON(w, http.StatusCreated, embedToken{Token: token, ExpiresAt: expiresAt.UTC(), Widgets: widgets, Origin: origin, TranscriptsAndAudio: grant.Content})
 }

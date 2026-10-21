@@ -67,7 +67,7 @@ export const listCalls = <ThrowOnError extends boolean = false>(options: Options
 /**
  * Read one conversation and its reported turns, events, spans and recording
  *
- * Requires authenticated organisation membership and permission to read the named project. A browser signs in with the session cookie (decision 0027); the role gate admits the minimumRole and above. Credential absence is 401, denied membership is 403, cross-project resource ids are not_found. Server-side LiveKit credentials must never reach the browser.
+ * Requires authenticated organisation membership and permission to read the named project. A browser signs in with the session cookie (decision 0027); the role gate admits the minimumRole and above. Credential absence is 401, denied membership is 403, cross-project resource ids are not_found. Server-side LiveKit credentials must never reach the browser. For an embed token without transcriptsAndAudio (decision 0034) every turn's userText and agentText, every span's attrs and the recording are withheld: null, absent, and the recording clock dropped.
  */
 export const getCall = <ThrowOnError extends boolean = false>(options: Options<GetCallData, ThrowOnError>): RequestResult<GetCallResponses, GetCallErrors, ThrowOnError> => (options.client ?? client).get<GetCallResponses, GetCallErrors, ThrowOnError>({
     security: [
@@ -751,7 +751,7 @@ export const getWorkspaces = <ThrowOnError extends boolean = false>(options?: Op
 /**
  * Read retained opt-in recording audio
  *
- * Requires authenticated organisation membership and permission to read the named project. A browser signs in with the session cookie (decision 0027); the role gate admits the minimumRole and above. Credential absence is 401, denied membership is 403, cross-project resource ids are not_found. Server-side LiveKit credentials must never reach the browser. Resolve the recording id server-side only after project authorisation. Do not fetch an arbitrary request URL. Enforce retention and recording opt-in; never synthesise media for a call without an observed recording.
+ * Requires authenticated organisation membership and permission to read the named project. A browser signs in with the session cookie (decision 0027); the role gate admits the minimumRole and above. Credential absence is 401, denied membership is 403, cross-project resource ids are not_found. Server-side LiveKit credentials must never reach the browser. Resolve the recording id server-side only after project authorisation. Do not fetch an arbitrary request URL. Enforce retention and recording opt-in; never synthesise media for a call without an observed recording. An embed token reads it only with transcriptsAndAudio (decision 0034).
  */
 export const getRecordingMedia = <ThrowOnError extends boolean = false>(options: Options<GetRecordingMediaData, ThrowOnError>): RequestResult<GetRecordingMediaResponses, GetRecordingMediaErrors, ThrowOnError> => (options.client ?? client).get<GetRecordingMediaResponses, GetRecordingMediaErrors, ThrowOnError>({
     security: [

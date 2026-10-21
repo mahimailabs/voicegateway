@@ -76,6 +76,8 @@ type embedClaims struct {
 	Origin       string   `json:"ori"`
 	// Minter is "key:<key_id>" or "user:<user id>".
 	Minter string `json:"by"`
+	// Content is the opt-in to transcripts and recording audio.
+	Content bool `json:"cnt,omitempty"`
 	jwt.RegisteredClaims
 }
 
@@ -93,7 +95,7 @@ func (t *EmbedTokens) Mint(grant store.EmbedScope, ttl time.Duration) (token str
 		minter = "key:" + grant.KeyID
 	}
 	claims := embedClaims{
-		Organisation: grant.OrganisationID, Project: grant.ProjectID, Widgets: grant.Widgets, Origin: grant.Origin, Minter: minter,
+		Organisation: grant.OrganisationID, Project: grant.ProjectID, Widgets: grant.Widgets, Origin: grant.Origin, Minter: minter, Content: grant.Content,
 		RegisteredClaims: jwt.RegisteredClaims{
 			Issuer: embedIssuer, Audience: jwt.ClaimStrings{embedAudience}, Subject: grant.OrganisationID + "/" + grant.ProjectID,
 			IssuedAt: jwt.NewNumericDate(now), NotBefore: jwt.NewNumericDate(now), ExpiresAt: jwt.NewNumericDate(expiresAt),
@@ -124,7 +126,7 @@ func (t *EmbedTokens) Parse(v string) (store.EmbedScope, error) {
 	if err != nil {
 		return store.EmbedScope{}, ErrEmbedToken
 	}
-	g := store.EmbedScope{OrganisationID: c.Organisation, ProjectID: c.Project, Widgets: c.Widgets, Origin: c.Origin}
+	g := store.EmbedScope{OrganisationID: c.Organisation, ProjectID: c.Project, Widgets: c.Widgets, Origin: c.Origin, Content: c.Content}
 	switch kind, id, _ := strings.Cut(c.Minter, ":"); kind {
 	case "key":
 		g.KeyID = id

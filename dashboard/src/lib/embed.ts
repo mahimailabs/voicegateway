@@ -23,6 +23,19 @@ export function startEmbed(): string | null {
 
 export const embedToken = () => token
 
+// Whether the frame's token shares transcripts and audio (decision 0034), read from its claims for
+// display only: the server withholds them either way. The console's own preview has no token and
+// reads with the session.
+export function sharesContent(): boolean {
+  if (!token) return true
+  try {
+    const claims = JSON.parse(atob(token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/"))) as { cnt?: unknown }
+    return claims.cnt === true
+  } catch {
+    return false
+  }
+}
+
 // A recording plays through an <audio> element, which cannot send the Bearer: with a token the
 // audio is read with fetch and played from memory.
 export async function playableUrl(url: string): Promise<string> {

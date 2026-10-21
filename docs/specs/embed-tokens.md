@@ -34,4 +34,5 @@ PRODUCT.md capability 9, decisions 0017, 0023, 0027 and 0034, docs/api/openapi.y
 4. Other projects are rejected: a token is 403 on another project's routes and `'self'` on its widget pages, and another project's key cannot mint here.
 5. A token reads only its widgets' routes, never settings, keys, members, workspaces or a new token.
 6. Revoking the minting key, or removing the minting member, stops the token.
-7. In Chromium, a page on an allowed origin shows the widget and a page on another origin is blocked by the browser.
+7. In Chromium, a page on an allowed origin shows the widget and a page on another origin is blocked by the browser, as are another project's widget, an expired token and no token (TestBrowserFramesTheWidgetOnlyForItsOrigin, chromedp). Every widget at every size passes axe with no serious or critical finding (dashboard/e2e/embeds.spec.ts).
+8. Transcripts and audio need the opt-in: without `transcriptsAndAudio` getCall returns no turn text, span attributes or recording and the recording route is 403; with it (an Admin or a project key, and the call widget) both are shared (TestEmbedTokensFrameOneProjectForOneOrigin).

@@ -276,7 +276,7 @@ paths:
         projectIsolation: required
         originAllowList: required
         readOnly: true
-      description: "Requires authenticated organisation membership and permission to read the named project. A browser signs in with the session cookie (decision 0027); the role gate admits the minimumRole and above. Credential absence is 401, denied membership is 403, cross-project resource ids are not_found. Server-side LiveKit credentials must never reach the browser."
+      description: "Requires authenticated organisation membership and permission to read the named project. A browser signs in with the session cookie (decision 0027); the role gate admits the minimumRole and above. Credential absence is 401, denied membership is 403, cross-project resource ids are not_found. Server-side LiveKit credentials must never reach the browser. For an embed token without transcriptsAndAudio (decision 0034) every turn's userText and agentText, every span's attrs and the recording are withheld: null, absent, and the recording clock dropped."
       parameters:
         - $ref: "#/components/parameters/OrganisationId"
         - $ref: "#/components/parameters/ProjectId"
@@ -1777,7 +1777,8 @@ paths:
         projectIsolation: required
         originAllowList: required
         readOnly: true
-      description: "Requires authenticated organisation membership and permission to read the named project. A browser signs in with the session cookie (decision 0027); the role gate admits the minimumRole and above. Credential absence is 401, denied membership is 403, cross-project resource ids are not_found. Server-side LiveKit credentials must never reach the browser. Resolve the recording id server-side only after project authorisation. Do not fetch an arbitrary request URL. Enforce retention and recording opt-in; never synthesise media for a call without an observed recording."
+        transcriptsAndAudio: required
+      description: "Requires authenticated organisation membership and permission to read the named project. A browser signs in with the session cookie (decision 0027); the role gate admits the minimumRole and above. Credential absence is 401, denied membership is 403, cross-project resource ids are not_found. Server-side LiveKit credentials must never reach the browser. Resolve the recording id server-side only after project authorisation. Do not fetch an arbitrary request URL. Enforce retention and recording opt-in; never synthesise media for a call without an observed recording. An embed token reads it only with transcriptsAndAudio (decision 0034)."
       parameters:
         - $ref: "#/components/parameters/OrganisationId"
         - $ref: "#/components/parameters/ProjectId"
@@ -5554,10 +5555,16 @@ components:
           x-configuration: true
           description: How long the token is valid.
           x-source: { kind: configuration, file: internal/api/embeds.go, pointer: null, detail: Requested token lifetime. }
+        transcriptsAndAudio:
+          type: boolean
+          default: false
+          x-configuration: true
+          description: "Share what was said with the framing site: the one-call view's turn text, span attributes (prompts, transcripts, tool arguments) and recording audio. Off by default, when the call widget shows timings only. Needs the call widget, and an Admin or a project key (decision 0034)."
+          x-source: { kind: configuration, file: internal/api/embeds.go, pointer: null, detail: Content opt-in requested by the minter. }
     EmbedToken:
       type: object
       additionalProperties: false
-      required: [ token, expiresAt, widgets, origin ]
+      required: [ token, expiresAt, widgets, origin, transcriptsAndAudio ]
       properties:
         token:
           type: string
@@ -5579,6 +5586,10 @@ components:
           type: string
           description: The origin the token may be framed by, normalised.
           x-source: { kind: computed, file: internal/api/embeds.go, pointer: null, detail: Normalised requested origin. }
+        transcriptsAndAudio:
+          type: boolean
+          description: Whether the token shares turn text, span attributes and recording audio.
+          x-source: { kind: computed, file: internal/api/embeds.go, pointer: null, detail: Content opt-in the token carries. }
     ProjectSettings:
       type: object
       additionalProperties: false

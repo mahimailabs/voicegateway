@@ -1467,6 +1467,10 @@ export type CreateEmbedToken = {
      * How long the token is valid.
      */
     expiresInSeconds?: number;
+    /**
+     * Share what was said with the framing site: the one-call view's turn text, span attributes (prompts, transcripts, tool arguments) and recording audio. Off by default, when the call widget shows timings only. Needs the call widget, and an Admin or a project key (decision 0034).
+     */
+    transcriptsAndAudio?: boolean;
 };
 
 export type EmbedToken = {
@@ -1486,6 +1490,10 @@ export type EmbedToken = {
      * The origin the token may be framed by, normalised.
      */
     origin: string;
+    /**
+     * Whether the token shares turn text, span attributes and recording audio.
+     */
+    transcriptsAndAudio: boolean;
 };
 
 export type ProjectSettings = {

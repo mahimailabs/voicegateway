@@ -39,8 +39,12 @@ Use a [project API key](/docs/team/api-keys). Never put the key in your page. Th
 
 Sizes: small 170 × 170, medium 364 × 170, large 364 × 382.
 
+## Transcripts and audio
+
+A recent call opens the call view inside the frame. By default it shows timings, models and issues only, never what was said. To share transcripts, prompts, tool arguments and the recording with your site, an Admin or a project key adds `"transcriptsAndAudio": true` to the token request. Everyone who can see your page then sees what callers said, so turn it on only where that is right for your users.
+
 ## What a token can do
 
-- Read only the widgets it names, in one project.
+- Read only the widgets it names, in one project, without transcripts or audio unless asked for.
 - Be shown only on its one site. Any other site sees a blocked frame.
 - Stop at its expiry, or as soon as its API key is revoked or its site removed.

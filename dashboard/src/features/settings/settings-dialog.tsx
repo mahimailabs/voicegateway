@@ -17,6 +17,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue, SelectGr
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Sidebar, SidebarContent, SidebarGroup, SidebarGroupContent, SidebarGroupLabel, SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarProvider } from "@/components/ui/sidebar"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
+import { Switch } from "@/components/ui/switch"
 import { useTheme } from "@/components/theme"
 import { NewProjectDialog } from "@/components/new-project-dialog"
 import { currentOrg, currentScope, scopePrefix, useUrlState } from "@/lib/url-state"
@@ -1013,7 +1014,11 @@ function Embeds() {
   const preview = `${src}?theme=${theme}${w.sizes.length > 1 ? `&size=${size}` : ""}${w.id === "call" && callId ? `&call=${encodeURIComponent(callId)}` : ""}`
   const snippet = `<iframe\n  src="${src}${query("EMBED_TOKEN")}"\n  width="${frame.width}"\n  height="${frame.height}"\n  style="border: 0; border-radius: 22px"\n  title="${w.title}, VoiceGateway"\n></iframe>`
   const grant = [w.id, ...w.with]
-  const mint = `curl -X POST ${window.location.origin}/api/v1${scopePrefix()}/embed-tokens \\\n  -H "Authorization: Bearer $VOICEGATEWAY_KEY" \\\n  -H "Content-Type: application/json" \\\n  -d '{"widgets": ${JSON.stringify(grant)}, "origin": "https://your-app.example.com"}'`
+  // Transcripts and audio reach the other site only when asked for (decision 0034).
+  const [contentPick, setContent] = useUrlState<string>("content", "off")
+  const hasCall = grant.includes("call")
+  const content = hasCall && contentPick === "on"
+  const mint = `curl -X POST ${window.location.origin}/api/v1${scopePrefix()}/embed-tokens \\\n  -H "Authorization: Bearer $VOICEGATEWAY_KEY" \\\n  -H "Content-Type: application/json" \\\n  -d '{"widgets": ${JSON.stringify(grant)}, "origin": "https://your-app.example.com"${content ? `, "transcriptsAndAudio": true` : ""}}'`
   return (
     <>
       <Header title="Embeds" description="Put this project's widgets in your own product. Each one is a small frame behind a short-lived, read-only token, so your API key never reaches the page." />
@@ -1063,6 +1068,16 @@ function Embeds() {
       <section className="pt-6">
         <h3 className="pb-1 text-[14px] font-semibold">1. Your backend asks for a token</h3>
         <p className="pb-3 text-[13px] text-muted-foreground">With a project API key, for the widgets the frame shows and the site that shows them. A token lasts an hour unless you pass expiresInSeconds (1 minute to 1 day).</p>
+        {hasCall && (
+          <Group label="What the call view shares">
+            <Row
+              title="Share transcripts and audio"
+              description="Off: the one-call view shows timings, models and issues only. On: the other site sees what callers and the agent said, prompts and tool arguments, and can play the recording. Needs an Admin or a project key."
+              last
+              value={<Switch checked={content} onCheckedChange={(on) => setContent(on ? "on" : "off")} aria-label="Share transcripts and audio" />}
+            />
+          </Group>
+        )}
         <CopyCommand text={mint} label="Token request" />
       </section>
       <section className="pt-6">
@@ -1071,7 +1086,7 @@ function Embeds() {
         <CopyCommand text={snippet} label="Embed snippet" />
       </section>
       <AllowedOrigins />
-      <TestToken grant={grant} query={query} src={src} />
+      <TestToken grant={grant} content={content} query={query} src={src} />
       <Group label="Enterprise">
         <Row icon={Lock} muted title="Per-customer tokens" description="A token that shows only one of your customers' calls." />
         <Row icon={Lock} muted title="Remove VoiceGateway branding" description="Widgets without Powered by VoiceGateway." value={<span className="text-[12px] text-muted-foreground">Open source: always shown.</span>} last />
@@ -1149,14 +1164,14 @@ function AllowedOrigins() {
 }
 
 // A token made here, for trying the snippet on an allowed site. It is shown once and never stored.
-function TestToken({ grant, query, src }: { grant: string[]; query: (token: string) => string; src: string }) {
+function TestToken({ grant, content, query, src }: { grant: string[]; content: boolean; query: (token: string) => string; src: string }) {
   const read = useQuery(projectSettingsQuery())
   const origins = read.data?.allowedOrigins ?? []
   const [origin, setOrigin] = useState<string | null>(null)
   const chosen = origin && origins.includes(origin) ? origin : (origins[0] ?? null)
-  const mint = useMutation({ mutationFn: () => createEmbedToken({ widgets: grant as CreateEmbedToken["widgets"], origin: chosen!, expiresInSeconds: 3600 }), onError: (error) => toast.error(errorText(error)) })
+  const mint = useMutation({ mutationFn: () => createEmbedToken({ widgets: grant as CreateEmbedToken["widgets"], origin: chosen!, expiresInSeconds: 3600, transcriptsAndAudio: content }), onError: (error) => toast.error(errorText(error)) })
   return (
-    <Group label="Try it" footer={mint.data ? `For ${mint.data.origin}, until ${new Date(mint.data.expiresAt).toLocaleTimeString()}. It opens ${mint.data.widgets.join(" and ")}.` : "A test token for one hour, made with your sign-in. Your product's backend makes its own with an API key."}>
+    <Group label="Try it" footer={mint.data ? `For ${mint.data.origin}, until ${new Date(mint.data.expiresAt).toLocaleTimeString()}. It opens ${mint.data.widgets.join(" and ")}${mint.data.transcriptsAndAudio ? ", with transcripts and audio" : ", without transcripts or audio"}.` : "A test token for one hour, made with your sign-in. Your product's backend makes its own with an API key."}>
       <Row
         title="Test token"
         last

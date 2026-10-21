@@ -135,6 +135,7 @@ export function checkSpec(spec: Doc, repo = root) {
         if (embed?.projectIsolation !== "required") fail(name, "embed access requires project isolation")
         if (embed?.originAllowList !== "required") fail(name, "embed access requires an origin allow-list")
         if (embed?.readOnly !== true) fail(name, "embed access must be read-only")
+        if (embed?.transcriptsAndAudio !== undefined && embed.transcriptsAndAudio !== "required") fail(name, "transcriptsAndAudio is required when named")
       }
     }
   }

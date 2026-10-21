@@ -140,6 +140,7 @@ func TestEmbedAccessMatchesTheContract(t *testing.T) {
 			key := strings.ToUpper(method) + " " + path
 			var x struct {
 				Widgets []string `yaml:"widgets"`
+				Content string   `yaml:"transcriptsAndAudio"`
 			}
 			if node, ok := op.Extensions.Get("x-embed-access"); ok {
 				if err := node.Decode(&x); err != nil {
@@ -156,6 +157,9 @@ func TestEmbedAccessMatchesTheContract(t *testing.T) {
 			seen[key] = true
 			if !slices.Equal(got, x.Widgets) || offered != (len(x.Widgets) > 0) {
 				t.Errorf("%s (%s): gate widgets %v, contract widgets %v, embedToken offered %v", key, op.OperationId, got, x.Widgets, offered)
+			}
+			if embedContent[key] != (x.Content == "required") {
+				t.Errorf("%s (%s): gate content-only %v, contract transcriptsAndAudio %q", key, op.OperationId, embedContent[key], x.Content)
 			}
 		}
 	}

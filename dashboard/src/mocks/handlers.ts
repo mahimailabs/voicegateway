@@ -172,12 +172,12 @@ export const handlers = [
   // The mock signs nothing: its token only fills the snippet. web mints real ones (decision 0034).
   http.post(`${project}/embed-tokens`, async ({ params, request }) => {
     if (!known(params)) return fail(404, "not_found", "No such project.")
-    const body = (await request.json().catch(() => null)) as { widgets?: string[]; origin?: unknown; expiresInSeconds?: number } | null
+    const body = (await request.json().catch(() => null)) as { widgets?: string[]; origin?: unknown; expiresInSeconds?: number; transcriptsAndAudio?: boolean } | null
     const origin = normaliseOrigin(body?.origin)
     if (!body || !Array.isArray(body.widgets) || !body.widgets.length || !origin) return fail(400, "invalid_request", "Name widgets and an origin.")
     if (!(projectSettings(settingsScope(params)).allowedOrigins ?? []).includes(origin)) return fail(400, "origin_not_allowed", "This origin is not in the project's allowed origins.")
     const expiresAt = new Date(Date.now() + (body.expiresInSeconds ?? 3600) * 1000).toISOString()
-    return HttpResponse.json({ token: "vge_mock-preview-token", expiresAt, widgets: [...new Set(body.widgets)], origin }, { status: 201 })
+    return HttpResponse.json({ token: "vge_mock-preview-token", expiresAt, widgets: [...new Set(body.widgets)], origin, transcriptsAndAudio: body.transcriptsAndAudio === true }, { status: 201 })
   }),
   http.get<PathParams, never, AlertSetup | ApiErrorBody>(`${project}/alert-setup`, ({ params }) => (known(params) ? HttpResponse.json(alertSetup()) : fail(404, "not_found", "No such project."))),
   http.get<PathParams, never, Workspaces>("*/api/v1/workspaces", () => HttpResponse.json(workspaces())),

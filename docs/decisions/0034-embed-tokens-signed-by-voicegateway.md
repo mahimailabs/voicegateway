@@ -21,6 +21,8 @@ Option 3. `POST .../embed-tokens` (a project key or a member, Viewer and up) ret
 
 The widget page sends `Content-Security-Policy: frame-ancestors <origin>` only for a valid token naming that project and widget, and `frame-ancestors 'self'` everywhere else in the console, plus `Referrer-Policy: no-referrer` on widget pages. An embed token reads only the routes its widgets need (`embedAccess` in internal/api/roles.go, compared with the contract's `x-embed-access`) and cannot mint another token.
 
+What was said in a call stays inside VoiceGateway unless the minter asks otherwise. A recent-calls frame opens the one-call view, and that view could show the call's transcript, span attributes (prompts, tool arguments, transcripts) and recording audio to anyone who can see the framing site. So a token carries a separate opt-in, `transcriptsAndAudio`, off by default. Without it, getCall answers every turn's text and every span's attributes as null and leaves out the recording, and the recording route refuses the token; the view shows timings, models and issues only and says so. Only an Admin or a project key may mint a token with the opt-in, it needs the call widget, and Settings, Embeds explains what turning it on shares.
+
 The widgets become five compact tiles in small, medium and large sizes (answer time, calls, issues, recent calls, time per turn) plus the one-call view a recent call opens. This replaces 0023's widget list; the rest of 0023 stands.
 
 ## Consequences
@@ -29,4 +31,5 @@ The widgets become five compact tiles in small, medium and large sizes (answer t
 - Changing VOICEGATEWAY_SECRET_KEY ends every embed token.
 - The check costs one Postgres round trip per widget request, the same as a project key.
 - A token is a bearer credential: whoever holds it reads its widgets' data until it expires. The origin check protects framing in a browser, not a copied token.
+- With `transcriptsAndAudio` on, the framing site and everyone who uses it read what callers and the agent said, the prompts and tool arguments, and the recording, for every call in the project, until the token expires. That is the platform's choice to make for its own users; VoiceGateway does not filter it further.
 - Per-customer tokens and removing the branding stay Enterprise and Cloud (0023).

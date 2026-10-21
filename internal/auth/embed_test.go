@@ -54,6 +54,15 @@ func TestEmbedTokenParse(t *testing.T) {
 	if err != nil || got.OrganisationID != "default" || got.ProjectID != "one" || got.Origin != grant.Origin || got.KeyID != grant.KeyID || got.UserID != "" || strings.Join(got.Widgets, ",") != "recent-calls,call" {
 		t.Fatalf("parse a good token: %+v %v", got, err)
 	}
+	if got.Content {
+		t.Error("a token without the opt-in shares content")
+	}
+	shared := grant
+	shared.Content = true
+	withContent, _, _ := tokens.Mint(shared, time.Hour)
+	if got, err := tokens.Parse(withContent); err != nil || !got.Content {
+		t.Errorf("the content opt-in did not survive: %+v %v", got, err)
+	}
 	if _, err := tokens.Parse(sign(jwt.SigningMethodHS256, tokens.key, nil)); err != nil {
 		t.Fatalf("a token signed the same way: %v", err)
 	}

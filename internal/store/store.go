@@ -419,6 +419,9 @@ type EmbedScope struct {
 	Widgets                   []string
 	Origin                    string
 	KeyID, UserID             string
+	// Content shares call transcripts, span attributes and recording audio. Off unless the minter
+	// opts in (decision 0034): without it the one-call view shows timings only.
+	Content bool
 }
 
 // ErrIdempotencyConflict means an invitation with that idempotency key exists already.

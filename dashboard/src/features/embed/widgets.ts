@@ -16,7 +16,7 @@ export const widgets = [
   { id: "issues", title: "Issues", question: "Is anything wrong right now, and what?", sizes: ["small", "medium", "large"], with: [] },
   { id: "recent-calls", title: "Recent calls", question: "What just happened on the line? A row opens that call.", sizes: ["medium", "large"], with: ["call"] },
   { id: "time-per-turn", title: "Time per turn", question: "Where does a turn's time go between the caller and the agent's voice?", sizes: ["medium", "large"], with: [] },
-  { id: "call", title: "One call", question: "One call's transcript, timeline and recording. Pass &call=<call id>.", sizes: ["full"], with: [] },
+  { id: "call", title: "One call", question: "One call's timeline, and its transcript and recording when the token shares them. Pass &call=<call id>.", sizes: ["full"], with: [] },
 ] as const satisfies readonly { id: string; title: string; question: string; sizes: readonly Size[]; with: readonly string[] }[]
 
 export type WidgetId = (typeof widgets)[number]["id"]

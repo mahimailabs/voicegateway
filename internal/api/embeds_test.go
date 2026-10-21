@@ -79,7 +79,7 @@ func TestEmbedTokensFrameOneProjectForOneOrigin(t *testing.T) {
 	accounts := &auth.Service{Users: f.pg, Secure: secure, Plain: plain, Embeds: tokens, Log: f.log, Now: time.Now}
 	routes := (&API{
 		Projects: f.pg, Settings: f.pg, Origins: f.pg, Embeds: tokens, Metadata: f.pg, Issues: f.pg, Calls: f.pg, Traces: f.events,
-		Layers: f.events, Stats: f.pg, Accounts: f.pg, Keys: f.pg, Log: f.log, Now: time.Now, Gate: accounts.Gate,
+		Layers: f.events, Stats: f.pg, Accounts: f.pg, Keys: f.pg, Recordings: f.pg, Log: f.log, Now: time.Now, Gate: accounts.Gate,
 	}).Routes()
 	admin := (&API{Projects: f.pg, Settings: f.pg, Origins: f.pg, Log: f.log, Now: time.Now, Gate: passThrough}).Routes()
 	frames := accounts.Frames(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = io.WriteString(w, "<!doctype html>") }))
@@ -188,6 +188,53 @@ func TestEmbedTokensFrameOneProjectForOneOrigin(t *testing.T) {
 		}
 		if status, body := send(t, routes, http.MethodGet, base+"/calls/"+callID, token, ""); status != http.StatusOK {
 			t.Errorf("getCall with the token = %d %s", status, body)
+		}
+	})
+
+	t.Run("transcripts and audio need the opt-in", func(t *testing.T) {
+		var c struct {
+			Turns []struct {
+				UserText  *string `json:"userText"`
+				AgentText *string `json:"agentText"`
+			} `json:"turns"`
+			Spans []struct {
+				Attrs map[string]string `json:"attrs"`
+			} `json:"spans"`
+			Recording *struct{} `json:"recording"`
+		}
+		said := func(t *testing.T, bearer string) (text, attrs bool) {
+			t.Helper()
+			status, body := send(t, routes, http.MethodGet, base+"/calls/"+callID, bearer, "")
+			c.Turns, c.Spans, c.Recording = nil, nil, nil
+			if err := json.Unmarshal(body, &c); status != http.StatusOK || err != nil || len(c.Turns) == 0 || len(c.Spans) == 0 {
+				t.Fatalf("getCall = %d %v", status, err)
+			}
+			for _, turn := range c.Turns {
+				text = text || turn.UserText != nil || turn.AgentText != nil
+			}
+			for _, sp := range c.Spans {
+				attrs = attrs || sp.Attrs != nil
+			}
+			return text, attrs
+		}
+		if text, attrs := said(t, token); text || attrs || c.Recording != nil {
+			t.Errorf("a token without the opt-in shared text %v, span attributes %v, recording %v", text, attrs, c.Recording != nil)
+		}
+		if status, _ := send(t, routes, http.MethodGet, base+"/recordings/RC_any", token, ""); status != http.StatusForbidden {
+			t.Errorf("recording audio without the opt-in = %d, want 403", status)
+		}
+		status, shared, body := mint(t, key, f.project, `{"widgets":["recent-calls","call"],"origin":"https://app.example.com","transcriptsAndAudio":true}`)
+		if status != http.StatusCreated || !strings.Contains(string(body), `"transcriptsAndAudio":true`) {
+			t.Fatalf("mint with the opt-in = %d %s", status, body)
+		}
+		if text, attrs := said(t, shared); !text || !attrs {
+			t.Errorf("a token with the opt-in: text %v, span attributes %v, want both", text, attrs)
+		}
+		if status, _ := send(t, routes, http.MethodGet, base+"/recordings/RC_any", shared, ""); status == http.StatusForbidden {
+			t.Error("recording audio with the opt-in was refused by the gate")
+		}
+		if status, _, _ := mint(t, key, f.project, `{"widgets":["recent-calls"],"origin":"https://app.example.com","transcriptsAndAudio":true}`); status != http.StatusBadRequest {
+			t.Errorf("the opt-in without the call widget = %d, want 400", status)
 		}
 	})
 
