@@ -15,6 +15,7 @@ on:
       - 'Makefile'
       - 'tools/scripts/dev-env.sh'
       - 'migrations/**'
+      - 'sdk/contract/**'
       - '.github/workflows/go.yml'
   push:
     branches: [main]
@@ -23,6 +24,7 @@ on:
       - 'internal/**'
       - 'deploy/**'
       - 'migrations/**'
+      - 'sdk/contract/**'
       - 'go.mod'
       - 'go.sum'
 

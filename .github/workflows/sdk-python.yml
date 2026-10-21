@@ -1,0 +1,58 @@
+name: Python SDK
+
+# sdk/python (the optional attach() SDK, decision 0033) and the example agent that installs it:
+# the lock, ruff, ruff format, mypy and pytest, on every change to them or to the wire contract they
+# send (sdk/contract). The publish workflow runs the same checks again on the tagged source.
+
+on:
+  pull_request:
+    paths:
+      - 'sdk/python/**'
+      - 'sdk/contract/**'
+      - 'examples/livekit-agent/**'
+      - '.github/workflows/sdk-python.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'sdk/python/**'
+      - 'sdk/contract/**'
+      - 'examples/livekit-agent/**'
+
+permissions:
+  contents: read
+
+jobs:
+  sdk:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: sdk/python
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          version: '0.8.15'
+      - run: uv lock --check
+      - run: uv run --locked ruff check
+      - run: uv run --locked ruff format --check
+      - run: uv run --locked mypy
+      - run: uv run --locked pytest
+
+  example:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: examples/livekit-agent
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          version: '0.8.15'
+      - run: uv lock --check
+      - run: uv run --locked ruff check
+      - run: uv run --locked ruff format --check
+      - run: uv run --locked mypy
