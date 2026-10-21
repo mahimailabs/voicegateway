@@ -18,9 +18,9 @@ import { setUpLater } from "./setup-later"
 // the API (setup-model.ts); ?step= holds a step the user went back to. Self-hosted installs keep the
 // simple add-project form and never open this page.
 
-// The rail: four dots with labels, the current one bold. A step already reached can be opened
-// again; a step ahead of the data cannot. A list, not tabs: it moves between screens.
-function Rail({ derived, viewed, onView }: { derived: 1 | 2 | 3 | 4; viewed: SetupStep; onView: (s: SetupStep) => void }) {
+// The rail: four dots with labels, the current one bold; dots up to the step on screen are blue and
+// the rest grey. A step the data has reached can be opened again; a step ahead of the data cannot. A list, not tabs: it moves between screens.
+export function Rail({ derived, viewed, onView }: { derived: 1 | 2 | 3 | 4; viewed: SetupStep; onView: (s: SetupStep) => void }) {
   const at = viewed === 0 ? 1 : viewed
   return (
     <nav aria-label="Setup steps">
@@ -29,7 +29,7 @@ function Rail({ derived, viewed, onView }: { derived: 1 | 2 | 3 | 4; viewed: Set
           const reached = step <= derived
           const body = (
             <>
-              <span className={cn("size-2 rounded-full", reached ? "bg-primary" : "bg-muted-foreground/30")} aria-hidden="true" />
+              <span className={cn("size-2 rounded-full", step <= at ? "bg-primary" : "bg-muted-foreground/30")} aria-hidden="true" />
               <span className={cn("text-[12px] sm:text-[13px]", step === at ? "font-semibold text-foreground" : "text-muted-foreground")}>{label}</span>
             </>
           )

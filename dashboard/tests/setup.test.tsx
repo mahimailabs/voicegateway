@@ -326,3 +326,13 @@ describe("First look", () => {
     await waitFor(() => expect(within(screen.getByText("Your plan").parentElement!).getByText("Unknown")).toBeTruthy())
   })
 })
+
+describe("rail", () => {
+  test("dots after the step on screen are grey, even when the data has reached them", async () => {
+    const { Rail } = await import("../src/features/setup/setup-page")
+    const { container } = render(<Rail derived={3} viewed={2} onView={() => {}} />)
+    const dots = Array.from(container.querySelectorAll("li > * > span[aria-hidden='true']"))
+    expect(dots.map((d) => d.className.includes("bg-primary"))).toEqual([true, true, false, false])
+    expect(screen.getByRole("button", { name: /Call/ })).toBeTruthy()
+  })
+})
