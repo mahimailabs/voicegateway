@@ -14,7 +14,7 @@ import (
 // delivered, the call read carries the latest, listCalls filters and counts recorded calls, an id
 // from another project is not found, and expired links are forgotten.
 func TestRecordingLinks(t *testing.T) {
-	s, _ := migrated(t)
+	s, pool := migrated(t)
 	ctx := context.Background()
 	for _, p := range []NewProject{project("production", "APIprod"), project("staging", "APIstage")} {
 		if _, err := s.CreateProject(ctx, p); err != nil {
@@ -100,6 +100,13 @@ func TestRecordingLinks(t *testing.T) {
 	}
 	if _, err := s.Recording(ctx, "default", "production", c.Recording.ID); err != nil {
 		t.Fatalf("latest recording forgotten too early: %v", err)
+	}
+	// Deleting a call takes its recording links with it; the object expires with its day.
+	if _, err := pool.Exec(ctx, "DELETE FROM calls WHERE id=$1", recorded); err != nil {
+		t.Fatalf("a recorded call cannot be deleted: %v", err)
+	}
+	if _, err := s.Recording(ctx, "default", "production", c.Recording.ID); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("recording of a deleted call: %v", err)
 	}
 }
 

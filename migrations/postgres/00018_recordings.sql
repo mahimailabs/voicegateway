@@ -15,7 +15,7 @@ ALTER TABLE projects ADD COLUMN recordings boolean NOT NULL DEFAULT false;
 
 CREATE TABLE call_recordings (
     id          uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
-    call_id     uuid        NOT NULL REFERENCES calls (id),
+    call_id     uuid        NOT NULL REFERENCES calls (id) ON DELETE CASCADE,
     object_key  text        NOT NULL UNIQUE CHECK (object_key <> ''),
     size_bytes  bigint      NOT NULL CHECK (size_bytes >= 0),
     started_at  timestamptz,

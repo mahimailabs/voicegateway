@@ -71,6 +71,11 @@ func TestBucketsRouteByProject(t *testing.T) {
 		return key
 	}
 	ownKey, instanceKey := put("acme", "support"), put("default", "production")
+	// The owner's own object under the same day prefix is not a recording of this project.
+	foreign := "recordings/2026/07/01/owner/backup.ogg"
+	if _, err := instance.client.PutObject(ctx, "own", foreign, bytes.NewReader(audio), int64(len(audio)), minio.PutObjectOptions{}); err != nil {
+		t.Fatal(err)
+	}
 
 	in := func(bucket, key string) bool {
 		_, err := instance.client.StatObject(ctx, bucket, key, minio.StatObjectOptions{})
@@ -95,6 +100,9 @@ func TestBucketsRouteByProject(t *testing.T) {
 	removed, err := b.Expire(ctx, stored.AddDate(0, 0, 91))
 	if err != nil || removed != 2 || in("own", ownKey) || in("recordings", instanceKey) {
 		t.Fatalf("Expire removed %d, %v; want both recordings gone", removed, err)
+	}
+	if !in("own", foreign) {
+		t.Fatal("Expire removed an object of the bucket's owner")
 	}
 }
 

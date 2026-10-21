@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"path"
 	"sync"
 	"time"
 
@@ -160,7 +161,7 @@ func (b *Buckets) Expire(ctx context.Context, cutoff time.Time) (int, error) {
 			errs = append(errs, err)
 			continue
 		}
-		n, err := bk.Expire(ctx, cutoff)
+		n, err := bk.expire(ctx, cutoff, path.Join(p.OrganisationID, p.ProjectID)+"/")
 		removed += n
 		if err != nil {
 			errs = append(errs, fmt.Errorf("bucket of %s/%s: %w", p.OrganisationID, p.ProjectID, err))

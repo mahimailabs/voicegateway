@@ -95,6 +95,12 @@ func (b *Bucket) Open(ctx context.Context, key string) (io.ReadSeekCloser, error
 // how many objects it removed. A day younger than that is kept whole, so an object lives at most a
 // day past cutoff.
 func (b *Bucket) Expire(ctx context.Context, cutoff time.Time) (int, error) {
+	return b.expire(ctx, cutoff, "")
+}
+
+// expire is Expire limited, when scope is "org/project/", to that project's recordings under each
+// day. A bucket a project brought may hold its owner's other objects, so only its own are removed.
+func (b *Bucket) expire(ctx context.Context, cutoff time.Time, scope string) (int, error) {
 	days, err := b.days(ctx)
 	if err != nil {
 		return 0, err
@@ -106,7 +112,7 @@ func (b *Bucket) Expire(ctx context.Context, cutoff time.Time) (int, error) {
 			// Not a day this package wrote, or not yet expired.
 			continue
 		}
-		n, err := b.removeAll(ctx, day)
+		n, err := b.removeAll(ctx, day+scope)
 		removed += n
 		if err != nil {
 			return removed, err
