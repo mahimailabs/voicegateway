@@ -25,7 +25,7 @@ Every language SDK sends the same versioned batch; the engine does all joining a
 {
   "version": 1,
   "batchId": "uuid, unique per batch; a retry resends the same id",
-  "sdk": { "name": "voicegateway-python", "version": "2.0.0" },
+  "sdk": { "name": "voicegateway-python", "version": "1.0.0rc6" },
   "framework": { "name": "livekit-agents", "version": "1.8.8" },
   "call": { "jobId": "AJ_...", "roomName": "...", "roomSid": "RM_..." },
   "events": [ { "type": "...", "at": "RFC 3339 time", "data": { } } ]
@@ -57,7 +57,7 @@ Engine (Go):
 5. Reads: getCall returns `fields`; listCalls takes repeated `field=key:value` (all must match); a call's latest SDK `state` per actor is returned by getCall as `live` for the live view. Contract in openapi.yaml with x-source; `make api-types`.
 6. Console: fields on the call page and a field filter in the call list; the live state on the call; the Connect panel's `sdk` source. Pre-built components only.
 
-SDK (`sdk/python`, PyPI name `voicegateway`, a new major version):
+SDK (`sdk/python`, PyPI name `voicegateway`, versioned with the engine's 1.0.0 previews: `1.0.0rc6` is `1.0.0-preview.6` in PEP 440 form):
 
 7. Public API only: `attach(session, *, url=None, fields=None) -> Attachment`, `Attachment.set_field(key, value)`, `Attachment.close()`, `__version__`. `import voicegateway` imports no LiveKit module.
 8. Subscribes to AgentSession events only, plus job id and room name and SID from the job context; never patches LiveKit internals.

@@ -3,7 +3,7 @@
   "batchId": "b-2026-10-21-full-call-0001",
   "sdk": {
     "name": "voicegateway-python",
-    "version": "2.0.0"
+    "version": "1.0.0rc6"
   },
   "framework": {
     "name": "livekit-agents",

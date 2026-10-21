@@ -11,10 +11,11 @@ LiveKit Agents' own uploader (`LIVEKIT_OBSERVABILITY_URL`) is the default way to
 ## Install
 
 ```bash
-uv add voicegateway
+uv add voicegateway==1.0.0rc6
+# or: pip install --pre voicegateway
 ```
 
-Python 3.11 to 3.13, livekit-agents 1.8.6 or later.
+The SDK follows VoiceGateway's 1.0.0 previews: `1.0.0rc6` is `1.0.0-preview.6` in Python's version form. A pre-release installs only with an exact pin or `--pre` (`uv add --prerelease allow voicegateway`); without either, pip picks the retired 0.x package. Python 3.11 to 3.13, livekit-agents 1.8.6 or later.
 
 ## Attach
 

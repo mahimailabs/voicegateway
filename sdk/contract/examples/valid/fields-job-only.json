@@ -1,7 +1,7 @@
 {
   "version": 1,
   "batchId": "b-2026-10-21-job-only-0001",
-  "sdk": { "name": "voicegateway-python", "version": "2.0.0" },
+  "sdk": { "name": "voicegateway-python", "version": "1.0.0rc6" },
   "framework": { "name": "livekit-agents", "version": "1.8.8" },
   "call": { "jobId": "AJ_fixture0002", "roomName": null, "roomSid": null },
   "events": [

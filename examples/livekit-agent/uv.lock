@@ -1193,7 +1193,7 @@ wheels = [
 
 [[package]]
 name = "voicegateway"
-version = "2.0.0"
+version = "1.0.0rc6"
 source = { editable = "../../sdk/python" }
 dependencies = [
     { name = "aiohttp" },
