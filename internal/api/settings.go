@@ -29,7 +29,7 @@ type projectSettingsRead struct {
 func (a *API) settingsResponse(settings store.ProjectSettings) projectSettingsRead {
 	// Raw events, spans and metric points expire after 90 days (migration 00010).
 	// Transcript and recording policies are not implemented here. Allowed origins are null until an
-	// Admin sets them (decision 0033).
+	// Admin sets them (decision 0034).
 	days := 90
 	out := projectSettingsRead{ProjectSettings: settings, TraceRetentionDays: &days}
 	if settings.AllowedOrigins != nil {

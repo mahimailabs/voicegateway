@@ -76,7 +76,7 @@ type Service struct {
 	// InstanceTokenSHA256 is the SHA-256 of VOICEGATEWAY_INSTANCE_TOKEN (phase 06e); nil when it is
 	// unset. A Bearer equal to the token is the instance principal, which names no user.
 	InstanceTokenSHA256 []byte
-	// Embeds mints and checks embed tokens (decision 0033); nil refuses every embed token.
+	// Embeds mints and checks embed tokens (decision 0034); nil refuses every embed token.
 	Embeds *EmbedTokens
 	Log    *slog.Logger
 	Now    func() time.Time

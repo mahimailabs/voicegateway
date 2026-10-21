@@ -1,4 +1,4 @@
-# 0033: Embed tokens signed by VoiceGateway
+# 0034: Embed tokens signed by VoiceGateway
 
 - Status: accepted
 - Date: 2026-10-21

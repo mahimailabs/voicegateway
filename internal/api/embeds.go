@@ -20,7 +20,7 @@ import (
 	"github.com/mahimailabs/voicegateway/internal/store"
 )
 
-// EmbedOrigins stores a project's allowed embed origins (decision 0033).
+// EmbedOrigins stores a project's allowed embed origins (decision 0034).
 type EmbedOrigins interface {
 	UpdateAllowedOrigins(ctx context.Context, org, project string, revision int64, origins []string) (store.ProjectSettings, error)
 }

@@ -6,7 +6,7 @@ A platform built on LiveKit shows this project's widgets inside its own product:
 
 ## Context
 
-PRODUCT.md capability 9, decisions 0017, 0023, 0027 and 0033, docs/api/openapi.yaml (`createEmbedToken`, `updateAllowedOrigins`, `x-embed-access`).
+PRODUCT.md capability 9, decisions 0017, 0023, 0027 and 0034, docs/api/openapi.yaml (`createEmbedToken`, `updateAllowedOrigins`, `x-embed-access`).
 
 ## In Scope
 

@@ -324,7 +324,7 @@ type Principal struct {
 	// Instance is true for the instance token (phase 06e), which names no user and no
 	// organisation: it calls the instance API only.
 	Instance bool
-	// Embed is set for an embed token (decision 0033), which names no user: it reads its widgets'
+	// Embed is set for an embed token (decision 0034), which names no user: it reads its widgets'
 	// routes of its one project.
 	Embed *EmbedScope
 }

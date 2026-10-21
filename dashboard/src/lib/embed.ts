@@ -1,6 +1,6 @@
 import { client } from "@/lib/api-types/client.gen"
 
-// An embedded widget (decision 0033) reads with the embed token in its frame's address, never with
+// An embedded widget (decision 0034) reads with the embed token in its frame's address, never with
 // a session: on another site the console's cookie is not sent, and it must not be. The token is read
 // once at start and sent as a Bearer on every API call, so links inside the widgets carry it on.
 const embedPath = /^\/org\/[^/]+\/project\/[^/]+\/embed\/[^/]+\/?$/

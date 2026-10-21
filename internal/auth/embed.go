@@ -19,7 +19,7 @@ import (
 	"github.com/mahimailabs/voicegateway/internal/store"
 )
 
-// An embed token (decision 0033) is vge_ followed by a JWT that VoiceGateway signs with HS256 under
+// An embed token (decision 0034) is vge_ followed by a JWT that VoiceGateway signs with HS256 under
 // a key derived from VOICEGATEWAY_SECRET_KEY. It names one project, the widgets it opens, the one
 // origin allowed to frame them, who minted it and when it expires. It is checked again on every
 // request: the minting key or member must still be active and the origin still allowed, so revoking

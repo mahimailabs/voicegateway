@@ -1205,7 +1205,7 @@ paths:
         projectIsolation: required
         browserSessionTransport: session_cookie
         scope: project
-      description: "Admins only (decision 0033). Each origin is https://host[:port], or http://localhost[:port] for development, with no path, query or wildcard; it is stored as a browser serialises it (lowercase, default port dropped, punycode host). At most 20. An empty list or null clears the list, which allows no origin and stops every embed token at its next request. A stale revision returns revision_conflict."
+      description: "Admins only (decision 0034). Each origin is https://host[:port], or http://localhost[:port] for development, with no path, query or wildcard; it is stored as a browser serialises it (lowercase, default port dropped, punycode host). At most 20. An empty list or null clears the list, which allows no origin and stops every embed token at its next request. A stale revision returns revision_conflict."
       parameters:
         - $ref: "#/components/parameters/OrganisationId"
         - $ref: "#/components/parameters/ProjectId"
@@ -1251,7 +1251,7 @@ paths:
         projectIsolation: required
         browserSessionTransport: session_cookie
         scope: project
-      description: "Decision 0033. A platform's backend calls this with a project key and puts the token in the widget frame's address (?token=); the key never reaches the browser. The token reads only the named widgets of this project, may be framed only by origin, which must be one of the project's allowedOrigins (else origin_not_allowed), and expires after expiresInSeconds (60 to 86400, 3600 by default). Nothing is stored: every request with the token checks again that the minting key is unrevoked, or the minting member still in the organisation, and the origin still allowed. An embed token cannot mint another."
+      description: "Decision 0034. A platform's backend calls this with a project key and puts the token in the widget frame's address (?token=); the key never reaches the browser. The token reads only the named widgets of this project, may be framed only by origin, which must be one of the project's allowedOrigins (else origin_not_allowed), and expires after expiresInSeconds (60 to 86400, 3600 by default). Nothing is stored: every request with the token checks again that the minting key is unrevoked, or the minting member still in the organisation, and the origin still allowed. An embed token cannot mint another."
       parameters:
         - $ref: "#/components/parameters/OrganisationId"
         - $ref: "#/components/parameters/ProjectId"
@@ -2156,7 +2156,7 @@ components:
       type: http
       scheme: bearer
       bearerFormat: vge_<JWT>
-      description: An embed token from createEmbedToken (decision 0033). It reads, in its one project, only the operations its widgets need (x-embed-access), until it expires or its minting key or member loses access.
+      description: An embed token from createEmbedToken (decision 0034). It reads, in its one project, only the operations its widgets need (x-embed-access), until it expires or its minting key or member loses access.
     instanceToken:
       type: http
       scheme: bearer

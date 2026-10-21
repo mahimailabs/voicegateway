@@ -169,7 +169,7 @@ export const handlers = [
     const saved = updateAllowedOrigins(settingsScope(params), body)
     return typeof saved === "string" ? fail(saved === "revision_conflict" ? 409 : 400, saved, saved === "revision_conflict" ? "Settings changed; reload before saving." : "An origin is https://host[:port], or http://localhost[:port], with no path.") : HttpResponse.json(saved)
   }),
-  // The mock signs nothing: its token only fills the snippet. web mints real ones (decision 0033).
+  // The mock signs nothing: its token only fills the snippet. web mints real ones (decision 0034).
   http.post(`${project}/embed-tokens`, async ({ params, request }) => {
     if (!known(params)) return fail(404, "not_found", "No such project.")
     const body = (await request.json().catch(() => null)) as { widgets?: string[]; origin?: unknown; expiresInSeconds?: number } | null

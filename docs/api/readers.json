@@ -406,8 +406,8 @@
     "browserStorage": false,
     "operations": [],
     "assetNotes": {
-      "<dynamic>": "A call's recording at the URL getCall returned (getRecordingMedia), read with the widget's embed token because an audio element cannot send it (decision 0033)."
+      "<dynamic>": "A call's recording at the URL getCall returned (getRecordingMedia), read with the widget's embed token because an audio element cannot send it (decision 0034)."
     },
-    "exclusion": "Sends an embedded widget's token with its reads (decision 0033); no read of its own."
+    "exclusion": "Sends an embedded widget's token with its reads (decision 0034); no read of its own."
   }
 ]

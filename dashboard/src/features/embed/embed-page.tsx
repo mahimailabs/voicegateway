@@ -19,7 +19,7 @@ import { issuesFrom, type Severity } from "@/features/issues/issues-model"
 import { AnswerGauge } from "@/features/overview/visuals"
 import { type Size, type WidgetId, widgets } from "./widgets"
 
-// One widget in a frame on someone else's site (decisions 0023, 0033): a compact tile in an iPhone
+// One widget in a frame on someone else's site (decisions 0023, 0034): a compact tile in an iPhone
 // widget size, no console shell, links that stay inside the widgets. It reads with the embed token in
 // its address; in the console's own preview, with the signed-in session.
 

@@ -996,7 +996,7 @@ function ThresholdsForm({ settings }: { settings: ProjectSettings }) {
   )
 }
 
-// Widgets a platform puts in its own product (decisions 0023, 0033). The preview is the real widget
+// Widgets a platform puts in its own product (decisions 0023, 0034). The preview is the real widget
 // in a frame of its real size, read with this session; on another site it reads with an embed token.
 function Embeds() {
   const [pick, setPick] = useUrlState<WidgetId>("widget", "answer-time")

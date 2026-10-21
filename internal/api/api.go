@@ -19,7 +19,7 @@ type API struct {
 	Issues   IssueMetadataStore
 	Metadata CallMetadataStore
 	Settings ProjectSettingsStore
-	// Origins stores the allowed embed origins and Embeds signs embed tokens (decision 0033); without
+	// Origins stores the allowed embed origins and Embeds signs embed tokens (decision 0034); without
 	// them those routes answer 503.
 	Origins           EmbedOrigins
 	Embeds            EmbedMinter
