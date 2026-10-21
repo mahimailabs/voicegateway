@@ -103,12 +103,30 @@ func live(events []event.SDKEvent) *Live {
 }
 
 // sdkTurns builds one turn per assistant message, with the last user message since the previous
-// turn as its user side.
+// turn as its user side. A user message the agent started answering (it went to thinking) with no
+// assistant message before the next user message or the end is a turn too, interrupted, with its
+// agent side unknown: the same turn the uploader's spans report when a reply is never played.
 func sdkTurns(events []event.SDKEvent) []Turn {
 	var turns []Turn
 	var user *sdkMessage
+	answering := false
+	unanswered := func() {
+		if user != nil && answering {
+			t := sdkTurn(user, sdkMessage{at: user.at})
+			t.AgentText, t.Interrupted = nil, ptrTo(true)
+			turns = append(turns, t)
+		}
+	}
 	for _, e := range events {
-		if e.Type != event.SDKMessage {
+		switch e.Type {
+		case event.SDKState:
+			var d event.SDKStateData
+			if user != nil && json.Unmarshal(e.Data, &d) == nil && d.Actor == "agent" && (d.State == "thinking" || d.State == "speaking") {
+				answering = true
+			}
+			continue
+		case event.SDKMessage:
+		default:
 			continue
 		}
 		m := sdkMessage{at: e.At.UTC()}
@@ -123,14 +141,18 @@ func sdkTurns(events []event.SDKEvent) []Turn {
 		}
 		switch m.data.Role {
 		case "user":
-			user = &m
+			unanswered()
+			user, answering = &m, false
 		case "assistant":
 			turns = append(turns, sdkTurn(user, m))
-			user = nil
+			user, answering = nil, false
 		}
 	}
+	unanswered()
 	return turns
 }
+
+func ptrTo[T any](v T) *T { return &v }
 
 func sdkTurn(user *sdkMessage, agent sdkMessage) Turn {
 	t := Turn{
