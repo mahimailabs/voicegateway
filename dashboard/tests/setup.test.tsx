@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { useEffect, useState } from "react"
 import { cleanup, render, screen, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
@@ -260,11 +261,31 @@ describe("Agent", () => {
     cloudClean()
   })
 
-  test("connected: says so and moves on by itself", async () => {
+  test("becoming connected on the screen: says so and moves on by itself", async () => {
+    const onContinue = vi.fn()
+    // The next poll's answer arrives while the screen is open.
+    function Polled() {
+      const [c, setC] = useState(connection())
+      useEffect(() => {
+        const t = setTimeout(() => setC(connection({ agent: { ...none, lastAcceptedAt: ago(1) } })), 50)
+        return () => clearTimeout(t)
+      }, [])
+      return <AgentScreen connection={c} now={now} onContinue={onContinue} />
+    }
+    show(() => <Polled />)
+    expect((await screen.findByRole("status")).textContent).toContain("Waiting for your agent")
+    await waitFor(() => expect(screen.getByRole("status").textContent).toContain("Your agent is connected"))
+    await waitFor(() => expect(onContinue).toHaveBeenCalled(), { timeout: 3000 })
+  })
+
+  test("opened already connected (going back to it): stays until Continue", async () => {
     const onContinue = vi.fn()
     show(() => <AgentScreen connection={connection({ agent: { ...none, lastAcceptedAt: ago(1) } })} now={now} onContinue={onContinue} />)
     expect((await screen.findByRole("status")).textContent).toContain("Your agent is connected")
-    await waitFor(() => expect(onContinue).toHaveBeenCalled(), { timeout: 3000 })
+    await new Promise((r) => setTimeout(r, 2000))
+    expect(onContinue).not.toHaveBeenCalled()
+    await userEvent.setup().click(screen.getByRole("button", { name: "Continue" }))
+    expect(onContinue).toHaveBeenCalledTimes(1)
   })
 
   test("an agent in Error: one line, the fix under Details", async () => {

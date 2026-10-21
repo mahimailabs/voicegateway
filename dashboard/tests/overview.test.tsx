@@ -22,7 +22,7 @@ vi.hoisted(() => {
 })
 
 // The globe draws with WebGL, which jsdom has not got.
-vi.mock("../src/components/network-globe.tsx", () => ({ NetworkGlobe: () => null }))
+vi.mock("../src/components/network-globe.tsx", () => ({ NetworkGlobe: () => <span data-testid="network-globe" /> }))
 
 const { OverviewPage, NOT_SERVED, NOT_COMPUTED } = await import("../src/features/overview/overview.tsx")
 
@@ -87,7 +87,7 @@ function webIn04e(overrides: ReturnType<typeof http.get>[] = []) {
   )
 }
 
-function show() {
+function show(entry = "/") {
   const root = createRootRoute({ component: () => <Outlet /> })
   const CallOpened = () => <p>{`call ${(useParams({ strict: false }) as { callId?: string }).callId}`}</p>
   const routes = [
@@ -95,7 +95,7 @@ function show() {
     createRoute({ getParentRoute: () => root, path: "/calls/$callId", component: CallOpened }),
     ...["/calls", "/agents", "/issues", "/sfu", "/sip", "/egress", "/ingress", "/project"].map((path) => createRoute({ getParentRoute: () => root, path, component: () => <p>{path}</p> })),
   ]
-  const router = createRouter({ routeTree: root.addChildren(routes), history: createMemoryHistory({ initialEntries: ["/"] }) })
+  const router = createRouter({ routeTree: root.addChildren(routes), history: createMemoryHistory({ initialEntries: [entry] }) })
   render(
     <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
       <TooltipProvider>
@@ -156,4 +156,14 @@ test("with the mock, every section is filled", async () => {
   const project = screen.getByText("LiveKit project").closest("section")!
   for (const label of ["Media server", "Phone bridge", "Egress", "Ingress"]) expect(within(project).getByText(label)).toBeTruthy()
   expect(within(project).queryByText("Unknown")).toBeNull()
+})
+
+test("the globe is not built under the Settings modal, and is on the page without it", async () => {
+  show("/?settings=thresholds")
+  await screen.findByText("Model providers")
+  await waitFor(() => expect(screen.queryAllByText("Loading").length).toBe(0))
+  expect(screen.queryByTestId("network-globe")).toBeNull()
+  cleanup()
+  show()
+  expect(await screen.findByTestId("network-globe")).toBeTruthy()
 })

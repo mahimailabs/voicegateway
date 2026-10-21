@@ -40,8 +40,9 @@ function connectionOverride(): Partial<ProjectConnection> {
   }
 }
 
-// The LiveKit project each mock project reads: fake values, since the mock reaches no LiveKit. A key
-// change (updateProjectLiveKitCredentials) is kept in memory, so the next connection read shows it.
+// The LiveKit project each mock project reads: fake values, since the mock reaches no LiveKit. The key
+// is the one the project was created with or last changed to (updateProjectLiveKitCredentials), kept
+// in memory only, never in browser storage, so the next connection read shows it.
 const MOCK_LIVEKIT_URL = "wss://example-project.livekit.cloud"
 const livekitKeys = new Map<string, string>()
 const livekitOf = (params: PathParams) => ({ url: MOCK_LIVEKIT_URL, apiKey: livekitKeys.get(settingsScope(params)) ?? "APIexample123" })
@@ -305,6 +306,7 @@ export const handlers = [
     }
     const out = await addProject(String(params.orgId), name, text(body?.livekitApiKey))
     if (out === "project_exists") return fail(409, "project_exists", "this organisation already has a project with that id; choose another name")
+    livekitKeys.set(`${params.orgId}/${out.id}`, text(body?.livekitApiKey))
     // liveRooms: the mock reaches no LiveKit, so it counts the rooms in the captured media server
     // snapshot, which is what a verify read of that LiveKit project would have listed.
     return HttpResponse.json<ProjectCreated>({ ...out, liveRooms: mediaServer().rooms.length }, { status: 201, headers: { "Cache-Control": "no-store" } })

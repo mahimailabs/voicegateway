@@ -152,7 +152,7 @@ export function OverviewPage() {
   // Members and Viewers, and self-hosted installs, keep the console with the Connect panel below.
   const install = useHosted()
   const admin = roleIn(currentScope().org, useSession()) === "Admin"
-  const settingsAsked = useRouterState({ select: (s) => s.location.pathname === "/settings" || (s.location.search as Record<string, unknown>).settings !== undefined })
+  const settingsAsked = useSettingsOpen()
   if (install === "hosted" && admin && !settingsAsked && connection.data && !connection.data.firstCall && !choseLater(currentScope().org, currentScope().project)) return <Navigate to="/setup" />
   const setup = empty || (connection.data !== undefined && anyError(connection.data, connection.dataUpdatedAt)) ? <ConnectAgentPanel /> : null
   // The call figures carry the page; without them the page says why, as before.
@@ -169,10 +169,16 @@ export function OverviewPage() {
 
 type Reads = { cloud: UseQueryResult<CloudAgents>; media: UseQueryResult<MediaServer>; sip: UseQueryResult<Sip>; egress: UseQueryResult<Egress>; ingress: UseQueryResult<Ingress>; workers: UseQueryResult<Workers>; probes: UseQueryResult<ProviderProbes> }
 
+// Settings is open over the page: ?settings= on any page, or the /settings route.
+const useSettingsOpen = () => useRouterState({ select: (s) => s.location.pathname === "/settings" || (s.location.search as Record<string, unknown>).settings !== undefined })
+
 function OverviewView({ stats, cloud: cloudRead, media, sip: sipQ, egress: egressQ, ingress: ingressQ, workers: workersQ, probes: probesQ, setup }: { stats: CallStats; setup: React.ReactNode } & Reads) {
   const navigate = useNavigate()
   // Phones have no room for the globe. A hidden globe still draws every frame, so it is not mounted.
   const phone = useIsPhone()
+  // The globe's WebGL setup holds the main thread for seconds where rendering is in software (no
+  // GPU), so it is not built under the Settings modal, which covers it; it appears when Settings closes.
+  const settingsOpen = useSettingsOpen()
   const [pick, setPick] = useUrlState("agent", "all")
   const [open, setOpen] = useState(false)
   const rooms = useMemo<MediaServerData | null>(() => (media.data ? fromContract(media.data) : null), [media.data])
@@ -424,8 +430,8 @@ function OverviewView({ stats, cloud: cloudRead, media, sip: sipQ, egress: egres
           ) : (
           <div className="flex items-center gap-4">
             {!phone && (
-              <div className="shrink-0 overflow-hidden rounded-xl bg-muted/40">
-                <ProviderGlobe probes={probe} size={210} />
+              <div className="size-[210px] shrink-0 overflow-hidden rounded-xl bg-muted/40">
+                {!settingsOpen && <ProviderGlobe probes={probe} size={210} />}
               </div>
             )}
             <ul className="min-w-0 flex-1 space-y-3">

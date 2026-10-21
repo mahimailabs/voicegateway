@@ -644,6 +644,9 @@ describe("createProject", () => {
     expect(created).toEqual({ id: "mock-staging", name: "Mock Staging", liveRooms: expect.any(Number) })
     const ws = await (await fetch("http://console.test/api/v1/workspaces")).json()
     expect(ws.items[0].projects).toContainEqual({ id: created.id, name: created.name })
+    // The new project reads the LiveKit key it was created with, not the built-in project's.
+    const connection = await (await fetch(`http://console.test/api/v1/org/default/project/${created.id}/connection`)).json()
+    expect(connection.livekit.apiKey).toBe("APImockstaging")
     const again = await post(fields)
     expect(again.status).toBe(409)
     const e = await again.json()
