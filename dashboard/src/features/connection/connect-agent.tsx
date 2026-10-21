@@ -13,9 +13,10 @@ import { REQUEST_CAPACITY } from "@/lib/support"
 import { type Source, type StepState, fixText, sourceState } from "./connection-model"
 import { cn } from "@/lib/utils"
 
-// First-call setup: the two URLs to copy, then three steps that move from Waiting to Connected as
-// ingest accepts the project's first webhook, its first agent upload and stores its first call. A
-// refused request shows why and how to fix it. Every state comes from getProjectConnection; the
+// First-call setup: the two URLs to copy, then the steps that move from Waiting to Connected as
+// ingest accepts the project's first webhook, its first agent upload and stores its first call, plus
+// the optional SDK, which stays Waiting for an agent that never calls attach(). A refused request
+// shows why and how to fix it. Every state comes from getProjectConnection; the
 // console infers nothing.
 
 const fmt = (iso: string) => new Date(iso).toLocaleString([], { dateStyle: "medium", timeStyle: "short" })
@@ -165,6 +166,13 @@ export function ConnectAgentView({ connection: c, now, framed = true }: { connec
             No call stored yet. Make a call to your agent.
           </Step>
         )}
+        <SourceStep
+          title="SDK (optional)"
+          source="sdk"
+          s={c.sdk}
+          now={now}
+          waiting="Optional. Only needed when your agent calls attach() from the VoiceGateway Python SDK; set VOICEGATEWAY_URL to the Agent upload URL. No SDK batch yet."
+        />
       </ItemGroup>
     </section>
   )

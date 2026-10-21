@@ -1,10 +1,11 @@
 # Example LiveKit agent
 
-The smallest LiveKit Agents voice agent, connected to VoiceGateway by one variable: `LIVEKIT_OBSERVABILITY_URL`. It imports nothing from VoiceGateway.
+The smallest LiveKit Agents voice agent, connected to VoiceGateway by one variable: `LIVEKIT_OBSERVABILITY_URL`. `agent.py` imports nothing from VoiceGateway.
 
 - `agent.py`: speech to text, model and text to speech through LiveKit Inference. The session records (`record=True`), which is what makes LiveKit Agents upload it.
 - `call.sh`: one call with no human. It starts the agent, dispatches it to a new room with `lk dispatch create`, joins as a caller with `lk room join --publish caller.ogg`, leaves, and stops the agent after its session upload.
 - `caller.ogg`: 2 s of silence, one spoken question, 20 s of silence. Ogg Opus, 48 kHz mono.
+- `agent_attach.py`: the same agent with the [Python SDK](../../sdk/python/README.md), `voicegateway.attach(session, fields={"example": "attach"})`, instead of the uploader. It needs `VOICEGATEWAY_URL`, not `LIVEKIT_OBSERVABILITY_URL`, and puts the custom field `example` on the call.
 
 ## Run
 
@@ -16,11 +17,19 @@ cp examples/livekit-agent/.env.example examples/livekit-agent/.env
 make example-call
 ```
 
+To run the SDK variant, set `VOICEGATEWAY_URL` in `.env` and run:
+
+```bash
+make example-call ATTACH=1
+```
+
+It runs `agent_attach.py` with `LIVEKIT_OBSERVABILITY_URL` empty, so the call reaches VoiceGateway through the SDK only.
+
 LiveKit Inference runs on LiveKit Cloud, so the LiveKit values must be a LiveKit Cloud project. VoiceGateway itself can be self-hosted or Cloud. On a self-hosted LiveKit server, replace the three model strings with provider plugins.
 
 ## Versions
 
-Tested with livekit-agents 1.8.8 (pinned in `uv.lock`) and lk 2.19.0. The upload needs livekit-agents 1.8.6 or later.
+Tested with livekit-agents 1.8.8 (pinned in `uv.lock`) and lk 2.19.0. The upload needs livekit-agents 1.8.6 or later. `agent_attach.py` uses the SDK from `sdk/python` in this repository (an editable uv path source).
 
 ## Caller audio
 

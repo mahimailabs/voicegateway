@@ -114,3 +114,21 @@ test("bulk archive reports partial failure and retains the failed call", async (
   await waitFor(()=>expect(links().some(el=>el.getAttribute("data-call-id")===firstId)).toBe(false))
   expect(links().some(el=>el.getAttribute("data-call-id")===secondId)).toBe(true)
 })
+
+test("a shared custom field filter reaches listCalls as field=key:value and survives the URL", async () => {
+  const seen: string[][] = []
+  server.events.on("request:start", ({ request }) => {
+    const u = new URL(request.url)
+    if (u.pathname.endsWith("/calls")) seen.push(u.searchParams.getAll("field"))
+  })
+  const withField = calls.filter((c) => c.fields?.customer === "acme")
+  expect(withField.length).toBeGreaterThan(0)
+  const q = createFilterQuery([createFilterRule({ id: "field-customer", path: ["field"], operator: "is", value: "customer:acme" })])
+  const router = await showCalls(undefined, { q })
+  await waitFor(() => expect(links().map((el) => el.getAttribute("data-call-id")).sort()).toEqual(withField.map((c) => c.id).sort()))
+  expect(seen.some((f) => f.length === 1 && f[0] === "customer:acme")).toBe(true)
+  expect(router.state.location.search).toMatchObject({ q })
+  // The chip shows the filter it came from.
+  expect(screen.getAllByText("Custom field").length).toBeGreaterThan(0)
+  server.events.removeAllListeners()
+})

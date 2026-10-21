@@ -40,7 +40,7 @@ afterAll(() => server.close())
 const project = "*/api/v1/org/:org/project/:project"
 const none: ConnectionSource = { lastAcceptedAt: null, lastRejectedAt: null, reason: null, usedKey: null, expectedKey: null }
 const urls = { observability: "https://vg.example.com/ingest/default/default-project", webhook: "https://vg.example.com/ingest/default/default-project/livekit/webhook" }
-const connection = (over: Partial<ProjectConnection> = {}): ProjectConnection => ({ urls, webhook: none, agent: none, firstCall: null, ...over })
+const connection = (over: Partial<ProjectConnection> = {}): ProjectConnection => ({ urls, webhook: none, agent: none, sdk: none, firstCall: null, ...over })
 
 function answer(...bodies: ProjectConnection[]) {
   const seen = { requests: 0 }
@@ -131,6 +131,20 @@ describe("keepPolling", () => {
     },
   ]
   for (const c of cases) test(c.name, () => expect(keepPolling(c.c, now)).toBe(c.want))
+  test("an SDK that was never used is waiting and neither errors nor keeps the panel polling", () => {
+    const c = connection({ webhook: accepted, agent: accepted, firstCall: first })
+    expect(sourceState(c.sdk, now).state).toBe("waiting")
+    expect(anyError(c, now)).toBe(false)
+    expect(keepPolling(c, now)).toBe(false)
+  })
+  test("an SDK that was used and then refused counts like any other source", () => {
+    const c = connection({ webhook: accepted, agent: accepted, sdk: refused, firstCall: first })
+    expect(anyError(c, now)).toBe(true)
+    expect(keepPolling(c, now)).toBe(true)
+    const warned = connection({ webhook: accepted, agent: accepted, sdk: { ...accepted, lastRejectedAt: "2026-10-20T11:59:30Z", reason: "token_missing" }, firstCall: first })
+    expect(anyError(warned, now)).toBe(false)
+    expect(keepPolling(warned, now)).toBe(true)
+  })
   test("anyError sees an error on either source", () => {
     expect(anyError(connection({ webhook: refused }), now)).toBe(true)
     expect(anyError(connection({ agent: refused }), now)).toBe(true)
@@ -144,7 +158,7 @@ describe("step state", () => {
   test("waiting: nothing accepted or refused yet, and no call stored", async () => {
     answer(connection())
     show()
-    for (const name of ["Webhook", "Agent upload", "First call stored"]) expect(within(await step(name)).getByText("Waiting")).toBeTruthy()
+    for (const name of ["Webhook", "Agent upload", "First call stored", "SDK (optional)"]) expect(within(await step(name)).getByText("Waiting")).toBeTruthy()
     expect(within(await step("First call stored")).getByText("No call stored yet. Make a call to your agent.")).toBeTruthy()
   })
 
@@ -177,6 +191,26 @@ describe("step state", () => {
     const agent = await step("Agent upload")
     expect(within(agent).getByText("Error")).toBeTruthy()
     expect(within(agent).getByText(/Python livekit-agents 1\.8\.6 or later, or Node @livekit\/agents 1\.8\.0 or later/)).toBeTruthy()
+  })
+
+  test("SDK step: waiting says it is optional and only for attach(), then connected and error like the others", async () => {
+    answer(connection())
+    show()
+    const waiting = await step("SDK (optional)")
+    expect(within(waiting).getByText("Waiting")).toBeTruthy()
+    expect(waiting.textContent).toMatch(/Optional\. Only needed when your agent calls attach\(\)/)
+    expect(waiting.textContent).toMatch(/VOICEGATEWAY_URL to the Agent upload URL/)
+    cleanup()
+    answer(connection({ sdk: { ...none, lastAcceptedAt: ago(1) } }))
+    show()
+    expect(within(await step("SDK (optional)")).getByText("Connected")).toBeTruthy()
+    cleanup()
+    answer(connection({ sdk: { ...none, lastRejectedAt: ago(1), reason: "token_missing" } }))
+    show()
+    const error = await step("SDK (optional)")
+    expect(within(error).getByText("Error")).toBeTruthy()
+    expect(within(error).getByText("The SDK batch carried no LiveKit token")).toBeTruthy()
+    expect(error.textContent).toMatch(/LIVEKIT_API_KEY and LIVEKIT_API_SECRET/)
   })
 
   test("an unverified refusal after an old accept stays a warning", async () => {
@@ -244,7 +278,7 @@ test("null URLs say once how to set VOICEGATEWAY_PUBLIC_URL, and offer nothing t
 
 test("every reason has its own fix, and the source-specific ones differ by source", () => {
   const reasons = ["token_missing", "key_mismatch", "signature_invalid", "grant_missing", "body_changed", "plan_inactive", "plan_cap", "too_large"] as const
-  for (const source of ["agent", "webhook"] as const) {
+  for (const source of ["agent", "webhook", "sdk"] as const) {
     const texts = reasons.map((reason) => fixText(source, { ...none, reason }).fix)
     expect(new Set(texts).size).toBe(reasons.length)
     for (const reason of reasons) {
@@ -260,6 +294,13 @@ test("every reason has its own fix, and the source-specific ones differ by sourc
   expect(fixText("webhook", { ...none, reason: "signature_invalid" }).fix).toMatch(/must match the LiveKit project that signs the webhook/)
   expect(fixText("webhook", { ...none, reason: "too_large" }).fix).toMatch(/proxy/)
   expect(fixText("agent", { ...none, reason: "too_large" }).fix).toMatch(/Open an issue/)
+  // The SDK signs with the agent's own key and secret and posts to VOICEGATEWAY_URL, the Agent upload URL.
+  expect(fixText("sdk", { ...none, reason: "token_missing" }).fix).toMatch(/LIVEKIT_API_KEY and LIVEKIT_API_SECRET/)
+  expect(fixText("sdk", { ...none, reason: "signature_invalid" }).fix).toMatch(/LIVEKIT_API_SECRET/)
+  expect(fixText("sdk", { ...none, reason: "key_mismatch" }).fix).toMatch(/VOICEGATEWAY_URL to the Agent upload URL/)
+  expect(fixText("sdk", { ...none, reason: "key_mismatch", usedKey: "APIa", expectedKey: "APIb" }).keys).toEqual({ used: "APIa", expected: "APIb" })
+  expect(fixText("sdk", { ...none, reason: "plan_cap" }).capacity).toBe(true)
+  for (const reason of ["token_missing", "signature_invalid", "grant_missing", "too_large"] as const) expect(fixText("sdk", { ...none, reason }).fix).not.toBe(fixText("agent", { ...none, reason }).fix)
   expect(fixText("agent", { ...none, reason: "plan_cap" }).capacity).toBe(true)
   expect(fixText("agent", { ...none, reason: "plan_inactive" }).capacity).toBe(true)
 })
@@ -278,6 +319,17 @@ describe("polling", () => {
     expect(seen.requests).toBe(2)
     await act(async () => vi.advanceTimersByTimeAsync(CONNECTION_POLL_MS * 4))
     expect(seen.requests).toBe(2)
+  })
+
+  test("stops after the first call when the SDK was never used", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    const accepted = { ...none, lastAcceptedAt: ago(1) }
+    const seen = answer(connection({ webhook: accepted, agent: accepted, firstCall: first }))
+    show()
+    expect(within(await step("SDK (optional)")).getByText("Waiting")).toBeTruthy()
+    expect(screen.queryByText("Error")).toBeNull()
+    await act(async () => vi.advanceTimersByTimeAsync(CONNECTION_POLL_MS * 3))
+    expect(seen.requests).toBe(1)
   })
 
   test("keeps going after the first call while a source is in error", async () => {

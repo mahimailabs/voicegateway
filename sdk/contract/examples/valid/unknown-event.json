@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "batchId": "b-2026-10-21-unknown-0001",
+  "sdk": { "name": "voicegateway-typescript", "version": "0.1.0" },
+  "framework": { "name": "livekit-agents-js", "version": "1.9.3" },
+  "call": { "roomSid": "RM_fixture0003" },
+  "events": [
+    { "type": "future_kind", "at": "2026-10-21T03:00:00Z", "data": { "anything": [1, 2, 3] } }
+  ]
+}

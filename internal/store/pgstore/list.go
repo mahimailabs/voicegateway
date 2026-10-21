@@ -2,6 +2,7 @@ package pgstore
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
@@ -42,8 +43,12 @@ func (s *Store) ListCalls(ctx context.Context, f store.CallFilter, after *store.
 		f.SnapshotAt = now.Time.UTC()
 	}
 
+	fields, err := json.Marshal(noNULMap(f.Fields))
+	if err != nil {
+		return nil, nil, time.Time{}, fmt.Errorf("list calls: %w", err)
+	}
 	p := ListCallsParams{
-		Tags: nonNilStrings(f.Tags), Archived: optionalBool(f.Archived),
+		Tags: nonNilStrings(f.Tags), Fields: fields, Archived: optionalBool(f.Archived),
 		MaxRows: int32(min(limit, math.MaxInt32)), SortBy: f.SortBy, Descending: f.Descending, //nolint:gosec // bounded above
 		OrganisationID: f.OrganisationID, ProjectID: f.ProjectID, SnapshotAt: timestamp(&f.SnapshotAt),
 		FromAt: timestamp(f.From), ToAt: timestamp(f.To), Room: text(f.Room), Channels: nonNilStrings(f.Channels),
@@ -75,7 +80,7 @@ func (s *Store) ListCalls(ctx context.Context, f store.CallFilter, after *store.
 	var totals *store.CallTotals
 	if withTotals {
 		t, err := q.CallTotals(ctx, CallTotalsParams{
-			OrganisationID: p.OrganisationID, ProjectID: p.ProjectID, SnapshotAt: p.SnapshotAt, Tags: p.Tags, Archived: p.Archived,
+			OrganisationID: p.OrganisationID, ProjectID: p.ProjectID, SnapshotAt: p.SnapshotAt, Tags: p.Tags, Fields: p.Fields, Archived: p.Archived,
 			FromAt: p.FromAt, ToAt: p.ToAt, Room: p.Room, Channels: p.Channels,
 			AnswerMin: p.AnswerMin, AnswerMax: p.AnswerMax, DurationMin: p.DurationMin, DurationMax: p.DurationMax,
 			TurnsMin: p.TurnsMin, TurnsMax: p.TurnsMax,

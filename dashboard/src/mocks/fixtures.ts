@@ -45,6 +45,17 @@ export function fromCapture(raw: RawCall): Call {
   }
 }
 
-const calls = [captureSip.call as unknown as RawCall, captureCrash.call as unknown as RawCall, captureCloud.call as unknown as RawCall, captureSession.call as unknown as RawCall, consoleRealtime.call as RawCall, consoleSession.call as RawCall, ...(fixtures.calls as RawCall[])].map(fromCapture)
+// SDK custom fields and live state, which no capture carries yet. The values are the final state of
+// the SDK conformance batch sdk/contract/examples/valid/full-call.json (its fields event, and each
+// actor's last state event), shown on one call so the call page has something to draw; every other
+// call has no SDK, so its fields are empty and its live state null.
+const SDK_CALL = "spike-room-11"
+const sdk: Pick<Call, "fields" | "live"> = {
+  fields: { customer: "acme", plan: "trial" },
+  live: { user: { state: "listening", at: "2026-10-21T02:21:52.200Z" }, agent: { state: "listening", at: "2026-10-21T02:21:55.810Z" } },
+}
+const withSdk = (c: Call): Call => (c.room === SDK_CALL ? { ...c, ...sdk } : { ...c, fields: {}, live: null })
+
+const calls = [captureSip.call as unknown as RawCall, captureCrash.call as unknown as RawCall, captureCloud.call as unknown as RawCall, captureSession.call as unknown as RawCall, consoleRealtime.call as RawCall, consoleSession.call as RawCall, ...(fixtures.calls as RawCall[])].map(fromCapture).map(withSdk)
 
 export const capturedCalls = (): Call[] => calls

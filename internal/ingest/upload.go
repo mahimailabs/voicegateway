@@ -254,6 +254,12 @@ func statusFor(err error) int {
 // readOTLP returns the export body, decompressed when the exporter gzipped it (the Agents
 // exporters do).
 func readOTLP(body io.Reader, encoding string) ([]byte, error) {
+	return readBody(body, encoding, maxOTLPDecoded)
+}
+
+// readBody returns a request body, decompressed when it was gzipped, refusing one that decodes
+// past limit.
+func readBody(body io.Reader, encoding string, limit int64) ([]byte, error) {
 	switch encoding {
 	case "", "identity":
 	case "gzip":
@@ -266,11 +272,11 @@ func readOTLP(body io.Reader, encoding string) ([]byte, error) {
 	default:
 		return nil, fmt.Errorf("content encoding %q not supported", encoding)
 	}
-	b, err := io.ReadAll(io.LimitReader(body, maxOTLPDecoded+1))
+	b, err := io.ReadAll(io.LimitReader(body, limit+1))
 	if err != nil {
 		return nil, err
 	}
-	if len(b) > maxOTLPDecoded {
+	if int64(len(b)) > limit {
 		return nil, errTooLarge
 	}
 	return b, nil

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react"
 import { Link, useNavigate, useParams } from "@tanstack/react-router"
 import { keepPreviousData, useInfiniteQuery, useQuery } from "@tanstack/react-query"
 import type { SortingState } from "@tanstack/react-table"
-import { Archive, ArrowCounterClockwise, CaretRight, ChatsCircle, Clock, Desktop, Flask, Globe, Hash, Phone, PhoneCall, Question, Tag, Timer, Waveform, WarningCircle } from "@phosphor-icons/react"
+import { Archive, ArrowCounterClockwise, BracketsCurly, CaretRight, ChatsCircle, Clock, Desktop, Flask, Globe, Hash, Phone, PhoneCall, Question, Tag, Timer, Waveform, WarningCircle } from "@phosphor-icons/react"
 import type { Icon } from "@phosphor-icons/react"
 import { TimeRangePicker, useUrlRange } from "@/components/time-range-picker"
 import { type Columns, DataTable, type Field } from "@/components/data-table"
@@ -17,12 +17,13 @@ import { useCallMetadata, type MetadataEdit } from "@/features/call/use-call-met
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { cn } from "@/lib/utils"
 import { ApiError, type Call, type CallSummary, type CallTotals, callCountQuery, callPagesQuery, callQuery, latestCallQuery, callTagsQuery } from "@/lib/api"
-import { serverOperators, toServerParams } from "./call-filters"
+import { parseField, serverOperators, toServerParams } from "./call-filters"
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty"
 import { PageState, errorText } from "@/components/page-state"
 import { Spinner } from "@/components/ui/spinner"
 import { CallMeta } from "@/features/call/call-meta"
 import { CallTags, TagChip } from "@/features/call/call-tags"
+import { CallFields, CallLive } from "@/features/call/call-sdk"
 import { CallTurnControls } from "@/features/call/call-turn-controls"
 import { CallView } from "@/features/call/call-view"
 import { fmtMs, pipelineLabel } from "@/features/call/call-model"
@@ -279,6 +280,18 @@ function callFields(allTags: string[]): Field<Row>[] {
     { id: "length", label: "Length (s)", type: "number", icon: <Clock />, operators: serverOperators.number, get: (r) => r.summary.durationSeconds },
     { id: "turns", label: "Turns", type: "number", icon: <ChatsCircle />, operators: serverOperators.number, get: (r) => r.summary.turnCount },
     { id: "recorded", label: "Recorded", type: "boolean", icon: <Waveform />, operators: serverOperators.boolean, get: (r) => r.summary.recorded },
+    // A custom field an SDK attached, entered as key:value. The list does not carry a call's fields, so
+    // the server alone filters on it.
+    {
+      id: "field",
+      label: "Custom field",
+      type: "text",
+      icon: <BracketsCurly />,
+      operators: serverOperators.field,
+      placeholder: "key:value",
+      validate: ({ value }) => (parseField(String(value ?? "")) ? null : "Enter key:value; the key is lower case letters, digits, _ . or -"),
+      get: () => null,
+    },
     ...(allTags.length ? [{ id: "tag", label: "Tag", type: "multiselect" as const, icon: <Tag />, operators: serverOperators.tags, options: allTags.map((t) => ({ value: t, label: t })), get: (r: Row) => r.summary.tags }] : []),
   ]
 }
@@ -540,6 +553,13 @@ function CallDrawer({ callId, preview, canEdit, pending, error, archive }: { cal
             <CallMeta call={call} />
           </div>
         </SheetDescription>
+        {/* What an SDK attached: its live state and custom fields. A call without an SDK shows neither. */}
+        {(Object.keys(call.fields ?? {}).length > 0 || call.live) && (
+          <div className="flex flex-wrap items-center gap-2 pt-1.5">
+            <CallLive call={call} />
+            <CallFields call={call} />
+          </div>
+        )}
         <div className="flex flex-wrap items-center gap-2 pt-1.5">
           <CallTags key={call.id} callId={call.id} disabled={!!preview} />
           {canEdit && !preview && <Button disabled={pending} size="sm" variant="ghost" className="ml-auto text-muted-foreground" onClick={() => archive([call], !isArchived)}>

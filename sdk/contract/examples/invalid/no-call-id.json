@@ -1,0 +1,1 @@
+{"version":1,"batchId":"b-invalid-no-call","sdk":{"name":"x","version":"1"},"framework":{"name":"y","version":"1"},"call":{"roomName":"r"},"events":[{"type":"close","at":"2026-10-21T03:00:00Z","data":{"reason":null}}]}

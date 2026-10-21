@@ -207,6 +207,9 @@ type Call struct {
 	// Recording is the call's latest stored recording, its id and start only; nil when none is
 	// stored.
 	Recording *Recording
+	// Fields are the custom fields an SDK attached to the call, at most MaxCallFields; empty when
+	// none did.
+	Fields map[string]string
 }
 
 // ListSnapshot is a listCalls snapshot kept server-side: the scope and filters it was taken for,
@@ -244,7 +247,9 @@ type CallSummary struct {
 
 // CallFilter is a listCalls request as storage reads it. A nil bound is no bound.
 type CallFilter struct {
-	Tags                      []string
+	Tags []string
+	// Fields keeps only calls whose SDK fields hold every key with its value; nil keeps all.
+	Fields                    map[string]string
 	Archived                  *bool
 	MetadataRevision          *int64
 	OrganisationID, ProjectID string
@@ -531,3 +536,7 @@ type RecordingLink struct {
 	StartedAt *time.Time
 	StoredAt  time.Time
 }
+
+// MaxCallFields is the most custom fields one call holds across all its SDK batches (Postgres
+// MergeCallFields); new keys past it are dropped.
+const MaxCallFields = 64

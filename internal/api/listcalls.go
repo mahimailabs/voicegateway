@@ -321,6 +321,24 @@ func (a *API) parseList(org, project string, q url.Values) (store.CallFilter, in
 	f.Archived = archived
 	f.Recorded = recorded
 	f.MatchNone = len(issueFilter) > 0
+	// field=key:value keeps calls whose SDK fields hold every pair; one key asked for with two values
+	// matches nothing.
+	if raw := q["field"]; len(raw) > 0 {
+		if len(raw) > maxFieldFilters {
+			return bad("at most %d field filters", maxFieldFilters)
+		}
+		f.Fields = make(map[string]string, len(raw))
+		for _, kv := range raw {
+			k, v, ok := strings.Cut(kv, ":")
+			if !ok || !fieldKey.MatchString(k) || len(v) > 256 {
+				return bad("field must be key:value, the key 1 to 64 of a-z, 0-9, _, . and -")
+			}
+			if old, seen := f.Fields[k]; seen && old != v {
+				f.MatchNone = true
+			}
+			f.Fields[k] = v
+		}
+	}
 
 	if v := q.Get("sort"); v != "" {
 		if !slices.Contains(sorts, v) {
@@ -447,3 +465,9 @@ func toTotals(t *store.CallTotals, budget float64) callTotals {
 	}
 	return out
 }
+
+// fieldKey is an SDK call field's key (sdk/contract/v1.schema.json).
+var fieldKey = regexp.MustCompile(`^[a-z0-9_.-]{1,64}$`)
+
+// maxFieldFilters bounds the field filters of one listCalls request.
+const maxFieldFilters = 16

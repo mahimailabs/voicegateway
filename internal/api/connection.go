@@ -40,6 +40,7 @@ type projectConnection struct {
 	URLs      connectionURLs   `json:"urls"`
 	Webhook   connectionSource `json:"webhook"`
 	Agent     connectionSource `json:"agent"`
+	SDK       connectionSource `json:"sdk"`
 	FirstCall *firstCall       `json:"firstCall"`
 }
 
@@ -75,6 +76,8 @@ func (a *API) getConnection(w http.ResponseWriter, r *http.Request) {
 			out.Webhook = src
 		case store.SourceAgent:
 			out.Agent = src
+		case store.SourceSDK:
+			out.SDK = src
 		}
 	}
 	first, err := a.Connections.FirstCall(r.Context(), org, id)

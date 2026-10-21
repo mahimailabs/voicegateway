@@ -59,6 +59,8 @@ LIVEKIT_OBSERVABILITY_URL=https://<host>/ingest/<organisation-id>/<project-id>
 
 The agent uploads only sessions that record. To send traces, logs, metrics and the transcript without the call audio, record without it: `record={"audio": False}` in Python, `record: { audio: false }` in Node. Every version that honours `LIVEKIT_OBSERVABILITY_URL` accepts these options.
 
+For custom call fields, live state, or to keep LiveKit Cloud's own observability, add the [Python SDK](/get-started/python-sdk).
+
 No agent yet? Run the [example agent](https://github.com/mahimailabs/voicegateway/tree/main/examples/livekit-agent). It needs a clone of this repository, [uv](https://docs.astral.sh/uv/) and the [LiveKit CLI](https://docs.livekit.io/reference/developer-tools/livekit-cli/) (`lk`). Copy `examples/livekit-agent/.env.example` to `.env`, fill in the LiveKit values and the agent upload URL, then run `make example-call`. It starts the example agent, places one call with `lk` and stops. The example uses LiveKit Inference, which needs a LiveKit Cloud project.
 
 </Step>

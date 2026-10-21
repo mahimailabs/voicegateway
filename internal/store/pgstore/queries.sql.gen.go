@@ -105,7 +105,7 @@ func (q *Queries) AdvanceMediaBackfill(ctx context.Context, arg AdvanceMediaBack
 
 const callByID = `-- name: CallByID :one
 SELECT l.id, l.room_name, l.room_sid, l.job_id, l.started_at, l.ended_at, l.end_state, l.first_seen_at,
-       l.participants, l.servable, l.summarized::boolean AS summarized, c.tags, c.archived, c.metadata_revision,
+       l.participants, l.servable, l.summarized::boolean AS summarized, c.tags, c.archived, c.metadata_revision, c.fields,
        r.id AS recording_id, r.started_at AS recording_started_at
 FROM call_list l JOIN calls c ON c.id = l.id
 LEFT JOIN LATERAL (
@@ -136,6 +136,7 @@ type CallByIDRow struct {
 	Tags               []string
 	Archived           bool
 	MetadataRevision   int64
+	Fields             []byte
 	RecordingID        pgtype.UUID
 	RecordingStartedAt pgtype.Timestamptz
 }
@@ -161,6 +162,7 @@ func (q *Queries) CallByID(ctx context.Context, arg CallByIDParams) (CallByIDRow
 		&i.Tags,
 		&i.Archived,
 		&i.MetadataRevision,
+		&i.Fields,
 		&i.RecordingID,
 		&i.RecordingStartedAt,
 	)
@@ -265,7 +267,7 @@ func (q *Queries) CallTags(ctx context.Context, arg CallTagsParams) ([]string, e
 
 const callTotals = `-- name: CallTotals :one
 WITH f AS (
-    SELECT l.organisation_id, l.project_id, l.id, l.room_name, l.room_sid, l.job_id, l.started_at, l.ended_at, l.end_state, l.created_at, l.first_seen_at, l.servable, l.summarized, l.start_at, l.duration_seconds, l.participants, l.channel, l.turn_count, l.answer_ms, l.answer_ms_median, l.models, l.pipeline, l.agent_key, l.recorded
+    SELECT l.organisation_id, l.project_id, l.id, l.room_name, l.room_sid, l.job_id, l.started_at, l.ended_at, l.end_state, l.created_at, l.first_seen_at, l.servable, l.summarized, l.start_at, l.duration_seconds, l.participants, l.channel, l.turn_count, l.answer_ms, l.answer_ms_median, l.models, l.pipeline, l.agent_key, l.recorded, l.fields
     FROM call_list l JOIN calls c ON c.id = l.id
     WHERE l.organisation_id = $3 AND l.project_id = $4 AND l.created_at <= $5 AND l.servable
       AND ($6::timestamptz IS NULL OR l.start_at >= $6::timestamptz)
@@ -282,9 +284,10 @@ WITH f AS (
       AND (NOT $17::bool OR l.duration_seconds IS NULL)
       AND (NOT $18::bool OR l.turn_count IS NULL)
       AND (cardinality($19::text[]) = 0 OR c.tags && $19::text[])
-      AND ($20::boolean IS NULL OR c.archived = $20::boolean)
-      AND ($21::bool IS NULL OR l.recorded = $21::bool)
-      AND NOT $22::bool
+      AND c.fields @> $20::jsonb
+      AND ($21::boolean IS NULL OR c.archived = $21::boolean)
+      AND ($22::bool IS NULL OR l.recorded = $22::bool)
+      AND NOT $23::bool
 ), a AS (
     SELECT u.v, f.start_at, f.id, u.ord
     FROM f, unnest(f.answer_ms) WITH ORDINALITY AS u(v, ord)
@@ -322,6 +325,7 @@ type CallTotalsParams struct {
 	UnknownDuration bool
 	UnknownTurns    bool
 	Tags            []string
+	Fields          []byte
 	Archived        pgtype.Bool
 	Recorded        pgtype.Bool
 	MatchNone       bool
@@ -363,6 +367,7 @@ func (q *Queries) CallTotals(ctx context.Context, arg CallTotalsParams) (CallTot
 		arg.UnknownDuration,
 		arg.UnknownTurns,
 		arg.Tags,
+		arg.Fields,
 		arg.Archived,
 		arg.Recorded,
 		arg.MatchNone,
@@ -1536,7 +1541,7 @@ func (q *Queries) LimitingSignInAttempt(ctx context.Context, arg LimitingSignInA
 
 const listCalls = `-- name: ListCalls :many
 WITH f AS (
-    SELECT l.organisation_id, l.project_id, l.id, l.room_name, l.room_sid, l.job_id, l.started_at, l.ended_at, l.end_state, l.created_at, l.first_seen_at, l.servable, l.summarized, l.start_at, l.duration_seconds, l.participants, l.channel, l.turn_count, l.answer_ms, l.answer_ms_median, l.models, l.pipeline, l.agent_key, l.recorded, c.tags, c.archived, c.metadata_revision,
+    SELECT l.organisation_id, l.project_id, l.id, l.room_name, l.room_sid, l.job_id, l.started_at, l.ended_at, l.end_state, l.created_at, l.first_seen_at, l.servable, l.summarized, l.start_at, l.duration_seconds, l.participants, l.channel, l.turn_count, l.answer_ms, l.answer_ms_median, l.models, l.pipeline, l.agent_key, l.recorded, l.fields, c.tags, c.archived, c.metadata_revision,
         CASE $6::text
             WHEN 'startedAt'       THEN EXTRACT(EPOCH FROM l.start_at)::double precision
             WHEN 'durationSeconds' THEN l.duration_seconds
@@ -1559,9 +1564,10 @@ WITH f AS (
       AND (NOT $22::bool OR l.duration_seconds IS NULL)
       AND (NOT $23::bool OR l.turn_count IS NULL)
       AND (cardinality($24::text[]) = 0 OR c.tags && $24::text[])
-      AND ($25::boolean IS NULL OR c.archived = $25::boolean)
-      AND ($26::bool IS NULL OR l.recorded = $26::bool)
-      AND NOT $27::bool
+      AND c.fields @> $25::jsonb
+      AND ($26::boolean IS NULL OR c.archived = $26::boolean)
+      AND ($27::bool IS NULL OR l.recorded = $27::bool)
+      AND NOT $28::bool
 )
 SELECT f.id, f.room_name, f.room_sid, f.start_at, f.started_at, f.ended_at, f.end_state, f.duration_seconds,
        f.participants, f.channel, f.turn_count, f.answer_ms, f.answer_ms_median, f.models, f.pipeline, f.agent_key, f.tags, f.archived, f.metadata_revision,
@@ -1598,6 +1604,7 @@ type ListCallsParams struct {
 	UnknownDuration bool
 	UnknownTurns    bool
 	Tags            []string
+	Fields          []byte
 	Archived        pgtype.Bool
 	Recorded        pgtype.Bool
 	MatchNone       bool
@@ -1657,6 +1664,7 @@ func (q *Queries) ListCalls(ctx context.Context, arg ListCallsParams) ([]ListCal
 		arg.UnknownDuration,
 		arg.UnknownTurns,
 		arg.Tags,
+		arg.Fields,
 		arg.Archived,
 		arg.Recorded,
 		arg.MatchNone,
@@ -2153,6 +2161,36 @@ func (q *Queries) Membership(ctx context.Context, arg MembershipParams) (string,
 	var role string
 	err := row.Scan(&role)
 	return role, err
+}
+
+const mergeCallFields = `-- name: MergeCallFields :one
+UPDATE calls SET fields = calls.fields || (
+    SELECT COALESCE(jsonb_object_agg(f.key, f.value), '{}'::jsonb)
+    FROM (
+        SELECT key, value FROM jsonb_each($1::jsonb) WHERE calls.fields ? key
+        UNION ALL
+        (SELECT key, value FROM jsonb_each($1::jsonb) WHERE NOT calls.fields ? key
+         ORDER BY key
+         LIMIT GREATEST(0, 64 - (SELECT count(*) FROM jsonb_object_keys(calls.fields))))
+    ) f
+), updated_at = now()
+WHERE id = $2
+RETURNING fields
+`
+
+type MergeCallFieldsParams struct {
+	Fields []byte
+	ID     pgtype.UUID
+}
+
+// An SDK's custom fields onto its call (Postgres 00020); a key already there takes the new value. A
+// call holds at most 64 keys: new keys past that are dropped, in key order, and the caller counts
+// them from the fields returned.
+func (q *Queries) MergeCallFields(ctx context.Context, arg MergeCallFieldsParams) ([]byte, error) {
+	row := q.db.QueryRow(ctx, mergeCallFields, arg.Fields, arg.ID)
+	var fields []byte
+	err := row.Scan(&fields)
+	return fields, err
 }
 
 const openCallInRoom = `-- name: OpenCallInRoom :one

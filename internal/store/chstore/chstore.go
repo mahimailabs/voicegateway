@@ -383,11 +383,20 @@ func (s *Store) CallTrace(ctx context.Context, organisationID, projectID, callID
 	if err != nil {
 		return nil, turn.Result{}, err
 	}
-	res := turn.Build(spans, history)
+	batches, err := s.sdkBatches(ctx, organisationID, projectID, callID)
+	if err != nil {
+		return nil, turn.Result{}, err
+	}
+	res := turn.WithSDK(turn.Build(spans, history), batches)
 	// STT audio has no per-turn source in LiveKit Agents 1.8.7; the call's comes from its
 	// lk.agents.usage.stt_audio_duration points, null when none joined.
-	if res.Usage.STTAudioSeconds.Sum, err = s.usageSum(ctx, organisationID, projectID, callID, "lk.agents.usage.stt_audio_duration"); err != nil {
+	// An SDK's usage, used only for a call with no spans, may already hold it.
+	stt, err := s.usageSum(ctx, organisationID, projectID, callID, "lk.agents.usage.stt_audio_duration")
+	if err != nil {
 		return nil, turn.Result{}, err
+	}
+	if stt != nil || res.Usage.STTAudioSeconds.Sum == nil {
+		res.Usage.STTAudioSeconds.Sum = stt
 	}
 	return spans, res, nil
 }
@@ -457,6 +466,38 @@ func (s *Store) CallSpans(ctx context.Context, organisationID, projectID, callID
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("call spans: %w", err)
+	}
+	return out, nil
+}
+
+// sdkBatches returns the SDK batches joined to a call (docs/specs/python-sdk.md), oldest first. A
+// batch is stored once per batch id, but a duplicate row before a merge is the same payload, so it
+// is skipped by its dedupe key rather than read with FINAL.
+func (s *Store) sdkBatches(ctx context.Context, organisationID, projectID, callID string) ([]event.SDKBatch, error) {
+	rows, err := s.conn.Query(ctx, `
+		SELECT dedupe_key, any(payload) FROM events
+		WHERE organisation_id = @org AND project_id = @project AND kind = @kind AND call_id = @call
+		GROUP BY dedupe_key ORDER BY min(received_at)`,
+		clickhouse.Named("org", organisationID), clickhouse.Named("project", projectID),
+		clickhouse.Named("kind", string(event.KindSDKEvents)), clickhouse.Named("call", callID))
+	if err != nil {
+		return nil, fmt.Errorf("sdk batches: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var out []event.SDKBatch
+	for rows.Next() {
+		var key, payload string
+		if err := rows.Scan(&key, &payload); err != nil {
+			return nil, fmt.Errorf("sdk batches: %w", err)
+		}
+		var b event.SDKBatch
+		// web validated every batch against the contract; one that no longer decodes is skipped.
+		if json.Unmarshal([]byte(payload), &b) == nil {
+			out = append(out, b)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("sdk batches: %w", err)
 	}
 	return out, nil
 }
