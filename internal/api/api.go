@@ -49,6 +49,9 @@ type API struct {
 	// NewProjects creates projects, their LiveKit secrets sealed: the store voicegateway project add
 	// writes through.
 	NewProjects ProjectCreator
+	// Credentials replaces an existing project's LiveKit key and secret, after VerifyLiveKit proves
+	// them; without it updateProjectLiveKitCredentials is off.
+	Credentials LiveKitCredentials
 	// VerifyLiveKit proves a new project's LiveKit secret before NewProjects stores it; without it
 	// createProject is off.
 	VerifyLiveKit LiveKitVerifier
@@ -121,6 +124,7 @@ func (a *API) Routes() http.Handler {
 	handle(r, http.MethodPost, project+"/keys", a.createProjectKey)
 	handle(r, http.MethodDelete, project+"/keys/{keyId}", a.revokeProjectKey)
 	handle(r, http.MethodPost, "/api/v1/org/{orgId}/projects", a.createProject)
+	handle(r, http.MethodPut, project+"/livekit-credentials", a.updateLiveKitCredentials)
 	handle(r, http.MethodGet, "/api/v1/org/{orgId}/members", a.getMembers)
 	handle(r, http.MethodPatch, "/api/v1/org/{orgId}/members/{userId}", a.updateMember)
 	handle(r, http.MethodDelete, "/api/v1/org/{orgId}/members/{userId}", a.removeMember)

@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"net/http"
@@ -87,6 +88,10 @@ func lkProject(org, id, key, secret string) store.NewProject {
 }
 
 type connectionRead struct {
+	LiveKit struct {
+		URL    string `json:"url"`
+		APIKey string `json:"apiKey"`
+	} `json:"livekit"`
 	URLs struct {
 		Observability *string `json:"observability"`
 		Webhook       *string `json:"webhook"`
@@ -403,5 +408,30 @@ func TestSDKConnection(t *testing.T) {
 	a := s.connection(t, "acme", "voice")
 	if a.SDK.LastAcceptedAt == nil || a.SDK.LastRejectedAt != nil || a.Agent != (sourceRead{}) || len(s.stream.events) != 1 {
 		t.Fatalf("A: sdk %+v, agent %+v, appended %d", a.SDK, a.Agent, len(s.stream.events))
+	}
+}
+
+// updateProjectLiveKitCredentials: once a project's key and secret are replaced, ingestion refuses
+// the old key and accepts the new one at once, with the secret sealed in the project's own scope.
+func TestLiveKitCredentialsChangeTakesEffect(t *testing.T) {
+	s := newConnectionStack(t, lkProject("acme", "voice", "APIold", "old-secret"))
+	const traces = "/ingest/acme/voice/observability/traces/otlp/v0"
+	if got := s.post(traces, uploadToken(t, "APIold", "old-secret", true), emptyExport); got != 200 {
+		t.Fatalf("old key before the change: %d", got)
+	}
+	if err := s.store.UpdateLiveKitCredentials(context.Background(), "acme", "voice", "APInew", "new-secret"); err != nil {
+		t.Fatal(err)
+	}
+	if got := s.post(traces, uploadToken(t, "APIold", "old-secret", true), emptyExport); got != 401 {
+		t.Fatalf("old key after the change: %d, want 401", got)
+	}
+	if got := s.post(traces, uploadToken(t, "APInew", "new-secret", true), emptyExport); got != 200 {
+		t.Fatalf("new key after the change: %d, want 200", got)
+	}
+	if got := s.connection(t, "acme", "voice"); got.LiveKit.APIKey != "APInew" || got.LiveKit.URL != "wss://example.livekit.cloud" {
+		t.Fatalf("connection shows %+v, want the new key and the unchanged URL", got.LiveKit)
+	}
+	if err := s.store.UpdateLiveKitCredentials(context.Background(), "acme", "nope", "APInew", "s"); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("unknown project: %v", err)
 	}
 }

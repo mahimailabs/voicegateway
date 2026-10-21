@@ -239,3 +239,30 @@ func TestMigrateKeepsCallsAndAddsSummaries(t *testing.T) {
 		t.Errorf("call_list: %v", err)
 	}
 }
+
+// A project's LiveKit key and secret can be replaced; the secret is sealed again in the project's
+// own scope and opens to the new value, the URL stays, and an unknown project is not found.
+func TestUpdateLiveKitCredentials(t *testing.T) {
+	s, pool := migrated(t)
+	ctx := context.Background()
+	if _, err := s.CreateProject(ctx, project("voice", "APIold")); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.UpdateLiveKitCredentials(ctx, "default", "voice", "APInew", "new-secret"); err != nil {
+		t.Fatal(err)
+	}
+	p, err := s.Project(ctx, "default", "voice")
+	if err != nil || p.LiveKitAPIKey != "APInew" || p.LiveKitURL != "wss://example.livekit.cloud" {
+		t.Fatalf("project = %+v, %v; want the new key and the same URL", p, err)
+	}
+	if secret, err := s.LiveKitSecret(ctx, "default", "voice"); err != nil || secret != "new-secret" {
+		t.Fatalf("secret opens to %q, %v", secret, err)
+	}
+	var sealed []byte
+	if err := pool.QueryRow(ctx, `SELECT livekit_api_secret_sealed FROM projects WHERE id = 'voice'`).Scan(&sealed); err != nil || bytes.Contains(sealed, []byte("new-secret")) {
+		t.Fatalf("stored secret is not sealed (%v)", err)
+	}
+	if err := s.UpdateLiveKitCredentials(ctx, "default", "nope", "APInew", "s"); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("unknown project: %v", err)
+	}
+}

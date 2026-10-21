@@ -36,7 +36,13 @@ type firstCall struct {
 	StartedAt *time.Time `json:"startedAt"`
 }
 
+type projectLiveKit struct {
+	URL    string `json:"url"`
+	APIKey string `json:"apiKey"`
+}
+
 type projectConnection struct {
+	LiveKit   projectLiveKit   `json:"livekit"`
 	URLs      connectionURLs   `json:"urls"`
 	Webhook   connectionSource `json:"webhook"`
 	Agent     connectionSource `json:"agent"`
@@ -64,7 +70,7 @@ func (a *API) getConnection(w http.ResponseWriter, r *http.Request) {
 		a.failWith(w, r, err, "", "the connection could not be read")
 		return
 	}
-	out := projectConnection{URLs: ingestionURLs(a.PublicURL, org, id)}
+	out := projectConnection{LiveKit: projectLiveKit{URL: project.LiveKitURL, APIKey: project.LiveKitAPIKey}, URLs: ingestionURLs(a.PublicURL, org, id)}
 	for _, c := range conns {
 		src := connectionSource{LastAcceptedAt: c.LastAcceptedAt, LastRejectedAt: c.LastRejectedAt, Reason: c.Reason}
 		if c.Reason != nil && *c.Reason == store.ReasonKeyMismatch {
