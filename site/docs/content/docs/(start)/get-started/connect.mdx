@@ -23,7 +23,7 @@ make project-add NAME="Production"
 
 Cloud: in the console, choose **Add a LiveKit project** in the organisation switcher (top left) or in **Settings > Organisation**, and enter the same three values.
 
-The secret is stored encrypted and never shown again.
+The secret is stored encrypted and never shown again. To change the key and secret later, an Admin opens **Settings > Connection**; the URL stays, since another LiveKit project is another VoiceGateway project.
 
 Self-hosted only: the console builds the two URLs from `VOICEGATEWAY_PUBLIC_URL`. Add the address LiveKit and your agent reach VoiceGateway on to `deploy/.env`, then run `make up` again:
 

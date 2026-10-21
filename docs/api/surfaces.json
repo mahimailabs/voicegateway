@@ -151,6 +151,14 @@
       "removeMember",
       "revokeProjectKey",
       "updateMember"
+    ],
+    "/setup": [
+      "getWorkspaces",
+      "createProject",
+      "getProjectConnection",
+      "listCalls",
+      "getCall",
+      "getMyOrganisationEntitlement"
     ]
   },
   "shell": [

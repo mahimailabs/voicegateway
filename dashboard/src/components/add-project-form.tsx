@@ -1,12 +1,15 @@
 import { useState } from "react"
 import { useMutation } from "@tanstack/react-query"
 import { Plus } from "@phosphor-icons/react"
+import { humanId } from "human-id"
 import { Button } from "@/components/ui/button"
 import { Field, FieldContent, FieldDescription, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import { Spinner } from "@/components/ui/spinner"
 import { Switch } from "@/components/ui/switch"
 import { errorText } from "@/components/page-state"
+import { LiveKitPaste } from "@/components/livekit-paste"
+import { type LiveKitEnv, NOTHING_PASTED, filledText, namesLiveKit, pasteLiveKit } from "@/lib/livekit-env"
 import { createProject } from "@/lib/api"
 import type { ProjectCreate, WorkspaceProject } from "@/lib/api-types"
 
@@ -21,8 +24,11 @@ const openNewProject = (orgId: string, project: WorkspaceProject) => window.loca
 // it to an Admin of the organisation. Recordings go to the instance's bucket unless the admin brings
 // their own S3 bucket here; web proves it with a write and a delete, and it can never be changed
 // afterwards, so the form says so. Its secret is held and cleared like the LiveKit one.
+// LiveKit Cloud's "Environment variables" block, pasted into the box at the top or into any of the
+// three LiveKit inputs, fills all three; the name starts as a readable generated one (human-id), so
+// a paste and Add project is enough.
 export function AddProjectForm({ orgId, onCreated = (p) => openNewProject(orgId, p) }: { orgId: string; onCreated?: (project: WorkspaceProject) => void }) {
-  const [name, setName] = useState("")
+  const [name, setName] = useState(() => humanId({ separator: "-", capitalize: false }))
   const [url, setUrl] = useState("")
   const [key, setKey] = useState("")
   const [secret, setSecret] = useState("")
@@ -33,6 +39,15 @@ export function AddProjectForm({ orgId, onCreated = (p) => openNewProject(orgId,
   const [accessKey, setAccessKey] = useState("")
   const [bucketSecret, setBucketSecret] = useState("")
   const [problem, setProblem] = useState<string | null>(null)
+  const [pasted, setPasted] = useState<string | null>(null)
+  const fill = (env: LiveKitEnv) => {
+    if (!namesLiveKit(env)) return setPasted(NOTHING_PASTED)
+    if (env.url !== undefined) setUrl(env.url)
+    if (env.apiKey !== undefined) setKey(env.apiKey)
+    if (env.apiSecret !== undefined) setSecret(env.apiSecret)
+    setPasted(filledText(env))
+  }
+  const onPaste = pasteLiveKit(fill)
   const create = useMutation({
     mutationFn: (body: ProjectCreate) => createProject(orgId, body),
     onSuccess: (p) => onCreated(p),
@@ -59,22 +74,23 @@ export function AddProjectForm({ orgId, onCreated = (p) => openNewProject(orgId,
       }}
     >
       <FieldGroup className="gap-4">
+        <LiveKitPaste id="new-project-paste" onParsed={fill} note={pasted} />
         <Field>
           <FieldLabel htmlFor="new-project-name">Name</FieldLabel>
           <Input id="new-project-name" placeholder="Production" value={name} onChange={(e) => setName(e.target.value)} autoComplete="off" maxLength={64} />
         </Field>
         <Field>
           <FieldLabel htmlFor="new-project-url">LiveKit URL</FieldLabel>
-          <Input id="new-project-url" placeholder="wss://your-project.livekit.cloud" value={url} onChange={(e) => setUrl(e.target.value)} autoComplete="off" spellCheck={false} />
+          <Input id="new-project-url" placeholder="wss://your-project.livekit.cloud" value={url} onChange={(e) => setUrl(e.target.value)} onPaste={onPaste} autoComplete="off" spellCheck={false} />
         </Field>
         <div className="grid gap-4 sm:grid-cols-2">
           <Field>
             <FieldLabel htmlFor="new-project-key">API key</FieldLabel>
-            <Input id="new-project-key" value={key} onChange={(e) => setKey(e.target.value)} autoComplete="off" spellCheck={false} />
+            <Input id="new-project-key" value={key} onChange={(e) => setKey(e.target.value)} onPaste={onPaste} autoComplete="off" spellCheck={false} />
           </Field>
           <Field>
             <FieldLabel htmlFor="new-project-secret">API secret</FieldLabel>
-            <Input id="new-project-secret" type="password" value={secret} onChange={(e) => setSecret(e.target.value)} autoComplete="new-password" />
+            <Input id="new-project-secret" type="password" value={secret} onChange={(e) => setSecret(e.target.value)} onPaste={onPaste} autoComplete="new-password" />
           </Field>
         </div>
         <FieldDescription>VoiceGateway checks the key and secret with LiveKit, then encrypts the secret and never shows it again.</FieldDescription>
@@ -116,7 +132,15 @@ export function AddProjectForm({ orgId, onCreated = (p) => openNewProject(orgId,
         )}
         {problem && <FieldError>{problem}</FieldError>}
         <Button type="submit" disabled={!ready}>
-          {create.isPending ? <Spinner /> : <Plus />} Add project
+          {create.isPending ? (
+            <>
+              <Spinner /> Verifying with LiveKit
+            </>
+          ) : (
+            <>
+              <Plus /> Add project
+            </>
+          )}
         </Button>
       </FieldGroup>
     </form>

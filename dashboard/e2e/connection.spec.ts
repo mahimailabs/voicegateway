@@ -1,5 +1,6 @@
 import { test, expect, type Page, type TestInfo } from "@playwright/test"
 import AxeBuilder from "@axe-core/playwright"
+import { watchErrors } from "./console-errors.ts"
 
 // The "Connect your agent" panel (first-call setup, acceptance check 8) at phone and desktop widths,
 // from Settings > Connection. The preview's mock API receives no ingest, so by default every step
@@ -9,16 +10,14 @@ const scope = "/org/default/project/default-project/"
 const widths = [["phone", 390, 844], ["desktop", 1280, 800]] as const
 
 async function open(page: Page, testInfo: TestInfo, width: number, height: number, override?: Record<string, unknown>) {
-  const errors: string[] = []
-  page.on("pageerror", (error) => errors.push(error.message))
-  page.on("console", (message) => { if (message.type() === "error") errors.push(message.text()) })
+  const watched = watchErrors(page)
   await page.setViewportSize({ width, height })
   await page.addInitScript((theme) => localStorage.setItem("vg-theme", theme), testInfo.project.use.colorScheme ?? "light")
   if (override) await page.addInitScript((body) => localStorage.setItem("vg.mock-connection", body), JSON.stringify(override))
   await page.goto(scope + "overview?settings=connection")
   const panel = page.getByRole("region", { name: "Connect your agent" })
   await expect(panel).toBeVisible({ timeout: 15_000 })
-  return { panel, errors }
+  return { panel, errors: watched }
 }
 
 async function settle(page: Page) {
@@ -29,11 +28,11 @@ async function settle(page: Page) {
   })
 }
 
-async function accessible(page: Page, testInfo: TestInfo, errors: string[]) {
+async function accessible(page: Page, testInfo: TestInfo, errors: ReturnType<typeof watchErrors>) {
   await settle(page)
   const results = await new AxeBuilder({ page }).analyze()
   await testInfo.attach("axe", { body: JSON.stringify(results, null, 2), contentType: "application/json" })
-  expect.soft(errors, "browser console and uncaught errors").toEqual([])
+  expect.soft(errors.unexpected(), "browser console and uncaught errors").toEqual([])
   expect(results.violations.filter((v) => v.impact === "serious" || v.impact === "critical").map(({ id, impact, nodes }) => ({ id, impact, targets: nodes.map((node) => node.target) })), "serious/critical axe violations").toEqual([])
 }
 

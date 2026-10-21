@@ -23,7 +23,7 @@ import { NewProjectDialog } from "@/components/new-project-dialog"
 import { currentOrg, currentScope, scopePrefix, useUrlState } from "@/lib/url-state"
 import { type Size, type WidgetId, sizes, widgets } from "@/features/embed/widgets"
 import { DEFAULTS, type Thresholds as T } from "@/lib/thresholds"
-import { ApiError, callTotalsQuery, createInvitation, createPasswordReset, createProjectKey, projectKeysQuery, revokeInvitation, revokeProjectKey, invitationsQuery, latestMatchingCallQuery, mediaServerQuery, membersQuery, projectSettingsQuery, saveProjectSettings, removeMember, updateMember, saveAllowedOrigins, createEmbedToken } from "@/lib/api"
+import { ApiError, callTotalsQuery, connectionQuery, createInvitation, createPasswordReset, createProjectKey, projectKeysQuery, revokeInvitation, revokeProjectKey, invitationsQuery, latestMatchingCallQuery, mediaServerQuery, membersQuery, projectSettingsQuery, saveProjectSettings, removeMember, updateMember, saveAllowedOrigins, createEmbedToken } from "@/lib/api"
 import type { CreateEmbedToken, Invitation, Member, ProjectKey, ProjectSettings } from "@/lib/api-types"
 import { DataTable, type Columns, type Field as FilterField } from "@/components/data-table"
 import { DataGridColumnHeader } from "@/components/reui/data-grid/data-grid-column-header"
@@ -33,6 +33,8 @@ import { type AccountProfile, ProfileError, readAccountProfile, saveAccountProfi
 import { UsageAllowance } from "@/components/usage-allowance"
 import { errorText } from "@/components/page-state"
 import { ConnectAgentPanel } from "@/features/connection/connect-agent"
+import { ChangeLiveKitKey } from "@/features/connection/livekit-credentials"
+import { useHosted } from "@/lib/hosted"
 
 // Settings as a modal over the page you are on (layout from shadcn's sidebar-13 block). Three groups,
 // as in ShipVoice Pro's settings: the project picked at the top of the sidebar (integrations, data,
@@ -212,9 +214,11 @@ const enterpriseRows = [
 
 export function Organisation() {
   const [adding, setAdding] = useState(false)
+  // The open-source terms are said only on a self-hosted install, never while it is unknown.
+  const selfHosted = useHosted() === "self-hosted"
   return (
     <>
-      <Header title={org().name} description="The organisation that owns your projects. The open-source edition is one organisation with any number of projects and no usage limits." />
+      <Header title={org().name} description={`The organisation that owns your projects.${selfHosted ? " The open-source edition is one organisation with any number of projects and no usage limits." : ""}`} />
       <UsageAllowance />
       <Group label="Projects">
         {org().projects.map(({ id, name: p }, k) => (
@@ -619,11 +623,35 @@ const notifications: Integration[] = [
   { logo: "", icon: Envelope, name: "Email", description: "Send alerts to an address or a list.", status: "", connect: true },
   { logo: "", icon: WebhooksLogo, name: "Webhook", description: "POST each alert as JSON to your endpoint.", status: "", connect: true },
 ]
-function Connection() {
+// The LiveKit project this project reads (getProjectConnection's livekit): its URL, which never
+// changes, and the API key agents and webhooks sign with. An Admin changes the key and secret here.
+function LiveKitProject() {
+  const read = useQuery(connectionQuery())
+  const isAdmin = roleIn(org().id, useSession()) === "Admin"
+  const lk = read.data?.livekit
+  const pending = <Muted>{read.isError ? "Could not be read" : "Loading"}</Muted>
   return (
     <>
-      <Header title="Connection" description="The URLs your agent and LiveKit send to, and the last outcome of each." />
-      <div className="pt-6">
+      <Group label="LiveKit project" footer={isAdmin ? undefined : "Only an Admin changes the key and secret."}>
+        <Row title="LiveKit URL" description="Another LiveKit project is another VoiceGateway project." value={lk ? <span className="font-mono text-[13px] break-all">{lk.url}</span> : pending} />
+        <Row title="API key" description="Agents and LiveKit webhooks sign with this key." value={lk ? <span className="font-mono text-[13px] break-all">{lk.apiKey}</span> : pending} last />
+      </Group>
+      {isAdmin && lk && (
+        <section className="pt-6">
+          <h3 className="pb-3 text-[14px] font-semibold">Change key and secret</h3>
+          <ChangeLiveKitKey url={lk.url} />
+        </section>
+      )}
+    </>
+  )
+}
+
+export function Connection() {
+  return (
+    <>
+      <Header title="Connection" description="The LiveKit project this project reads, the URLs your agent and LiveKit send to, and the last outcome of each." />
+      <LiveKitProject />
+      <div className="pt-8">
         <ConnectAgentPanel framed={false} />
       </div>
     </>

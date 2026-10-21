@@ -1,5 +1,7 @@
 import { useMemo, useState } from "react"
-import { Link, useNavigate } from "@tanstack/react-router"
+import { Link, Navigate, useNavigate } from "@tanstack/react-router"
+import { useHosted } from "@/lib/hosted"
+import { choseLater } from "@/features/setup/setup-later"
 import { type UseQueryResult, useQuery } from "@tanstack/react-query"
 import { Brain, CaretRight, Cloud, DownloadSimple, Gauge, HardDrives, Microphone, Phone, PhoneCall, Robot, SpeakerHigh, UploadSimple, Users, WarningCircle } from "@phosphor-icons/react"
 import type { Icon } from "@phosphor-icons/react"
@@ -23,7 +25,7 @@ import { LiveWire } from "./live-wire"
 import { wireData } from "./wire-data"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
-import { useUrlState } from "@/lib/url-state"
+import { currentScope, useUrlState } from "@/lib/url-state"
 import { useIsPhone } from "@/hooks/use-mobile"
 import { ConnectAgentPanel } from "@/features/connection/connect-agent"
 import { anyError } from "@/features/connection/connection-model"
@@ -144,6 +146,10 @@ export function OverviewPage() {
   const latest = useQuery(latestCallQuery())
   const connection = useQuery(connectionQuery())
   const empty = latest.isSuccess && latest.data === null
+  // On Cloud a project with no stored call is in the setup journey, unless this viewer chose to set
+  // up later. Self-hosted installs keep the Connect panel below.
+  const install = useHosted()
+  if (install === "hosted" && connection.data && !connection.data.firstCall && !choseLater(currentScope().org, currentScope().project)) return <Navigate to="/setup" />
   const setup = empty || (connection.data !== undefined && anyError(connection.data, connection.dataUpdatedAt)) ? <ConnectAgentPanel /> : null
   // The call figures carry the page; without them the page says why, as before.
   if (stats.data) return <OverviewView stats={stats.data as CallStats} cloud={cloud} media={media} sip={sip} egress={egress} ingress={ingress} workers={workers} probes={probes} setup={setup} />

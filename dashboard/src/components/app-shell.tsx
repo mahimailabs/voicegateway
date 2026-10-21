@@ -3,7 +3,10 @@ import { NoProjectYet } from "@/components/no-project-yet"
 import { workspacesRead } from "@/lib/workspaces"
 import { Button } from "@/components/ui/button"
 import { useMemo, useState } from "react"
-import { Link, Outlet, useNavigate, useRouterState } from "@tanstack/react-router"
+import { Link, Navigate, Outlet, useNavigate, useRouterState } from "@tanstack/react-router"
+import { useHosted } from "@/lib/hosted"
+import { roleIn, useSession } from "@/lib/session"
+import { choseLater } from "@/features/setup/setup-later"
 import {
   Bell,
   MagnifyingGlass,
@@ -225,6 +228,15 @@ export function AppShell() {
   )
 }
 
+// On Cloud an Admin of an organisation with no project goes to the setup journey, unless they chose
+// to set up later; everyone else, and every self-hosted install, gets the simple form or message.
+function NoProjectYetOrSetup({ org }: { org: { id: string; name: string } }) {
+  const install = useHosted()
+  const admin = roleIn(org.id, useSession()) === "Admin"
+  if (install === "hosted" && admin && !choseLater(org.id, null)) return <Navigate to="/setup" />
+  return <NoProjectYet org={org} />
+}
+
 // The URL names an organisation or project this person cannot read. Say so, and link to the first
 // project they can, as a full page load so that project's settings are read. When the organisation
 // it names has no project yet, as a new hosted workspace or a fresh install, say how to add one
@@ -232,7 +244,7 @@ export function AppShell() {
 function NoSuchProject() {
   const first = firstProjectPath()
   const org = currentOrg()
-  if (org && !org.projects.length) return <NoProjectYet org={org} />
+  if (org && !org.projects.length) return <NoProjectYetOrSetup org={org} />
   if (!first && workspacesRead()) return <NoProjectYet org={null} />
   return (
     <Empty className="mx-auto max-w-[1200px]">

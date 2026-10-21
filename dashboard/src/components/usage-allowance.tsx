@@ -1,7 +1,8 @@
 import { Button } from "@/components/ui/button"
 import { useQuery } from "@tanstack/react-query"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
-import { ApiError, entitlementQuery } from "@/lib/api"
+import { entitlementQuery } from "@/lib/api"
+import { installOf } from "@/lib/hosted"
 import { REQUEST_CAPACITY } from "@/lib/support"
 
 const periodDate = new Intl.DateTimeFormat("en", { timeZone: "UTC", dateStyle: "medium", timeStyle: "short" })
@@ -9,7 +10,7 @@ const periodDate = new Intl.DateTimeFormat("en", { timeZone: "UTC", dateStyle: "
 // This API is absent on self-hosted installs. Unknown usage is never rendered as zero.
 export function UsageAllowance() {
   const query = useQuery(entitlementQuery())
-  if (query.error instanceof ApiError && query.error.status === 404) return null
+  if (installOf(query) === "self-hosted") return null
   if (query.isPending) return null
   if (query.isError) return <Alert><AlertTitle>Usage unavailable</AlertTitle><AlertDescription>We could not check your allowance. Try again shortly.</AlertDescription></Alert>
   const usage = query.data
