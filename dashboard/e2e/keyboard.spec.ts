@@ -14,6 +14,10 @@ for (const { path, first, next } of cases) {
     await page.goto(scope + path)
     const initial = page.getByRole("tab", { name: first })
     const following = page.getByRole("tab", { name: next })
+    // The page is ready once the tabs under test render: on a call that is after getCall answers and
+    // the drawer draws, which a loaded CI runner has taken more than the 5 s assertion budget to do
+    // (the same 15 s first-render wait as the other e2e specs). The keyboard checks keep their budget.
+    await initial.waitFor({ timeout: 15_000 })
     await expect(initial).toHaveAttribute("aria-selected", "true")
     await initial.focus()
     await page.keyboard.press("ArrowRight")
