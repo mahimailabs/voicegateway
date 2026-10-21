@@ -38,8 +38,9 @@ func projectBody(name, url, key, secret string) string {
 }
 
 // Acceptance checks 1 and 2 of phase 06f: an Admin creates a project; the answer is the
-// WorkspaceProject with no secret and no-store; the stored secret is sealed and opens to the original
-// with the sealer; the project then shows in getWorkspaces and its secret through LiveKitSecret.
+// ProjectCreated (liveRooms null: this verifier counts no rooms) with no secret and no-store; the
+// stored secret is sealed and opens to the original with the sealer; the project then shows in
+// getWorkspaces and its secret through LiveKitSecret.
 func TestCreateProject(t *testing.T) {
 	f := newFixture(t)
 	f.addUser("ada@example.com", "org-a", "admin")
@@ -55,7 +56,7 @@ func TestCreateProject(t *testing.T) {
 		t.Errorf("Cache-Control = %q, want no-store", cc)
 	}
 	status, body := f.send(web, call{method: http.MethodPost, path: "/api/v1/org/org-a/projects", body: projectBody("Staging", "https://staging.lk.example.com", "APIstaging", testLiveKitSecret+"-2"), cookie: admin})
-	if status != http.StatusCreated || string(body) != `{"id":"staging","name":"Staging"}` {
+	if status != http.StatusCreated || string(body) != `{"id":"staging","name":"Staging","liveRooms":null}` {
 		t.Fatalf("createProject = %d %s, want 201 with the project", status, body)
 	}
 	if bytes.Contains(body, []byte(testLiveKitSecret)) || bytes.Contains(body, []byte("APIstaging")) {
