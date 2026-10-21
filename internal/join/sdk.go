@@ -45,7 +45,12 @@ func (j *Joiner) sdkBatch(ctx context.Context, r *store.Event) error {
 	if len(fields) == 0 {
 		return nil
 	}
-	return j.Calls.MergeCallFields(ctx, id, fields)
+	dropped, err := j.Calls.MergeCallFields(ctx, id, fields)
+	if dropped > 0 {
+		// The batch is stored; only the keys past the call's cap are not.
+		j.Log.Warn("join: call fields over their cap, keys dropped", "project", r.ProjectID, "call", id, "dropped", dropped, "cap", store.MaxCallFields)
+	}
+	return err
 }
 
 // joinSDK returns the call of a batch's room SID or job id, opening it when none exists yet.

@@ -39,7 +39,7 @@ The SDK flushes on the session's `close` event and on job shutdown. `await vg.cl
 
 ## Fields
 
-Keys match `^[a-z0-9_.-]{1,64}$`; values are strings of at most 256 characters. Later values win. An invalid key or value is dropped and counted on `vg.dropped_fields`; it never raises.
+Keys match `^[a-z0-9_.-]{1,64}$`; values are strings of at most 256 characters. Later values win. An invalid key or value is dropped and counted on `vg.dropped_fields`; it never raises. A call holds at most 64 fields: VoiceGateway drops new keys past that, and a key the call already has still takes a new value.
 
 ## What it sends
 

@@ -47,13 +47,15 @@ test("relative time uses the largest whole unit", () => {
   expect(relative("2026-10-18T02:26:55.810Z", now)).toBe(new Intl.RelativeTimeFormat([], { numeric: "auto" }).format(-3, "day"))
 })
 
-test("the call drawer shows the SDK's fields and live state from getCall", async () => {
+test("the call drawer shows the SDK's fields and, for this ended call, its last state from getCall", async () => {
   const call = calls.find((c) => c.live)!
+  expect(call.endedAt).not.toBeNull()
   await showCalls(call.id)
   const dialog = within(await screen.findByRole("dialog"))
   const fields = await dialog.findByRole("list", { name: "Custom fields" })
   expect(within(fields).getAllByRole("listitem").map((li) => li.textContent)).toEqual(Object.entries(call.fields!).sort(([a], [b]) => a.localeCompare(b)).map(([k, v]) => k + v))
-  const live = dialog.getByRole("list", { name: "Live state" })
+  expect(dialog.queryByRole("list", { name: "Live state" })).toBeNull()
+  const live = dialog.getByRole("list", { name: "Last state" })
   expect(within(live).getByText(`User ${call.live!.user!.state}`, { exact: false })).toBeTruthy()
   expect(within(live).getByText(`Agent ${call.live!.agent!.state}`, { exact: false })).toBeTruthy()
 })
@@ -65,4 +67,16 @@ test("a call no SDK reported on shows no fields and no live state", async () => 
   expect(await dialog.findByText(call.room, { selector: "h2" })).toBeTruthy()
   expect(dialog.queryByRole("list", { name: "Custom fields" })).toBeNull()
   expect(dialog.queryByRole("list", { name: "Live state" })).toBeNull()
+  expect(dialog.queryByRole("list", { name: "Last state" })).toBeNull()
+})
+
+test("an ended call shows its last state with its time, not as happening now", () => {
+  render(<CallLive now={now} call={{ endedAt: "2026-10-21T02:30:00Z", live: { user: null, agent: { state: "listening", at: "2026-10-21T02:26:55.810Z" } } }} />)
+  expect(screen.queryByRole("list", { name: "Live state" })).toBeNull()
+  const last = screen.getByRole("list", { name: "Last state" })
+  expect(last.textContent).toMatch(/^Last state:/)
+  const time = within(last).getByText((_, el) => el?.tagName === "TIME")
+  expect(time.getAttribute("dateTime")).toBe("2026-10-21T02:26:55.810Z")
+  expect(time.textContent).toBe(new Date("2026-10-21T02:26:55.810Z").toLocaleTimeString([], { timeStyle: "medium" }))
+  expect(time.textContent).not.toMatch(/ago/)
 })

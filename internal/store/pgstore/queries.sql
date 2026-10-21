@@ -994,7 +994,19 @@ WHERE organisation_id = @organisation_id AND project_id = @project_id AND servab
 ORDER BY start_at, id
 LIMIT 1;
 
--- name: MergeCallFields :exec
--- An SDK's custom fields onto its call (Postgres 00020); a key already there takes the new value.
-UPDATE calls SET fields = fields || @fields::jsonb, updated_at = now()
-WHERE id = @id;
+-- name: MergeCallFields :one
+-- An SDK's custom fields onto its call (Postgres 00020); a key already there takes the new value. A
+-- call holds at most 64 keys: new keys past that are dropped, in key order, and the caller counts
+-- them from the fields returned.
+UPDATE calls SET fields = calls.fields || (
+    SELECT COALESCE(jsonb_object_agg(f.key, f.value), '{}'::jsonb)
+    FROM (
+        SELECT key, value FROM jsonb_each(@fields::jsonb) WHERE calls.fields ? key
+        UNION ALL
+        (SELECT key, value FROM jsonb_each(@fields::jsonb) WHERE NOT calls.fields ? key
+         ORDER BY key
+         LIMIT GREATEST(0, 64 - (SELECT count(*) FROM jsonb_object_keys(calls.fields))))
+    ) f
+), updated_at = now()
+WHERE id = @id
+RETURNING fields;

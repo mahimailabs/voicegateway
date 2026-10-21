@@ -352,7 +352,7 @@
       }
     },
     "fields": {
-      "description": "Custom call fields from attach(fields=...) or set_field; merged onto the call, later values win.",
+      "description": "Custom call fields from attach(fields=...) or set_field; merged onto the call, later values winning. One call holds at most 64 keys across all its batches: new keys past that are dropped by the engine (the batch is still accepted).",
       "type": "object",
       "additionalProperties": false,
       "required": [

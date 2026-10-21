@@ -2293,7 +2293,7 @@ components:
         fields:
           type: object
           additionalProperties: { type: string }
-          description: Custom fields the agent attached through a VoiceGateway SDK (attach(fields=...) or set_field), later values winning. Empty when no SDK attached any. Absent from captures made before the SDK.
+          description: Custom fields the agent attached through a VoiceGateway SDK (attach(fields=...) or set_field), later values winning; at most 64 per call, new keys past that are dropped. Empty when no SDK attached any. Absent from captures made before the SDK.
           x-source: { kind: computed, file: migrations/postgres/00020_sdk_fields.sql, pointer: null, detail: "calls.fields, merged by the worker from SDK fields events (docs/specs/python-sdk.md)." }
         live:
           oneOf:

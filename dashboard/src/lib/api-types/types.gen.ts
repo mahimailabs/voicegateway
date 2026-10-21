@@ -74,7 +74,7 @@ export type Call = {
      */
     clocks: Array<Clock>;
     /**
-     * Custom fields the agent attached through a VoiceGateway SDK (attach(fields=...) or set_field), later values winning. Empty when no SDK attached any. Absent from captures made before the SDK.
+     * Custom fields the agent attached through a VoiceGateway SDK (attach(fields=...) or set_field), later values winning; at most 64 per call, new keys past that are dropped. Empty when no SDK attached any. Absent from captures made before the SDK.
      */
     fields?: {
         [key: string]: string;

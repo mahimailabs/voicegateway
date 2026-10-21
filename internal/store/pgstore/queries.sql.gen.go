@@ -2163,9 +2163,19 @@ func (q *Queries) Membership(ctx context.Context, arg MembershipParams) (string,
 	return role, err
 }
 
-const mergeCallFields = `-- name: MergeCallFields :exec
-UPDATE calls SET fields = fields || $1::jsonb, updated_at = now()
+const mergeCallFields = `-- name: MergeCallFields :one
+UPDATE calls SET fields = calls.fields || (
+    SELECT COALESCE(jsonb_object_agg(f.key, f.value), '{}'::jsonb)
+    FROM (
+        SELECT key, value FROM jsonb_each($1::jsonb) WHERE calls.fields ? key
+        UNION ALL
+        (SELECT key, value FROM jsonb_each($1::jsonb) WHERE NOT calls.fields ? key
+         ORDER BY key
+         LIMIT GREATEST(0, 64 - (SELECT count(*) FROM jsonb_object_keys(calls.fields))))
+    ) f
+), updated_at = now()
 WHERE id = $2
+RETURNING fields
 `
 
 type MergeCallFieldsParams struct {
@@ -2173,10 +2183,14 @@ type MergeCallFieldsParams struct {
 	ID     pgtype.UUID
 }
 
-// An SDK's custom fields onto its call (Postgres 00020); a key already there takes the new value.
-func (q *Queries) MergeCallFields(ctx context.Context, arg MergeCallFieldsParams) error {
-	_, err := q.db.Exec(ctx, mergeCallFields, arg.Fields, arg.ID)
-	return err
+// An SDK's custom fields onto its call (Postgres 00020); a key already there takes the new value. A
+// call holds at most 64 keys: new keys past that are dropped, in key order, and the caller counts
+// them from the fields returned.
+func (q *Queries) MergeCallFields(ctx context.Context, arg MergeCallFieldsParams) ([]byte, error) {
+	row := q.db.QueryRow(ctx, mergeCallFields, arg.Fields, arg.ID)
+	var fields []byte
+	err := row.Scan(&fields)
+	return fields, err
 }
 
 const openCallInRoom = `-- name: OpenCallInRoom :one

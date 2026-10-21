@@ -314,19 +314,32 @@ func noNUL(ss []string) []string {
 }
 
 // MergeCallFields adds an SDK's custom fields to a call; a key it already has takes the new value.
-func (s *Store) MergeCallFields(ctx context.Context, callID string, fields map[string]string) error {
+// A call holds at most store.MaxCallFields keys; it returns how many new keys were dropped for that.
+func (s *Store) MergeCallFields(ctx context.Context, callID string, fields map[string]string) (int, error) {
 	id, err := uuid(callID)
 	if err != nil {
-		return err
+		return 0, err
 	}
-	b, err := json.Marshal(noNULMap(fields))
+	in := noNULMap(fields)
+	b, err := json.Marshal(in)
 	if err != nil {
-		return err
+		return 0, err
 	}
-	if err := s.q.MergeCallFields(ctx, MergeCallFieldsParams{ID: id, Fields: b}); err != nil {
-		return fmt.Errorf("merge call fields: %w", badRow(err))
+	out, err := s.q.MergeCallFields(ctx, MergeCallFieldsParams{ID: id, Fields: b})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return 0, store.ErrNotFound
 	}
-	return nil
+	if err != nil {
+		return 0, fmt.Errorf("merge call fields: %w", badRow(err))
+	}
+	kept := callFields(out)
+	dropped := 0
+	for k := range in {
+		if _, ok := kept[k]; !ok {
+			dropped++
+		}
+	}
+	return dropped, nil
 }
 
 // noNULMap strips NUL from keys and values, which Postgres text and jsonb refuse.

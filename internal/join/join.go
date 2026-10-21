@@ -36,7 +36,8 @@ type Calls interface {
 	PutSummary(ctx context.Context, c store.StaleCall, sum store.CallSummary, computedAt time.Time) error
 	LinkRecording(ctx context.Context, l store.RecordingLink) error
 	// MergeCallFields adds an SDK's custom fields to a call; a key it already has takes the new value.
-	MergeCallFields(ctx context.Context, callID string, fields map[string]string) error
+	// It returns how many new keys it dropped for the call's cap, store.MaxCallFields.
+	MergeCallFields(ctx context.Context, callID string, fields map[string]string) (int, error)
 }
 
 // Traces counts traces that never linked to a call, and reads a call's spans and the turns built

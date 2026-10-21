@@ -26,28 +26,32 @@ export function CallFields({ call }: { call: Pick<Call, "fields"> }) {
   )
 }
 
-function LiveBadge({ who, s, now }: { who: "User" | "Agent"; s: LiveState; now: number }) {
+function LiveBadge({ who, s, now, ended }: { who: "User" | "Agent"; s: LiveState; now: number; ended: boolean }) {
   const at = new Date(s.at).toLocaleString([], { dateStyle: "medium", timeStyle: "medium" })
+  // An ended call's state is its last one: said with its time, never as happening now.
+  const when = ended ? new Date(s.at).toLocaleTimeString([], { timeStyle: "medium" }) : relative(s.at, now)
   return (
     <li>
-      <Badge variant="secondary" className="font-normal" title={`${who} ${s.state}, reported ${at}`}>
+      <Badge variant={ended ? "outline" : "secondary"} className="font-normal" title={`${who} ${s.state}, ${ended ? "last reported" : "reported"} ${at}`}>
         {who === "User" ? <User data-icon="inline-start" /> : <Robot data-icon="inline-start" />}
         {`${who} ${s.state} · `}
-        <time dateTime={s.at}>{relative(s.at, now)}</time>
+        <time dateTime={s.at}>{when}</time>
       </Badge>
     </li>
   )
 }
 
-export function CallLive({ call, now: at }: { call: Pick<Call, "live">; now?: number }) {
+export function CallLive({ call, now: at }: { call: Pick<Call, "live"> & { endedAt?: Call["endedAt"] }; now?: number }) {
   // Times are relative to when the call was read into view, so a render never changes them.
   const [now] = useState(() => at ?? Date.now())
   const live = call.live
   if (!live || (!live.user && !live.agent)) return null
+  const ended = call.endedAt != null
   return (
-    <ul aria-label="Live state" className="flex flex-wrap gap-1">
-      {live.user && <LiveBadge who="User" s={live.user} now={now} />}
-      {live.agent && <LiveBadge who="Agent" s={live.agent} now={now} />}
+    <ul aria-label={ended ? "Last state" : "Live state"} className="flex flex-wrap items-center gap-1">
+      {ended && <li className="text-xs text-muted-foreground">Last state:</li>}
+      {live.user && <LiveBadge who="User" s={live.user} now={now} ended={ended} />}
+      {live.agent && <LiveBadge who="Agent" s={live.agent} now={now} ended={ended} />}
     </ul>
   )
 }

@@ -46,7 +46,7 @@ The SDK sends the session's user and agent states, messages with their latency m
 vg.set_field("plan", "trial")
 ```
 
-Keys match `^[a-z0-9_.-]{1,64}$`; values are strings of at most 256 characters. Later values win. An invalid field is dropped and counted on `vg.dropped_fields`.
+Keys match `^[a-z0-9_.-]{1,64}$`; values are strings of at most 256 characters. Later values win. An invalid field is dropped and counted on `vg.dropped_fields`. A call holds at most 64 fields: VoiceGateway drops new keys past that, and a key the call already has still takes a new value.
 
 ## Fails open
 

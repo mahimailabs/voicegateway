@@ -7,14 +7,16 @@ import AxeBuilder from "@axe-core/playwright"
 const scope = "/org/default/project/default-project/"
 const sdkCall = "spike-room-11"
 
-test("the call drawer shows the SDK's live state and custom fields, accessibly", async ({ page }) => {
+test("the call drawer shows the SDK's custom fields and an ended call's last state, accessibly", async ({ page }) => {
   await page.goto(`${scope}calls/${sdkCall}?range=%221-2000000000%22`)
   const dialog = page.getByRole("dialog")
   const fields = dialog.getByRole("list", { name: "Custom fields" })
   await expect(fields).toBeVisible({ timeout: 15_000 })
   await expect(fields.getByRole("listitem")).toHaveText(["customeracme", "plantrial"])
-  const live = dialog.getByRole("list", { name: "Live state" })
-  await expect(live.getByRole("listitem").first()).toContainText("User listening")
+  // spike-room-11 has ended, so its state is the last one, with its time.
+  const live = dialog.getByRole("list", { name: "Last state" })
+  await expect(live.getByRole("listitem").first()).toContainText("Last state:")
+  await expect(live.getByRole("listitem").nth(1)).toContainText("User listening")
   await expect(live.getByRole("listitem").last()).toContainText("Agent listening")
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
   const results = await new AxeBuilder({ page }).include('[data-slot="sheet-header"]').analyze()
@@ -27,6 +29,7 @@ test("a call without an SDK shows no fields and no live state", async ({ page })
   await expect(dialog.getByRole("heading", { name: "spike-room-10" })).toBeVisible({ timeout: 15_000 })
   await expect(dialog.getByRole("list", { name: "Custom fields" })).toHaveCount(0)
   await expect(dialog.getByRole("list", { name: "Live state" })).toHaveCount(0)
+  await expect(dialog.getByRole("list", { name: "Last state" })).toHaveCount(0)
 })
 
 test("a shared custom field filter is sent as field=key:value and keeps only matching calls", async ({ page }) => {

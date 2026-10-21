@@ -207,7 +207,8 @@ type Call struct {
 	// Recording is the call's latest stored recording, its id and start only; nil when none is
 	// stored.
 	Recording *Recording
-	// Fields are the custom fields an SDK attached to the call; empty when none did.
+	// Fields are the custom fields an SDK attached to the call, at most MaxCallFields; empty when
+	// none did.
 	Fields map[string]string
 }
 
@@ -535,3 +536,7 @@ type RecordingLink struct {
 	StartedAt *time.Time
 	StoredAt  time.Time
 }
+
+// MaxCallFields is the most custom fields one call holds across all its SDK batches (Postgres
+// MergeCallFields); new keys past it are dropped.
+const MaxCallFields = 64
