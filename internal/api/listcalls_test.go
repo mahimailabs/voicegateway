@@ -151,7 +151,19 @@ func TestSummaryRebuildsAfterLateSpan(t *testing.T) {
 	// A span joined while a rebuild is running leaves the call stale for the next sweep.
 	f.append(event.KindAgentTraces, "", turnSpan(2))
 	f.store()
-	stale, err := f.pg.StaleCalls(context.Background(), 10)
+	// The fixture's Postgres is shared by every test in the package, so only this project's stale
+	// calls are this test's.
+	ownStale := func() ([]store.StaleCall, error) {
+		all, err := f.pg.StaleCalls(context.Background(), 1000)
+		var own []store.StaleCall
+		for _, c := range all {
+			if c.ProjectID == f.project {
+				own = append(own, c)
+			}
+		}
+		return own, err
+	}
+	stale, err := ownStale()
 	if err != nil || len(stale) != 1 || stale[0].ID != id {
 		t.Fatalf("stale = %v, %v; want the call", stale, err)
 	}
@@ -160,7 +172,7 @@ func TestSummaryRebuildsAfterLateSpan(t *testing.T) {
 	if err := f.pg.PutSummary(context.Background(), stale[0], store.CallSummary{Models: []string{}, Pipeline: "unknown"}, time.Now()); err != nil {
 		t.Fatal(err)
 	}
-	if again, _ := f.pg.StaleCalls(context.Background(), 10); len(again) != 1 {
+	if again, _ := ownStale(); len(again) != 1 {
 		t.Fatalf("stale after a racing join = %d, want 1", len(again))
 	}
 	f.summarize()
