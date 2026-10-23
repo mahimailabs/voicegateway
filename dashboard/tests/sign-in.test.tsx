@@ -63,3 +63,26 @@ test("retyping clears the error", async () => {
   await userEvent.setup().type(screen.getByLabelText("Password"), "x")
   expect(screen.queryByRole("alert")).toBeNull()
 })
+
+test("show password reveals what was typed, and hides it again", async () => {
+  render(<SignInScreen needsAdmin={false} onSignedIn={vi.fn()} />)
+  const user = userEvent.setup()
+  const password = screen.getByLabelText("Password")
+  expect(password.getAttribute("type")).toBe("password")
+  await user.click(screen.getByRole("button", { name: "Show password" }))
+  expect(password.getAttribute("type")).toBe("text")
+  await user.click(screen.getByRole("button", { name: "Hide password" }))
+  expect(password.getAttribute("type")).toBe("password")
+})
+
+test("before the first admin exists, nobody is told to ask an admin", () => {
+  render(<SignInScreen needsAdmin onSignedIn={vi.fn()} />)
+  expect(screen.queryByRole("button", { name: "Forgot password?" })).toBeNull()
+  expect(screen.queryByText(/Ask an admin/)).toBeNull()
+})
+
+test("forgot password says who sends a reset link", async () => {
+  render(<SignInScreen needsAdmin={false} onSignedIn={vi.fn()} />)
+  await userEvent.setup().click(screen.getByRole("button", { name: "Forgot password?" }))
+  expect((await screen.findByText(/Settings, Members/)).textContent).toContain("24 hours")
+})

@@ -1,8 +1,11 @@
 import { useEffect, useState, type FormEvent } from "react"
+import { WarningCircle } from "@phosphor-icons/react"
+import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui/field"
-import { Input } from "@/components/ui/input"
+import { Spinner } from "@/components/ui/spinner"
+import { AuthShell } from "@/features/auth/auth-shell"
+import { PasswordInput } from "@/features/auth/password-input"
 import { acceptInvitation, lookInvitation, type AcceptResult, type LookResult } from "@/lib/invitation"
 
 export const INVALID = "This invitation is no longer valid. Ask an admin for a new link."
@@ -63,60 +66,53 @@ export function InvitePage({ token, onAccepted }: { token: string; onAccepted: (
   const pending = look?.kind === "pending" ? look.invitation : null
   const reset = pending?.kind === "reset"
   return (
-    <main className="flex min-h-svh items-center justify-center bg-muted p-4">
-      <Card className="w-full max-w-sm">
-        <CardHeader>
-          <CardTitle>{reset ? "Set a new password" : pending ? `Join ${pending.organisationName}` : "VoiceGateway invitation"}</CardTitle>
-          {pending && <CardDescription>{reset ? `For ${pending.email}. Setting it signs you out everywhere else.` : `As ${pending.role} for ${pending.email}.`}</CardDescription>}
-        </CardHeader>
-        <CardContent>
-          {!token && (
-            <p role="alert" className="text-sm text-destructive">
-              {NO_TOKEN}
-            </p>
-          )}
-          {token && look === null && <p className="text-sm text-muted-foreground">Reading the invitation</p>}
-          {look?.kind === "invalid" && (
-            <p role="alert" className="text-sm text-destructive">
-              {INVALID}
-            </p>
-          )}
-          {look?.kind === "failed" && (
-            <p role="alert" className="text-sm text-destructive">
-              VoiceGateway did not answer. Reload to try again.
-            </p>
-          )}
-          {pending && (
-            <form onSubmit={submit}>
-              <FieldGroup>
-                <Field>
-                  <FieldLabel htmlFor="password">{reset ? "New password" : "Password"}</FieldLabel>
-                  <Input
-                    id="password"
-                    type="password"
-                    autoComplete={reset ? "new-password" : "current-password"}
-                    required
-                    value={password}
-                    onChange={(e) => {
-                      setPassword(e.target.value)
-                      setError(null)
-                    }}
-                  />
-                  <FieldDescription>{reset ? "At least 12 characters." : `At least 12 characters. ${EXISTING_ACCOUNT}`}</FieldDescription>
-                </Field>
-                {error && (
-                  <p role="alert" className="text-sm text-destructive">
-                    {error}
-                  </p>
-                )}
-                <Button type="submit" disabled={busy}>
-                  {busy ? "Signing in" : reset ? "Set password" : "Join"}
-                </Button>
-              </FieldGroup>
-            </form>
-          )}
-        </CardContent>
-      </Card>
-    </main>
+    <AuthShell
+      title={reset ? "Set a new password" : pending ? `Join ${pending.organisationName}` : "VoiceGateway invitation"}
+      description={pending ? (reset ? `For ${pending.email}. Setting it signs you out everywhere else.` : `As ${pending.role} for ${pending.email}.`) : undefined}
+    >
+      {!token && <Problem>{NO_TOKEN}</Problem>}
+      {token && look === null && (
+        <p className="flex items-center gap-2 text-sm text-muted-foreground">
+          <Spinner />
+          Reading the invitation
+        </p>
+      )}
+      {look?.kind === "invalid" && <Problem>{INVALID}</Problem>}
+      {look?.kind === "failed" && <Problem>VoiceGateway did not answer. Reload to try again.</Problem>}
+      {pending && (
+        <form onSubmit={submit}>
+          <FieldGroup>
+            <Field>
+              <FieldLabel htmlFor="password">{reset ? "New password" : "Password"}</FieldLabel>
+              <PasswordInput
+                id="password"
+                autoComplete={reset ? "new-password" : "current-password"}
+                describedBy="password-help"
+                value={password}
+                onChange={(v) => {
+                  setPassword(v)
+                  setError(null)
+                }}
+              />
+              <FieldDescription id="password-help">{reset ? "At least 12 characters." : `At least 12 characters. ${EXISTING_ACCOUNT}`}</FieldDescription>
+            </Field>
+            {error && <Problem>{error}</Problem>}
+            <Button type="submit" size="lg" disabled={busy}>
+              {busy && <Spinner />}
+              {busy ? "Signing in" : reset ? "Set password" : "Join"}
+            </Button>
+          </FieldGroup>
+        </form>
+      )}
+    </AuthShell>
+  )
+}
+
+function Problem({ children }: { children: string }) {
+  return (
+    <Alert variant="destructive">
+      <WarningCircle />
+      <AlertDescription>{children}</AlertDescription>
+    </Alert>
   )
 }
