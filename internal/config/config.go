@@ -51,9 +51,36 @@ type Config struct {
 	// API on (phase 06e); nil when unset. The token itself is not kept. Setting it requires
 	// WorkerEndpointsPublicOnly.
 	InstanceTokenSHA256 []byte
+	// Google and GitHub are the OAuth apps of Google and GitHub sign-in (phase 06h, decision 0035);
+	// zero is off. Either needs PublicURL, the base of its callback.
+	Google, GitHub OAuthApp
+	// Auth0 is an Auth0 tenant's application (decision 0036); zero is off. Like Google and GitHub
+	// it needs PublicURL.
+	Auth0 Auth0App
 	// ConsoleDir is the built dashboard web serves (decision 0011); the image sets it. Empty serves
 	// no console, as in development, where the Vite dev server runs it.
 	ConsoleDir string
+}
+
+// OAuthApp is one provider's OAuth app: both set, or neither. The secret is never logged.
+type OAuthApp struct {
+	ClientID, ClientSecret string
+}
+
+// On reports whether the app is configured.
+func (a OAuthApp) On() bool { return a.ClientID != "" }
+
+// Auth0App is an Auth0 application: its tenant's domain with its OAuth app, all three set or
+// none.
+type Auth0App struct {
+	// Domain is the tenant or custom domain, a bare host such as voicegateway.us.auth0.com.
+	Domain string
+	OAuthApp
+}
+
+// Callback is the provider's callback URL for a public URL: the one to register with it exactly.
+func Callback(publicURL, provider string) string {
+	return strings.TrimRight(publicURL, "/") + "/auth/oauth/" + provider + "/callback"
 }
 
 // S3 is any S3-compatible bucket.
@@ -136,6 +163,35 @@ func Load(getenv func(string) string) (Config, error) {
 		}
 	}
 
+	// Each provider's id and secret come as a pair, and its callback is built from the public URL,
+	// which must be https, or http on localhost, for a provider to accept it.
+	for _, p := range []struct {
+		name string
+		app  *OAuthApp
+	}{{"GOOGLE", &c.Google}, {"GITHUB", &c.GitHub}, {"AUTH0", &c.Auth0.OAuthApp}} {
+		id, secret := "VOICEGATEWAY_"+p.name+"_CLIENT_ID", "VOICEGATEWAY_"+p.name+"_CLIENT_SECRET"
+		p.app.ClientID, p.app.ClientSecret = optional(id, ""), optional(secret, "")
+		switch {
+		case p.app.ClientID != "" && p.app.ClientSecret == "":
+			errs = append(errs, fmt.Errorf("%s is set, so %s is required", id, secret))
+		case p.app.ClientID == "" && p.app.ClientSecret != "":
+			errs = append(errs, fmt.Errorf("%s is set, so %s is required", secret, id))
+		case p.app.ClientID != "" && !callbackBase(c.PublicURL):
+			errs = append(errs, fmt.Errorf("%s needs VOICEGATEWAY_PUBLIC_URL with https (or http://localhost), the base of its callback URL", id))
+		}
+	}
+
+	// Auth0 also needs its tenant's domain, a bare host: the endpoints and issuer are built on it.
+	c.Auth0.Domain = optional("VOICEGATEWAY_AUTH0_DOMAIN", "")
+	switch {
+	case c.Auth0.Domain == "" && c.Auth0.ClientID != "":
+		errs = append(errs, errors.New("VOICEGATEWAY_AUTH0_CLIENT_ID is set, so VOICEGATEWAY_AUTH0_DOMAIN is required"))
+	case c.Auth0.Domain != "" && c.Auth0.ClientID == "":
+		errs = append(errs, errors.New("VOICEGATEWAY_AUTH0_DOMAIN is set, so VOICEGATEWAY_AUTH0_CLIENT_ID is required"))
+	case c.Auth0.Domain != "" && !bareHost(c.Auth0.Domain):
+		errs = append(errs, errors.New("VOICEGATEWAY_AUTH0_DOMAIN must be a bare host such as voicegateway.us.auth0.com, without https:// or a path"))
+	}
+
 	c.CloudQuotas, err = strconv.ParseBool(optional("VOICEGATEWAY_CLOUD_QUOTAS", "false"))
 	if err != nil {
 		errs = append(errs, errors.New("VOICEGATEWAY_CLOUD_QUOTAS must be true or false"))
@@ -165,6 +221,22 @@ func Load(getenv func(string) string) (Config, error) {
 		return Config{}, errors.Join(errs...)
 	}
 	return c, nil
+}
+
+// callbackBase reports whether a public URL can be a provider callback's base: https, or http on
+// localhost.
+func callbackBase(raw string) bool {
+	u, err := url.Parse(raw)
+	if err != nil || u.Host == "" {
+		return false
+	}
+	return u.Scheme == "https" || u.Scheme == "http" && u.Hostname() == "localhost"
+}
+
+// bareHost reports whether raw is a host name alone, as an Auth0 domain is.
+func bareHost(raw string) bool {
+	u, err := url.Parse("https://" + raw)
+	return err == nil && u.Host == raw && u.Port() == "" && u.User == nil && u.Path == "" && u.RawQuery == "" && u.Fragment == ""
 }
 
 // Redact returns a connection URL without its password, for logs and preflight output. Query

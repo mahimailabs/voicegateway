@@ -702,7 +702,7 @@ INSERT INTO users (email, password_hash) VALUES ($1, $2) RETURNING id
 
 type CreateUserParams struct {
 	Email        string
-	PasswordHash string
+	PasswordHash pgtype.Text
 }
 
 func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (pgtype.UUID, error) {
@@ -720,7 +720,7 @@ RETURNING id
 
 type CreateUserIfAbsentParams struct {
 	Email        string
-	PasswordHash string
+	PasswordHash pgtype.Text
 }
 
 // A new account from an invite. A parallel accept that created the same email first wins: this
@@ -1243,6 +1243,22 @@ func (q *Queries) HealCall(ctx context.Context, arg HealCallParams) error {
 	return err
 }
 
+const identityOwner = `-- name: IdentityOwner :one
+SELECT user_id FROM identities WHERE provider = $1 AND subject = $2
+`
+
+type IdentityOwnerParams struct {
+	Provider string
+	Subject  string
+}
+
+func (q *Queries) IdentityOwner(ctx context.Context, arg IdentityOwnerParams) (pgtype.UUID, error) {
+	row := q.db.QueryRow(ctx, identityOwner, arg.Provider, arg.Subject)
+	var user_id pgtype.UUID
+	err := row.Scan(&user_id)
+	return user_id, err
+}
+
 const initMediaBackfills = `-- name: InitMediaBackfills :exec
 INSERT INTO issue_media_backfills (organisation_id, project_id)
 SELECT organisation_id, id FROM projects
@@ -1277,6 +1293,29 @@ func (q *Queries) InsertCallRecording(ctx context.Context, arg InsertCallRecordi
 		arg.SizeBytes,
 		arg.StartedAt,
 		arg.StoredAt,
+	)
+	return err
+}
+
+const insertIdentity = `-- name: InsertIdentity :exec
+INSERT INTO identities (provider, subject, user_id, email) VALUES ($1, $2, $3, $4)
+ON CONFLICT (provider, subject) DO NOTHING
+`
+
+type InsertIdentityParams struct {
+	Provider string
+	Subject  string
+	UserID   pgtype.UUID
+	Email    string
+}
+
+// Links a provider subject to an account; a subject already linked keeps its account.
+func (q *Queries) InsertIdentity(ctx context.Context, arg InsertIdentityParams) error {
+	_, err := q.db.Exec(ctx, insertIdentity,
+		arg.Provider,
+		arg.Subject,
+		arg.UserID,
+		arg.Email,
 	)
 	return err
 }
@@ -3402,7 +3441,7 @@ UPDATE users SET password_hash = $1, password_version = password_version + 1 WHE
 `
 
 type SetPasswordParams struct {
-	PasswordHash string
+	PasswordHash pgtype.Text
 	Email        string
 }
 
@@ -3420,7 +3459,7 @@ UPDATE users SET password_hash = $1, password_version = password_version + 1 WHE
 `
 
 type SetPasswordByIDParams struct {
-	PasswordHash string
+	PasswordHash pgtype.Text
 	ID           pgtype.UUID
 }
 
@@ -3464,6 +3503,41 @@ func (q *Queries) SignInAttemptsSince(ctx context.Context, arg SignInAttemptsSin
 	var count int64
 	err := row.Scan(&count)
 	return count, err
+}
+
+const signInMethods = `-- name: SignInMethods :many
+SELECT (u.password_hash IS NOT NULL)::boolean AS has_password, i.provider, i.created_at
+FROM users u LEFT JOIN identities i ON i.user_id = u.id
+WHERE u.id = $1
+ORDER BY i.provider, i.created_at
+`
+
+type SignInMethodsRow struct {
+	HasPassword bool
+	Provider    pgtype.Text
+	CreatedAt   pgtype.Timestamptz
+}
+
+// Whether an account has a password, and its linked providers, for Settings: one row with NULL
+// provider when none is linked, no row for an unknown account.
+func (q *Queries) SignInMethods(ctx context.Context, userID pgtype.UUID) ([]SignInMethodsRow, error) {
+	rows, err := q.db.Query(ctx, signInMethods, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []SignInMethodsRow
+	for rows.Next() {
+		var i SignInMethodsRow
+		if err := rows.Scan(&i.HasPassword, &i.Provider, &i.CreatedAt); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const staleCalls = `-- name: StaleCalls :many
@@ -3594,6 +3668,20 @@ func (q *Queries) TouchCall(ctx context.Context, arg TouchCallParams) error {
 		arg.FirstSeenAt,
 		arg.ID,
 	)
+	return err
+}
+
+const touchIdentity = `-- name: TouchIdentity :exec
+UPDATE identities SET last_used_at = now() WHERE provider = $1 AND subject = $2
+`
+
+type TouchIdentityParams struct {
+	Provider string
+	Subject  string
+}
+
+func (q *Queries) TouchIdentity(ctx context.Context, arg TouchIdentityParams) error {
+	_, err := q.db.Exec(ctx, touchIdentity, arg.Provider, arg.Subject)
 	return err
 }
 
@@ -3812,9 +3900,9 @@ UPDATE users SET password_hash = $1 WHERE id = $2 AND password_hash = $3
 `
 
 type UpdatePasswordHashParams struct {
-	PasswordHash string
+	PasswordHash pgtype.Text
 	ID           pgtype.UUID
-	VerifiedHash string
+	VerifiedHash pgtype.Text
 }
 
 // The same password hashed again with current parameters: not a new password, so password_version
@@ -4269,13 +4357,44 @@ SELECT id, email, password_hash, password_version FROM users WHERE email = $1
 type UserByEmailRow struct {
 	ID              pgtype.UUID
 	Email           string
-	PasswordHash    string
+	PasswordHash    pgtype.Text
 	PasswordVersion int32
 }
 
 func (q *Queries) UserByEmail(ctx context.Context, email string) (UserByEmailRow, error) {
 	row := q.db.QueryRow(ctx, userByEmail, email)
 	var i UserByEmailRow
+	err := row.Scan(
+		&i.ID,
+		&i.Email,
+		&i.PasswordHash,
+		&i.PasswordVersion,
+	)
+	return i, err
+}
+
+const userByIdentity = `-- name: UserByIdentity :one
+SELECT u.id, u.email, u.password_hash, u.password_version
+FROM identities i JOIN users u ON u.id = i.user_id
+WHERE i.provider = $1 AND i.subject = $2
+`
+
+type UserByIdentityParams struct {
+	Provider string
+	Subject  string
+}
+
+type UserByIdentityRow struct {
+	ID              pgtype.UUID
+	Email           string
+	PasswordHash    pgtype.Text
+	PasswordVersion int32
+}
+
+// The account a provider subject is linked to (decision 0035).
+func (q *Queries) UserByIdentity(ctx context.Context, arg UserByIdentityParams) (UserByIdentityRow, error) {
+	row := q.db.QueryRow(ctx, userByIdentity, arg.Provider, arg.Subject)
+	var i UserByIdentityRow
 	err := row.Scan(
 		&i.ID,
 		&i.Email,

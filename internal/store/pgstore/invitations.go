@@ -295,7 +295,7 @@ func (s *Store) AcceptInvitation(ctx context.Context, tokenSHA256 []byte, passwo
 			}
 			return "", store.ErrNotFound
 		}
-		if err := q.SetPasswordByID(ctx, SetPasswordByIDParams{ID: userID, PasswordHash: passwordHash}); err != nil {
+		if err := q.SetPasswordByID(ctx, SetPasswordByIDParams{ID: userID, PasswordHash: hashText(passwordHash)}); err != nil {
 			return "", fmt.Errorf("accept reset: %w", err)
 		}
 	default:
@@ -304,7 +304,7 @@ func (s *Store) AcceptInvitation(ctx context.Context, tokenSHA256 []byte, passwo
 				return "", err
 			}
 		} else {
-			userID, err = q.CreateUserIfAbsent(ctx, CreateUserIfAbsentParams{Email: link.Email, PasswordHash: passwordHash})
+			userID, err = q.CreateUserIfAbsent(ctx, CreateUserIfAbsentParams{Email: link.Email, PasswordHash: hashText(passwordHash)})
 			if errors.Is(err, pgx.ErrNoRows) {
 				return "", ErrUserExists
 			}

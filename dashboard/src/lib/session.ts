@@ -3,7 +3,13 @@
 
 import { useSyncExternalStore } from "react"
 
-export type AccountProfile = { name: string | null; revision: number }
+export type AccountProfile = {
+  name: string | null
+  revision: number
+  // How the account signs in (phase 06h): GET /auth/profile has them; a save's answer does not.
+  hasPassword?: boolean
+  identities?: { provider: "google" | "github" | "auth0"; linkedAt: string }[]
+}
 
 export type Session = { email: string; profile?: AccountProfile; organisations: { id: string; role: string }[] }
 

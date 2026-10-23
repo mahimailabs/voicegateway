@@ -37,6 +37,8 @@ var (
 	ErrOtherOrganisations = store.ErrOtherOrganisations
 	// ErrWrongPassword means an existing account's password did not match.
 	ErrWrongPassword = store.ErrWrongPassword
+	// ErrEmailMismatch means a provider proved emails, none of them the invited one.
+	ErrEmailMismatch = store.ErrEmailMismatch
 )
 
 // TooManyAttempts is sign-in's limit, reached through accept: try again after Wait.
@@ -392,6 +394,42 @@ func (s *Service) Accept(ctx context.Context, token, password string, limit Sign
 	return p, nil
 }
 
+// AcceptVerified uses an invite link for someone a provider proved owns email (phase 06h): it must
+// be the invited email. It joins the account with that email, or creates one with no password,
+// which only a provider or a later reset link signs in. tokenSHA256 is the link's token hashed, as
+// sign-in kept it across the provider's redirect. A reset link is ErrInvalidLink: it sets a
+// password, which a provider cannot. Errors: ErrInvalidLink, and ErrEmailMismatch.
+func (s *Service) AcceptVerified(ctx context.Context, tokenSHA256 []byte, email string) (store.Principal, error) {
+	link, err := s.Store.OpenInvitation(ctx, tokenSHA256)
+	if errors.Is(err, store.ErrNotFound) {
+		return store.Principal{}, ErrInvalidLink
+	}
+	if err != nil {
+		return store.Principal{}, err
+	}
+	if link.Kind != "invite" {
+		return store.Principal{}, ErrInvalidLink
+	}
+	if !strings.EqualFold(email, link.Email) {
+		return store.Principal{}, ErrEmailMismatch
+	}
+	// Two tries at most: a parallel accept may create the account between the read and the insert.
+	for range 2 {
+		u, err := s.Store.UserByEmail(ctx, link.Email)
+		switch {
+		case err == nil:
+			return s.use(ctx, link, tokenSHA256, "", u.ID)
+		case !errors.Is(err, store.ErrNotFound):
+			return store.Principal{}, err
+		}
+		p, err := s.use(ctx, link, tokenSHA256, "", "")
+		if !errors.Is(err, store.ErrUserExists) {
+			return p, err
+		}
+	}
+	return store.Principal{}, ErrInvalidLink
+}
+
 // forget clears the reserved tries. The link is already decided, so a failure only logs.
 func (s *Service) forget(ctx context.Context, success func(context.Context) error, id string) {
 	if err := success(ctx); err != nil {
@@ -405,6 +443,10 @@ func (s *Service) forget(ctx context.Context, success func(context.Context) erro
 func (s *Service) acceptInvite(ctx context.Context, link store.OpenInvitation, sum []byte, password string, retry bool) (store.Principal, error) {
 	u, err := s.Store.UserByEmail(ctx, link.Email)
 	switch {
+	case err == nil && u.PasswordHash == "":
+		// An account made through Google or GitHub (decision 0035) has no password to prove; it
+		// joins with its provider instead.
+		return store.Principal{}, ErrWrongPassword
 	case err == nil:
 		ok, err := s.Verify(ctx, password, u.PasswordHash)
 		if err != nil {

@@ -94,6 +94,15 @@ type CallSummary struct {
 	ComputedAt     pgtype.Timestamptz
 }
 
+type Identity struct {
+	Provider   string
+	Subject    string
+	UserID     pgtype.UUID
+	Email      string
+	CreatedAt  pgtype.Timestamptz
+	LastUsedAt pgtype.Timestamptz
+}
+
 type Invitation struct {
 	ID             pgtype.UUID
 	Kind           string
@@ -329,7 +338,7 @@ type TelemetryAdmission struct {
 type User struct {
 	ID              pgtype.UUID
 	Email           string
-	PasswordHash    string
+	PasswordHash    pgtype.Text
 	CreatedAt       pgtype.Timestamptz
 	PasswordVersion int32
 	DisplayName     pgtype.Text

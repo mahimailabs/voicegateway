@@ -1046,3 +1046,28 @@ RETURNING fields;
 -- A project's new LiveKit key and sealed secret; its URL never changes.
 UPDATE projects SET livekit_api_key = @livekit_api_key, livekit_api_secret_sealed = @livekit_api_secret_sealed
 WHERE organisation_id = @organisation_id AND id = @id;
+
+-- name: UserByIdentity :one
+-- The account a provider subject is linked to (decision 0035).
+SELECT u.id, u.email, u.password_hash, u.password_version
+FROM identities i JOIN users u ON u.id = i.user_id
+WHERE i.provider = @provider AND i.subject = @subject;
+
+-- name: InsertIdentity :exec
+-- Links a provider subject to an account; a subject already linked keeps its account.
+INSERT INTO identities (provider, subject, user_id, email) VALUES (@provider, @subject, @user_id, @email)
+ON CONFLICT (provider, subject) DO NOTHING;
+
+-- name: IdentityOwner :one
+SELECT user_id FROM identities WHERE provider = @provider AND subject = @subject;
+
+-- name: TouchIdentity :exec
+UPDATE identities SET last_used_at = now() WHERE provider = @provider AND subject = @subject;
+
+-- name: SignInMethods :many
+-- Whether an account has a password, and its linked providers, for Settings: one row with NULL
+-- provider when none is linked, no row for an unknown account.
+SELECT (u.password_hash IS NOT NULL)::boolean AS has_password, i.provider, i.created_at
+FROM users u LEFT JOIN identities i ON i.user_id = u.id
+WHERE u.id = @user_id
+ORDER BY i.provider, i.created_at;

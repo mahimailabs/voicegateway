@@ -7,6 +7,8 @@ A fresh session reads this to know where the project stands.
 
 ## Current Phase
 
+Google and GitHub sign-in (2026-10-23, phase 06h, decision 0035): off unless an operator sets a provider's client id and secret. Postgres 00022 adds `identities` and makes `users.password_hash` nullable; `internal/oauth` runs the PKCE code flow through `golang.org/x/oauth2`, with Google's ID token verified by `coreos/go-oidc/v3` and GitHub's primary verified email from its API. A provider signs in only an account linked to its subject, an account with its verified email, or the account an open invitation names; nothing else is created. The sign-in and invite pages show the buttons, Settings shows the password and linked accounts. Checks 1 to 9 pass in a cloud copy against Postgres 16.15; check 10 is a Go end-to-end test through a test Google issuer, since `make dashboard-e2e` runs on the mock API. Decision 0036 adds Auth0 beside them (`VOICEGATEWAY_AUTH0_DOMAIN`, client id and secret), verified with go-oidc like Google and stored as `auth0` by Auth0's user id; check 11 passes. Cloud uses Auth0 and still needs its tenant, the tenant's Google and GitHub connections, and the secrets on the host.
+
 Live operations (2026-10-20): sampled refresh and permission-loss handling merged in #429,
 project-scoped pushed notifications in #430, and real container resource collection in #431
 (81d978ef97ce6051f5753b92e4be1a67243f30ac). Native source, stale/disconnect/recovery,

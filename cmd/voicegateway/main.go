@@ -80,6 +80,11 @@ func root() *cobra.Command {
 				if err != nil {
 					return err
 				}
+				for _, line := range app.SignInProviders(c) {
+					if _, err := fmt.Fprintln(cmd.OutOrStdout(), line); err != nil {
+						return err
+					}
+				}
 				if !ok {
 					return errChecksFailed
 				}

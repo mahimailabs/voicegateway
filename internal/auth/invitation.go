@@ -18,6 +18,8 @@ import (
 type Links interface {
 	Look(ctx context.Context, token string) (store.PendingLink, error)
 	Accept(ctx context.Context, token, password string, limit func(ctx context.Context, email string) (success func(context.Context) error, wait time.Duration, err error)) (store.Principal, error)
+	// AcceptVerified uses an invite link, by its token's SHA-256, for an email a provider verified.
+	AcceptVerified(ctx context.Context, tokenSHA256 []byte, email string) (store.Principal, error)
 }
 
 // codeInvitationInvalid is the one answer for an unknown, accepted, revoked or expired link.
