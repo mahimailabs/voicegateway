@@ -147,7 +147,8 @@ function AccountName() {
     mutationFn: () => saveAccountProfile(name, edit?.revision ?? read.data!.revision),
     onSuccess: async (profile) => {
       await client.cancelQueries({ queryKey: key, exact: true })
-      client.setQueryData<AccountProfile>(key, (prior) => prior && prior.revision > profile.revision ? prior : profile)
+      // A save answers the editable fields only; how the account signs in stays as read.
+      client.setQueryData<AccountProfile>(key, (prior) => prior && prior.revision > profile.revision ? prior : { ...prior, ...profile })
       setEdit(null)
       toast("Profile saved")
     },
@@ -171,6 +172,40 @@ function AccountName() {
   </div>} />
 }
 
+const PROVIDER_NAMES = { google: "Google", github: "GitHub", auth0: "Auth0" } as const
+
+// How the account signs in (phase 06h): its password, if any, and the providers linked to it.
+// Read only; a reset link from an admin is the way to set a first password.
+function SignInMethods() {
+  const session = useSession()
+  // The same read as the name above, so the page asks once.
+  const read = useQuery({ queryKey: ["account-profile", session?.email], queryFn: ({ signal }) => readAccountProfile(signal), enabled: !!session, staleTime: 15_000, retry: false })
+  if (!session) return null
+  const linked = read.data?.identities ?? []
+  return (
+    <Group label="Sign-in">
+      <Row
+        title="Password"
+        value={read.isPending ? <Muted>Loading</Muted> : read.isError || read.data.hasPassword === undefined ? <Muted>Could not be read</Muted> : read.data.hasPassword ? "Set" : <Muted>No password set</Muted>}
+      />
+      <Row
+        title="Linked accounts"
+        description="Google, GitHub or Auth0 accounts that sign you in."
+        value={
+          read.isPending ? <Muted>Loading</Muted> : read.isError ? <Muted>Could not be read</Muted> : linked.length === 0 ? <Muted>None</Muted> : (
+            <div className="flex flex-wrap gap-2">
+              {linked.map((i) => (
+                <Badge key={i.provider} variant="secondary">{PROVIDER_NAMES[i.provider]}</Badge>
+              ))}
+            </div>
+          )
+        }
+        last
+      />
+    </Group>
+  )
+}
+
 export function Account() {
   const { theme, set } = useTheme()
   const session = useSession()
@@ -184,6 +219,7 @@ export function Account() {
         <Row title="Email" value={email ?? <NotSet />} />
         <Row title="Role" description={`Your role across ${org().name}.`} value={role ?? <Muted>Not a member</Muted>} last />
       </Group>
+      <SignInMethods />
       <Group label="Appearance" footer="Kept in this browser.">
         <Row
           title="Theme"

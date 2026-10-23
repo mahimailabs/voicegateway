@@ -6,6 +6,7 @@ import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui
 import { Spinner } from "@/components/ui/spinner"
 import { AuthShell } from "@/features/auth/auth-shell"
 import { PasswordInput } from "@/features/auth/password-input"
+import { ProviderButtons } from "@/features/auth/provider-buttons"
 import { acceptInvitation, lookInvitation, type AcceptResult, type LookResult } from "@/lib/invitation"
 
 export const INVALID = "This invitation is no longer valid. Ask an admin for a new link."
@@ -82,6 +83,7 @@ export function InvitePage({ token, onAccepted }: { token: string; onAccepted: (
       {pending && (
         <form onSubmit={submit}>
           <FieldGroup>
+            {!reset && <ProviderButtons invitationToken={token} onError={setError} />}
             <Field>
               <FieldLabel htmlFor="password">{reset ? "New password" : "Password"}</FieldLabel>
               <PasswordInput

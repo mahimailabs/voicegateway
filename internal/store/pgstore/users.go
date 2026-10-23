@@ -44,7 +44,7 @@ func (s *Store) AddUser(ctx context.Context, email, passwordHash, organisationID
 	if !ok {
 		return "", fmt.Errorf("organisation %s: %w", organisationID, store.ErrNotFound)
 	}
-	id, err := q.CreateUser(ctx, CreateUserParams{Email: foldEmail(email), PasswordHash: passwordHash})
+	id, err := q.CreateUser(ctx, CreateUserParams{Email: foldEmail(email), PasswordHash: hashText(passwordHash)})
 	if err != nil {
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == uniqueViolation {
@@ -70,7 +70,7 @@ func (s *Store) UserByEmail(ctx context.Context, email string) (store.User, erro
 	if err != nil {
 		return store.User{}, fmt.Errorf("user by email: %w", err)
 	}
-	return store.User{ID: row.ID.String(), Email: row.Email, PasswordHash: row.PasswordHash, PasswordVersion: int(row.PasswordVersion)}, nil
+	return store.User{ID: row.ID.String(), Email: row.Email, PasswordHash: row.PasswordHash.String, PasswordVersion: int(row.PasswordVersion)}, nil
 }
 
 // Principal loads a user's email, password version and organisation roles in one query, or
@@ -251,7 +251,7 @@ func (s *Store) UpdatePasswordHash(ctx context.Context, userID, verifiedHash, pa
 	if err != nil {
 		return false, fmt.Errorf("update password hash: %w", err)
 	}
-	n, err := s.q.UpdatePasswordHash(ctx, UpdatePasswordHashParams{ID: id, PasswordHash: passwordHash, VerifiedHash: verifiedHash})
+	n, err := s.q.UpdatePasswordHash(ctx, UpdatePasswordHashParams{ID: id, PasswordHash: hashText(passwordHash), VerifiedHash: hashText(verifiedHash)})
 	if err != nil {
 		return false, fmt.Errorf("update password hash: %w", err)
 	}
@@ -261,7 +261,7 @@ func (s *Store) UpdatePasswordHash(ctx context.Context, userID, verifiedHash, pa
 // SetPassword replaces an account's password and moves its password_version on, which signs the
 // user out of every session. An unknown email is store.ErrNotFound.
 func (s *Store) SetPassword(ctx context.Context, email, passwordHash string) error {
-	n, err := s.q.SetPassword(ctx, SetPasswordParams{Email: foldEmail(email), PasswordHash: passwordHash})
+	n, err := s.q.SetPassword(ctx, SetPasswordParams{Email: foldEmail(email), PasswordHash: hashText(passwordHash)})
 	if err != nil {
 		return fmt.Errorf("set password: %w", err)
 	}
@@ -353,3 +353,9 @@ func (s *Store) changeMember(ctx context.Context, organisationID, userID string,
 }
 
 func foldEmail(email string) string { return strings.ToLower(strings.TrimSpace(email)) }
+
+// hashText is a password hash as stored: the empty string, an account with no password (decision
+// 0035), is NULL. A NULL hash reads back as "", which no password matches.
+func hashText(hash string) pgtype.Text {
+	return pgtype.Text{String: hash, Valid: hash != ""}
+}

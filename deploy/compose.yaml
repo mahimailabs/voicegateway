@@ -20,6 +20,18 @@ x-voicegateway-env: &voicegateway-env
   # nothing, and Settings shows each link to copy.
   VOICEGATEWAY_SMTP_URL: ${VOICEGATEWAY_SMTP_URL:-}
   VOICEGATEWAY_SMTP_FROM: ${VOICEGATEWAY_SMTP_FROM:-}
+  # Google and GitHub sign-in (decision 0035): each on when its client id and secret are both set,
+  # off when both are empty. Needs VOICEGATEWAY_PUBLIC_URL, the base of the callback URL that
+  # `voicegateway preflight` prints.
+  VOICEGATEWAY_GOOGLE_CLIENT_ID: ${VOICEGATEWAY_GOOGLE_CLIENT_ID:-}
+  VOICEGATEWAY_GOOGLE_CLIENT_SECRET: ${VOICEGATEWAY_GOOGLE_CLIENT_SECRET:-}
+  VOICEGATEWAY_GITHUB_CLIENT_ID: ${VOICEGATEWAY_GITHUB_CLIENT_ID:-}
+  VOICEGATEWAY_GITHUB_CLIENT_SECRET: ${VOICEGATEWAY_GITHUB_CLIENT_SECRET:-}
+  # Auth0 sign-in (decision 0036): on when the tenant's domain (a bare host such as
+  # voicegateway.us.auth0.com), client id and secret are all set.
+  VOICEGATEWAY_AUTH0_DOMAIN: ${VOICEGATEWAY_AUTH0_DOMAIN:-}
+  VOICEGATEWAY_AUTH0_CLIENT_ID: ${VOICEGATEWAY_AUTH0_CLIENT_ID:-}
+  VOICEGATEWAY_AUTH0_CLIENT_SECRET: ${VOICEGATEWAY_AUTH0_CLIENT_SECRET:-}
   # Turns on the instance API (/api/v1/instance, ee/), for an operator's program that creates
   # organisations: at least 32 characters, and needs VOICEGATEWAY_PUBLIC_URL and
   # VOICEGATEWAY_WORKER_ENDPOINTS_PUBLIC_ONLY=true (every role refuses to start without it). Empty

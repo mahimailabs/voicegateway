@@ -354,6 +354,25 @@
     "exclusion": "Accepting invitation and reset links, from web's /auth routes (decision 0027, phase 06d); not part of the read contract."
   },
   {
+    "file": "dashboard/src/lib/providers.ts",
+    "fixtures": [],
+    "assets": [
+      "/auth/providers",
+      "/auth/oauth/google/start",
+      "/auth/oauth/github/start",
+      "/auth/oauth/auth0/start"
+    ],
+    "browserStorage": false,
+    "operations": [],
+    "assetNotes": {
+      "/auth/providers": "Which Google, GitHub and Auth0 sign-in buttons to show (phase 06h, decision 0036); not a console read.",
+      "/auth/oauth/google/start": "Starts a Google sign-in and answers Google's URL (phase 06h); not a console read.",
+      "/auth/oauth/github/start": "Starts a GitHub sign-in and answers GitHub's URL (phase 06h); not a console read.",
+      "/auth/oauth/auth0/start": "Starts an Auth0 sign-in and answers the tenant's URL (decision 0036); not a console read."
+    },
+    "exclusion": "Google, GitHub and Auth0 sign-in, from web's /auth routes (decisions 0035 and 0036, phase 06h); not part of the read contract."
+  },
+  {
     "file": "dashboard/src/lib/session.ts",
     "fixtures": [],
     "assets": [

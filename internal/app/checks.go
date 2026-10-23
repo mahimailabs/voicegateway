@@ -97,3 +97,21 @@ func redactErr(err error, raw string) error {
 	}
 	return err
 }
+
+// SignInProviders are preflight's lines on Google, GitHub and Auth0 sign-in (phase 06h, decision
+// 0036): each provider on, with the callback URL to register with it, or off. Only whether each is
+// set, never a secret.
+func SignInProviders(c config.Config) []string {
+	lines := make([]string, 0, 3)
+	for _, p := range []struct {
+		name, label string
+		app         config.OAuthApp
+	}{{"google", "Google", c.Google}, {"github", "GitHub", c.GitHub}, {"auth0", "Auth0", c.Auth0.OAuthApp}} {
+		if p.app.On() {
+			lines = append(lines, fmt.Sprintf("ON   %-10s sign-in; callback URL %s", p.label, config.Callback(c.PublicURL, p.name)))
+		} else {
+			lines = append(lines, fmt.Sprintf("OFF  %-10s sign-in", p.label))
+		}
+	}
+	return lines
+}

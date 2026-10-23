@@ -174,3 +174,98 @@ func TestSharedInstanceNeedsPublicOnly(t *testing.T) {
 		t.Errorf("Load() with an unparseable flag = %v", err)
 	}
 }
+
+// Phase 06h acceptance check 2: a provider's id and secret come as a pair, and need a public URL a
+// provider can call back.
+func TestSignInProviders(t *testing.T) {
+	const public = "https://vg.example"
+	tests := []struct {
+		name    string
+		env     map[string]string
+		wantErr string
+	}{
+		{name: "google id alone", env: map[string]string{"VOICEGATEWAY_PUBLIC_URL": public, "VOICEGATEWAY_GOOGLE_CLIENT_ID": "id"}, wantErr: "VOICEGATEWAY_GOOGLE_CLIENT_SECRET is required"},
+		{name: "google secret alone", env: map[string]string{"VOICEGATEWAY_PUBLIC_URL": public, "VOICEGATEWAY_GOOGLE_CLIENT_SECRET": "gs-secret"}, wantErr: "VOICEGATEWAY_GOOGLE_CLIENT_ID is required"},
+		{name: "github id alone", env: map[string]string{"VOICEGATEWAY_PUBLIC_URL": public, "VOICEGATEWAY_GITHUB_CLIENT_ID": "id"}, wantErr: "VOICEGATEWAY_GITHUB_CLIENT_SECRET is required"},
+		{name: "github secret alone", env: map[string]string{"VOICEGATEWAY_PUBLIC_URL": public, "VOICEGATEWAY_GITHUB_CLIENT_SECRET": "gh-secret"}, wantErr: "VOICEGATEWAY_GITHUB_CLIENT_ID is required"},
+		{name: "no public URL", env: map[string]string{"VOICEGATEWAY_GITHUB_CLIENT_ID": "id", "VOICEGATEWAY_GITHUB_CLIENT_SECRET": "gh-secret"}, wantErr: "needs VOICEGATEWAY_PUBLIC_URL"},
+		{name: "plain http away from localhost", env: map[string]string{"VOICEGATEWAY_PUBLIC_URL": "http://vg.example", "VOICEGATEWAY_GOOGLE_CLIENT_ID": "id", "VOICEGATEWAY_GOOGLE_CLIENT_SECRET": "gs-secret"}, wantErr: "needs VOICEGATEWAY_PUBLIC_URL"},
+		{name: "http on localhost", env: map[string]string{"VOICEGATEWAY_PUBLIC_URL": "http://localhost:8080", "VOICEGATEWAY_GOOGLE_CLIENT_ID": "id", "VOICEGATEWAY_GOOGLE_CLIENT_SECRET": "gs-secret"}},
+		{name: "both on", env: map[string]string{"VOICEGATEWAY_PUBLIC_URL": public, "VOICEGATEWAY_GOOGLE_CLIENT_ID": "id", "VOICEGATEWAY_GOOGLE_CLIENT_SECRET": "gs-secret", "VOICEGATEWAY_GITHUB_CLIENT_ID": "id2", "VOICEGATEWAY_GITHUB_CLIENT_SECRET": "gh-secret"}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			c, err := Load(env(tc.env))
+			if tc.wantErr == "" {
+				if err != nil {
+					t.Fatalf("Load: %v", err)
+				}
+				if !c.Google.On() {
+					t.Fatal("Google is off")
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+				t.Fatalf("Load err = %v, want %q", err, tc.wantErr)
+			}
+			for _, secret := range []string{"gs-secret", "gh-secret"} {
+				if strings.Contains(err.Error(), secret) {
+					t.Fatalf("the error echoes a client secret: %v", err)
+				}
+			}
+		})
+	}
+	if c, err := Load(env(nil)); err != nil || c.Google.On() || c.GitHub.On() || c.Auth0.On() {
+		t.Fatalf("no settings: providers on or error %v", err)
+	}
+	if got := Callback("https://vg.example/", "github"); got != "https://vg.example/auth/oauth/github/callback" {
+		t.Fatalf("Callback = %s", got)
+	}
+}
+
+// Decision 0036: Auth0 takes its tenant's domain, a bare host, with its id and secret.
+func TestAuth0Settings(t *testing.T) {
+	const public = "https://vg.example"
+	app := map[string]string{"VOICEGATEWAY_PUBLIC_URL": public, "VOICEGATEWAY_AUTH0_CLIENT_ID": "id", "VOICEGATEWAY_AUTH0_CLIENT_SECRET": "a0-secret"}
+	with := func(extra map[string]string) map[string]string {
+		m := map[string]string{}
+		for k, v := range app {
+			m[k] = v
+		}
+		for k, v := range extra {
+			m[k] = v
+		}
+		return m
+	}
+	tests := []struct {
+		name    string
+		env     map[string]string
+		wantErr string
+	}{
+		{name: "tenant domain", env: with(map[string]string{"VOICEGATEWAY_AUTH0_DOMAIN": "voicegateway.us.auth0.com"})},
+		{name: "custom domain", env: with(map[string]string{"VOICEGATEWAY_AUTH0_DOMAIN": "login.voicegateway.dev"})},
+		{name: "no domain", env: app, wantErr: "VOICEGATEWAY_AUTH0_DOMAIN is required"},
+		{name: "domain alone", env: map[string]string{"VOICEGATEWAY_PUBLIC_URL": public, "VOICEGATEWAY_AUTH0_DOMAIN": "voicegateway.us.auth0.com"}, wantErr: "VOICEGATEWAY_AUTH0_CLIENT_ID is required"},
+		{name: "secret missing", env: map[string]string{"VOICEGATEWAY_PUBLIC_URL": public, "VOICEGATEWAY_AUTH0_DOMAIN": "voicegateway.us.auth0.com", "VOICEGATEWAY_AUTH0_CLIENT_ID": "id"}, wantErr: "VOICEGATEWAY_AUTH0_CLIENT_SECRET is required"},
+		{name: "domain with scheme", env: with(map[string]string{"VOICEGATEWAY_AUTH0_DOMAIN": "https://voicegateway.us.auth0.com"}), wantErr: "bare host"},
+		{name: "domain with path", env: with(map[string]string{"VOICEGATEWAY_AUTH0_DOMAIN": "voicegateway.us.auth0.com/"}), wantErr: "bare host"},
+		{name: "plain http public URL", env: with(map[string]string{"VOICEGATEWAY_AUTH0_DOMAIN": "voicegateway.us.auth0.com", "VOICEGATEWAY_PUBLIC_URL": "http://vg.example"}), wantErr: "needs VOICEGATEWAY_PUBLIC_URL"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			c, err := Load(env(tc.env))
+			if tc.wantErr == "" {
+				if err != nil || !c.Auth0.On() || c.Auth0.Domain != tc.env["VOICEGATEWAY_AUTH0_DOMAIN"] {
+					t.Fatalf("Load = %+v, %v; want Auth0 on", c.Auth0.Domain, err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+				t.Fatalf("Load err = %v, want %q", err, tc.wantErr)
+			}
+			if strings.Contains(err.Error(), "a0-secret") {
+				t.Fatalf("the error echoes the client secret: %v", err)
+			}
+		})
+	}
+}

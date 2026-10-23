@@ -462,6 +462,18 @@ type PendingLink struct {
 // ErrUserExists means an account with that email already exists.
 var ErrUserExists = errors.New("a user with that email exists")
 
+// ErrEmailMismatch means a provider proved emails, none of them the one an invitation is for.
+var ErrEmailMismatch = errors.New("the verified email is not the invited one")
+
+// Identity is a provider linked to an account (decision 0035): google or github, and when.
+type Identity struct {
+	Provider string
+	LinkedAt time.Time
+}
+
+// ErrIdentityLinked means a provider identity is linked to another account (decision 0035).
+var ErrIdentityLinked = errors.New("the provider identity is linked to another account")
+
 // Invitation is an invitation or a password reset link as an admin lists it: never its token.
 // Role is nil for a reset; InvitedBy is the inviter's email, nil when unknown or the instance API.
 type Invitation struct {

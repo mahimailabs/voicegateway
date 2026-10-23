@@ -76,6 +76,10 @@ type Service struct {
 	// InstanceTokenSHA256 is the SHA-256 of VOICEGATEWAY_INSTANCE_TOKEN (phase 06e); nil when it is
 	// unset. A Bearer equal to the token is the instance principal, which names no user.
 	InstanceTokenSHA256 []byte
+	// Providers are the configured Google and GitHub sign-ins by name (phase 06h); a missing name
+	// is off. Identities stores their links, set whenever Providers is.
+	Providers  map[string]Provider
+	Identities Identities
 	// Embeds mints and checks embed tokens (decision 0034); nil refuses every embed token.
 	Embeds *EmbedTokens
 	Log    *slog.Logger
@@ -157,6 +161,9 @@ func (s *Service) Routes() http.Handler {
 	mux.HandleFunc("GET /auth/session", s.session)
 	mux.HandleFunc("GET /auth/profile", s.profile)
 	mux.HandleFunc("PUT /auth/profile", s.updateProfile)
+	mux.HandleFunc("GET /auth/providers", s.providers)
+	mux.HandleFunc("GET /auth/oauth/{provider}/start", s.oauthStart)
+	mux.HandleFunc("GET /auth/oauth/{provider}/callback", s.oauthCallback)
 	if s.Links != nil {
 		mux.Handle("GET /auth/invitation", LinkHeaders(http.HandlerFunc(s.invitation)))
 		mux.Handle("POST /auth/invitation/accept", LinkHeaders(http.HandlerFunc(s.acceptInvitation)))
@@ -217,7 +224,9 @@ func (s *Service) signIn(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	hash := u.PasswordHash
-	if !known {
+	// An account with no password (phase 06h) is compared against the dummy hash, so it takes as
+	// long as a wrong password and answers the same.
+	if !known || hash == "" {
 		if hash, err = dummyHash(); err != nil {
 			s.fail(w, err)
 			return
@@ -228,7 +237,7 @@ func (s *Service) signIn(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, err)
 		return
 	}
-	if !known || !ok {
+	if !known || u.PasswordHash == "" || !ok {
 		// The reserved attempt stays counted.
 		writeError(w, http.StatusUnauthorized, "unauthenticated", "email or password is wrong")
 		return

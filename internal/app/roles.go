@@ -30,6 +30,7 @@ import (
 	"github.com/mahimailabs/voicegateway/internal/join"
 	"github.com/mahimailabs/voicegateway/internal/mailer"
 	"github.com/mahimailabs/voicegateway/internal/mcp"
+	"github.com/mahimailabs/voicegateway/internal/oauth"
 	"github.com/mahimailabs/voicegateway/internal/obs"
 	"github.com/mahimailabs/voicegateway/internal/scrape"
 	"github.com/mahimailabs/voicegateway/internal/seal"
@@ -117,6 +118,7 @@ func Web(ctx context.Context, c config.Config, log *slog.Logger) error {
 		PublicHTTPS: strings.HasPrefix(strings.ToLower(c.PublicURL), "https://"),
 		PublicURL:   c.PublicURL, Links: links,
 		InstanceTokenSHA256: c.InstanceTokenSHA256, Embeds: embeds,
+		Providers: signInProviders(c), Identities: projects,
 		Log: log, Now: time.Now,
 	}
 	// The instance API (phase 06e, ee/instance) is on only with VOICEGATEWAY_INSTANCE_TOKEN.
@@ -467,4 +469,20 @@ func handlePost(mux *http.ServeMux, routes map[string]http.Handler) {
 func postOnly(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Allow", http.MethodPost)
 	http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
+}
+
+// signInProviders are the Google, GitHub and Auth0 sign-ins configuration turns on (phase 06h,
+// decision 0036); config has already refused a half-set app or a missing public URL.
+func signInProviders(c config.Config) map[string]auth.Provider {
+	on := map[string]auth.Provider{}
+	if c.Google.On() {
+		on["google"] = oauth.NewGoogle(oauth.Config{ClientID: c.Google.ClientID, ClientSecret: c.Google.ClientSecret, RedirectURL: config.Callback(c.PublicURL, "google")}, nil)
+	}
+	if c.GitHub.On() {
+		on["github"] = oauth.NewGitHub(oauth.Config{ClientID: c.GitHub.ClientID, ClientSecret: c.GitHub.ClientSecret, RedirectURL: config.Callback(c.PublicURL, "github")}, nil)
+	}
+	if c.Auth0.On() {
+		on["auth0"] = oauth.NewAuth0(c.Auth0.Domain, oauth.Config{ClientID: c.Auth0.ClientID, ClientSecret: c.Auth0.ClientSecret, RedirectURL: config.Callback(c.PublicURL, "auth0")}, nil)
+	}
+	return on
 }

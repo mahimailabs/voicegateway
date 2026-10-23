@@ -9,6 +9,8 @@ import { Popover, PopoverContent, PopoverDescription, PopoverHeader, PopoverTitl
 import { Spinner } from "@/components/ui/spinner"
 import { AuthShell } from "@/features/auth/auth-shell"
 import { PasswordInput } from "@/features/auth/password-input"
+import { ProviderButtons } from "@/features/auth/provider-buttons"
+import { PROVIDER_REFUSED, readProviderRefusal } from "@/lib/providers"
 import { signIn, type SignInResult } from "@/lib/session"
 
 // The command that creates an install's first admin (decision 0027). There is no open sign-up.
@@ -35,7 +37,8 @@ function message(r: SignInResult): string | null {
 export function SignInScreen({ needsAdmin, onSignedIn }: { needsAdmin: boolean; onSignedIn: () => void }) {
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
-  const [error, setError] = useState<string | null>(null)
+  // A refused Google or GitHub sign-in lands here with ?error=oauth_refused, read once.
+  const [error, setError] = useState<string | null>(() => (readProviderRefusal() ? PROVIDER_REFUSED : null))
   const [busy, setBusy] = useState(false)
 
   async function submit(e: FormEvent) {
@@ -59,6 +62,7 @@ export function SignInScreen({ needsAdmin, onSignedIn }: { needsAdmin: boolean; 
       {needsAdmin && <CopyCommand text={FIRST_ADMIN_COMMAND} label="First admin command" />}
       <form onSubmit={submit}>
         <FieldGroup>
+          {!needsAdmin && <ProviderButtons onError={setError} />}
           <Field>
             <FieldLabel htmlFor="email">Email</FieldLabel>
             <Input

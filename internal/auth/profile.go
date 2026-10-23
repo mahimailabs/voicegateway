@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"time"
 	"unicode/utf8"
 
 	"github.com/mahimailabs/voicegateway/internal/store"
@@ -27,7 +28,33 @@ func (s *Service) profile(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, profile)
+	if s.Identities == nil {
+		writeJSON(w, http.StatusOK, profile)
+		return
+	}
+	// Settings shows how the account signs in (phase 06h): its password, if any, and linked providers.
+	hasPassword, ids, err := s.Identities.SignInMethods(r.Context(), p.UserID)
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	body := profileBody{AccountProfile: profile, HasPassword: hasPassword, Identities: make([]identityBody, 0, len(ids))}
+	for _, id := range ids {
+		body.Identities = append(body.Identities, identityBody{Provider: id.Provider, LinkedAt: id.LinkedAt.UTC().Format(time.RFC3339)})
+	}
+	writeJSON(w, http.StatusOK, body)
+}
+
+// profileBody is GET /auth/profile: the editable profile, and how the account signs in.
+type profileBody struct {
+	store.AccountProfile
+	HasPassword bool           `json:"hasPassword"`
+	Identities  []identityBody `json:"identities"`
+}
+
+type identityBody struct {
+	Provider string `json:"provider"`
+	LinkedAt string `json:"linkedAt"`
 }
 
 func (s *Service) updateProfile(w http.ResponseWriter, r *http.Request) {

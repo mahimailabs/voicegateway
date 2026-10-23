@@ -113,6 +113,42 @@ VOICEGATEWAY_SMTP_FROM=VoiceGateway <noreply@example.com>
 
 VoiceGateway only sends over TLS. If your mail server's certificate is signed by your own certificate authority, mount that CA's PEM file into the web container and set `SSL_CERT_FILE` to its path there, for example in an extra Compose file passed with a second `-f`. Otherwise sends fail and the web log shows `could not send the email` with `class: tls`.
 
+## Sign in with Google or GitHub
+
+Off unless you turn it on. Once on, people with an account, or with an invitation, can sign in with Google or GitHub instead of a password. It never lets in someone without an account or an invitation, and the provider must have verified their email.
+
+1. Set `VOICEGATEWAY_PUBLIC_URL=https://<host>` (or `http://localhost:8080` on your own machine).
+2. Run `docker compose exec web voicegateway preflight`. It prints each provider's callback URL, `https://<host>/auth/oauth/google/callback` and `https://<host>/auth/oauth/github/callback`.
+3. Make an OAuth app with each provider you want, with that callback URL:
+   - Google: Google Cloud console, APIs and services, Credentials, Create credentials, OAuth client ID, type Web application. Add the callback under Authorised redirect URIs.
+   - GitHub: Settings, Developer settings, OAuth Apps, New OAuth App. Homepage URL is your public URL; Authorization callback URL is the callback.
+4. Put the client id and secret in `deploy/.env` and run `make up` again:
+
+```bash
+VOICEGATEWAY_GOOGLE_CLIENT_ID=...
+VOICEGATEWAY_GOOGLE_CLIENT_SECRET=...
+VOICEGATEWAY_GITHUB_CLIENT_ID=...
+VOICEGATEWAY_GITHUB_CLIENT_SECRET=...
+```
+
+Set both values of a pair or neither; web refuses to start with one. The sign-in and invitation pages then show the buttons.
+
+### Or through Auth0
+
+If you already run an Auth0 tenant, VoiceGateway can sign in through it instead, or as well. The tenant's own connections (Google, GitHub and others) decide how people prove who they are, and the same rules apply: an account or an invitation, and a verified email.
+
+1. In Auth0, Applications, Create Application, type **Regular Web Application**.
+2. Under Settings, set Allowed Callback URLs to `https://<host>/auth/oauth/auth0/callback`, the URL preflight prints.
+3. Put the tenant's domain (Settings, Domain), the client id and the secret in `deploy/.env` and run `make up` again:
+
+```bash
+VOICEGATEWAY_AUTH0_DOMAIN=your-tenant.us.auth0.com
+VOICEGATEWAY_AUTH0_CLIENT_ID=...
+VOICEGATEWAY_AUTH0_CLIENT_SECRET=...
+```
+
+The domain is the bare host, without `https://`. Set all three or none.
+
 ## Data retention
 
 Raw telemetry expires after 90 days; infrastructure samples keep their separate 30-day retention. Cleanup runs in the background. Month-partitioned raw tables can retain rows for up to an additional month while waiting for the whole partition to expire. Postgres call summaries remain available after raw telemetry expires.
