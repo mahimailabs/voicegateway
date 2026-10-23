@@ -53,7 +53,7 @@ export function SignInScreen({ needsAdmin, onSignedIn }: { needsAdmin: boolean; 
           {needsAdmin ? (
             <CardDescription>No account exists yet. Create the first admin on the server, then sign in.</CardDescription>
           ) : (
-            <CardDescription>Use the email and password your admin gave you.</CardDescription>
+            <CardDescription>Use your VoiceGateway email and password.</CardDescription>
           )}
         </CardHeader>
         <CardContent>
