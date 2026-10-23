@@ -81,13 +81,13 @@ export function SignInScreen({ needsAdmin, onSignedIn }: { needsAdmin: boolean; 
               {!needsAdmin && (
                 <Popover>
                   <PopoverTrigger asChild>
-                    <Button type="button" variant="link" size="xs" className="h-auto px-0 text-muted-foreground">
+                    <Button type="button" variant="link" size="sm" className="-mr-2.5 text-muted-foreground">
                       Forgot password?
                     </Button>
                   </PopoverTrigger>
-                  <PopoverContent align="end" className="w-72">
+                  <PopoverContent align="end" className="w-72" aria-labelledby="reset-help-title">
                     <PopoverHeader>
-                      <PopoverTitle>Ask an admin for a reset link</PopoverTitle>
+                      <PopoverTitle id="reset-help-title">Ask an admin for a reset link</PopoverTitle>
                       <PopoverDescription>An admin of your organisation can send you one from Settings, Members. It works for 24 hours.</PopoverDescription>
                     </PopoverHeader>
                   </PopoverContent>

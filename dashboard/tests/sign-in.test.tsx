@@ -84,5 +84,6 @@ test("before the first admin exists, nobody is told to ask an admin", () => {
 test("forgot password says who sends a reset link", async () => {
   render(<SignInScreen needsAdmin={false} onSignedIn={vi.fn()} />)
   await userEvent.setup().click(screen.getByRole("button", { name: "Forgot password?" }))
-  expect((await screen.findByText(/Settings, Members/)).textContent).toContain("24 hours")
+  const help = await screen.findByRole("dialog", { name: "Ask an admin for a reset link" })
+  expect(help.textContent).toContain("24 hours")
 })
