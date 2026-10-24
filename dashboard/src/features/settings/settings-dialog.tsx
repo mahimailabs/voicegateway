@@ -194,8 +194,9 @@ function SignInMethods() {
         value={
           read.isPending ? <Muted>Loading</Muted> : read.isError ? <Muted>Could not be read</Muted> : linked.length === 0 ? <Muted>None</Muted> : (
             <div className="flex flex-wrap gap-2">
-              {linked.map((i) => (
-                <Badge key={i.provider} variant="secondary">{PROVIDER_NAMES[i.provider]}</Badge>
+              {/* One badge per provider: an Auth0 tenant links each of its connections apart. */}
+              {[...new Set(linked.map((i) => i.provider))].map((p) => (
+                <Badge key={p} variant="secondary">{PROVIDER_NAMES[p]}</Badge>
               ))}
             </div>
           )

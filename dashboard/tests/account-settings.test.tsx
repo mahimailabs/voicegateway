@@ -79,3 +79,13 @@ test("denied profile save cancels an outstanding read before clearing cached ide
  expect(screen.queryByRole("textbox", { name: "Name" })).toBeNull()
  expect(notices.saved).not.toHaveBeenCalled()
 })
+
+test("an account with two Auth0 connections shows one Auth0 badge", async () => {
+ vi.stubGlobal("fetch", async () => json(200, { name: "Ada", revision: 1, hasPassword: false, identities: [
+  { provider: "auth0", linkedAt: "2026-10-23T20:00:00Z" }, { provider: "auth0", linkedAt: "2026-10-23T20:05:00Z" }, { provider: "google", linkedAt: "2026-10-23T20:10:00Z" },
+ ] }))
+ show()
+ await screen.findByText("Google")
+ expect(screen.getAllByText("Auth0")).toHaveLength(1)
+ expect(screen.getByText("No password set")).toBeTruthy()
+})
