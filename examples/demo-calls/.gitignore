@@ -1,0 +1,3 @@
+# The root .gitignore drops every .env.*; the template is meant to be committed.
+!.env.example
+.venv/
