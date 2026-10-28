@@ -1633,7 +1633,8 @@ func (q *Queries) EndCapacityRun(ctx context.Context, arg EndCapacityRunParams) 
 }
 
 const endLostCapacityRuns = `-- name: EndLostCapacityRuns :execrows
-UPDATE capacity_runs SET state = 'ended', ended_at = $1, limited_by = 'runner_lost'
+UPDATE capacity_runs SET state = 'ended', ended_at = $1,
+    limited_by = CASE WHEN state = 'running' THEN 'runner_lost' ELSE 'no_worker' END
 WHERE (state = 'running' AND heartbeat_at < $2)
    OR (state = 'requested' AND requested_at < $3)
 `
@@ -1644,7 +1645,8 @@ type EndLostCapacityRunsParams struct {
 	UnclaimedBefore pgtype.Timestamptz
 }
 
-// A running run whose runner stopped heartbeating, or a request no worker took, ends as lost.
+// A running run whose runner stopped heartbeating ends as runner_lost; a request no worker was free
+// to take in time ends as no_worker.
 func (q *Queries) EndLostCapacityRuns(ctx context.Context, arg EndLostCapacityRunsParams) (int64, error) {
 	result, err := q.db.Exec(ctx, endLostCapacityRuns, arg.Now, arg.StaleBefore, arg.UnclaimedBefore)
 	if err != nil {
@@ -3803,7 +3805,7 @@ const organisationUsage = `-- name: OrganisationUsage :one
 WITH period_calls AS (
     SELECT started_at, end_state,
         CASE end_state WHEN 'observed' THEN ended_at WHEN 'inferred' THEN last_activity_at END AS effective_end
-    FROM calls WHERE organisation_id = $1 AND COALESCE(room_name, '') NOT LIKE 'vg-capacity-%'
+    FROM calls WHERE organisation_id = $1 AND COALESCE(room_name, '') !~ '^vg-capacity-[0-9a-f]{8}-[0-9]+$'
 ), classified AS (
     SELECT started_at, end_state, effective_end,
         started_at IS NOT NULL AND effective_end >= started_at

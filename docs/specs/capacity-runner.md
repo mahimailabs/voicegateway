@@ -29,7 +29,7 @@ Run the capacity test of decision 0022 for real. From one click on an agent, the
    - `job_failed`: an agent left a call before the step ended, or a dispatch was refused.
    - `answer`: the step's median answer is more than 50% above step 1's median, or a call got no answer within 15 s of its line.
    - `tester`: the tester's CPU averaged over 90% across the step. The step is then inconclusive, never an agent failure.
-   - `real_call`, `stopped` (a person pressed Stop), `runner_lost`.
+   - `real_call`, `stopped` (a person pressed Stop), `runner_lost`, and `no_worker` for a request no worker was free to claim within 15 minutes (each worker runs one test at a time, and a run to 64 takes 7 minutes).
    - A step that passes every rule at the maximum ends the run as `max_reached`.
    - A join slower than the project's join threshold (Settings, `joinMs`) but within 10 s is reported per step as a late join, not a failure: it means the worker started a new process. Decision 0022 lists the join threshold among the stop rules and, two lines later, reports it separately; this spec takes the second reading, which the spike supports (8 calls joined at about 5.8 s while every call was answered).
 6. **Result**: the last step every call passed (`capacity`, null when step 1 failed), `limitedBy`, and per step: calls, joined, pending, failed, late, join and answer seconds, tester CPU. A Cloud agent stopped by `pending` with exactly 5 calls joined is labelled `plan` (the Build plan's 5-session cap, decision 0022). Results are stored in Postgres (00025): a run is a few rows, written by the worker like the call index.
@@ -46,6 +46,8 @@ Run the capacity test of decision 0022 for real. From one click on an agent, the
 
 ## Constraints
 
+- Off where the worker reaches only public addresses (`VOICEGATEWAY_WORKER_ENDPOINTS_PUBLIC_ONLY=true`, as on Cloud): the worker starts no runner and web answers 503 to a start. The callers' signalling WebSocket and WebRTC ICE dials do not go through the #420 address guard yet, and cloud-1's 2 vCPU are already short on ingest (#456). Turning tests on for Cloud is Mahimai's call.
+- A test room is matched by its exact name, `vg-capacity-<first 8 hex of the run id>-<n>`, never by the prefix alone, so a customer's own room that starts with `vg-capacity-` is still a call.
 - web never dials LiveKit for the run; it only writes the request. worker never answers HTTP.
 - Never panic in the runner; a LiveKit error ends the run as `failed` with its error class, after cleanup.
 - Unknown stays unknown: an answer never heard is not a zero; a step not reached is absent, not zero.

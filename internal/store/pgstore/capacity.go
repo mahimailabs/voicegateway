@@ -135,7 +135,7 @@ func (s *Store) EndCapacityRun(ctx context.Context, id, runner string, end store
 }
 
 // EndLostCapacityRuns ends, as runner_lost, every running run whose heartbeat is older than
-// staleBefore and every request no worker claimed before unclaimedBefore.
+// staleBefore, and, as no_worker, every request no worker claimed before unclaimedBefore.
 func (s *Store) EndLostCapacityRuns(ctx context.Context, now, staleBefore, unclaimedBefore time.Time) (int64, error) {
 	n, err := s.q.EndLostCapacityRuns(ctx, EndLostCapacityRunsParams{Now: at(now), StaleBefore: at(staleBefore), UnclaimedBefore: at(unclaimedBefore)})
 	if err != nil {

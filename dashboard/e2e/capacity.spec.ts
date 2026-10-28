@@ -4,6 +4,14 @@ import AxeBuilder from "@axe-core/playwright"
 // The capacity test dialog (docs/specs/capacity-runner.md) on the mock API: setup, a running test and
 // a stopped one, each without serious or critical axe violations, in light and dark, phone and desktop.
 async function axe(page: Page, testInfo: TestInfo, name: string) {
+  // A button that just changed variant is still fading its colours, and the pointer may rest on
+  // it after the click: check the settled frame with nothing hovered.
+  await page.mouse.move(0, 0)
+  await page.evaluate(async () => {
+    await Promise.all(document.getAnimations().filter((animation) =>
+      animation.effect?.getComputedTiming().iterations !== Infinity
+    ).map((animation) => animation.finished.catch(() => undefined)))
+  })
   const results = await new AxeBuilder({ page }).include("[role=dialog]").analyze()
   await testInfo.attach(`axe-${name}`, { body: JSON.stringify(results, null, 2), contentType: "application/json" })
   expect(results.violations.filter((v) => v.impact === "serious" || v.impact === "critical").map(({ id, impact, nodes }) => ({ id, impact, targets: nodes.map((node) => node.target) })), `${name}: serious/critical axe violations`).toEqual([])

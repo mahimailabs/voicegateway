@@ -5,18 +5,24 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"regexp"
 	"strings"
 	"time"
 
 	"github.com/mahimailabs/voicegateway/internal/store"
 )
 
-// RoomPrefix starts the name of every room a capacity test creates (decision 0022). The joiner
-// makes no call for such a room.
+// RoomPrefix starts the name of every room a capacity test creates (decision 0022). Such a room is
+// joined like any call, but the call index marks it not servable and leaves it out of the plan's
+// minutes (migration 00025, which matches the same shape as testRoom).
 const RoomPrefix = "vg-capacity-"
 
+// testRoom is the exact shape of a test room's name, vg-capacity-<8 hex>-<n>, so a customer's own
+// room that only starts with the prefix is still a call.
+var testRoom = regexp.MustCompile(`^vg-capacity-[0-9a-f]{8}-[0-9]+$`)
+
 // IsTestRoom reports whether a room is one a capacity test created.
-func IsTestRoom(name string) bool { return strings.HasPrefix(name, RoomPrefix) }
+func IsTestRoom(name string) bool { return testRoom.MatchString(name) }
 
 // The stop rules' limits (decision 0022, docs/specs/capacity-runner.md).
 const (

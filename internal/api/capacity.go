@@ -125,6 +125,10 @@ func (a *API) startCapacityRun(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, http.StatusServiceUnavailable, codeSourceUnavailable, "capacity tests are not available on this server")
 		return
 	}
+	if a.CapacityOff {
+		writeError(w, r, http.StatusServiceUnavailable, codeSourceUnavailable, "capacity tests are off on this server: it reaches only public addresses, and a test's callers cannot be held to that yet")
+		return
+	}
 	var body struct {
 		Agent   string `json:"agent"`
 		MaxStep int    `json:"maxStep"`

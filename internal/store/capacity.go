@@ -25,7 +25,9 @@ const (
 	LimitAgentBusy  = "agent_busy"
 	LimitStopped    = "stopped"
 	LimitRunnerLost = "runner_lost"
-	LimitFailed     = "failed"
+	// LimitNoWorker ends a request no worker was free to claim in time; nothing was measured.
+	LimitNoWorker = "no_worker"
+	LimitFailed   = "failed"
 )
 
 // Step outcomes: a step is running until it ends; inconclusive means the tester, not the agent,

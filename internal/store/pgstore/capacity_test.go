@@ -149,8 +149,8 @@ func TestLostRunnerEndsTheRun(t *testing.T) {
 	if n, err := s.EndLostCapacityRuns(ctx, later.Add(6*time.Minute), later, later.Add(time.Minute)); err != nil || n != 1 {
 		t.Fatalf("ended %d unclaimed runs, %v; want 1", n, err)
 	}
-	if got, _ := s.CapacityRun(ctx, waiting.ID); got.State != store.CapacityEnded {
-		t.Errorf("unclaimed run state = %s, want ended", got.State)
+	if got, _ := s.CapacityRun(ctx, waiting.ID); got.State != store.CapacityEnded || *got.LimitedBy != store.LimitNoWorker {
+		t.Errorf("unclaimed run = %s, %v; want ended as no_worker, never as a lost runner", got.State, got.LimitedBy)
 	}
 }
 
@@ -181,12 +181,14 @@ func TestCapacityRoomsAreNotCalls(t *testing.T) {
 	ctx := context.Background()
 	start := time.Date(2026, 10, 28, 12, 0, 0, 0, time.UTC)
 	end := start.Add(time.Minute)
-	for _, room := range []string{"vg-capacity-0b7d8f8e-1", "customer-call"} {
-		id, err := s.UpsertCall(ctx, store.CallUpsert{OrganisationID: "default", ProjectID: "p", RoomSID: "RM_" + room, RoomName: room, StartedAt: &start, LastActivityAt: &start, FirstSeenAt: &start})
+	// A customer's room that only starts like a test room is still a call.
+	for i, room := range []string{"vg-capacity-0b7d8f8e-1", "customer-call", "vg-capacity-launch"} {
+		at, done := start.Add(time.Duration(i)*time.Hour), end.Add(time.Duration(i)*time.Hour)
+		id, err := s.UpsertCall(ctx, store.CallUpsert{OrganisationID: "default", ProjectID: "p", RoomSID: "RM_" + room, RoomName: room, StartedAt: &at, LastActivityAt: &at, FirstSeenAt: &at})
 		if err != nil {
 			t.Fatal(err)
 		}
-		if err := s.FinishCall(ctx, id, &end); err != nil {
+		if err := s.FinishCall(ctx, id, &done); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -199,14 +201,14 @@ func TestCapacityRoomsAreNotCalls(t *testing.T) {
 		t.Errorf("first call room = %q, %v; want customer-call, never the test room", room, err)
 	}
 	var servable int
-	if err := s.pool.QueryRow(ctx, `SELECT count(*) FROM call_list WHERE servable`).Scan(&servable); err != nil || servable != 1 {
-		t.Errorf("servable calls = %d, %v; want 1", servable, err)
+	if err := s.pool.QueryRow(ctx, `SELECT count(*) FROM call_list WHERE servable`).Scan(&servable); err != nil || servable != 2 {
+		t.Errorf("servable calls = %d, %v; want 2: the customer's two rooms", servable, err)
 	}
-	u, err := s.OrganisationUsage(ctx, "default", start.Add(-time.Hour), start.Add(time.Hour))
+	u, err := s.OrganisationUsage(ctx, "default", start.Add(-time.Hour), start.Add(4*time.Hour))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if u.Calls != 1 || u.CallSeconds != 60 {
-		t.Errorf("usage = %d calls, %d s; want the customer's call alone", u.Calls, u.CallSeconds)
+	if u.Calls != 2 || u.CallSeconds != 120 {
+		t.Errorf("usage = %d calls, %d s; want the customer's two calls alone", u.Calls, u.CallSeconds)
 	}
 }

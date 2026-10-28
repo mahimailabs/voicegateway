@@ -23,7 +23,7 @@ CREATE TABLE capacity_runs (
     -- Whether the agent is a LiveKit Cloud agent; null when the run could not tell.
     cloud_agent       boolean,
     capacity          integer     CHECK (capacity > 0),
-    limited_by        text        CHECK (limited_by IN ('pending', 'job_failed', 'answer', 'tester', 'plan', 'real_call', 'agent_busy', 'stopped', 'runner_lost', 'failed', 'max_reached')),
+    limited_by        text        CHECK (limited_by IN ('pending', 'job_failed', 'answer', 'tester', 'plan', 'real_call', 'agent_busy', 'stopped', 'runner_lost', 'no_worker', 'failed', 'max_reached')),
     -- The class of a LiveKit or storage error that ended the run as failed; never a message body.
     error             text        CHECK (octet_length(error) <= 64),
     CHECK ((state = 'ended') = (ended_at IS NOT NULL AND limited_by IS NOT NULL)),
@@ -52,14 +52,15 @@ CREATE TABLE capacity_steps (
     PRIMARY KEY (run_id, step)
 );
 
--- A capacity test's rooms are joined like any call, so nothing they send is lost, but they are never
+-- A capacity test's rooms (vg-capacity-<first 8 hex of the run id>-<n>, the shape internal/capacity
+-- IsTestRoom matches) are joined like any call, so nothing they send is lost, but they are never
 -- served: servable is the one rule Calls, call stats, Issues, alert findings and the first call
--- share (decision 0022).
+-- share (decision 0022). A customer room that only starts with vg-capacity- is still a call.
 CREATE OR REPLACE VIEW call_list AS
 SELECT c.organisation_id, c.project_id, c.id, c.room_name, c.room_sid, c.job_id, c.started_at, c.ended_at,
        c.end_state, c.created_at, c.first_seen_at,
        (COALESCE(c.room_name, '') <> '' AND COALESCE(c.started_at, c.first_seen_at) IS NOT NULL
-        AND c.room_name NOT LIKE 'vg-capacity-%') AS servable,
+        AND c.room_name !~ '^vg-capacity-[0-9a-f]{8}-[0-9]+$') AS servable,
        (s.call_id IS NOT NULL) AS summarized,
        COALESCE(c.started_at, c.first_seen_at) AS start_at,
        CASE WHEN c.ended_at IS NOT NULL AND c.started_at IS NOT NULL

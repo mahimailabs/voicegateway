@@ -117,6 +117,7 @@ const limits: Record<NonNullable<Run["limitedBy"]>, { label: string; agent: bool
   agent_busy: { label: "not run: the agent was busy", agent: false },
   stopped: { label: "stopped by a person", agent: false },
   runner_lost: { label: "the worker running it stopped", agent: false },
+  no_worker: { label: "not run: no worker was free; start it again", agent: false },
   failed: { label: "LiveKit or storage failed", agent: false },
 }
 const limitText = (r: Run) => (r.limitedBy ? limits[r.limitedBy].label : r.state === "requested" ? "waiting for a worker" : "running")
@@ -248,7 +249,7 @@ export function CapacitySetupDialog({ agent: a, ms, onOpenChange }: { agent: Age
                     <span className="absolute inline-flex size-full animate-ping rounded-full bg-primary opacity-60" />
                     <span className="relative inline-flex size-2 rounded-full bg-primary" />
                   </span>
-                  {run!.state === "requested" ? "Waiting for a worker to start the test" : current ? `Step ${ladderOf.indexOf(current.step) + 1} of ${ladderOf.length}: ${current.step} calls at once` : "Checking the agent is idle"}
+                  {run!.state === "requested" ? "Waiting for a worker to start the test" : current ? `Step ${ladderOf.indexOf(current.step) + 1} of ${ladderOf.length}: ${current.step} ${current.step === 1 ? "call" : "calls"} at once` : "Checking the agent is idle"}
                 </p>
                 <CapacityChart steps={run!.steps} all={ladderOf} threshold={run!.joinThresholdMs} />
               </div>

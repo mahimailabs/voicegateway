@@ -654,9 +654,9 @@ export type CapacityRun = {
     stopRequested: boolean;
     capacity: number | null;
     /**
-     * What ended the run. The agent's limits: pending (a job waited 10 s for the agent), job_failed (an agent left a call or a dispatch was refused), answer (the median answer rose more than 50% above step 1's, or a call went unanswered for 15 s), plan (a LiveKit Cloud agent refused at the Build plan's 5 sessions). max_reached: every step passed. The rest say the run could not measure the agent: tester (the tester's CPU averaged over 90%), real_call (a room the test did not create got the agent), agent_busy (the agent had a call at the start), stopped (a person pressed Stop), runner_lost (the worker stopped heartbeating), failed (LiveKit or storage failed; see error).
+     * What ended the run. The agent's limits: pending (a job waited 10 s for the agent), job_failed (an agent left a call or a dispatch was refused), answer (the median answer rose more than 50% above step 1's, or a call went unanswered for 15 s), plan (a LiveKit Cloud agent refused at the Build plan's 5 sessions). max_reached: every step passed. The rest say the run could not measure the agent: tester (the tester's CPU averaged over 90%), real_call (a room the test did not create got the agent), agent_busy (the agent had a call at the start), stopped (a person pressed Stop), runner_lost (the worker stopped heartbeating), no_worker (no worker was free to claim the request within 15 minutes), failed (LiveKit or storage failed; see error).
      */
-    limitedBy: 'pending' | 'job_failed' | 'answer' | 'plan' | 'max_reached' | 'tester' | 'real_call' | 'agent_busy' | 'stopped' | 'runner_lost' | 'failed' | null;
+    limitedBy: 'pending' | 'job_failed' | 'answer' | 'plan' | 'max_reached' | 'tester' | 'real_call' | 'agent_busy' | 'stopped' | 'runner_lost' | 'no_worker' | 'failed' | null;
     cloudAgent: boolean | null;
     joinThresholdMs: number | null;
     error: string | null;

@@ -87,4 +87,14 @@ func TestCapacityRuns(t *testing.T) {
 	if code, _ := send(t, admin, http.MethodPost, base+"/capacity-runs/not-a-uuid/stop", ""); code != http.StatusNotFound {
 		t.Errorf("stop an unknown run = %d, want 404", code)
 	}
+
+	// An instance that reaches only public addresses refuses new tests but still answers reads.
+	off := f.api(nil)
+	off.Capacity, off.CapacityOff = f.pg, true
+	if code, b := send(t, off, http.MethodPost, base+"/capacity-runs", start); code != http.StatusServiceUnavailable || errCode(b) != codeSourceUnavailable {
+		t.Errorf("start with tests off = %d %s, want 503 source_unavailable", code, errCode(b))
+	}
+	if code, b := send(t, off, http.MethodGet, base+"/capacity?agent=vg-capture", ""); code != http.StatusOK || !strings.Contains(string(b), run.ID) {
+		t.Errorf("read with tests off = %d %s, want 200 with the last run", code, b)
+	}
 }

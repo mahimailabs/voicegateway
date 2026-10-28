@@ -45,6 +45,10 @@ type API struct {
 	// Capacity stores capacity test requests and reads their results; without it those routes
 	// answer 503.
 	Capacity CapacityRuns
+	// CapacityOff refuses new capacity tests with 503 while reads still answer: set on an instance
+	// whose worker reaches only public addresses, since a test's callers dial LiveKit's signalling
+	// and ICE servers outside that guard.
+	CapacityOff bool
 	// Recordings and Media serve a call's stored recording (phase 07a).
 	Recordings Recordings
 	Media      Media

@@ -869,7 +869,7 @@ paths:
         projectIsolation: required
         browserSessionTransport: session_cookie
         scope: project
-      description: "Requires Admin membership in the named organisation (decision 0022): the test places real calls through the agent's providers, so consent is required. A worker claims the run within seconds, refuses a busy agent and ramps synthetic calls in rooms named vg-capacity-*, which never count as calls. One run per project at a time: a second is 409 run_active. A project key cannot start one."
+      description: "Requires Admin membership in the named organisation (decision 0022): the test places real calls through the agent's providers, so consent is required. A worker claims the run within seconds, refuses a busy agent and ramps synthetic calls in rooms named vg-capacity-<8 hex>-<n>, which never count as calls. One run per project at a time: a second is 409 run_active. A project key cannot start one. An instance whose worker reaches only public addresses (VOICEGATEWAY_WORKER_ENDPOINTS_PUBLIC_ONLY, as on Cloud) answers 503 source_unavailable: a test's callers dial LiveKit's signalling and ICE servers outside that guard. Reads still answer there."
       parameters:
         - $ref: "#/components/parameters/OrganisationId"
         - $ref: "#/components/parameters/ProjectId"
@@ -4638,8 +4638,8 @@ components:
           x-source: { kind: computed, file: internal/capacity/run.go, pointer: null, detail: "The last step every call passed: calls at once the agent carried. On LiveKit Cloud it is per replica." }
         limitedBy:
           type: [ string, "null" ]
-          enum: [ pending, job_failed, answer, plan, max_reached, tester, real_call, agent_busy, stopped, runner_lost, failed, null ]
-          description: "What ended the run. The agent's limits: pending (a job waited 10 s for the agent), job_failed (an agent left a call or a dispatch was refused), answer (the median answer rose more than 50% above step 1's, or a call went unanswered for 15 s), plan (a LiveKit Cloud agent refused at the Build plan's 5 sessions). max_reached: every step passed. The rest say the run could not measure the agent: tester (the tester's CPU averaged over 90%), real_call (a room the test did not create got the agent), agent_busy (the agent had a call at the start), stopped (a person pressed Stop), runner_lost (the worker stopped heartbeating), failed (LiveKit or storage failed; see error)."
+          enum: [ pending, job_failed, answer, plan, max_reached, tester, real_call, agent_busy, stopped, runner_lost, no_worker, failed, null ]
+          description: "What ended the run. The agent's limits: pending (a job waited 10 s for the agent), job_failed (an agent left a call or a dispatch was refused), answer (the median answer rose more than 50% above step 1's, or a call went unanswered for 15 s), plan (a LiveKit Cloud agent refused at the Build plan's 5 sessions). max_reached: every step passed. The rest say the run could not measure the agent: tester (the tester's CPU averaged over 90%), real_call (a room the test did not create got the agent), agent_busy (the agent had a call at the start), stopped (a person pressed Stop), runner_lost (the worker stopped heartbeating), no_worker (no worker was free to claim the request within 15 minutes), failed (LiveKit or storage failed; see error)."
           x-null-reason: "The run has not ended."
           x-source: { kind: computed, file: internal/capacity/run.go, pointer: null, detail: "The stop rule or event that ended the run." }
         cloudAgent:

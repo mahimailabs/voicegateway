@@ -148,7 +148,7 @@ func Web(ctx context.Context, c config.Config, log *slog.Logger) error {
 		Alerts: projects, AlertEmail: c.SMTPURL != "", AlertTest: alert.Composer{PublicURL: c.PublicURL, Now: time.Now}.Test,
 		Settings: projects, Origins: projects, Embeds: embeds, Metadata: projects, Issues: projects, StorageBucket: c.S3.Bucket,
 		Live:              live,
-		ResourceEndpoints: projects, ResourceSamples: events, Projects: projects, NewProjects: projects, Credentials: projects, VerifyLiveKit: scrape.NewVerifier(c.WorkerEndpointsPublicOnly), VerifyBucket: bucket.NewVerifier(bucketTransport), Calls: projects, Capacity: projects, Traces: events, Layers: events, Endpoints: projects, Accounts: projects, Stats: projects, Keys: projects, NewKey: auth.NewKey, Log: log, Now: time.Now, Gate: accounts.Gate,
+		ResourceEndpoints: projects, ResourceSamples: events, Projects: projects, NewProjects: projects, Credentials: projects, VerifyLiveKit: scrape.NewVerifier(c.WorkerEndpointsPublicOnly), VerifyBucket: bucket.NewVerifier(bucketTransport), Calls: projects, Capacity: projects, CapacityOff: c.WorkerEndpointsPublicOnly, Traces: events, Layers: events, Endpoints: projects, Accounts: projects, Stats: projects, Keys: projects, NewKey: auth.NewKey, Log: log, Now: time.Now, Gate: accounts.Gate,
 		Invitations: projects, Inviter: NewInviter(links), LinkBase: accounts.LinkBase,
 		Recordings: projects, Media: recordings,
 		Connections: projects, PublicURL: c.PublicURL,
@@ -358,11 +358,17 @@ func Worker(ctx context.Context, c config.Config, log *slog.Logger) error {
 	// connection step; only its warnings reach the worker's log.
 	lksdk.SetLogger(lklogger.LogRLogger(logr.FromSlogHandler(warnOnly{log.Handler()})))
 	g.Go(func() error {
+		if c.WorkerEndpointsPublicOnly {
+			// The callers' signalling and WebRTC dials do not go through the address guard, so an
+			// instance that must reach only public addresses runs no capacity tests (web refuses them).
+			log.Info("capacity: tests are off, VOICEGATEWAY_WORKER_ENDPOINTS_PUBLIC_ONLY is set")
+			return nil
+		}
 		runs := pgstore.NewStore(pool, sealer)
 		return (&capacity.Runner{
 			Runs: runs, Projects: runs, Dial: capacity.NewDial(scrape.NewWorkerClient(c.WorkerEndpointsPublicOnly)),
 			CPU: capacity.HostCPU, ID: name, Log: log, Now: time.Now,
-			Poll: 2 * time.Second, Beat: time.Second, Lost: 30 * time.Second, Unclaimed: 5 * time.Minute,
+			Poll: 2 * time.Second, Beat: time.Second, Lost: 30 * time.Second, Unclaimed: 15 * time.Minute,
 			StepFor: time.Minute, BusyEvery: 10 * time.Second, Timeout: 10 * time.Second,
 		}).Run(gctx)
 	})
