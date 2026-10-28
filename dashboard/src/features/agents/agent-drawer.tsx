@@ -10,13 +10,14 @@ import type { CapacityRun } from "@/lib/api-types"
 import { type MediaServerData, type Room, RoomBody, openAtWatchEnd, regionCity } from "../media-server/room-drawer"
 import { type Agent, cores, gib, joinDelays, median, reportedTime } from "./agents-model"
 import { CapacityButton, CapacityResult, capacityRun } from "./capacity"
+import { fmtClock, fmtDateTime } from "@/lib/format"
 
 // One agent, everything the three keys and the watched rooms say about it. Calls at once is counted
 // from the agent's own time in each room (join to last seen), per watch: between watches nothing was
 // read, so the gaps are not drawn as zero.
 
-const at = (s: number) => new Date(s * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })
-const day = (s: number) => new Date(s * 1000).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })
+const at = (s: number) => fmtClock(s * 1000)
+const day = (s: number) => fmtDateTime(s * 1000)
 const when = reportedTime
 const config = { calls: { label: "Calls at once", color: "var(--chart-1)" } } satisfies ChartConfig
 

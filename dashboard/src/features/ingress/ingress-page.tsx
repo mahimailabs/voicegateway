@@ -12,6 +12,7 @@ import { QueryState } from "@/components/page-state"
 import { ingressQuery } from "@/lib/api"
 import type { Ingress as IngressData } from "@/lib/api-types"
 import { useUrlState } from "@/lib/url-state"
+import { fmtDateTime, fmtSeconds as secs } from "@/lib/format"
 
 // Media pushed or pulled into the project's rooms, as ListIngress returns it. An endpoint stays listed
 // until deleted, but its state covers only the current or last session; earlier sessions need LiveKit's
@@ -36,8 +37,7 @@ const statusTone = (s: string) =>
       : s === "ENDPOINT_BUFFERING"
         ? "bg-amber-500/10 text-amber-700 dark:text-amber-400"
         : "bg-muted text-muted-foreground"
-const clock = (s: number) => new Date(s * 1000).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })
-const secs = (s: number) => (s >= 60 ? `${Math.floor(s / 60)}m ${String(Math.round(s % 60)).padStart(2, "0")}s` : `${s.toFixed(1)} s`)
+const clock = (s: number) => fmtDateTime(s * 1000)
 const codec = (m?: string | null) => (m ? m.split("/")[1].toUpperCase() : null)
 const media = (m: Media | null) =>
   m?.mimeType

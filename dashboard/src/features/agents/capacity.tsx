@@ -13,6 +13,7 @@ import { cn } from "@/lib/utils"
 import type { CapacityRun } from "@/lib/api-types"
 import { type MediaServerData, openAtWatchEnd } from "../media-server/room-drawer"
 import type { Agent } from "./agents-model"
+import { fmtDateTime } from "@/lib/format"
 
 // Capacity test (decision 0022): VoiceGateway ramps synthetic calls at an idle agent until a job stays
 // pending, and reports the last step every call got the agent. The run itself needs the Phase 2
@@ -147,7 +148,7 @@ function CapacitySetupDialog({ agent: a, ms, onOpenChange }: { agent: Agent | nu
                 tone={idle.idle ? "good" : "bad"}
                 icon={idle.idle ? CheckCircle : WarningCircle}
                 label={idle.idle ? "Idle" : `Busy in ${idle.busy.length} ${idle.busy.length === 1 ? "room" : "rooms"}`}
-                tip={`At the last read, ${Number.isFinite(idle.lastRead) ? new Date(idle.lastRead * 1000).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "at a time not reported"}. The server checks again before it starts, and stops if a real call arrives.`}
+                tip={`At the last read, ${Number.isFinite(idle.lastRead) ? fmtDateTime(idle.lastRead * 1000) : "at a time not reported"}. The server checks again before it starts, and stops if a real call arrives.`}
               />
               {production && <Hint tone="warn" icon={Info} label="Production" tip="Callers arriving during the test share this agent." />}
               {cloud && <Hint tone="warn" icon={Info} label="Per replica" tip="LiveKit Cloud adds replicas under load, so the result is per replica. The Build plan stops Cloud agents at 5 sessions; that is the plan's limit." />}

@@ -13,6 +13,7 @@ import { QueryState } from "@/components/page-state"
 import { egressQuery } from "@/lib/api"
 import type { Egress as EgressData } from "@/lib/api-types"
 import { useUrlState } from "@/lib/url-state"
+import { fmtBytes as size, fmtDateTime, fmtSeconds as secs } from "@/lib/format"
 
 // Recordings and streams out of the project's rooms, as ListEgress returns them. ListEgress keeps only
 // recent egress, so history needs LiveKit's egress webhooks (Phase 2). The request is kept as its shape
@@ -34,9 +35,7 @@ const statusTone = (s: string) =>
         : "bg-muted text-muted-foreground"
 const storageName: Record<string, string> = { s3: "S3", gcp: "Google Cloud Storage", azure: "Azure Blob", aliOSS: "Alibaba OSS" }
 const kindName: Record<string, string> = { roomComposite: "Room recording", web: "Web page", participant: "Participant", trackComposite: "Track composite", track: "Track" }
-const clock = (s: number) => new Date(s * 1000).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })
-const secs = (s: number) => (s >= 60 ? `${Math.floor(s / 60)}m ${String(Math.round(s % 60)).padStart(2, "0")}s` : `${s.toFixed(1)} s`)
-const size = (b: number) => (b >= 1024 ** 2 ? `${(b / 1024 ** 2).toFixed(1)} MB` : `${Math.round(b / 1024)} KB`)
+const clock = (s: number) => fmtDateTime(s * 1000)
 // A file that recorded audio but reached no bucket: the length is known, the bytes are gone. An
 // unreported size or length is not evidence of a loss.
 const lost = (e: Egress) => e.status === "EGRESS_FAILED" && e.file !== null && e.file.sizeBytes === 0 && e.file.durationS !== null && e.file.durationS > 0

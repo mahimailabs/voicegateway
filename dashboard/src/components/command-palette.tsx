@@ -11,6 +11,7 @@ import { cloudAgentsQuery, issuesQuery, mediaServerQuery, recentCallsQuery } fro
 import { fromContract } from "@/features/media-server/room-drawer"
 import { agentsFrom } from "@/features/agents/agents-model"
 import { issuesFrom } from "@/features/issues/issues-model"
+import { fmtDateTime as when } from "@/lib/format"
 
 // One palette for the whole console (cmdk through shadcn's Command): pages, calls, agents, issues and
 // actions. Hotkeys follow Linear's pattern: G then a letter goes to a page, so single keys stay free
@@ -81,7 +82,6 @@ export function CommandPalette({ open, onOpenChange, pages, onSettings, onShortc
     onOpenChange(false)
     fn()
   }
-  const when = (iso: string) => new Date(iso).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })
 
   return (
     <CommandDialog open={open} onOpenChange={onOpenChange} title="Command palette" description="Jump to a page, a call, an agent or an issue, or run an action." className="sm:max-w-[600px]">
