@@ -118,6 +118,11 @@ func (l *liveKit) AgentRooms(ctx context.Context, agent string) ([]string, error
 			}
 			got, err := l.dispatches.ListDispatch(dctx, &livekit.ListAgentDispatchRequest{Room: room.GetName()})
 			if err != nil {
+				// A call that ended after ListRooms has no dispatch to list: only a room still
+				// there leaves the answer unknown.
+				if l.gone(gctx, room.GetName()) {
+					return nil
+				}
 				return fmt.Errorf("list dispatch: %w", err)
 			}
 			if hasJob(got.GetAgentDispatches(), agent) {
@@ -132,6 +137,16 @@ func (l *liveKit) AgentRooms(ctx context.Context, agent string) ([]string, error
 		return nil, err
 	}
 	return busy, nil
+}
+
+// gone reports whether LiveKit answers that room no longer exists; a failed answer is not gone.
+func (l *liveKit) gone(ctx context.Context, room string) bool {
+	lctx, err := l.signed(ctx, auth.VideoGrant{RoomList: true})
+	if err != nil {
+		return false
+	}
+	res, err := l.rooms.ListRooms(lctx, &livekit.ListRoomsRequest{Names: []string{room}})
+	return err == nil && len(res.GetRooms()) == 0
 }
 
 func hasJob(ds []*livekit.AgentDispatch, agent string) bool {

@@ -155,22 +155,68 @@ func (t *test) add(ctx context.Context, n int) (store.CapacityEnd, bool) {
 		t.order = append(t.order, c)
 		fresh = append(fresh, c)
 	}
+	actx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	stopped := make(chan store.CapacityEnd, 1)
+	alive := make(chan struct{})
+	go func() {
+		defer close(alive)
+		t.keepAlive(actx, cancel, stopped)
+	}()
 	var g errgroup.Group
 	g.SetLimit(connectAtOnce)
 	errs := make([]store.CapacityEnd, len(fresh))
 	for i, c := range fresh {
 		g.Go(func() error {
-			errs[i] = t.connect(ctx, c)
+			errs[i] = t.connect(actx, c)
 			return nil
 		})
 	}
 	_ = g.Wait()
+	cancel()
+	<-alive
+	select {
+	case end := <-stopped:
+		return end, true
+	default:
+	}
 	for _, e := range errs {
 		if e.LimitedBy != "" {
 			return e, true
 		}
 	}
 	return store.CapacityEnd{}, false
+}
+
+// keepAlive heartbeats the run while a step connects its calls, which can outlast Lost on a large
+// step, and cancels the connects when a person stops the run or another worker ended it.
+func (t *test) keepAlive(ctx context.Context, cancel context.CancelFunc, stopped chan<- store.CapacityEnd) {
+	beat := time.NewTicker(t.Beat)
+	defer beat.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case now := <-beat.C:
+			hctx, hcancel := t.ctx(ctx)
+			stop, err := t.Runs.HeartbeatCapacityRun(hctx, t.run.ID, t.ID, now)
+			hcancel()
+			switch {
+			case errors.Is(err, store.ErrNotFound):
+				stopped <- store.CapacityEnd{LimitedBy: store.LimitRunnerLost}
+				cancel()
+				return
+			case err != nil:
+				if ctx.Err() == nil {
+					t.Log.Warn("capacity: heartbeat failed", "run", t.run.ID, "err", err)
+				}
+			case stop:
+				stopped <- store.CapacityEnd{LimitedBy: store.LimitStopped}
+				cancel()
+				return
+			}
+		}
+	}
 }
 
 func (t *test) connect(ctx context.Context, c *call) store.CapacityEnd {

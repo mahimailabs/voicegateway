@@ -334,3 +334,50 @@ func TestBusyAgentIsRefusedOnLiveKit(t *testing.T) {
 		t.Errorf("AgentRooms(another-agent) = %v, %v; want none", busy, err)
 	}
 }
+
+type listRooms struct {
+	livekit.RoomService
+	rooms []string
+	// ended are rooms that end between the first list and the dispatch read.
+	ended map[string]bool
+}
+
+func (l listRooms) ListRooms(_ context.Context, req *livekit.ListRoomsRequest) (*livekit.ListRoomsResponse, error) {
+	res := &livekit.ListRoomsResponse{}
+	for _, name := range l.rooms {
+		if len(req.GetNames()) > 0 && (l.ended[name] || req.GetNames()[0] != name) {
+			continue
+		}
+		res.Rooms = append(res.Rooms, &livekit.Room{Name: name})
+	}
+	return res, nil
+}
+
+type failingDispatches struct{ livekit.AgentDispatchService }
+
+func (failingDispatches) ListDispatch(context.Context, *livekit.ListAgentDispatchRequest) (*livekit.ListAgentDispatchResponse, error) {
+	return nil, fmt.Errorf("twirp error not_found: room not found")
+}
+
+// TestAgentRoomsSkipsAnEndedRoom: a call that ends between the room list and its dispatch read is
+// not busy and not an error; a room still there whose dispatches cannot be read is an error.
+func TestAgentRoomsSkipsAnEndedRoom(t *testing.T) {
+	for name, tt := range map[string]struct {
+		ended   bool
+		wantErr bool
+	}{
+		"ended":       {ended: true},
+		"still there": {wantErr: true},
+	} {
+		t.Run(name, func(t *testing.T) {
+			l := &liveKit{
+				rooms:      listRooms{rooms: []string{"customer-call"}, ended: map[string]bool{"customer-call": tt.ended}},
+				dispatches: failingDispatches{}, apiKey: devKey, apiSecret: devSecret,
+			}
+			busy, err := l.AgentRooms(t.Context(), testAgent)
+			if (err != nil) != tt.wantErr || len(busy) != 0 {
+				t.Errorf("AgentRooms = %v, %v; want no rooms and error %v", busy, err, tt.wantErr)
+			}
+		})
+	}
+}

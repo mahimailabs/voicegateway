@@ -22,6 +22,8 @@ type fakeRuns struct {
 	end     *store.CapacityEnd
 	stopAt  time.Time
 	lost    bool
+	beats   int
+	endedAt time.Time
 }
 
 func (f *fakeRuns) ClaimCapacityRun(_ context.Context, _ string, _ time.Time) (store.CapacityRun, bool, error) {
@@ -47,6 +49,7 @@ func (f *fakeRuns) HeartbeatCapacityRun(_ context.Context, _, _ string, now time
 	if f.lost {
 		return false, store.ErrNotFound
 	}
+	f.beats++
 	return !f.stopAt.IsZero() && !now.Before(f.stopAt), nil
 }
 
@@ -64,7 +67,7 @@ func (f *fakeRuns) EndCapacityRun(_ context.Context, _, _ string, end store.Capa
 	if f.lost {
 		return store.ErrNotFound
 	}
-	f.end = &end
+	f.end, f.endedAt = &end, time.Now()
 	return nil
 }
 
@@ -95,6 +98,8 @@ type fakeAgent struct {
 	// busy names the rooms, other than the test's, where the agent has a job, as of a time.
 	busy  func(now time.Time) []string
 	cloud *bool
+	// connect is how long a caller takes to join its room.
+	connect time.Duration
 
 	mu      sync.Mutex
 	rooms   map[string]bool
@@ -166,7 +171,12 @@ func (a *fakeAgent) AgentRooms(context.Context, string) ([]string, error) {
 
 func (a *fakeAgent) CloudAgent(context.Context, string) *bool { return a.cloud }
 
-func (a *fakeAgent) Call(_ context.Context, room string, events chan<- Event) (func(), error) {
+func (a *fakeAgent) Call(ctx context.Context, room string, events chan<- Event) (func(), error) {
+	select {
+	case <-time.After(a.connect):
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.callers[room] = events
@@ -324,6 +334,27 @@ func mapsEqual(a, b map[int]string) bool {
 		}
 	}
 	return true
+}
+
+// TestStopWhileCallsConnect: a step whose callers are slow to join still heartbeats, and a stop
+// during it ends the run within 2 s instead of after the connects.
+func TestStopWhileCallsConnect(t *testing.T) {
+	runs, a := runTest(t, 16, setup{
+		agent: &fakeAgent{jobs: 16, join: 500 * time.Millisecond, answer: steady, connect: 5 * time.Minute},
+		runs:  &fakeRuns{stopAt: synctestEpoch.Add(45 * time.Second)},
+	})
+	if runs.end == nil || runs.end.LimitedBy != store.LimitStopped {
+		t.Fatalf("end = %+v, want stopped", runs.end)
+	}
+	if took := runs.endedAt.Sub(synctestEpoch); took > 47*time.Second {
+		t.Errorf("stopped after %s, want within 2 s of the stop at 45s", took)
+	}
+	if runs.beats < 40 {
+		t.Errorf("%d heartbeats while connecting, want one a second", runs.beats)
+	}
+	if n := a.open(); n != 0 {
+		t.Errorf("%d test rooms left open", n)
+	}
 }
 
 func TestPendingStepCountsWhoGotTheAgent(t *testing.T) {
