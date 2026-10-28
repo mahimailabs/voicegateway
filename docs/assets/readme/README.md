@@ -5,24 +5,27 @@ Reference: [Langfuse's README](https://github.com/langfuse/langfuse/blob/main/RE
 | Reference element | VoiceGateway mapping |
 | --- | --- |
 | Hero and trace glimpse | Existing wordmark, product promise and captured call inspector |
-| Cloud / self-host / demo links | Console preview / website / V1 roadmap; Cloud is not yet available |
+| Cloud / self-host / demo links | Self-host / docs / website / V1 roadmap |
 | Illustrated capabilities | Captured Overview and Live wire; reported data stays distinct from unavailable measurements |
-| Deployment section | Current Node 24 console quickstart; backend installation remains planned |
+| Deployment section | Installer quickstart, then the captured-data console |
 | Trace example | Captured caller turn with end-of-turn, first-token and first-audio timings |
 
 Each image has explicit light/dark files. The root README selects them with `picture` and `prefers-color-scheme`, with light as the fallback. SVG diagrams are standalone; screenshots and hero banners are JPEG. Every new asset is below the repository's 250 KiB file cap.
 
 ## Captures
 
-Captured from main at `551df3ca` on 2026-10-16, using the existing console components and committed LiveKit fixtures. No displayed measurements were edited. These are preview observations, not a live backend.
+Captured on 2026-10-28 from main at `aecb6121`, with `make dev` (the mock API serving the committed LiveKit captures) and Playwright at 1440 × 900, once per theme. No displayed measurement was edited. The mock API has no account, so the sidebar's account row is hidden during capture.
 
-- Overview: `/org/default/project/default-project/overview`, crop the content area to keep the gauge, turn distribution and Live wire together.
-- Call inspector: `/org/default/project/default-project/calls/console-62f58fc1?turn=4-caller`, crop the actual dialog. The selected caller asks about Toronto. Recorded audio is unavailable in this example.
-- Capture each view once per theme using the console's theme toggle. Transcripts may have different scroll positions across fresh navigation; both images select the same turn.
+- Hero (`hero-light.webp`, `hero-dark.webp`): an animated WebP. From `/org/default/project/default-project/calls`, open `vg-capture-1791863749`, choose Diagnosis, then Next turn, and scroll the breakdown. Record with Playwright's `recordVideo`, then convert the last 15.4 seconds with `ffmpeg -vf "fps=8,scale=960:-1:flags=lanczos" -c:v libwebp_anim -q:v 60 -compression_level 6 -loop 0` (the dark file at the same settings stays under the cap). If your ffmpeg has no libwebp, write the same frames as PNGs and encode them with `img2webp -loop 0 -lossy -q 60 -m 6 -d 125`, which is how the current files were made. Drop any leading frames that still show the account row, since it is hidden only after the page settles.
+- Overview: `/org/default/project/default-project/overview`.
+- Call (`call-*.jpg`): `/org/default/project/default-project/calls/vg-capture-1791863749?callView=diagnosis`, which opens on the slowest turn.
+- JPEG stills: `ffmpeg -i <png> -q:v 4 <jpg>`.
+
+The docs site's `site/docs/public/screens/` holds the same captures plus Calls, Issues, Alerts, Agent workers, the call's Conversation view and Settings (`?settings=thresholds`, `?settings=data`).
 
 ## Banner source
 
-`tools/readme-banner.html` composes the existing outlined wordmark, headline and captured call image. Serve the repository locally, open this file with `?theme=light` and `?theme=dark`, and capture its 1800 × 580 banner bounds into `hero-light.jpg` and `hero-dark.jpg`. This source is static presentation artwork; it adds no product UI or runtime dependency. Keep the captured image literal, without redrawing its controls or replacing its numbers.
+`tools/readme-banner.html` composes the wordmark and headline for the GitHub social card (see below); its wide format, with the captured call image, was the README banner until 2026-10-28. Serve the repository locally, open it with `?format=social&theme=light` or `dark`, and capture its bounds. The README itself now opens with the animated hero instead of this banner.
 
 ## Diagram source
 

@@ -1,41 +1,50 @@
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/readme/hero-dark.jpg" />
-  <img src="docs/assets/readme/hero-light.jpg" alt="VoiceGateway. One call. The whole story. The open-source profiler for LiveKit voice agents, shown with a real captured call." width="100%" />
-</picture>
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="dashboard/src/assets/brand/wordmark-dark.svg" />
+    <img src="dashboard/src/assets/brand/wordmark.svg" alt="VoiceGateway" height="48" />
+  </picture>
+</p>
+
+<h3 align="center">One call. The whole story.</h3>
+<p align="center">The open-source profiler for LiveKit voice agents, from the phone line to the model.</p>
 
 <div align="center">
-  <h3><a href="#quickstart">Try the console</a> · <a href="https://voicegateway.dev">Website</a> · <a href="docs/specs/v1-connect-plan.md">V1 roadmap</a></h3>
-  <p><a href="dashboard/README.md">Console guide</a> · <a href="CONTRIBUTING.md">Contribute</a> · <a href="https://github.com/mahimailabs/voicegateway/issues/new/choose">Report a bug</a> · <a href="https://discord.gg/ysFaF4uSB">Discord</a></p>
+  <h3><a href="#quickstart">Self-host</a> · <a href="https://docs.voicegateway.dev">Docs</a> · <a href="https://voicegateway.dev">Website</a> · <a href="https://github.com/mahimailabs/voicegateway/issues/320">V1 roadmap</a></h3>
+  <p><a href="https://docs.voicegateway.dev/get-started/python-sdk">Python SDK</a> · <a href="CONTRIBUTING.md">Contribute</a> · <a href="https://github.com/mahimailabs/voicegateway/issues/new/choose">Report a bug</a> · <a href="https://discord.gg/ysFaF4uSB">Discord</a></p>
   <p>
-    <a href="docs/progress.md"><img src="https://img.shields.io/badge/V1-console_preview-0071E3?style=flat-square" alt="V1: console preview" /></a>
+    <a href="docs/progress.md"><img src="https://img.shields.io/badge/V1-preview-0071E3?style=flat-square" alt="V1 preview" /></a>
     <a href="https://github.com/mahimailabs/voicegateway/actions/workflows/dashboard.yml"><img src="https://github.com/mahimailabs/voicegateway/actions/workflows/dashboard.yml/badge.svg" alt="Dashboard CI" /></a>
+    <a href="https://pypi.org/project/voicegateway/"><img src="https://img.shields.io/pypi/v/voicegateway?include_prereleases&style=flat-square&label=python%20sdk" alt="Python SDK on PyPI" /></a>
     <a href="LICENSE"><img src="https://img.shields.io/badge/core-MIT-6e6e73?style=flat-square" alt="Core: MIT licensed; see the license section for Enterprise code" /></a>
   </p>
 </div>
 
-VoiceGateway profiles **LiveKit voice calls from the phone line to the model**. Inspect the transcript, turn timings, agent activity and infrastructure around a call to understand where it slowed down or went wrong.
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/readme/hero-dark.webp" />
+  <img src="docs/assets/readme/hero-light.webp" alt="Opening a captured LiveKit call in the VoiceGateway console: the call list, the call's transcript and recording, then the diagnosis of each turn with speech-to-text, turn detection, model and voice timings." width="100%" />
+</picture>
+
+VoiceGateway profiles **LiveKit voice calls from the phone line to the model**. Every call gets one view: the transcript and recording, each turn's timings, the agent's spans, and the media server, SIP, egress and agent workers around it. You see where a call slowed down or went wrong, and which layer did it.
 
 > [!NOTE]
-> **V1 preview.** You can [self-host](docs/self-hosting.md) the Go backend and console against your own LiveKit project today; some panels and notifications are still being built, and the hosted Cloud service is not available yet. The Quickstart below runs the console on captured LiveKit sessions. The published Python release is the earlier product.
+> **V1 preview.** [Self-host](docs/self-hosting.md) the Go backend and console against your own LiveKit project today. Alert delivery and capacity tests are still being built ([roadmap](https://github.com/mahimailabs/voicegateway/issues/320)). VoiceGateway Cloud, the same product hosted, opens at [voicegateway.dev](https://voicegateway.dev).
 
 ## Features
 
-Available in the **captured-data console preview**:
-
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/assets/readme/overview-dark.jpg" />
-  <img src="docs/assets/readme/overview-light.jpg" alt="Captured console overview: answer-time distribution and the Live wire connecting callers, SIP, media server, agent and models." width="100%" />
+  <img src="docs/assets/readme/overview-light.jpg" alt="The console Overview: median answer time on a gauge, every turn against the response budget, and the Live wire from callers through the phone bridge and media server to the agent and its models." width="100%" />
 </picture>
 
-- **Call inspection:** transcripts, individual turns, events and agent spans when captured.
-- **Latency breakdowns:** measured answer time, end-of-turn wait, model first token and voice first audio. Overlapping stages are explained rather than added together.
-- **Usage visibility:** reported tokens, audio seconds and characters, without estimated model prices.
-- **LiveKit infrastructure views:** rooms, participants, agent workers, SIP, egress and ingress observations around the call.
-- **Issues and alert-rule previews:** grouped findings and seven supported rule previews. Notification delivery is planned for V1.
-- **Live replay:** explore captured room activity over time. The real-time backend feed is planned for V1.
-- **Embeddable widget previews:** answer time, calls, one call, turn anatomy and issues. Production tokens and origin enforcement are planned for V1.
+- **Call inspection:** transcript, turns, LiveKit events, the agent's spans and reported usage, in one drawer. Opt-in recordings play beside the transcript.
+- **Turn diagnosis:** speech to text, turn detection, model first token, tools and voice first audio on the turn's own clock. Overlapping stages are shown as overlapping, never added up.
+- **Issues:** problems found on many calls become one issue, with the calls as evidence. Resolve, ignore, tag or archive them; a resolved issue that comes back shows as regressed.
+- **Every LiveKit layer:** media server rooms and participants, SIP trunks and call legs, egress and ingress jobs, and agent workers with jobs, load, CPU and memory.
+- **Live:** a project-scoped feed pushed from the worker, with stale and disconnected sources marked as such.
+- **For your team and tools:** organisations, roles and invites, Google, GitHub or Auth0 sign-in, project API keys, an [MCP server](https://docs.voicegateway.dev/team/mcp) for coding agents, signed [embeds](https://docs.voicegateway.dev/team/embeds) for your own pages, and a [Python SDK](sdk/python/README.md) for custom call fields.
+- **Alerts:** seven rules preview on your real calls today; delivery by email and webhook is next.
 
-Unreported measurements stay **unknown**. Traces, usage and recordings appear only when the capture provides them. See [the V1 roadmap](#the-road-to-v1) for backend and hosted capabilities still being built.
+Unreported measurements stay **unknown**, never zero. Traces, usage and recordings appear only when the agent sends them.
 
 ## How it fits
 
@@ -57,7 +66,20 @@ One Go binary runs as **web** (checks keys, takes data in, serves the API and da
 
 ## Quickstart
 
-Run the captured-data console locally with **Node.js 24** and npm. No LiveKit credentials are needed for this preview.
+Self-host with Docker, git and make. The installer clones the release, starts the six services and runs the preflight checks:
+
+```bash
+curl -fsSL https://voicegateway.dev/install.sh | bash
+cd voicegateway
+make user-add EMAIL=you@example.com
+make project-add NAME="Production"   # with LIVEKIT_URL, LIVEKIT_API_KEY and LIVEKIT_API_SECRET set
+```
+
+Sign in at [localhost:8080](http://localhost:8080). The **Connect your agent** panel gives the one variable your agent needs, `LIVEKIT_OBSERVABILITY_URL`, and the webhook URL for LiveKit. Start the agent session with `record=True` and place a call. [Read the self-hosting guide](docs/self-hosting.md) or try the [example agent](examples/livekit-agent/README.md).
+
+### Look around without LiveKit
+
+Run the console on captured LiveKit sessions with **Node.js 24** and npm:
 
 ```bash
 git clone https://github.com/mahimailabs/voicegateway.git
@@ -66,28 +88,18 @@ npm --prefix dashboard ci
 make dev
 ```
 
-Open **[localhost:5180](http://localhost:5180)**, choose **Calls**, then open a captured session and select a caller turn.
-
-### Self-host with your LiveKit project
-
-```bash
-make up
-make user-add EMAIL=you@example.com
-make project-add NAME="Production"   # with LIVEKIT_URL, LIVEKIT_API_KEY and LIVEKIT_API_SECRET set
-```
-
-Then point your agent's `LIVEKIT_OBSERVABILITY_URL` and your LiveKit webhook at VoiceGateway. [Read the self-hosting guide](docs/self-hosting.md)
+Open **[localhost:5180](http://localhost:5180)**, choose **Calls** and open a call.
 
 ### Inspect a real turn
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/assets/readme/call-dark.jpg" />
-  <img src="docs/assets/readme/call-light.jpg" alt="A captured caller turn: 2.68 seconds to answer, with a 2.50-second end-of-turn wait, 189 milliseconds to model first token and 165 milliseconds to voice first audio. The inspector explains that the stages overlap." width="100%" />
+  <img src="docs/assets/readme/call-light.jpg" alt="Diagnosis of a captured call: five turns in 4 minutes 57 seconds, every measured answer over the 1.5 second budget. Turn 2 answers in 3.04 seconds, with a 668 millisecond end-of-turn delay, 685 milliseconds to the model's first token and 1.38 seconds to the voice's first audio." width="100%" />
 </picture>
 
-In this captured session, the caller asks about Toronto. The inspector shows the turn detector below its threshold and a **2.50 s end-of-turn wait**. That makes the next investigation specific: endpointing behaviour, with the transcript and measured turn timings beside it.
+In this captured call, the caller asks for the status of order 1042. Every measured answer is over the 1.5 s budget, and turn 2 is the slowest at **3.04 s**. Its breakdown shows where the time went: **1.38 s to the voice's first audio**, against 685 ms to the model's first token and a 668 ms end-of-turn delay. That makes the next step specific: the text-to-speech provider before the prompt.
 
-[Read the console guide](dashboard/README.md)
+[Read the console docs](https://docs.voicegateway.dev/console/calls)
 
 ### Upgrading from the API token
 
@@ -95,17 +107,17 @@ In this captured session, the caller asks about Toronto. The inspector shows the
 
 ## The road to V1
 
-The preview establishes the console and its captured evidence. The next work connects it to authenticated ingest, durable storage and project-scoped APIs, then adds live updates and server-backed actions.
+V1 is 32 of 39 tasks done; the [roadmap issue](https://github.com/mahimailabs/voicegateway/issues/320) lists each one and what is left.
 
-- **Self-hosted:** the V1 platform runs on your infrastructure today as a preview. Follow [Self-hosting](docs/self-hosting.md) to connect your LiveKit project and see your calls.
-- **VoiceGateway Cloud:** the same product hosted, with self-serve signup, checkout and workspace provisioning. It is not available yet; follow [voicegateway.dev](https://voicegateway.dev) for updates.
-- **Next capabilities:** notifications, opt-in recording retention, MCP access, capacity testing and authorised embeds. Existing previews do not imply an operational backend.
+- **Self-hosted:** runs on your infrastructure today as a preview. Follow [Self-hosting](docs/self-hosting.md).
+- **VoiceGateway Cloud:** the same product hosted, with self-serve sign-up and checkout. Follow [voicegateway.dev](https://voicegateway.dev).
+- **Next:** alert evaluation and delivery, more alert channels, the capacity test runner and a 1,000-call load test.
 
-[Connect execution plan](docs/specs/v1-connect-plan.md) · [Current progress](docs/progress.md) · [Product scope](PRODUCT.md) · [Decisions](docs/decisions/)
+[Current progress](docs/progress.md) · [Product scope](PRODUCT.md) · [Decisions](docs/decisions/)
 
 ## Contribute
 
-Pick an [open issue](https://github.com/mahimailabs/voicegateway/issues), agree on scope and open a focused PR against `main`. Start with [CONTRIBUTING.md](CONTRIBUTING.md) for current V1 setup and the separate published-Python workflow.
+Pick an [open issue](https://github.com/mahimailabs/voicegateway/issues), agree on scope and open a focused PR against `main`. Start with [CONTRIBUTING.md](CONTRIBUTING.md).
 
 From the repository root:
 
@@ -114,7 +126,7 @@ make test
 make lint
 ```
 
-These run the Go tests (container tests need Docker) and lint, plus the dashboard tests, lint and TypeScript checks. `make up` starts the six-service stack. The [Phase 1 spec](docs/specs/phase01-console.md) and [progress notes](docs/progress.md) identify the remaining API and UI-test work.
+These run the Go tests (container tests need Docker) and lint, plus the dashboard tests, lint and TypeScript checks. `make up` starts the six-service stack.
 
 ## Community and security
 
@@ -124,7 +136,7 @@ Please report vulnerabilities privately using [SECURITY.md](SECURITY.md).
 
 ## License
 
-**Free to self-host.** Code outside `ee/` uses the [MIT license](LICENSE); code inside it uses the [Enterprise license](ee/LICENSE). VoiceGateway Cloud will host the same product. [Read the boundary](docs/decisions/0017-oss-enterprise-cloud-boundary.md).
+**Free to self-host.** Code outside `ee/` uses the [MIT license](LICENSE); code inside it uses the [Enterprise license](ee/LICENSE). VoiceGateway Cloud hosts the same product. [Read the boundary](docs/decisions/0017-oss-enterprise-cloud-boundary.md).
 
 <!-- GitAds-Verify: B26PKZL6HHS6F2ZU9NAHRIA9OQHS919R -->
 <details>

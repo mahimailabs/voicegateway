@@ -3,10 +3,15 @@ title: Issues
 description: The same problem across many calls, as one row.
 ---
 
-<Picture src="/diagrams/layers-none" alt="The layers of a call: caller, phone bridge, media server, agent workers and models, with Egress and Ingress below." />
+<Picture src="/screens/issues" ext="jpg" alt="The Issues page: open issues by severity, each with its source, how many calls it was seen on and when it was last seen." />
 
-<Callout type="warn">Preview. The console shows issues from sample data; the server sends them next.</Callout>
+VoiceGateway checks every call and every layer. A problem seen on many calls becomes one issue, with the calls it was found on as evidence.
 
-VoiceGateway checks every call and every layer. A problem seen on many calls becomes one issue, with the calls it was found on.
+| You can | What happens |
+| --- | --- |
+| Resolve | It moves to Resolved. If it is found again, it shows as **Regressed** |
+| Ignore | It moves to Ignored and stops counting as open |
+| Tag | Group issues your own way |
+| Archive | It leaves the list; Restore brings it back |
 
-Mark an issue resolved or ignored. If it comes back, it shows as **Regressed**.
+Pick several rows to change them together, and Undo straight after. A Member or an Admin can change issues; a Viewer can read them.
