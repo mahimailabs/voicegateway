@@ -394,7 +394,7 @@ func Worker(ctx context.Context, c config.Config, log *slog.Logger) error {
 	})
 	g.Go(func() error {
 		deliverer := &alert.Deliverer{Store: alerts, HTTP: scrape.NewWorkerClient(c.WorkerEndpointsPublicOnly), Refused: scrape.Refused, Mailer: mail, Log: log, Now: time.Now}
-		every(gctx, deliverEvery, "alert delivery", deliverer.Tick, log)
+		everyWithin(gctx, deliverEvery, alert.TickBudget, "alert delivery", deliverer.Tick, log)
 		return nil
 	})
 	g.Go(func() error {
@@ -431,6 +431,12 @@ const (
 
 // every runs f each period until ctx is cancelled. A failure is logged and retried next period.
 func every(ctx context.Context, period time.Duration, what string, f func(context.Context, time.Time) error, log *slog.Logger) {
+	everyWithin(ctx, period, period, what, f, log)
+}
+
+// everyWithin is every with each run given up to budget; ticks that fall inside a longer run are
+// dropped.
+func everyWithin(ctx context.Context, period, budget time.Duration, what string, f func(context.Context, time.Time) error, log *slog.Logger) {
 	t := time.NewTicker(period)
 	defer t.Stop()
 	for {
@@ -438,7 +444,7 @@ func every(ctx context.Context, period time.Duration, what string, f func(contex
 		case <-ctx.Done():
 			return
 		case now := <-t.C:
-			cctx, cancel := context.WithTimeout(ctx, period)
+			cctx, cancel := context.WithTimeout(ctx, budget)
 			if err := f(cctx, now); err != nil && ctx.Err() == nil {
 				log.Error("worker: "+what+" failed, retrying next period", "err", err)
 			}

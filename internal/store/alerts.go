@@ -134,8 +134,9 @@ type AlertSource struct {
 // StandingAlert is a standing condition true now, such as a plain-RTP trunk.
 type StandingAlert struct {
 	OrganisationID, ProjectID, SourceID string
-	ObservedAt                          time.Time
-	Where, Detail                       string
+	// ChangedAt is when the condition last turned on or changed, not when a read last saw it.
+	ChangedAt     time.Time
+	Where, Detail string
 }
 
 // AlertEvent is what one rule matched in a range, for the Alerts page chart.

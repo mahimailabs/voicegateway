@@ -411,3 +411,62 @@ func TestDisabledRuleSendsNothing(t *testing.T) {
 		t.Fatal("a disabled rule sent")
 	}
 }
+
+// A plain trunk is one occurrence however many reads still see it; it turning plain again after
+// it was fixed is a new one.
+func TestPlainTrunkCountsOncePerActivation(t *testing.T) {
+	f := setup(t)
+	ctx := context.Background()
+	key := store.FindingKey{IssueID: "sip:plain-phone", SourceID: "inbound:trunk-1"}
+	plain := &store.StandingEvaluation{Subjects: []string{key.SourceID}, Covered: []store.FindingKey{key}, Findings: []store.StandingFinding{{Finding: store.Finding{ID: key.IssueID, Title: "Plain phone audio", Severity: "medium", Detail: "Media encryption off"}, SourceID: key.SourceID, Where: "trunk-1"}}}
+	fixed := &store.StandingEvaluation{Subjects: []string{key.SourceID}, Covered: []store.FindingKey{key}}
+	at := time.Now().UTC()
+	read := func(e *store.StandingEvaluation) {
+		t.Helper()
+		at = at.Add(time.Minute)
+		if err := f.store.ApplyStandingFindings(ctx, store.LayerRead{OrganisationID: "default", ProjectID: "one", Layer: store.LayerSIP, ReadAt: at, Every: time.Minute, OK: true}, e); err != nil {
+			t.Fatal(err)
+		}
+		f.tick()
+	}
+	occurrences := func() int {
+		return f.count(`SELECT count(*) FROM alert_occurrences WHERE rule_id = 'plain-phone'`)
+	}
+	read(plain)
+	read(plain)
+	read(plain)
+	if n := occurrences(); n != 1 {
+		t.Fatalf("occurrences after 3 reads of one plain trunk = %d, want 1", n)
+	}
+	read(fixed)
+	if n := f.count(`SELECT count(*) FROM alert_incidents WHERE state = 'resolved'`); n != 1 {
+		t.Fatal("a fixed trunk did not resolve the incident")
+	}
+	read(plain)
+	if n := occurrences(); n != 2 {
+		t.Fatalf("occurrences after the trunk turned plain again = %d, want 2", n)
+	}
+}
+
+// An attempt is recorded even when the tick's context ends during the send, so a channel that
+// already answered is not sent the same change again.
+func TestAttemptRecordedAfterTickEnds(t *testing.T) {
+	f := setup(t)
+	tick, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		cancel()
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+	f.webhook(srv.URL, "recording-lost")
+	if err := f.store.PutMediaFinding(context.Background(), store.MediaFinding{OrganisationID: "default", ProjectID: "one", Layer: "egress", EventID: "evt-1", ComponentID: "EG_1", Status: "EGRESS_FAILED"}); err != nil {
+		t.Fatal(err)
+	}
+	f.tick()
+	f.advance(time.Minute) // the delivery is due from the database clock, ahead of the fixture's
+	_ = f.deliver.Tick(tick, f.clock())
+	if n := f.count(`SELECT count(*) FROM alert_deliveries WHERE attempts = 1 AND lease_until IS NULL`); n != 1 {
+		t.Fatal("the attempt made before the tick ended was not recorded")
+	}
+}

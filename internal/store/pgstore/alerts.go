@@ -90,7 +90,7 @@ func (s *Store) StandingAlerts(ctx context.Context) ([]store.StandingAlert, erro
 	for _, r := range rows {
 		out = append(out, store.StandingAlert{
 			OrganisationID: r.OrganisationID, ProjectID: r.ProjectID, SourceID: r.SourceID,
-			ObservedAt: r.ObservedAt.Time.UTC(), Where: r.Location, Detail: r.Detail,
+			ChangedAt: r.ChangedAt.Time.UTC(), Where: r.Location, Detail: r.Detail,
 		})
 	}
 	return out, nil

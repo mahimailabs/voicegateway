@@ -31,11 +31,18 @@ const (
 	lease = 2 * time.Minute
 	// sendTimeout bounds one attempt.
 	sendTimeout = 10 * time.Second
-	// claimBatch caps the deliveries one tick sends.
-	claimBatch = 20
+	// claimBatch caps the deliveries one tick sends: all of them, one after another, finish inside
+	// TickBudget, well inside the lease, so no other worker claims one still being sent.
+	claimBatch = 5
+	// finishTimeout bounds recording one attempt, even after the tick's context ends.
+	finishTimeout = 5 * time.Second
 	// errorBytes caps the provider message kept from a refusal.
 	errorBytes = 200
 )
+
+// TickBudget is how long one Tick may run: every claimed delivery sent and recorded, 75 s, inside
+// the 2 minute lease.
+const TickBudget = claimBatch * (sendTimeout + finishTimeout)
 
 // Deliverer sends due deliveries. HTTP dials through the worker's address guard
 // (scrape.NewWorkerClient), whose refusals Refused recognises; Mailer is nil without
@@ -68,9 +75,19 @@ func (d *Deliverer) Tick(ctx context.Context, now time.Time) error {
 	}
 	var errs []error
 	for _, del := range due {
+		// A delivery not sent before the tick ends keeps its lease and goes out once it lapses.
+		if err := ctx.Err(); err != nil {
+			errs = append(errs, err)
+			break
+		}
 		o := d.send(ctx, del)
 		a := d.schedule(del, o, d.Now())
-		if err := d.Store.FinishAlertAttempt(ctx, del, a); err != nil {
+		// Recorded even when the tick's context ended during the send, so an answer the channel
+		// already gave is not sent again.
+		fctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), finishTimeout)
+		err := d.Store.FinishAlertAttempt(fctx, del, a)
+		cancel()
+		if err != nil {
 			errs = append(errs, fmt.Errorf("alert delivery %s: %w", del.ID, err))
 			continue
 		}

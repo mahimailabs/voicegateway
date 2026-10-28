@@ -73,12 +73,12 @@ func (e *Evaluator) Tick(ctx context.Context, now time.Time) error {
 	plain := map[string]bool{}
 	for _, s := range standing {
 		plain[s.OrganisationID+"/"+s.ProjectID+"/"+s.SourceID] = true
-		// A trunk that turns plain again, or changes while plain, is a new occurrence: the Issues
-		// page bumps observed_at only then.
-		at := s.ObservedAt
+		// A trunk that turns plain again, or changes while plain, is a new occurrence; a read that
+		// still sees it unchanged is not (changed_at moves only on the first two).
+		at := s.ChangedAt
 		occ := store.AlertOccurrence{
 			OrganisationID: s.OrganisationID, ProjectID: s.ProjectID, RuleID: "plain-phone",
-			OccurrenceID: s.SourceID + "@" + s.ObservedAt.Format(time.RFC3339Nano), Subject: s.SourceID, At: &at,
+			OccurrenceID: s.SourceID + "@" + s.ChangedAt.Format(time.RFC3339Nano), Subject: s.SourceID, At: &at,
 			Detail: store.AlertDetail{Where: s.Where, Detail: s.Detail},
 		}
 		if _, _, err := e.Store.ApplyAlertOccurrence(ctx, occ, s.Where, now, now.Add(-flapGuard), e.Compose); err != nil {

@@ -28,6 +28,6 @@ The checks are `alerts-behaviour.md` 3 to 7, run against Postgres 16 through tes
 6. A channel answering 400 gets no retry, is marked broken and adds an Issues row without the secret: `TestRefusalBreaksChannel`; the console names it on the rule (`dashboard/tests/alerts.test.tsx`).
 7. A silent source keeps its incident firing, marked silent: `TestSilentSourceStaysFiring`.
 
-Also: `TestCleanCallsResolveAndFlapReopens`, `TestDisabledRuleSendsNothing`, `TestAlertSetupKeepsChannelSecrets` and `TestAlertReads` (contract-validated).
+Also: `TestCleanCallsResolveAndFlapReopens`, `TestDisabledRuleSendsNothing`, `TestPlainTrunkCountsOncePerActivation`, `TestAttemptRecordedAfterTickEnds`, `TestAlertSetupKeepsChannelSecrets` and `TestAlertReads` (contract-validated).
 
 8. End to end on the Mac LiveKit slot: a real slow call on a LiveKit Cloud project reaches a webhook receiver once, signed, and resolves after clean calls. Not run yet.

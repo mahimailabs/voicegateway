@@ -258,6 +258,7 @@ type IssueOccurrence struct {
 	Active         bool
 	ObservedAt     pgtype.Timestamptz
 	SourceLayer    string
+	ChangedAt      pgtype.Timestamptz
 }
 
 type IssueSource struct {

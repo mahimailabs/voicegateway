@@ -116,6 +116,12 @@ CREATE TABLE alert_delivery_attempts (
 -- The evaluator reads occurrences by when they were stored.
 CREATE INDEX issue_occurrences_observed ON issue_occurrences (observed_at) WHERE active;
 
+-- A standing condition's observed_at moves on every source read that still sees it; changed_at
+-- moves only when it turns on again or its detail changes, which is what makes a new plain-phone
+-- occurrence.
+ALTER TABLE issue_occurrences ADD COLUMN changed_at timestamptz NOT NULL DEFAULT now();
+UPDATE issue_occurrences SET changed_at = observed_at;
+
 -- Occurrences stored before alerts existed are history, not news: count them as seen so the first
 -- run does not page anyone for last week. Standing conditions (plain-phone) are evaluated as they
 -- stand, so they are not seeded.
@@ -128,6 +134,7 @@ WHERE issue_id IN ('slow', 'cut', 'job-failed', 'slow-join', 'recording-lost', '
 ON CONFLICT DO NOTHING;
 
 -- +goose Down
+ALTER TABLE issue_occurrences DROP COLUMN changed_at;
 DROP INDEX issue_occurrences_observed;
 DROP TABLE alert_delivery_attempts;
 DROP TABLE alert_deliveries;

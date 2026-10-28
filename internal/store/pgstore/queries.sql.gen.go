@@ -4864,7 +4864,7 @@ func (q *Queries) StaleCalls(ctx context.Context, maxCalls int32) ([]StaleCallsR
 }
 
 const standingAlertOccurrences = `-- name: StandingAlertOccurrences :many
-SELECT o.organisation_id, o.project_id, o.source_id, o.observed_at,
+SELECT o.organisation_id, o.project_id, o.source_id, o.changed_at,
        COALESCE(o.detail->>'where', o.source_id)::text AS location, COALESCE(o.detail->>'detail', '')::text AS detail
 FROM issue_occurrences o
 WHERE o.issue_id = 'sip:plain-phone' AND o.active
@@ -4875,7 +4875,7 @@ type StandingAlertOccurrencesRow struct {
 	OrganisationID string
 	ProjectID      string
 	SourceID       string
-	ObservedAt     pgtype.Timestamptz
+	ChangedAt      pgtype.Timestamptz
 	Location       string
 	Detail         string
 }
@@ -4894,7 +4894,7 @@ func (q *Queries) StandingAlertOccurrences(ctx context.Context) ([]StandingAlert
 			&i.OrganisationID,
 			&i.ProjectID,
 			&i.SourceID,
-			&i.ObservedAt,
+			&i.ChangedAt,
 			&i.Location,
 			&i.Detail,
 		); err != nil {
@@ -5668,7 +5668,7 @@ WITH prior AS (
 INSERT INTO issue_occurrences (organisation_id, project_id, issue_id, source_id, source_layer, detail)
 VALUES ($1, $2, $3, $4, $5, $6)
 ON CONFLICT (organisation_id, project_id, issue_id, source_id) DO UPDATE
-SET detail = EXCLUDED.detail, active = true, observed_at = now()
+SET detail = EXCLUDED.detail, active = true, observed_at = now(), changed_at = now()
 WHERE NOT issue_occurrences.active OR issue_occurrences.detail IS DISTINCT FROM EXCLUDED.detail
 RETURNING 1
 )
