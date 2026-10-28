@@ -393,7 +393,7 @@ func Worker(ctx context.Context, c config.Config, log *slog.Logger) error {
 		return nil
 	})
 	g.Go(func() error {
-		deliverer := &alert.Deliverer{Store: alerts, HTTP: scrape.NewWorkerClient(c.WorkerEndpointsPublicOnly), Mailer: mail, Log: log, Now: time.Now}
+		deliverer := &alert.Deliverer{Store: alerts, HTTP: scrape.NewWorkerClient(c.WorkerEndpointsPublicOnly), Refused: scrape.Refused, Mailer: mail, Log: log, Now: time.Now}
 		every(gctx, deliverEvery, "alert delivery", deliverer.Tick, log)
 		return nil
 	})

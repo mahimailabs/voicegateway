@@ -195,7 +195,7 @@ function Incidents({ list, canResolve }: { list: AlertIncident[]; canResolve: bo
                     {i.silentSince && ` · no data since ${time(Date.parse(i.silentSince) / 1000)}`}
                   </p>
                   <p className="text-[13px] text-muted-foreground">
-                    {`Last: ${last.detail} · `}
+                    {last.where === last.detail ? "Last: " : `Last: ${last.detail} · `}
                     {last.callId ? (
                       <Link to="/calls/$callId" params={{ callId: last.callId }} className="font-mono hover:text-foreground hover:underline">
                         {last.where}

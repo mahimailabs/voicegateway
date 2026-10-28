@@ -19,6 +19,7 @@ import (
 	tcpostgres "github.com/testcontainers/testcontainers-go/modules/postgres"
 
 	"github.com/mahimailabs/voicegateway/internal/alert"
+	"github.com/mahimailabs/voicegateway/internal/scrape"
 	"github.com/mahimailabs/voicegateway/internal/seal"
 	"github.com/mahimailabs/voicegateway/internal/store"
 	"github.com/mahimailabs/voicegateway/internal/store/pgstore"
@@ -314,6 +315,30 @@ func TestRefusalBreaksChannel(t *testing.T) {
 	}
 	if n := f.count(`SELECT count(*) FROM issue_occurrences WHERE issue_id = 'alert-not-delivered' AND NOT detail::text LIKE '%s3cret%'`); n != 1 {
 		t.Fatalf("issue occurrences without the secret = %d, want 1", n)
+	}
+}
+
+// An address the worker's guard refuses (here loopback on a public-only server, as on Cloud) is
+// final on the first attempt, as a refusal is: the channel is broken, not retried for a day.
+func TestGuardRefusalBreaksChannel(t *testing.T) {
+	f := setup(t)
+	calls := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { calls++ }))
+	defer srv.Close()
+	f.deliver.HTTP, f.deliver.Refused = scrape.NewWorkerClient(true), scrape.Refused
+	f.webhook(srv.URL+"/hook", "recording-lost")
+	if err := f.store.PutMediaFinding(context.Background(), store.MediaFinding{OrganisationID: "default", ProjectID: "one", Layer: "egress", EventID: "evt-1", ComponentID: "EG_1", Status: "EGRESS_FAILED"}); err != nil {
+		t.Fatal(err)
+	}
+	f.tick()
+	f.advance(time.Minute) // the delivery is due from the database clock, ahead of the fixture's
+	f.send()
+	channels, err := f.store.AlertChannels(context.Background(), "default", "one")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if calls != 0 || len(channels) != 1 || !channels[0].Broken || channels[0].Last == nil || channels[0].Last.State != "failed" || *channels[0].Last.LastStatus != "address_not_allowed" {
+		t.Fatalf("calls %d, channel %+v: want no call and a broken channel with address_not_allowed", calls, channels)
 	}
 }
 

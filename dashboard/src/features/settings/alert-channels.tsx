@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { EnvelopeSimple, LinkSimple, PaperPlaneTilt, Trash, WebhooksLogo } from "@phosphor-icons/react"
 import type { Icon } from "@phosphor-icons/react"
@@ -6,6 +6,7 @@ import { toast } from "sonner"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Field, FieldDescription, FieldLabel } from "@/components/ui/field"
 import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/input-group"
 import { Item, ItemContent, ItemDescription, ItemGroup, ItemSeparator, ItemTitle } from "@/components/ui/item"
@@ -100,6 +101,7 @@ function ChannelItem({ kind, icon: I, name, description, channel, isAdmin, loade
   const refresh = () => qc.invalidateQueries({ queryKey: alertSetupQuery().queryKey })
   const test = useMutation({ mutationFn: () => testAlertChannel(kind), onSuccess: () => (toast.success(`Test alert queued for ${name}`), refresh()), onError: (e: Error) => toast.error(errorText(e)) })
   const remove = useMutation({ mutationFn: () => removeAlertChannel(kind), onSuccess: () => (toast.success(`${name} removed`), refresh()), onError: (e: Error) => toast.error(errorText(e)) })
+  const [confirming, setConfirming] = useState(false)
   const badge = deliveryBadge(channel)
   return (
     <Item role="listitem" size="sm" className="flex-col items-stretch gap-3 rounded-none border-0 px-0 py-4">
@@ -126,11 +128,37 @@ function ChannelItem({ kind, icon: I, name, description, channel, isAdmin, loade
             <Button size="sm" variant="outline" onClick={() => test.mutate()} disabled={test.isPending}>
               <PaperPlaneTilt /> Send test
             </Button>
-            <Button size="sm" variant="ghost" className="text-destructive hover:text-destructive" onClick={() => remove.mutate()} disabled={remove.isPending}>
+            <Button size="sm" variant="ghost" className="text-destructive hover:text-destructive" onClick={() => setConfirming(true)} disabled={remove.isPending}>
               <Trash /> Remove
             </Button>
           </div>
         )}
+        <Dialog open={confirming} onOpenChange={setConfirming}>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle>{`Remove ${name}?`}</DialogTitle>
+              <DialogDescription>
+                {kind === "webhook"
+                  ? "The URL and signing secret are deleted and cannot be shown again. Adding the webhook again makes a new secret, so every receiver needs it. Rules stop sending here."
+                  : "The recipients are deleted. Rules stop sending email until it is set up again."}
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setConfirming(false)}>
+                Cancel
+              </Button>
+              <Button
+                variant="destructive"
+                onClick={() => {
+                  remove.mutate()
+                  setConfirming(false)
+                }}
+              >
+                Remove
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
     </Item>
   )
@@ -158,6 +186,13 @@ function WebhookForm({ configured }: { configured: boolean }) {
     setRotate(false)
   })
   const valid = /^https?:\/\/[^\s/]+/.test(url.trim()) && !save.isPending
+  // The secret is shown this once: bring it into view and onto its Copy button, on a phone too.
+  const shown = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!secret) return
+    shown.current?.scrollIntoView?.({ block: "center" })
+    shown.current?.querySelector("button")?.focus({ preventScroll: true })
+  }, [secret])
   return (
     <form
       className="space-y-3"
@@ -194,7 +229,7 @@ function WebhookForm({ configured }: { configured: boolean }) {
         </p>
       )}
       {secret && (
-        <div className="space-y-2">
+        <div ref={shown} className="space-y-2">
           <p className="text-[13px] text-muted-foreground">Copy the signing secret now. It is not shown again. Verify each delivery's webhook-signature header with it.</p>
           <CopyCommand text={secret} label="Signing secret" copyLabel="Copy secret" />
           <Button type="button" size="sm" variant="outline" onClick={() => setSecret(null)}>

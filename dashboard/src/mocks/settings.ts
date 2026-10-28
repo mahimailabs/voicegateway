@@ -57,11 +57,14 @@ export const RULES: AlertRuleSetup["ruleId"][] = ["slow-answer", "cut-off", "job
 // changed is on and sends nowhere; a channel keeps only what web would answer, never a URL or secret.
 const ruleState = new Map<string, { on: boolean; to: AlertRuleUpdate["to"] }>()
 const channelState = new Map<AlertChannel["kind"], AlertChannel>()
+// When each queued test reads as delivered.
+const testDue = new Map<string, number>()
 export function resetAlerts() {
   ruleState.clear()
   channelState.clear()
+  testDue.clear()
 }
-export const alertSetup = (): AlertSetup => ({
+export const alertSetup = (): AlertSetup => (settleTests(), {
   items: RULES.map((ruleId) => ({ ruleId, ...(ruleState.get(ruleId) ?? { on: true, to: [] }) })),
   channels: [...channelState.values()].sort((a, b) => a.kind.localeCompare(b.kind)),
   emailAvailable: true,
@@ -107,13 +110,24 @@ export function updateAlertChannel(kind: string, input: unknown): SavedAlertChan
 }
 export const deleteAlertChannel = (kind: string) => channelState.delete(kind as AlertChannel["kind"])
 
-/** Queues a test as web does; the mock has no worker, so it is delivered at once. */
+/** Queues a test as web does. The mock has no worker: the test reads as pending for a second, then
+ * as delivered, so the console's polling shows how it ended. */
 export function testAlertChannel(kind: string): boolean {
   const c = channelState.get(kind as AlertChannel["kind"])
   if (!c) return false
   const now = new Date().toISOString()
-  c.lastDelivery = { id: crypto.randomUUID(), channel: c.kind, change: "test", state: "delivered", attempts: 1, nextAttemptAt: null, status: c.kind === "email" ? "sent" : "HTTP 200", message: null, deliveredAt: now, createdAt: now }
+  c.lastDelivery = { id: crypto.randomUUID(), channel: c.kind, change: "test", state: "pending", attempts: 0, nextAttemptAt: now, status: null, message: null, deliveredAt: null, createdAt: now }
+  testDue.set(c.lastDelivery.id, Date.now() + 1000)
   return true
+}
+function settleTests() {
+  for (const c of channelState.values()) {
+    const d = c.lastDelivery
+    if (d?.state === "pending" && (testDue.get(d.id) ?? Infinity) <= Date.now()) {
+      c.lastDelivery = { ...d, state: "delivered", attempts: 1, nextAttemptAt: null, status: c.kind === "email" ? "sent" : "HTTP 200", deliveredAt: new Date().toISOString() }
+      testDue.delete(d.id)
+    }
+  }
 }
 
 // The organisation's members, held in memory for the mock: changes last until the page reloads.

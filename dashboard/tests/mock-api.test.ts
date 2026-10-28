@@ -543,7 +543,7 @@ describe("settings reads", () => {
     const { body } = await get(`${base}/alert-setup`)
     expect(valid("AlertSetup", body)).toBe("")
     expect(JSON.stringify(body)).not.toMatch(/T0K3N|whsec_/)
-    expect(body.channels[0]).toMatchObject({ kind: "webhook", target: "hooks.example.com", lastDelivery: { change: "test", state: "delivered" } })
+    expect(body.channels[0]).toMatchObject({ kind: "webhook", target: "hooks.example.com", lastDelivery: { change: "test", state: "pending" } })
     expect((await postTo(`${base}/alert-channels/email/test`)).status).toBe(404)
   })
 

@@ -49,7 +49,7 @@ import {
   updateProjectSettings as updateProjectSettingsCall,
   updateProjectLiveKitCredentials as updateProjectLiveKitCredentialsCall,
 } from "@/lib/api-types"
-import type { AlertChannelUpdate, AlertRuleUpdate, AlertRuleId, AlertChannelKind, Call as GeneratedCall, CreateEmbedToken, ProjectConnection, UpdateProjectSettings, CallPage, ProjectCreate, CallSummary, CallTotals, EndOfTurnEvent, ItemEvent, Member, OverlapEvent, RecordingSegment, Span, StateEvent, TranscriptEvent, Turn } from "@/lib/api-types"
+import type { AlertChannelUpdate, AlertRuleUpdate, AlertRuleId, AlertChannelKind, AlertSetup, Call as GeneratedCall, CreateEmbedToken, ProjectConnection, UpdateProjectSettings, CallPage, ProjectCreate, CallSummary, CallTotals, EndOfTurnEvent, ItemEvent, Member, OverlapEvent, RecordingSegment, Span, StateEvent, TranscriptEvent, Turn } from "@/lib/api-types"
 
 export type { CallSummary, CallTotals, RecordingSegment, Span, Turn }
 export type SessionEvent = StateEvent | TranscriptEvent | EndOfTurnEvent | OverlapEvent | ItemEvent
@@ -296,7 +296,13 @@ export function connectionQuery(selected = currentScope()) {
 // no body. The secret is sealed and never answered.
 export const updateLiveKitCredentials = (selected: ReturnType<typeof currentScope>, livekitApiKey: string, livekitApiSecret: string) =>
   updateProjectLiveKitCredentialsCall({ ...thrown, path: { orgId: selected.org, projectId: selected.project }, body: { livekitApiKey, livekitApiSecret } }).then(() => undefined)
-export const alertSetupQuery = () => ({ queryKey: ["alert-setup", currentScope()], queryFn: () => data(getAlertSetup({ ...thrown, path: scope() })) })
+// Asked again every 3 s while a channel's latest delivery is still pending or retrying, so a test or
+// a retry shows how it ended.
+export const alertSetupQuery = () => ({
+  queryKey: ["alert-setup", currentScope()],
+  queryFn: () => data(getAlertSetup({ ...thrown, path: scope() })),
+  refetchInterval: (query: { state: { data?: AlertSetup } }) => (query.state.data?.channels.some((c) => c.lastDelivery?.state === "pending" || c.lastDelivery?.state === "retrying") ? 3000 : false),
+})
 // Alert rules, channels and incidents (alerts-behaviour.md). A Member turns rules on and picks
 // channels; an Admin sets a channel, whose webhook URL and signing secret are sealed on the server:
 // the secret is in updateAlertChannel's answer when it is made and nowhere else.

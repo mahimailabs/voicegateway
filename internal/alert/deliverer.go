@@ -38,13 +38,16 @@ const (
 )
 
 // Deliverer sends due deliveries. HTTP dials through the worker's address guard
-// (scrape.NewWorkerClient); Mailer is nil without VOICEGATEWAY_SMTP_URL.
+// (scrape.NewWorkerClient), whose refusals Refused recognises; Mailer is nil without
+// VOICEGATEWAY_SMTP_URL.
 type Deliverer struct {
 	Store  Deliveries
 	HTTP   *http.Client
 	Mailer Mailer
 	Log    *slog.Logger
 	Now    func() time.Time
+	// Refused tells an address the HTTP client's guard refuses from a network failure (scrape.Refused).
+	Refused func(error) bool
 }
 
 // outcome is one attempt's result before the retry schedule applies.
@@ -176,6 +179,10 @@ func (d *Deliverer) webhook(ctx context.Context, c store.AlertWebhookConfig, del
 		// The error text repeats the URL, which may carry a token: keep its class only.
 		if errors.Is(err, context.DeadlineExceeded) {
 			return outcome{status: "timeout", err: ptr("no answer within 10 s"), retry: true}
+		}
+		// The worker's address guard refused the host's address: the same on every retry.
+		if d.Refused != nil && d.Refused(err) {
+			return refused("address_not_allowed", "the address is not allowed from this server")
 		}
 		return outcome{status: "unreachable", err: ptr("could not connect"), retry: true}
 	}

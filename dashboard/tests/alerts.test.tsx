@@ -93,7 +93,28 @@ test("a new webhook's signing secret is shown once and never read back", async (
   await waitFor(() => expect(document.body.textContent).not.toContain(secret))
   expect(document.body.textContent).not.toContain("T0K3N")
   await user.click(screen.getByRole("button", { name: /Send test/ }))
-  expect(await screen.findByText(/Delivered/)).toBeTruthy()
+  expect(await screen.findByText("Sending")).toBeTruthy()
+  // Polled while the test is pending, so its outcome shows without a reload.
+  expect(await screen.findByText(/^Delivered/, {}, { timeout: 6000 })).toBeTruthy()
+}, 15_000)
+
+test("Remove asks first, naming what is lost, and only the confirmation deletes the channel", async () => {
+  const { AlertChannels } = await import("../src/features/settings/alert-channels")
+  show(() => <AlertChannels isAdmin selfHosted />)
+  const user = userEvent.setup()
+  const form = await screen.findByRole("form", { name: "Webhook" })
+  await user.type(within(form).getByLabelText("Endpoint URL"), "https://hooks.example.com/in")
+  await user.click(within(form).getByRole("button", { name: "Add webhook" }))
+  await user.click(await screen.findByRole("button", { name: "Done" }))
+  await user.click(screen.getByRole("button", { name: /Remove/ }))
+  const dialog = await screen.findByRole("dialog")
+  expect(dialog.textContent).toMatch(/signing secret are deleted/)
+  expect(writes.some((w) => w.method === "DELETE")).toBe(false)
+  await user.click(within(dialog).getByRole("button", { name: "Cancel" }))
+  expect(writes.some((w) => w.method === "DELETE")).toBe(false)
+  await user.click(screen.getByRole("button", { name: /Remove/ }))
+  await user.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Remove" }))
+  await waitFor(() => expect(writes).toContainEqual({ method: "DELETE", path: "/api/v1/org/default/project/default-project/alert-channels/webhook", body: "" }))
 })
 
 test("a Viewer sees the channels but no form", async () => {
