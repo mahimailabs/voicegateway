@@ -2,6 +2,7 @@ package join
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/livekit/protocol/livekit"
@@ -12,7 +13,9 @@ import (
 	"github.com/mahimailabs/voicegateway/internal/store"
 )
 
-// mediaFindings runs after durable event insertion, before stream acknowledgement.
+// mediaFindings runs after durable event insertion, before stream acknowledgement. A finding whose
+// call was deleted after the join (by retention, or by hand while the call was live) is kept
+// without the call, so the stream entry can still be acknowledged instead of failing on every retry.
 func (j *Joiner) mediaFindings(ctx context.Context, rows []store.Event) error {
 	for _, row := range rows {
 		if row.Kind != string(event.KindLiveKitWebhook) {
@@ -47,7 +50,12 @@ func (j *Joiner) mediaFindings(ctx context.Context, rows []store.Event) error {
 		default:
 			continue
 		}
-		if err := j.Calls.PutMediaFinding(ctx, finding); err != nil {
+		err := j.Calls.PutMediaFinding(ctx, finding)
+		if errors.Is(err, store.ErrNotFound) && finding.CallID != "" {
+			finding.CallID = ""
+			err = j.Calls.PutMediaFinding(ctx, finding)
+		}
+		if err != nil {
 			return fmt.Errorf("store media finding: %w", err)
 		}
 	}
