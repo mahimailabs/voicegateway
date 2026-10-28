@@ -78,7 +78,9 @@ func (fakeProjects) Project(_ context.Context, org, id string) (store.Project, e
 	return store.Project{OrganisationID: org, ID: id, LiveKitURL: "ws://livekit.test", LiveKitAPIKey: "key"}, nil
 }
 
-func (fakeProjects) LiveKitSecret(context.Context, string, string) (string, error) { return "secret", nil }
+func (fakeProjects) LiveKitSecret(context.Context, string, string) (string, error) {
+	return "secret", nil
+}
 
 func (fakeProjects) ProjectSettings(context.Context, string, string) (store.ProjectSettings, error) {
 	return store.ProjectSettings{Thresholds: store.Thresholds{JoinMs: 2000}}, nil

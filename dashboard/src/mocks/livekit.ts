@@ -103,14 +103,29 @@ export function cloudAgents(): CloudAgents {
   } as CloudAgents
 }
 
-// The one capacity run we have, with the capture's snake_case step fields in the contract's names.
+// The one capacity run we have (a feasibility capture, docs/api/coverage.md), in the contract's shape.
+// The capture recorded one time and no per-step times, CPU or no-answer counts: every time is that
+// one time, and what it did not record stays null. It ended on the tester, so its last step is
+// inconclusive and the capacity is the last step every call passed.
+type CapturedStep = { step: number; joined: number; pending: number; join_s: number[]; answer_s: number[] }
+export const CAPTURED_RUN_ID = "0b7d8f8e-6a4e-4c1f-9d2b-5f3a1c0e7d10"
+export function capacitySteps(): CapacityRun["steps"] {
+  const at = capacityRaw.ranAt
+  return (capacityRaw.steps as CapturedStep[]).map((s) => ({
+    step: s.step, startedAt: at, endedAt: at, outcome: s.pending === 0 ? "passed" : "inconclusive",
+    calls: s.step, joined: s.joined, pending: s.pending, failed: null, late: null, noAnswer: null,
+    joinSeconds: s.join_s, answerSeconds: s.answer_s, testerCpuPercent: null,
+  }))
+}
 export function capacity(): CapacityRun {
-  type Step = { step: number; joined: number; pending: number; join_s: number[]; answer_s: number[]; host_load_1m: number[]; host_cores: number }
-  const d = capacityRaw as unknown as Omit<CapacityRun, "steps"> & { steps: Step[] }
+  const at = capacityRaw.ranAt
+  const steps = capacitySteps()
+  const passed = steps.filter((s) => s.outcome === "passed")
   return {
-    ...d,
-    steps: d.steps.map(({ join_s, answer_s, host_load_1m, host_cores, ...x }) => ({ ...x, joinSeconds: join_s, answerSeconds: answer_s, hostLoad1m: host_load_1m, hostCores: host_cores })),
-  } as CapacityRun
+    id: CAPTURED_RUN_ID, agent: capacityRaw.agent, maxStep: 16, state: "ended", requestedAt: at, startedAt: at, endedAt: at,
+    stopRequested: false, capacity: passed.length ? passed[passed.length - 1].step : null, limitedBy: "tester",
+    cloudAgent: false, joinThresholdMs: null, error: null, steps,
+  }
 }
 
 // The project snapshot: what the three keys see at one read. Room and join times in seconds become

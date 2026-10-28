@@ -23,6 +23,8 @@ import {
   getCall,
   getCallStats,
   getCapacity,
+  startCapacityRun as startCapacityRunCall,
+  stopCapacityRun as stopCapacityRunCall,
   getCloudAgents,
   getEgress,
   getIngress,
@@ -49,7 +51,7 @@ import {
   updateProjectSettings as updateProjectSettingsCall,
   updateProjectLiveKitCredentials as updateProjectLiveKitCredentialsCall,
 } from "@/lib/api-types"
-import type { AlertChannelUpdate, AlertRuleUpdate, AlertRuleId, AlertChannelKind, AlertSetup, Call as GeneratedCall, CreateEmbedToken, ProjectConnection, UpdateProjectSettings, CallPage, ProjectCreate, CallSummary, CallTotals, EndOfTurnEvent, ItemEvent, Member, OverlapEvent, RecordingSegment, Span, StateEvent, TranscriptEvent, Turn } from "@/lib/api-types"
+import type { CapacityRun, AlertChannelUpdate, AlertRuleUpdate, AlertRuleId, AlertChannelKind, AlertSetup, Call as GeneratedCall, CreateEmbedToken, ProjectConnection, UpdateProjectSettings, CallPage, ProjectCreate, CallSummary, CallTotals, EndOfTurnEvent, ItemEvent, Member, OverlapEvent, RecordingSegment, Span, StateEvent, TranscriptEvent, Turn } from "@/lib/api-types"
 
 export type { CallSummary, CallTotals, RecordingSegment, Span, Turn }
 export type SessionEvent = StateEvent | TranscriptEvent | EndOfTurnEvent | OverlapEvent | ItemEvent
@@ -213,9 +215,17 @@ export function cloudAgentsQuery() {
     retry: false,
   }
 }
-// The contract requires the agent whose run to read, and the console does not pass one yet: it
-// shows one run for every agent. The cast keeps that known gap in one visible place.
-export const capacityQuery = () => ({ queryKey: ["capacity", currentScope()], queryFn: () => data(getCapacity({ ...thrown, path: scope() } as Parameters<typeof getCapacity<true>>[0])) })
+// An agent's latest capacity test (decision 0022), or null before its first. While a run is open the
+// read polls, so each step shows as the worker writes it.
+export const capacityQuery = (agent: string | null, selected = currentScope()) => ({
+  queryKey: ["capacity", selected, agent],
+  queryFn: () => data(getCapacity({ ...thrown, path: { orgId: selected.org, projectId: selected.project }, query: { agent: agent ?? "" } })),
+  enabled: agent !== null,
+  refetchInterval: (q: { state: { data?: CapacityRun | null } }) => (q.state.data && q.state.data.state !== "ended" ? 2000 : false as const),
+})
+// Starting and stopping a test is Admin only; the server answers run_active while one is open.
+export const startCapacity = (agent: string, maxStep: CapacityRun["maxStep"]) => data(startCapacityRunCall({ ...thrown, path: scope(), body: { agent, maxStep, consent: true } }))
+export const stopCapacity = (runId: string) => data(stopCapacityRunCall({ ...thrown, path: { ...scope(), runId } }))
 export function workersQuery() {
   // Capture the scope with the key; retries must never read a newly selected project.
   const selected = currentScope()

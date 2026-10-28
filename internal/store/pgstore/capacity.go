@@ -19,7 +19,7 @@ import (
 func (s *Store) CreateCapacityRun(ctx context.Context, n store.NewCapacityRun) (store.CapacityRun, error) {
 	id, err := s.q.CreateCapacityRun(ctx, CreateCapacityRunParams{
 		OrganisationID: n.OrganisationID, ProjectID: n.ProjectID, Agent: n.Agent,
-		MaxStep: int32(min(n.MaxStep, math.MaxInt32)), //nolint:gosec // bounded above
+		MaxStep:     int32(min(n.MaxStep, math.MaxInt32)), //nolint:gosec // bounded above
 		RequestedBy: text(n.RequestedBy), RequestedAt: at(n.RequestedAt),
 	})
 	var pgErr *pgconn.PgError

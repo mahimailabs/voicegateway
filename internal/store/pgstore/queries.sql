@@ -537,11 +537,12 @@ FROM organisations o WHERE o.id = @id;
 -- its start and end are known and the end is not before the start, and counts in the period that
 -- holds its end. Exact durations are summed first and the sum is rounded down to whole seconds
 -- once, never per call. Open calls, and closed calls with no end or an end before their start,
--- are counted apart by their start and never summed.
+-- are counted apart by their start and never summed. A capacity test's calls are VoiceGateway's own
+-- load, not the organisation's traffic, and never count (decision 0022).
 WITH period_calls AS (
     SELECT started_at, end_state,
         CASE end_state WHEN 'observed' THEN ended_at WHEN 'inferred' THEN last_activity_at END AS effective_end
-    FROM calls WHERE organisation_id = @organisation_id
+    FROM calls WHERE organisation_id = @organisation_id AND COALESCE(room_name, '') NOT LIKE 'vg-capacity-%'
 ), classified AS (
     SELECT *,
         started_at IS NOT NULL AND effective_end >= started_at

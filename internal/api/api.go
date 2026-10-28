@@ -42,6 +42,9 @@ type API struct {
 	Accounts  Accounts
 	Stats     Stats
 	Keys      Keys
+	// Capacity stores capacity test requests and reads their results; without it those routes
+	// answer 503.
+	Capacity CapacityRuns
 	// Recordings and Media serve a call's stored recording (phase 07a).
 	Recordings Recordings
 	Media      Media
@@ -134,6 +137,9 @@ func (a *API) Routes() http.Handler {
 	handle(r, http.MethodGet, project+"/live-events", a.liveEvents)
 	handle(r, http.MethodGet, project+"/connection", a.getConnection)
 	handle(r, http.MethodGet, project+"/recordings/{recordingId}", a.getRecordingMedia)
+	handle(r, http.MethodGet, project+"/capacity", a.getCapacity)
+	handle(r, http.MethodPost, project+"/capacity-runs", a.startCapacityRun)
+	handle(r, http.MethodPost, project+"/capacity-runs/{runId}/stop", a.stopCapacityRun)
 	handle(r, http.MethodGet, project+"/keys", a.listProjectKeys)
 	handle(r, http.MethodPost, project+"/keys", a.createProjectKey)
 	handle(r, http.MethodDelete, project+"/keys/{keyId}", a.revokeProjectKey)

@@ -34,7 +34,7 @@ Run the capacity test of decision 0022 for real. From one click on an agent, the
    - A join slower than the project's join threshold (Settings, `joinMs`) but within 10 s is reported per step as a late join, not a failure: it means the worker started a new process. Decision 0022 lists the join threshold among the stop rules and, two lines later, reports it separately; this spec takes the second reading, which the spike supports (8 calls joined at about 5.8 s while every call was answered).
 6. **Result**: the last step every call passed (`capacity`, null when step 1 failed), `limitedBy`, and per step: calls, joined, pending, failed, late, join and answer seconds, tester CPU. A Cloud agent stopped by `pending` with exactly 5 calls joined is labelled `plan` (the Build plan's 5-session cap, decision 0022). Results are stored in Postgres (00024): a run is a few rows, written by the worker like the call index.
 7. **Cleanup**: when a run ends for any reason, the runner disconnects every caller and deletes every room it created; the rooms' 60 s empty timeout covers a worker that dies first.
-8. **Test rooms never count**: the joiner creates no call for a `vg-capacity-` room. Its events are stored unmatched with the reason `capacity test room`, so they are not lost, and Calls, Issues, Alerts and the plan's call minutes never see them.
+8. **Test rooms never count**: a `vg-capacity-` room's webhooks and uploads are joined like any call's, so nothing it sends is lost, but the `call_list` view marks it not servable (00024). Calls, call stats, Issues, alert findings and the first call read only servable calls, and the plan's call minutes (`OrganisationUsage`) leave test rooms out.
 9. **Read and stop**: `getCapacity` returns the agent's latest run from Postgres, live while it runs; `stopCapacityRun` (Admin) asks the runner to stop, which it does within 2 s.
 10. **Console**: Start is enabled for Admins; the dialog shows each step as it lands and a Stop button, then the result. Others see the result and a disabled Start that says who can run it.
 
@@ -54,12 +54,12 @@ Run the capacity test of decision 0022 for real. From one click on an agent, the
 ## Acceptance Checks
 
 1. Against livekit-server --dev and a test agent worker that accepts 4 jobs, a run to 16 passes 1, 2 and 4 and stops at 8 with `pending`, capacity 4 (TestRunStopsWhenAJobStaysPending).
-2. A test agent whose answers slow down with load stops on `answer` at the first step more than 50% slower than step 1 (TestRunStopsWhenAnswersSlow).
-3. A room the runner did not create getting the agent ends the run as `real_call` within 10 s, and a busy agent at the start ends it as `agent_busy` before any room is created (TestRunStopsForARealCall, TestBusyAgentIsNotTested).
-4. Stop ends a running test within 2 s; after any end, every `vg-capacity-` room is gone from LiveKit (TestStopDeletesEveryTestRoom).
-5. A run whose worker stopped heartbeating is ended as `runner_lost`, and a second start for the project while one runs is 409 (TestLostRunnerEndsTheRun, TestOneRunPerProject).
-6. Tester CPU over 90% ends the step as `tester`, never as an agent limit (TestTesterLimitIsNotTheAgents, synctest with a fake CPU).
-7. Webhooks and uploads from a `vg-capacity-` room create no call and are stored unmatched (TestCapacityRoomsAreNotCalls).
-8. Only an Admin starts or stops a run; routes, roles and the contract agree (TestEveryRouteHasAMinimumRole, contract tests).
-9. The console starts a run, shows steps as they land, stops it, and shows the result; Vitest for the model, Playwright with axe on the dialog in light and dark at 375 and 1280 px.
+2. A test agent whose answers slow down with load stops on `answer` at the first step more than 50% slower than step 1; exactly 50% passes (TestRamp, "answers more than 50% slower").
+3. A room the runner did not create getting the agent ends the run as `real_call` within 10 s, and a busy agent at the start ends it as `agent_busy` before any room is created (TestRamp, "a real call mid-run"; TestBusyAgentIsNotTested; TestBusyAgentIsRefusedOnLiveKit against livekit-server --dev).
+4. Stop ends a running test within 2 s; after any end, every `vg-capacity-` room is gone (TestRamp, "a person's stop", and every TestRamp case checks no test room is left; TestRunStopsWhenAJobStaysPending lists LiveKit's rooms; TestStopBeforeAWorkerClaimsIt).
+5. A run whose worker stopped heartbeating is ended as `runner_lost`, and a second start for the project while one runs is 409 (TestLostRunnerEndsTheRun, TestLostRunIsNotEndedTwice, TestOneRunPerProject, TestCapacityRuns).
+6. Tester CPU over 90% ends the step as `tester`, never as an agent limit; a slow join is late, not a failure (TestRamp, "a saturated tester", synctest with a fake CPU; TestSlowJoinIsLateNotAFailure).
+7. A `vg-capacity-` room is never a servable call, never the first call, and never counts toward the plan's minutes (TestCapacityRoomsAreNotCalls).
+8. Only an Admin starts or stops a run; routes, roles and the contract agree (TestCapacityRuns, TestEveryRouteHasAMinimumRole, `make api-check`).
+9. The console starts a run, shows steps as they land, stops it, and shows the result (tests/capacity.test.tsx, tests/mock-api.test.ts "capacity tests"); Playwright with axe on the dialog in light and dark at phone and desktop sizes (e2e/capacity.spec.ts).
 10. One real run on the Mac LiveKit test slot: the example agent on LiveKit Cloud, stack built from this branch, result stored and shown, every test room deleted.

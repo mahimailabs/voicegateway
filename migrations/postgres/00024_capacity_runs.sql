@@ -52,6 +52,51 @@ CREATE TABLE capacity_steps (
     PRIMARY KEY (run_id, step)
 );
 
+-- A capacity test's rooms are joined like any call, so nothing they send is lost, but they are never
+-- served: servable is the one rule Calls, call stats, Issues, alert findings and the first call
+-- share (decision 0022).
+CREATE OR REPLACE VIEW call_list AS
+SELECT c.organisation_id, c.project_id, c.id, c.room_name, c.room_sid, c.job_id, c.started_at, c.ended_at,
+       c.end_state, c.created_at, c.first_seen_at,
+       (COALESCE(c.room_name, '') <> '' AND COALESCE(c.started_at, c.first_seen_at) IS NOT NULL
+        AND c.room_name NOT LIKE 'vg-capacity-%') AS servable,
+       (s.call_id IS NOT NULL) AS summarized,
+       COALESCE(c.started_at, c.first_seen_at) AS start_at,
+       CASE WHEN c.ended_at IS NOT NULL AND c.started_at IS NOT NULL
+            THEN EXTRACT(EPOCH FROM c.ended_at - c.started_at)::double precision END AS duration_seconds,
+       p.participants,
+       CASE WHEN p.sip > 0 THEN 'phone' WHEN p.participants > 0 THEN 'web' ELSE 'unknown' END AS channel,
+       s.turn_count, s.answer_ms, s.answer_ms_median,
+       COALESCE(s.models, '{}') AS models, COALESCE(s.pipeline, 'unknown') AS pipeline, s.agent_key,
+       EXISTS (SELECT 1 FROM call_recordings r WHERE r.call_id = c.id) AS recorded,
+       c.fields
+FROM calls c
+CROSS JOIN LATERAL (
+    SELECT count(*) AS participants, count(*) FILTER (WHERE kind = 'sip') AS sip
+    FROM call_participants WHERE call_id = c.id
+) p
+LEFT JOIN call_summaries s ON s.call_id = c.id;
+
 -- +goose Down
+CREATE OR REPLACE VIEW call_list AS
+SELECT c.organisation_id, c.project_id, c.id, c.room_name, c.room_sid, c.job_id, c.started_at, c.ended_at,
+       c.end_state, c.created_at, c.first_seen_at,
+       (COALESCE(c.room_name, '') <> '' AND COALESCE(c.started_at, c.first_seen_at) IS NOT NULL) AS servable,
+       (s.call_id IS NOT NULL) AS summarized,
+       COALESCE(c.started_at, c.first_seen_at) AS start_at,
+       CASE WHEN c.ended_at IS NOT NULL AND c.started_at IS NOT NULL
+            THEN EXTRACT(EPOCH FROM c.ended_at - c.started_at)::double precision END AS duration_seconds,
+       p.participants,
+       CASE WHEN p.sip > 0 THEN 'phone' WHEN p.participants > 0 THEN 'web' ELSE 'unknown' END AS channel,
+       s.turn_count, s.answer_ms, s.answer_ms_median,
+       COALESCE(s.models, '{}') AS models, COALESCE(s.pipeline, 'unknown') AS pipeline, s.agent_key,
+       EXISTS (SELECT 1 FROM call_recordings r WHERE r.call_id = c.id) AS recorded,
+       c.fields
+FROM calls c
+CROSS JOIN LATERAL (
+    SELECT count(*) AS participants, count(*) FILTER (WHERE kind = 'sip') AS sip
+    FROM call_participants WHERE call_id = c.id
+) p
+LEFT JOIN call_summaries s ON s.call_id = c.id;
 DROP TABLE capacity_steps;
 DROP TABLE capacity_runs;

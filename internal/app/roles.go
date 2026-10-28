@@ -14,7 +14,10 @@ import (
 	"time"
 
 	"github.com/alexedwards/scs/pgxstore"
+	"github.com/go-logr/logr"
 	"github.com/jackc/pgx/v5/pgxpool"
+	lklogger "github.com/livekit/protocol/logger"
+	lksdk "github.com/livekit/server-sdk-go/v2"
 	"github.com/redis/go-redis/v9"
 	"golang.org/x/sync/errgroup"
 
@@ -24,6 +27,7 @@ import (
 	"github.com/mahimailabs/voicegateway/internal/api"
 	"github.com/mahimailabs/voicegateway/internal/auth"
 	"github.com/mahimailabs/voicegateway/internal/bucket"
+	"github.com/mahimailabs/voicegateway/internal/capacity"
 	"github.com/mahimailabs/voicegateway/internal/config"
 	"github.com/mahimailabs/voicegateway/internal/console"
 	"github.com/mahimailabs/voicegateway/internal/ingest"
@@ -144,7 +148,7 @@ func Web(ctx context.Context, c config.Config, log *slog.Logger) error {
 		Alerts: projects, AlertEmail: c.SMTPURL != "", AlertTest: alert.Composer{PublicURL: c.PublicURL, Now: time.Now}.Test,
 		Settings: projects, Origins: projects, Embeds: embeds, Metadata: projects, Issues: projects, StorageBucket: c.S3.Bucket,
 		Live:              live,
-		ResourceEndpoints: projects, ResourceSamples: events, Projects: projects, NewProjects: projects, Credentials: projects, VerifyLiveKit: scrape.NewVerifier(c.WorkerEndpointsPublicOnly), VerifyBucket: bucket.NewVerifier(bucketTransport), Calls: projects, Traces: events, Layers: events, Endpoints: projects, Accounts: projects, Stats: projects, Keys: projects, NewKey: auth.NewKey, Log: log, Now: time.Now, Gate: accounts.Gate,
+		ResourceEndpoints: projects, ResourceSamples: events, Projects: projects, NewProjects: projects, Credentials: projects, VerifyLiveKit: scrape.NewVerifier(c.WorkerEndpointsPublicOnly), VerifyBucket: bucket.NewVerifier(bucketTransport), Calls: projects, Capacity: projects, Traces: events, Layers: events, Endpoints: projects, Accounts: projects, Stats: projects, Keys: projects, NewKey: auth.NewKey, Log: log, Now: time.Now, Gate: accounts.Gate,
 		Invitations: projects, Inviter: NewInviter(links), LinkBase: accounts.LinkBase,
 		Recordings: projects, Media: recordings,
 		Connections: projects, PublicURL: c.PublicURL,
@@ -350,6 +354,18 @@ func Worker(ctx context.Context, c config.Config, log *slog.Logger) error {
 			Log: log, Now: time.Now, Every: 15 * time.Second, Timeout: 10 * time.Second,
 		}).Run(gctx)
 	})
+	// The capacity test's callers join rooms through server-sdk-go, whose WebRTC stack logs every
+	// connection step; only its warnings reach the worker's log.
+	lksdk.SetLogger(lklogger.LogRLogger(logr.FromSlogHandler(warnOnly{log.Handler()})))
+	g.Go(func() error {
+		runs := pgstore.NewStore(pool, sealer)
+		return (&capacity.Runner{
+			Runs: runs, Projects: runs, Dial: capacity.NewDial(scrape.NewWorkerClient(c.WorkerEndpointsPublicOnly)),
+			CPU: capacity.HostCPU, ID: name, Log: log, Now: time.Now,
+			Poll: 2 * time.Second, Beat: time.Second, Lost: 30 * time.Second, Unclaimed: 5 * time.Minute,
+			StepFor: time.Minute, BusyEvery: 10 * time.Second, Timeout: 10 * time.Second,
+		}).Run(gctx)
+	})
 	g.Go(func() error {
 		every(gctx, sweepEvery, "sweep", joiner.Sweep, log)
 		return nil
@@ -519,3 +535,16 @@ func signInProviders(c config.Config) map[string]auth.Provider {
 	}
 	return on
 }
+
+// warnOnly passes a handler's warnings and errors and drops the rest.
+type warnOnly struct{ slog.Handler }
+
+func (h warnOnly) Enabled(ctx context.Context, l slog.Level) bool {
+	return l >= slog.LevelWarn && h.Handler.Enabled(ctx, l)
+}
+
+func (h warnOnly) WithAttrs(attrs []slog.Attr) slog.Handler {
+	return warnOnly{h.Handler.WithAttrs(attrs)}
+}
+
+func (h warnOnly) WithGroup(name string) slog.Handler { return warnOnly{h.Handler.WithGroup(name)} }
