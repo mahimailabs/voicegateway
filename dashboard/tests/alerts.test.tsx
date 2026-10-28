@@ -149,4 +149,9 @@ test("a PagerDuty key goes with its region and is never shown again", async () =
   await waitFor(() => expect(writes).toContainEqual({ method: "PUT", path: "/api/v1/org/default/project/default-project/alert-channels/pagerduty", body: JSON.stringify({ key: "0123456789abcdef0123456789abcdef", region: "eu" }) }))
   expect(await screen.findByText("events.eu.pagerduty.com")).toBeTruthy()
   expect(document.body.textContent).not.toContain("0123456789abcdef")
+  // Replacing the key starts from the saved region, not US.
+  cleanup()
+  show(() => <AlertChannels isAdmin selfHosted />)
+  // The form remounts once the saved channel loads, so each try looks it up again.
+  await waitFor(() => expect(within(screen.getByRole("form", { name: "PagerDuty" })).getByRole("radio", { name: "EU" }).getAttribute("aria-checked")).toBe("true"))
 })

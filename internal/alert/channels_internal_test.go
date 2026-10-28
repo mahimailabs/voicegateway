@@ -70,8 +70,32 @@ func TestChatMessagesCarryNoMarkup(t *testing.T) {
 			}
 		}
 	}
+	// An occurrence with no place and no detail still gives Slack a section text: an empty one is
+	// refused with invalid_blocks, which would mark the channel broken.
+	bare := firing("firing")
+	bare.Incident.Last = Occurrence{}
+	body, err := chatMessage("slack", bare)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var msg struct {
+		Blocks []struct {
+			Type string `json:"type"`
+			Text *struct {
+				Text string `json:"text"`
+			} `json:"text"`
+		} `json:"blocks"`
+	}
+	if err := json.Unmarshal(body, &msg); err != nil {
+		t.Fatal(err)
+	}
+	for _, b := range msg.Blocks {
+		if b.Type == "section" && (b.Text == nil || b.Text.Text != "Slow answers") {
+			t.Errorf("slack section without an occurrence = %+v, want the alert's title", b.Text)
+		}
+	}
 	// A test message names the channel it proves.
-	body, err := chatMessage("slack", Message{Type: "alert.test", At: at})
+	body, err = chatMessage("slack", Message{Type: "alert.test", At: at})
 	if err != nil || !strings.Contains(string(body), "The Slack channel of this project works.") {
 		t.Fatalf("slack test message = %s, %v", body, err)
 	}
@@ -183,8 +207,8 @@ func TestOpsgenieAlerts(t *testing.T) {
 	if r[1].path != "/v2/alerts/voicegateway-8f2b6a1e-0000-4000-8000-000000000001/close?identifierType=alias" {
 		t.Errorf("resolved went to %s", r[1].path)
 	}
-	if r[2].body["priority"] != "P5" {
-		t.Errorf("test sent %+v, want a P5 alert", r[2])
+	if r[2].body["priority"] != "P5" || r[2].body["alias"] != "voicegateway-test-p" {
+		t.Errorf("test sent %+v, want a P5 alert under the project's test alias", r[2])
 	}
 	if o := d.opsgenie(ctx, c, firing("firing")); o.ok || o.retry || o.status != "HTTP 422" {
 		t.Errorf("422: %+v, want final", o)

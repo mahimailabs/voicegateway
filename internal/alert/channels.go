@@ -68,9 +68,16 @@ func summarize(m Message, kind string) summary {
 	if inc.HoldReason != nil {
 		s.Facts = append(s.Facts, [2]string{"Still firing because", *inc.HoldReason})
 	}
-	s.Text = inc.Last.Detail
-	if inc.Last.Where != "" {
-		s.Text = inc.Last.Where + ": " + s.Text
+	switch {
+	case inc.Last.Where != "" && inc.Last.Detail != "":
+		s.Text = inc.Last.Where + ": " + inc.Last.Detail
+	case inc.Last.Where != "":
+		s.Text = inc.Last.Where
+	case inc.Last.Detail != "":
+		s.Text = inc.Last.Detail
+	default:
+		// Slack refuses a section with empty text (invalid_blocks), so the text is never empty.
+		s.Text = inc.Title
 	}
 	return s
 }
@@ -275,7 +282,7 @@ func (d *Deliverer) opsgenie(ctx context.Context, c store.AlertKeyConfig, m Mess
 	switch {
 	case m.Incident == nil:
 		_, err = client.Create(ctx, &ogalert.CreateAlertRequest{
-			Message: s.Title, Description: s.Text + " You can close this alert.", Alias: "voicegateway-test",
+			Message: s.Title, Description: s.Text + " You can close this alert.", Alias: "voicegateway-test-" + m.ProjectID,
 			Source: "VoiceGateway", Priority: ogalert.P5,
 		})
 	case m.Type == "alert.resolved":

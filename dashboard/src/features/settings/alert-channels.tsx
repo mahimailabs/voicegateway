@@ -106,7 +106,7 @@ export function AlertChannels({ isAdmin, selfHosted }: { isAdmin: boolean; selfH
         <span key={x.kind} className="contents">
           <ItemSeparator className="my-0" />
           <ChannelItem kind={x.kind} mark={logo(x.kind)} name={x.name} description={x.description} channel={find(x.kind)} isAdmin={isAdmin} loaded={read.isSuccess}>
-            <KeyForm kind={x.kind} name={x.name} label={x.label} how={x.how} configured={Boolean(find(x.kind))} />
+            <KeyForm key={find(x.kind)?.target ?? "new"} kind={x.kind} name={x.name} label={x.label} how={x.how} saved={find(x.kind)?.target} />
           </ChannelItem>
         </span>
       ))}
@@ -330,9 +330,11 @@ function UrlForm({ kind, name, placeholder, how, configured }: { kind: AlertChan
 
 // A paging channel's key and region. The key is entered on every save: the saved one is sealed and
 // never comes back.
-function KeyForm({ kind, name, label, how, configured }: { kind: AlertChannelKind; name: string; label: string; how: string; configured: boolean }) {
+function KeyForm({ kind, name, label, how, saved }: { kind: AlertChannelKind; name: string; label: string; how: string; saved?: string }) {
+  const configured = saved !== undefined
   const [key, setKey] = useState("")
-  const [region, setRegion] = useState<"us" | "eu">("us")
+  // The saved target is the region's host (events.eu.pagerduty.com), so a replaced key keeps its region.
+  const [region, setRegion] = useState<"us" | "eu">(saved?.includes(".eu.") ? "eu" : "us")
   const save = useSave(kind, () => setKey(""))
   const valid = key.trim().length >= 8 && !save.isPending
   const id = `alert-${kind}-key`
@@ -358,8 +360,8 @@ function KeyForm({ kind, name, label, how, configured }: { kind: AlertChannelKin
       <Field>
         <FieldLabel id={`${id}-region`}>Region</FieldLabel>
         <ToggleGroup type="single" variant="outline" size="sm" value={region} onValueChange={(v) => v && setRegion(v as "us" | "eu")} aria-labelledby={`${id}-region`} className="w-fit">
-          <ToggleGroupItem value="us">US</ToggleGroupItem>
-          <ToggleGroupItem value="eu">EU</ToggleGroupItem>
+          <ToggleGroupItem value="us" className="px-3 data-[state=on]:bg-accent data-[state=on]:text-accent-foreground">US</ToggleGroupItem>
+          <ToggleGroupItem value="eu" className="px-3 data-[state=on]:bg-accent data-[state=on]:text-accent-foreground">EU</ToggleGroupItem>
         </ToggleGroup>
       </Field>
       <Button type="submit" size="sm" disabled={!valid}>
