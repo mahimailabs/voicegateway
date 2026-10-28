@@ -338,7 +338,7 @@ export const getCapacity = <ThrowOnError extends boolean = false>(options: Optio
 /**
  * Start a capacity test of one agent
  *
- * Requires Admin membership in the named organisation (decision 0022): the test places real calls through the agent's providers, so consent is required. A worker claims the run within seconds, refuses a busy agent and ramps synthetic calls in rooms named vg-capacity-*, which never count as calls. One run per project at a time: a second is 409 run_active. A project key cannot start one.
+ * Requires Admin membership in the named organisation (decision 0022): the test places real calls through the agent's providers, so consent is required. A worker claims the run within seconds, refuses a busy agent and ramps synthetic calls in rooms named vg-capacity-<8 hex>-<n>, which never count as calls. One run per project at a time: a second is 409 run_active. A project key cannot start one. An instance whose worker reaches only public addresses (VOICEGATEWAY_WORKER_ENDPOINTS_PUBLIC_ONLY, as on Cloud) answers 503 source_unavailable: a test's callers dial LiveKit's signalling and ICE servers outside that guard. Reads still answer there.
  */
 export const startCapacityRun = <ThrowOnError extends boolean = false>(options: Options<StartCapacityRunData, ThrowOnError>): RequestResult<StartCapacityRunResponses, StartCapacityRunErrors, ThrowOnError> => (options.client ?? client).post<StartCapacityRunResponses, StartCapacityRunErrors, ThrowOnError>({
     security: [{
