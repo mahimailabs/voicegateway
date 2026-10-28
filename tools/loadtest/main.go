@@ -60,7 +60,7 @@ func main() {
 	flag.StringVar(&c.root, "root", ".", "repository root, where the captured call is read from")
 	flag.StringVar(&c.out, "out", "", "write the report as JSON to this file")
 	flag.DurationVar(&c.p99, "p99", 50*time.Millisecond, "slowest p99 answer allowed for each upload kind (ARCHITECTURE.md's ingest target)")
-	flag.DurationVar(&c.drain, "drain", 5*time.Minute, "how long to wait for the worker to store everything")
+	flag.DurationVar(&c.drain, "drain", 10*time.Minute, "how long to wait for the worker to store everything, and again for every call summary")
 	flag.Parse()
 	c.key, c.secret = os.Getenv("LIVEKIT_API_KEY"), os.Getenv("LIVEKIT_API_SECRET")
 
@@ -204,6 +204,12 @@ func runTag() string {
 
 // replay sends one call's steps, each at its moment.
 func replay(ctx context.Context, steps []step, notifier *webhook.URLNotifier, up *uploader, rec *recorder) {
+	// A call is live from its first step, not while it waits for its turn in the ramp.
+	select {
+	case <-ctx.Done():
+		return
+	case <-time.After(time.Until(steps[0].at)):
+	}
 	rec.live.Add(1)
 	defer rec.live.Add(-1)
 	for _, s := range steps {
