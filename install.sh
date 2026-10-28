@@ -12,7 +12,9 @@
 #   VOICEGATEWAY_DIR      where the checkout goes (default ./voicegateway)
 set -euo pipefail
 
-DEFAULT_VERSION="1.0.0-preview.5"
+DEFAULT_VERSION="1.0.0-preview.8"
+# The default release's image is pinned by digest, so a moved tag cannot change what it installs.
+DEFAULT_DIGEST="sha256:4e03820efd7e6d376cfbe782b87abed84d51487bb26ca8c7df94c414c16ac3d1"
 REPO_URL="https://github.com/mahimailabs/voicegateway.git"
 IMAGE="ghcr.io/mahimailabs/voicegateway"
 GUIDE_URL="https://github.com/mahimailabs/voicegateway/blob/main/docs/self-hosting.md"
@@ -62,8 +64,10 @@ checkout() {
 }
 
 start() {
-    step "Starting the stack from $IMAGE:$VERSION"
-    VOICEGATEWAY_IMAGE="$IMAGE:$VERSION" make -C "$DIR" up
+    local ref="$IMAGE:$VERSION"
+    [ "$VERSION" != "$DEFAULT_VERSION" ] || ref="$ref@$DEFAULT_DIGEST"
+    step "Starting the stack from $ref"
+    VOICEGATEWAY_IMAGE="$ref" make -C "$DIR" up
     step "Checking that every service answers"
     make -C "$DIR" preflight
 }

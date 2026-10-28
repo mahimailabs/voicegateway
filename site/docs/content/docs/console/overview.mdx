@@ -3,6 +3,12 @@ title: Overview
 description: How your whole voice stack is doing, on one page.
 ---
 
-<Picture src="/screens/overview" ext="jpg" alt="The Overview page: answer time per call, turn timings and the live wire from callers to models." />
+<Picture src="/screens/overview" ext="jpg" alt="The Overview page: median answer time on a gauge, every turn against the response budget, and the Live wire from callers through the phone bridge and media server to the agent and its models." />
 
-One tile per part of the stack. Each tile opens the page with the detail.
+| You see | What it tells you |
+| --- | --- |
+| The gauge | Median answer time, and how many turns went over your budget |
+| Every turn | One dot per turn; red dots are over the budget |
+| Live wire | Callers, phone bridge, media server, agents and models, with the timing on each link |
+
+Each tile opens the page with the detail. The budget is the **Answer time** threshold in [Settings](/console/settings).

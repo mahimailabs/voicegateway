@@ -2,10 +2,11 @@
 
 ## Current evidence
 
-Issues groups call findings and standing component checks with source links in the preview.
-The current branch replaces browser-local issue decisions with scoped Postgres persistence;
-standing component evaluation is still unfinished. Call tags and archive state now persist per immutable call ID in Postgres (migration
-00016), and listCalls applies persisted tag/archive filters with consistent totals.
+Done. Issues reads persisted call, standing, job, recording and ingress findings with scoped
+decisions, tags and archive (#435, #436, #440). Call tags and archive persist per immutable call ID
+(Postgres 00016); issue evidence and decisions persist per stable issue and source identity
+(Postgres 00017). The full root race, lint, contract, frontend and browser gates passed on main
+aecb612 on 2026-10-28 (see docs/progress.md). Webhook alert delivery is separate work.
 
 ## Required end state
 

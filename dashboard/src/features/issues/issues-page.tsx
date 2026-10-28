@@ -17,6 +17,7 @@ import { QueryState } from "@/components/page-state"
 import type { IssueList } from "@/lib/api-types"
 import { issuesQuery } from "@/lib/api"
 import { useUrlState } from "@/lib/url-state"
+import { fmtDateTime } from "@/lib/format"
 
 // Issues: every finding the console computes, grouped so a pattern across calls reads as one row
 // (decision 0021). Open a row for the calls or components it was found on. A standing issue is
@@ -24,7 +25,7 @@ import { useUrlState } from "@/lib/url-state"
 
 const dot: Record<Severity, string> = { high: "bg-destructive", medium: "bg-amber-500", low: "bg-muted-foreground/50", info: "bg-muted-foreground/30" }
 const sourceIcon = { Calls: PhoneCall, "Agent workers": Robot, "Phone bridge": Phone, "Recordings and ingress": UploadSimple }
-const day = (s: number) => new Date(s * 1000).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })
+const day = (s: number) => fmtDateTime(s * 1000)
 
 function Hits({ issue }: { issue: Issue }) {
   return (

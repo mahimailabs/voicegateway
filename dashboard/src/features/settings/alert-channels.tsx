@@ -14,6 +14,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { ProviderLogo } from "@/components/provider-logo"
 import { CopyCommand } from "@/components/copy-command"
 import { errorText } from "@/components/page-state"
+import { fmtHourMinute } from "@/lib/format"
 import { alertSetupQuery, removeAlertChannel, saveAlertChannel, testAlertChannel } from "@/lib/api"
 import type { AlertChannel, AlertChannelKind, AlertChannelUpdate, AlertDelivery } from "@/lib/api-types"
 
@@ -46,7 +47,7 @@ const toneClass = { ok: "text-emerald-700 dark:text-emerald-400", warn: "text-am
 function lastDeliveryText(d: AlertDelivery) {
   const what = d.change === "test" ? "Test" : d.change[0].toUpperCase() + d.change.slice(1)
   const parts = [`${what} ${d.state} ${ago(d.createdAt)}`, d.status, d.message].filter(Boolean)
-  if (d.state === "retrying" && d.nextAttemptAt) parts.push(`next try ${new Date(d.nextAttemptAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`)
+  if (d.state === "retrying" && d.nextAttemptAt) parts.push(`next try ${fmtHourMinute(d.nextAttemptAt)}`)
   return parts.join(" · ")
 }
 

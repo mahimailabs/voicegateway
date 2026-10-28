@@ -5,6 +5,7 @@ import type { Agent } from "@/features/agents/agents-model"
 import { type MediaServerData, openAtWatchEnd } from "@/features/media-server/room-drawer"
 import { type SipData, enc } from "@/features/sip/sip-model"
 import type { TrackerRow, WireLink, WireNode } from "./live-wire"
+import { fmtDateTime } from "@/lib/format"
 
 // Builds the Live wire from the reads: who called (getCallStats), which hops each call crossed (the
 // media server watch and SIP), which agent took it and which providers that agent used, with the
@@ -149,7 +150,7 @@ export function wireData(rows: Row[], { stats, ms: rooms, sip, probes: probe }: 
   // 24 UTC-hour blocks, the last one holding the last read, one strip per layer.
   const lastHour = Math.floor(lastRead / 3600) * 3600
   const hours = Array.from({ length: 24 }, (_, i) => lastHour - (23 - i) * 3600)
-  const label = (h: number) => new Date(h * 1000).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })
+  const label = (h: number) => fmtDateTime(h * 1000)
   const inHour = (h: number, t: number) => t >= h && t < h + 3600
   const grey = "bg-muted-foreground/15"
   // The calls strip reads the server's hourly counts: each block is the UTC hour it falls in.

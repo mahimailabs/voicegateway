@@ -16,14 +16,15 @@ project-scoped pushed notifications in #430, and real container resource collect
 (81d978ef97ce6051f5753b92e4be1a67243f30ac). Native source, stale/disconnect/recovery,
 HTTP permission and browser checks passed before merge. This roadmap task is complete.
 
-Issue workflows (2026-10-20): call tags/archive merged in #435
-(82c15b084831fb2b66ca253a7789c5416c20939c). The current branch adds persisted call findings,
-scoped issue decisions/tags/archive, revision-safe Undo, snapshot-consistent reads and historical
-backfill without summary rewrites. Targeted native race checks and Go lint pass; 232 frontend and
-88 browser checks passed before the backfill addition, and a clean full final run is still required. The backfill test now explicitly covers a backlog
-larger than one sweep after the full run exposed its original first-batch assumption. Standing
-component evaluation and webhook delivery are unfinished. Complete remains 2/14; do not count
-these partial issue/settings changes as completed tasks.
+Issue workflows (2026-10-28): complete. Call tags and archive merged in #435; persisted call,
+standing (SIP, Cloud agents), job, recording and ingress findings, scoped decisions, revision-safe
+Undo, snapshot-consistent reads, coverage reporting and bounded historical backfills merged in #436
+(Postgres 00017), and the escaped issue id fix in #440. A clean full run on main aecb612 passed on
+2026-10-28: the Go race suite with containers (`CI=1`), Go lint and sqlc diff, `make api-check`,
+410 dashboard tests, dashboard lint and TypeScript, SDK tests and lint, and 206 browser and
+accessibility checks (58 phone-width duplicates skip by design). A self-hosted LiveKit media server
+stays partial for job failure detection, as the spec records. Alert evaluation and delivery reuse
+these occurrences and are tracked separately (spec alerts-delivery).
 
 Call diagnosis (2026-10-19): turn-level latency comparison, trace-clock response breakdown, source-linked speech/tools and reported usage are implemented. Turn navigation stays in the fixed header and bounds comparison to six turns. Realtime calls show speech intervals, derived response gaps and interruptions without inventing STT/TTS stages. SIP termination remains separate evidence. The generic per-call architecture flow and topology were removed.
 
@@ -612,3 +613,11 @@ Mahimai decided Cloud keeps recordings in VoiceGateway's bucket by default, and 
 - **Check:** `api.CheckProject` checks `recordingBucket` (an http or https endpoint with no path, an S3 bucket name by minio-go's `s3utils`); `bucket.Verifier` writes and deletes `recordings/voicegateway-check` through the worker's address guard before anything is stored: 422 `recording_bucket_refused` or `recording_bucket_unreachable`, never the cause. `voicegateway project add --recording-bucket-*` with `RECORDING_BUCKET_SECRET_KEY` (and `make project-add RECORDING_BUCKET_*`) does the same check; `--skip-verify` skips only LiveKit's.
 - **Use:** `bucket.Buckets` stores and serves each project's recordings in its own bucket or the instance's, remembering the choice since it never changes; retention expires the instance's bucket and every brought one. Contract: `RecordingBucketCreate` on `ProjectCreate`, the 422 renamed `ProjectNotVerified`; api types regenerated. Console: a switch on Add project, off by default.
 - Tests: `TestVerifyBucket`, `TestBucketsRouteByProject` (SeaweedFS), `TestProjectBucketFixedAtCreate` (Postgres), `TestCheckProjectBucket`, `TestCreateProjectAnswersTheBucketVerifier`, and the console's form and mock cases.
+
+### 2026-10-28: README and docs refreshed for the V1 preview
+
+- **README:** opens with an animated hero (WebP, light and dark, under the 250 KiB cap) of a captured call going from the list to its turn diagnosis, replacing the static banner. The copy now matches main: self-host first with the installer, then the captured-data console; features list issues, recordings, the live feed, agent worker CPU and memory, MCP, embeds and the Python SDK; alert delivery and capacity tests are named as what is left. New Overview and call diagnosis captures. Capture steps are in `docs/assets/readme/README.md`.
+- **Docs site:** new captures for Overview, Calls, a call's Conversation and Diagnosis, Issues, Alerts, Agent workers and Settings. Issues and Live lose their stale preview notes (issue workflows and the pushed feed are merged); Calls covers diagnosis, tags, archive and recordings; a new Settings page covers thresholds, data and the other panes; Agent workers covers cAdvisor CPU and memory; People says what a Member can change.
+- **Roadmap #320:** checklists only, 32 of 39 done. Open: alert channels in settings, alert evaluation, alert channels, capacity runner, docs per console page, install timing report, 1,000-call load test.
+- **Installer:** `install.sh` and `docs/self-hosting.md` install `1.0.0-preview.8`, the image cloud-1 runs, pinned to digest `sha256:4e03820efd7e6d376cfbe782b87abed84d51487bb26ca8c7df94c414c16ac3d1` (ghcr.io's manifest for that tag). A `VOICEGATEWAY_VERSION` override still pulls by tag.
+- **Install timing:** not measured. A Linux cloud container could not pull the image from ghcr.io (its blob host is outside that network policy) and Docker Hub rate-limited it.

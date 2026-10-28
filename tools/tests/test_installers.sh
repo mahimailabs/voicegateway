@@ -48,21 +48,21 @@ run_install() {
 
 rm -rf "$WORK/voicegateway"
 run_install || fail "fresh install exited non-zero: $(cat "$WORK/out")"
-grep -qx 'git -c advice.detachedHead=false clone --quiet --branch v1.0.0-preview.5 --depth 1 https://github.com/mahimailabs/voicegateway.git voicegateway' "$LOG" || fail "fresh install clones the pinned tag: $(cat "$LOG")"
-grep -qx 'make -C voicegateway up image=ghcr.io/mahimailabs/voicegateway:1.0.0-preview.5' "$LOG" || fail "make up uses the pinned image"
+grep -qx 'git -c advice.detachedHead=false clone --quiet --branch v1.0.0-preview.8 --depth 1 https://github.com/mahimailabs/voicegateway.git voicegateway' "$LOG" || fail "fresh install clones the pinned tag: $(cat "$LOG")"
+grep -qx 'make -C voicegateway up image=ghcr.io/mahimailabs/voicegateway:1.0.0-preview.8@sha256:4e03820efd7e6d376cfbe782b87abed84d51487bb26ca8c7df94c414c16ac3d1' "$LOG" || fail "make up uses the pinned image by digest"
 grep -qx 'make -C voicegateway preflight image=' "$LOG" || fail "preflight runs after up"
 grep -q 'make user-add' "$WORK/out" || fail "next steps name make user-add"
 pass "fresh install clones the release, starts it from the image and runs preflight"
 
 run_install || fail "re-run exited non-zero"
-grep -qx 'git -C voicegateway fetch --depth 1 origin tag v1.0.0-preview.5' "$LOG" || fail "re-run fetches the tag"
-grep -qx 'git -C voicegateway checkout --quiet v1.0.0-preview.5' "$LOG" || fail "re-run checks out the tag"
+grep -qx 'git -C voicegateway fetch --depth 1 origin tag v1.0.0-preview.8' "$LOG" || fail "re-run fetches the tag"
+grep -qx 'git -C voicegateway checkout --quiet v1.0.0-preview.8' "$LOG" || fail "re-run checks out the tag"
 grep -q ' clone ' "$LOG" && fail "re-run must not clone again"
 pass "re-running updates the existing checkout"
 
 run_install VOICEGATEWAY_VERSION=1.2.3 VOICEGATEWAY_DIR=elsewhere || fail "override exited non-zero"
 grep -q -- '--branch v1.2.3 .* elsewhere$' "$LOG" || fail "VOICEGATEWAY_VERSION and VOICEGATEWAY_DIR are honoured"
-grep -q 'image=ghcr.io/mahimailabs/voicegateway:1.2.3' "$LOG" || fail "the image follows VOICEGATEWAY_VERSION"
+grep -qx 'make -C elsewhere up image=ghcr.io/mahimailabs/voicegateway:1.2.3' "$LOG" || fail "the image follows VOICEGATEWAY_VERSION"
 pass "VOICEGATEWAY_VERSION and VOICEGATEWAY_DIR override the defaults"
 
 mkdir -p "$WORK/notrepo"
