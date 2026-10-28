@@ -35,13 +35,19 @@ func TestWebServesHealthAndStopsCleanly(t *testing.T) {
 	}
 	go func() { done <- Web(ctx, c, slog.New(slog.NewTextHandler(io.Discard, nil))) }()
 
+	// Web builds every router and parses the API contract before it listens, which can take over
+	// a second under -race on a busy CI runner. A Web that returns early fails the test with its error.
 	var resp *http.Response
-	for range 50 {
+	for deadline := time.Now().Add(15 * time.Second); time.Now().Before(deadline); {
 		resp, err = http.Get("http://" + addr + "/healthz")
 		if err == nil {
 			break
 		}
-		time.Sleep(20 * time.Millisecond)
+		select {
+		case werr := <-done:
+			t.Fatalf("Web() returned before serving: %v", werr)
+		case <-time.After(20 * time.Millisecond):
+		}
 	}
 	if err != nil {
 		t.Fatalf("GET /healthz: %v", err)
