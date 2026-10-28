@@ -102,7 +102,10 @@
       "getEgress",
       "getIngress",
       "getAlertSetup",
-      "listAlertEvents"
+      "listAlertEvents",
+      "listAlertIncidents",
+      "updateAlertRule",
+      "resolveAlertIncident"
     ],
     "/live": [
       "getMediaServer",
@@ -172,7 +175,10 @@
     "getInvitations",
     "getAlertSetup",
     "getCallStats",
-    "listIssues"
+    "listIssues",
+    "updateAlertChannel",
+    "deleteAlertChannel",
+    "testAlertChannel"
   ],
   "widgets": [
     "answer-time",

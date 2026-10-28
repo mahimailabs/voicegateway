@@ -1,5 +1,4 @@
-import type { AlertRuleSetup, AlertSetup, CreatedInvitation, CreatedPasswordReset, CreatedProjectKey, Invitation, Invitations, Member, Members, ProjectKey, ProjectKeys, ProjectSettings, Thresholds } from "@/lib/api-types"
-import { readLocal } from "@/lib/local-store"
+import type { AlertChannel, AlertRuleSetup, AlertRuleUpdate, AlertSetup, SavedAlertChannel, CreatedInvitation, CreatedPasswordReset, CreatedProjectKey, Invitation, Invitations, Member, Members, ProjectKey, ProjectKeys, ProjectSettings, Thresholds } from "@/lib/api-types"
 
 // The settings reads, served from what the console saved in this browser (lib/local-store.ts) until
 // web stores them. Each read validates what it finds, as the server validates its own rows: a value
@@ -53,17 +52,68 @@ export function updateAllowedOrigins(scope: string, input: unknown): ProjectSett
 }
 
 export const RULES: AlertRuleSetup["ruleId"][] = ["slow-answer", "cut-off", "job-failed", "slow-join", "plain-phone", "recording-lost", "ingress-error"]
-const CHANNELS: AlertRuleSetup["to"] = ["slack", "teams", "discord", "pagerduty", "opsgenie", "email", "webhook"]
 
-// Every rule, saved or not: a rule nobody changed is on and sends nowhere.
-export function alertSetup(): AlertSetup {
-  const saved = record(readLocal("vg.alert-rules"))
-  return {
-    items: RULES.map((ruleId) => {
-      const { on, to } = record(saved[ruleId])
-      return { ruleId, on: typeof on === "boolean" ? on : true, to: Array.isArray(to) ? CHANNELS.filter((c) => to.includes(c)) : [] }
-    }),
+// Alert rules and channels, held in memory for the mock as web holds them in Postgres: a rule nobody
+// changed is on and sends nowhere; a channel keeps only what web would answer, never a URL or secret.
+const ruleState = new Map<string, { on: boolean; to: AlertRuleUpdate["to"] }>()
+const channelState = new Map<AlertChannel["kind"], AlertChannel>()
+export function resetAlerts() {
+  ruleState.clear()
+  channelState.clear()
+}
+export const alertSetup = (): AlertSetup => ({
+  items: RULES.map((ruleId) => ({ ruleId, ...(ruleState.get(ruleId) ?? { on: true, to: [] }) })),
+  channels: [...channelState.values()].sort((a, b) => a.kind.localeCompare(b.kind)),
+  emailAvailable: true,
+})
+export const alertChannels = () => [...channelState.keys()]
+
+/** Saves a rule as web does: only email and webhook, de-duplicated and sorted. */
+export function updateAlertRule(ruleId: string, input: unknown): AlertRuleSetup | "not_found" | "invalid_request" {
+  if (!RULES.includes(ruleId as AlertRuleSetup["ruleId"])) return "not_found"
+  const v = record(input)
+  if (Object.keys(v).some((k) => !["on", "to"].includes(k)) || typeof v.on !== "boolean" || !Array.isArray(v.to) || v.to.some((c) => c !== "email" && c !== "webhook")) return "invalid_request"
+  const to = [...new Set(v.to as AlertRuleUpdate["to"])].sort()
+  ruleState.set(ruleId, { on: v.on, to })
+  return { ruleId: ruleId as AlertRuleSetup["ruleId"], on: v.on, to }
+}
+
+const secret = () => `whsec_${btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(32))))}`
+
+/** Sets a channel as web does; the webhook's secret is made on create or rotate and answered once. */
+export function updateAlertChannel(kind: string, input: unknown): SavedAlertChannel | "not_found" | "invalid_request" {
+  if (kind !== "email" && kind !== "webhook") return "not_found"
+  const v = record(input)
+  if (Object.keys(v).some((k) => !["url", "rotateSecret", "recipients"].includes(k))) return "invalid_request"
+  const now = new Date().toISOString()
+  if (kind === "email") {
+    const list = Array.isArray(v.recipients) ? [...new Set(v.recipients.map((x) => String(x).trim().toLowerCase()))] : []
+    if (v.url !== undefined || !list.length || list.length > 20 || list.some((x) => !/^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(x))) return "invalid_request"
+    const target = `${list.length} ${list.length === 1 ? "recipient" : "recipients"}`
+    channelState.set("email", { kind, target, recipients: list, broken: false, updatedAt: now, lastDelivery: channelState.get("email")?.lastDelivery ?? null })
+    return { kind, target, recipients: list, signingSecret: null }
   }
+  let host = ""
+  try {
+    const u = new URL(String(v.url))
+    host = ["http:", "https:"].includes(u.protocol) ? u.hostname : ""
+  } catch {
+    host = ""
+  }
+  if (!host || v.recipients !== undefined) return "invalid_request"
+  const fresh = !channelState.has("webhook") || v.rotateSecret === true
+  channelState.set("webhook", { kind, target: host, recipients: null, broken: false, updatedAt: now, lastDelivery: channelState.get("webhook")?.lastDelivery ?? null })
+  return { kind, target: host, recipients: null, signingSecret: fresh ? secret() : null }
+}
+export const deleteAlertChannel = (kind: string) => channelState.delete(kind as AlertChannel["kind"])
+
+/** Queues a test as web does; the mock has no worker, so it is delivered at once. */
+export function testAlertChannel(kind: string): boolean {
+  const c = channelState.get(kind as AlertChannel["kind"])
+  if (!c) return false
+  const now = new Date().toISOString()
+  c.lastDelivery = { id: crypto.randomUUID(), channel: c.kind, change: "test", state: "delivered", attempts: 1, nextAttemptAt: null, status: c.kind === "email" ? "sent" : "HTTP 200", message: null, deliveredAt: now, createdAt: now }
+  return true
 }
 
 // The organisation's members, held in memory for the mock: changes last until the page reloads.

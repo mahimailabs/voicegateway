@@ -7,14 +7,10 @@ import { Ajv2020 } from "ajv/dist/2020.js"
 import { setupServer } from "msw/node"
 import { afterAll, afterEach, beforeAll, describe, expect, test, vi } from "vitest"
 import { parse } from "yaml"
-import { resetProjectSettings } from "../src/mocks/settings.ts"
+import { resetAlerts, resetProjectSettings } from "../src/mocks/settings.ts"
 import { handlers, resetMockLiveKit } from "../src/mocks/handlers.ts"
 import { capturedCalls } from "../src/mocks/fixtures.ts"
 import { buildModel, turnCount } from "../src/features/call/call-model.ts"
-import { QueryClient } from "@tanstack/react-query"
-import type { AlertSetup } from "../src/lib/api-types"
-import { localSave } from "../src/lib/local-store.ts"
-import { type Setup, setupFrom } from "../src/features/alerts/alerts-model.ts"
 import { agentsFrom, checks as agentChecks } from "../src/features/agents/agents-model.ts"
 import { fromContract } from "../src/features/media-server/room-drawer.tsx"
 import { checks as sipChecks, routes } from "../src/features/sip/sip-model.ts"
@@ -467,6 +463,7 @@ function storage(saved: Record<string, unknown>, blocked: boolean | "writes" = f
     },
   })
 }
+const postTo = (url: string) => fetch(url, { method: "POST" })
 const get = async (url: string) => {
   const res = await fetch(url)
   return { status: res.status, body: await res.json() }
@@ -519,26 +516,45 @@ describe("settings reads", () => {
     expect((await save()).status).toBe(409)
   })
 
-  test("alert setup names every rule; an unchanged rule is on and sends nowhere, and an unknown channel is dropped", async () => {
-    storage({ "vg.alert-rules": { "slow-join": { on: false, to: ["email", "fax"] } } })
+  test("alert setup names every rule; an unchanged rule is on and sends nowhere, and a saved rule comes back", async () => {
+    resetAlerts()
     const { body } = await get(`${base}/alert-setup`)
     expect(valid("AlertSetup", body)).toBe("")
     expect(body.items).toHaveLength(7)
-    expect(body.items.find((r: { ruleId: string }) => r.ruleId === "slow-join")).toEqual({ ruleId: "slow-join", on: false, to: ["email"] })
     expect(body.items.find((r: { ruleId: string }) => r.ruleId === "cut-off")).toEqual({ ruleId: "cut-off", on: true, to: [] })
+    const put = (rule: string, b: unknown) => fetch(`${base}/alert-rules/${rule}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(b) })
+    const saved = await put("slow-join", { on: false, to: ["webhook", "email", "webhook"] })
+    expect(saved.status).toBe(200)
+    expect(valid("AlertRuleSetup", await saved.json())).toBe("")
+    expect((await put("slow-join", { on: true, to: ["slack"] })).status).toBe(400)
+    expect((await put("no-such-rule", { on: true, to: [] })).status).toBe(404)
+    const after = (await get(`${base}/alert-setup`)).body
+    expect(after.items.find((r: { ruleId: string }) => r.ruleId === "slow-join")).toEqual({ ruleId: "slow-join", on: false, to: ["email", "webhook"] })
   })
 
-  test("two saves made before the read is answered again both land", async () => {
-    storage({})
-    const client = new QueryClient()
-    const key = ["alert-setup-test"]
-    client.setQueryData(key, (await get(`${base}/alert-setup`)).body)
-    const save = localSave<Setup, AlertSetup>(client, "vg.alert-rules", key, (a) => (a ? setupFrom(a) : {}))
-    void save((s) => ({ ...s, "slow-join": { on: false, to: [] } }))
-    void save((s) => ({ ...s, "cut-off": { on: true, to: ["email"] } }))
+  test("a webhook channel answers its signing secret once and shows only its host", async () => {
+    resetAlerts()
+    const put = (b: unknown) => fetch(`${base}/alert-channels/webhook`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(b) })
+    const first = await (await put({ url: "https://hooks.example.com/in/T0K3N" })).json()
+    expect(valid("SavedAlertChannel", first)).toBe("")
+    expect(first.signingSecret).toMatch(/^whsec_/)
+    expect((await (await put({ url: "https://hooks.example.com/in/T0K3N" })).json()).signingSecret).toBeNull()
+    expect((await postTo(`${base}/alert-channels/webhook/test`)).status).toBe(204)
     const { body } = await get(`${base}/alert-setup`)
-    expect(body.items.find((r: { ruleId: string }) => r.ruleId === "slow-join").on).toBe(false)
-    expect(body.items.find((r: { ruleId: string }) => r.ruleId === "cut-off").to).toEqual(["email"])
+    expect(valid("AlertSetup", body)).toBe("")
+    expect(JSON.stringify(body)).not.toMatch(/T0K3N|whsec_/)
+    expect(body.channels[0]).toMatchObject({ kind: "webhook", target: "hooks.example.com", lastDelivery: { change: "test", state: "delivered" } })
+    expect((await postTo(`${base}/alert-channels/email/test`)).status).toBe(404)
+  })
+
+  test("incidents answer in the contract shape, and only a firing lost recording is resolved by a person", async () => {
+    const { body } = await get(`${base}/alert-incidents?from=1970-01-01T00:00:00Z&to=${new Date(Date.now() + 60_000).toISOString()}`)
+    expect(valid("AlertIncidents", body)).toBe("")
+    for (const i of body.items as { id: string; ruleId: string; state: string }[]) {
+      const res = await postTo(`${base}/alert-incidents/${i.id}/resolve`)
+      expect(res.status).toBe(i.ruleId === "recording-lost" && i.state === "firing" ? 200 : 409)
+    }
+    expect((await postTo(`${base}/alert-incidents/00000000-0000-4000-8000-000000000099/resolve`)).status).toBe(404)
   })
 
   test("invitations are kept in memory as web without SMTP answers them, and an unknown organisation is not found", async () => {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"log/slog"
 	"net/http"
 	"time"
@@ -19,6 +20,11 @@ type API struct {
 	Issues   IssueMetadataStore
 	Metadata CallMetadataStore
 	Settings ProjectSettingsStore
+	// Alerts keeps alert setup and history; AlertEmail is true when the server has SMTP, and
+	// AlertTest builds a channel's test message (docs/specs/alerts-delivery.md).
+	Alerts     AlertStore
+	AlertEmail bool
+	AlertTest  func(organisationID, projectID string) (json.RawMessage, error)
 	// Origins stores the allowed embed origins and Embeds signs embed tokens (decision 0034); without
 	// them those routes answer 503.
 	Origins           EmbedOrigins
@@ -104,6 +110,14 @@ func (a *API) Routes() http.Handler {
 	handle(r, http.MethodGet, project+"/calls", a.listCalls)
 	handle(r, http.MethodGet, project+"/call-tags", a.getCallTags)
 	handle(r, http.MethodGet, project+"/issues", a.listIssues)
+	handle(r, http.MethodGet, project+"/alert-events", a.listAlertEvents)
+	handle(r, http.MethodGet, project+"/alert-setup", a.getAlertSetup)
+	handle(r, http.MethodPut, project+"/alert-rules/{ruleId}", a.updateAlertRule)
+	handle(r, http.MethodPut, project+"/alert-channels/{kind}", a.updateAlertChannel)
+	handle(r, http.MethodDelete, project+"/alert-channels/{kind}", a.deleteAlertChannel)
+	handle(r, http.MethodPost, project+"/alert-channels/{kind}/test", a.testAlertChannel)
+	handle(r, http.MethodGet, project+"/alert-incidents", a.listAlertIncidents)
+	handle(r, http.MethodPost, project+"/alert-incidents/{incidentId}/resolve", a.resolveAlertIncident)
 	handle(r, http.MethodGet, project+"/issues/{issueId}/metadata", a.getIssueMetadata)
 	handle(r, http.MethodPut, project+"/issues/{issueId}/metadata", a.updateIssueMetadata)
 	handle(r, http.MethodGet, project+"/calls/{callId}", a.getCall)

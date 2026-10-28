@@ -1368,6 +1368,248 @@ paths:
           $ref: "#/components/responses/InternalError"
         "503":
           $ref: "#/components/responses/SourceUnavailable"
+  /api/v1/org/{orgId}/project/{projectId}/alert-rules/{ruleId}:
+    put:
+      operationId: updateAlertRule
+      summary: Turn an alert rule on or off and choose where it sends
+      tags: [ Console writes ]
+      security:
+        - consoleSession: []
+      x-access:
+        principal: organisation_member
+        minimumRole: Member
+        projectIsolation: required
+        browserSessionTransport: session_cookie
+        scope: project
+      description: "A rule that is off still opens incidents, so its history stays, but sends nothing (docs/specs/alerts-behaviour.md). to names channel kinds only; email and webhook deliver today, and any other kind is invalid_request. A kind with no configured channel is kept and sends once an Admin configures it."
+      parameters:
+        - $ref: "#/components/parameters/OrganisationId"
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/AlertRuleId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AlertRuleUpdate"
+      responses:
+        "200":
+          description: The rule as saved.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AlertRuleSetup"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/SourceUnavailable"
+  /api/v1/org/{orgId}/project/{projectId}/alert-channels/{kind}:
+    put:
+      operationId: updateAlertChannel
+      summary: Set where an alert channel sends
+      tags: [ Console writes ]
+      security:
+        - consoleSession: []
+      x-access:
+        principal: organisation_member
+        minimumRole: Admin
+        projectIsolation: required
+        browserSessionTransport: session_cookie
+        scope: project
+      description: "Admins only. Email takes 1 to 20 recipient addresses and needs the server's VOICEGATEWAY_SMTP_URL. A webhook takes an http or https URL; the URL is sealed on the server and never returned, and only its host is shown. A new webhook gets a Standard Webhooks signing secret, returned in this answer only; saving again keeps it unless rotateSecret is true. Saving clears a broken channel."
+      parameters:
+        - $ref: "#/components/parameters/OrganisationId"
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/AlertChannelKind"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AlertChannelUpdate"
+      responses:
+        "200":
+          description: The channel as saved, with a new signing secret when one was made.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SavedAlertChannel"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/SourceUnavailable"
+    delete:
+      operationId: deleteAlertChannel
+      summary: Remove an alert channel
+      tags: [ Console writes ]
+      security:
+        - consoleSession: []
+      x-access:
+        principal: organisation_member
+        minimumRole: Admin
+        projectIsolation: required
+        browserSessionTransport: session_cookie
+        scope: project
+      description: "Admins only. Rules keep the kind among their choices; nothing is sent to it until it is configured again. A delivery still waiting fails as channel_removed. A channel not configured is not_found."
+      parameters:
+        - $ref: "#/components/parameters/OrganisationId"
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/AlertChannelKind"
+      responses:
+        "204":
+          description: Removed.
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/SourceUnavailable"
+  /api/v1/org/{orgId}/project/{projectId}/alert-channels/{kind}/test:
+    post:
+      operationId: testAlertChannel
+      summary: Send a test alert to a channel
+      tags: [ Console writes ]
+      security:
+        - consoleSession: []
+      x-access:
+        principal: organisation_member
+        minimumRole: Admin
+        projectIsolation: required
+        browserSessionTransport: session_cookie
+        scope: project
+      description: "Admins only. Queues one test delivery, retried and recorded like any other; its outcome appears as the channel's lastDelivery in getAlertSetup. A channel not configured is not_found."
+      parameters:
+        - $ref: "#/components/parameters/OrganisationId"
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/AlertChannelKind"
+      responses:
+        "204":
+          description: Queued. The channel's lastDelivery in getAlertSetup shows how it went.
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/SourceUnavailable"
+  /api/v1/org/{orgId}/project/{projectId}/alert-incidents:
+    get:
+      operationId: listAlertIncidents
+      security:
+        - consoleSession: []
+        - projectKey: []
+      summary: List alert incidents and their deliveries in a range
+      tags:
+        - Console reads
+      x-access:
+        principal: organisation_member
+        minimumRole: Viewer
+        projectIsolation: required
+        browserSessionTransport: session_cookie
+        scope: project
+      description: "Delivery history (docs/specs/alerts-behaviour.md, History): incidents opened in, or still open across, the range, newest first, each with every delivery of its changes. At most 500; complete is false when more exist. Incidents and deliveries are kept 30 days after they resolve."
+      parameters:
+        - $ref: "#/components/parameters/OrganisationId"
+        - $ref: "#/components/parameters/ProjectId"
+        - name: from
+          in: query
+          required: true
+          description: Inclusive UTC start of the range.
+          schema:
+            type: string
+            format: date-time
+        - name: to
+          in: query
+          required: true
+          description: Exclusive UTC end of the range.
+          schema:
+            type: string
+            format: date-time
+      responses:
+        "200":
+          description: Incidents in the range. Null means unreported, never zero.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AlertIncidents"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/SourceUnavailable"
+  /api/v1/org/{orgId}/project/{projectId}/alert-incidents/{incidentId}/resolve:
+    post:
+      operationId: resolveAlertIncident
+      summary: Resolve a recording-lost incident
+      tags: [ Console writes ]
+      security:
+        - consoleSession: []
+      x-access:
+        principal: organisation_member
+        minimumRole: Member
+        projectIsolation: required
+        browserSessionTransport: session_cookie
+        scope: project
+      description: "A lost recording never comes back, so a person resolves a firing recording-lost incident; no resolved message is sent. Every other rule resolves when its condition holds, and resolving one, or an incident not firing, is incident_not_resolvable."
+      parameters:
+        - $ref: "#/components/parameters/OrganisationId"
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/AlertIncidentId"
+      responses:
+        "200":
+          description: The resolved incident.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AlertIncident"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/SourceUnavailable"
   /api/v1/org/{orgId}/invitations:
     get:
       operationId: getInvitations
@@ -5312,7 +5554,7 @@ components:
               source:
                 type: string
                 enum: [ calls, agent_workers, phone_bridge, delivery ]
-                description: "The component the check runs on. delivery is a recorded egress or ingress failure."
+                description: "The component the check runs on. delivery is a recorded egress or ingress failure, or an alert not delivered."
                 x-source: { kind: computed, file: dashboard/src/features/issues/issues-model.ts, pointer: null, detail: "The component the check runs on." }
               lastSeenAt:
                 type: [ string, "null" ]
@@ -5434,7 +5676,7 @@ components:
           type: string
           description: Stable error category.
           x-source: { kind: computed, file: docs/api/coverage.md, pointer: null, detail: Stable error category. }
-          enum: [ invalid_request, revision_conflict, unauthenticated, forbidden, not_found, source_unavailable, internal_error, range_not_satisfiable, last_admin, already_member, member_of_other_organisations, project_exists, livekit_secret_invalid, livekit_unreachable, recording_bucket_refused, recording_bucket_unreachable, origin_not_allowed ]
+          enum: [ invalid_request, revision_conflict, unauthenticated, forbidden, not_found, source_unavailable, internal_error, range_not_satisfiable, last_admin, already_member, member_of_other_organisations, project_exists, livekit_secret_invalid, livekit_unreachable, recording_bucket_refused, recording_bucket_unreachable, origin_not_allowed, incident_not_resolvable ]
         message:
           type: string
           description: Safe human-readable explanation, excluding upstream credentials and request bodies.
@@ -5488,11 +5730,11 @@ components:
           enum: [ slow-answer, cut-off, job-failed, slow-join, plain-phone, recording-lost, ingress-error ]
         on:
           type: boolean
-          description: Saved rule enablement. The preview uses true when no override exists.
-          x-source: { kind: configuration, file: dashboard/src/features/alerts/alerts-model.ts, pointer: null, detail: Saved rule enablement. The preview uses true when no override exists. }
+          description: "Whether the rule sends; true when never saved. A rule that is off still opens incidents."
+          x-source: { kind: configuration, file: dashboard/src/features/alerts/alerts-model.ts, pointer: null, detail: "Saved rule enablement; true when never saved." }
         to:
           type: array
-          description: Selected notification channel kinds only. No webhook URLs or credentials.
+          description: "Channel kinds the rule sends to. No webhook URLs or credentials. Email and webhook deliver today."
           x-source: { kind: configuration, file: dashboard/src/features/alerts/alerts-model.ts, pointer: null, detail: Selected notification channel kinds only. No webhook URLs or credentials. }
           items:
             type: string
@@ -5501,13 +5743,298 @@ components:
     AlertSetup:
       type: object
       additionalProperties: false
-      required: [ items ]
+      required: [ items, channels, emailAvailable ]
       properties:
         items:
           type: array
           items:
             $ref: "#/components/schemas/AlertRuleSetup"
-          x-source: { kind: configuration, file: dashboard/src/features/alerts/alerts-model.ts, pointer: null, detail: Saved overrides for the seven rules. Absence of an override uses the documented preview default; it does not prove delivery is connected. }
+          x-source: { kind: configuration, file: internal/store/pgstore/alerts.go, pointer: null, detail: "All seven rules. A rule never saved is on and sends nowhere." }
+        channels:
+          type: array
+          description: The project's configured channels, each with its latest delivery. A kind not listed is not configured.
+          items:
+            $ref: "#/components/schemas/AlertChannel"
+          x-source: { kind: configuration, file: internal/store/pgstore/queries.sql, pointer: null, detail: "ListAlertChannels." }
+        emailAvailable:
+          type: boolean
+          description: "Whether this server sends email (VOICEGATEWAY_SMTP_URL is set). Without it the email channel cannot be configured."
+          x-source: { kind: configuration, file: internal/app/roles.go, pointer: null, detail: "VOICEGATEWAY_SMTP_URL set." }
+    AlertRuleUpdate:
+      type: object
+      additionalProperties: false
+      required: [ on, to ]
+      properties:
+        on:
+          type: boolean
+          description: Whether the rule sends. Off still opens incidents.
+          x-source: { kind: configuration, file: internal/api/alerts.go, pointer: null, detail: "Saved to alert_rules.enabled." }
+        to:
+          type: array
+          description: Channel kinds the rule sends to. Email and webhook deliver today.
+          x-source: { kind: configuration, file: internal/api/alerts.go, pointer: null, detail: "Saved to alert_rules.channels, de-duplicated and sorted." }
+          items:
+            type: string
+            enum: [ email, webhook ]
+          uniqueItems: true
+    AlertChannelUpdate:
+      type: object
+      additionalProperties: false
+      properties:
+        url:
+          type: string
+          maxLength: 2048
+          description: "Webhook only: the http or https URL each delivery is POSTed to. Sealed on the server and never returned."
+          x-source: { kind: configuration, file: internal/api/alerts.go, pointer: null, detail: "Sealed into alert_channels.config_sealed." }
+        rotateSecret:
+          type: boolean
+          description: "Webhook only: true makes a new signing secret, returned once."
+          x-source: { kind: configuration, file: internal/api/alerts.go, pointer: null, detail: "Draws a new whsec_ secret." }
+        recipients:
+          type: array
+          description: "Email only: 1 to 20 addresses that get every alert as one email."
+          x-source: { kind: configuration, file: internal/api/alerts.go, pointer: null, detail: "Sealed into alert_channels.config_sealed." }
+          minItems: 1
+          maxItems: 20
+          items:
+            type: string
+            format: email
+    SavedAlertChannel:
+      type: object
+      additionalProperties: false
+      required: [ kind, target, recipients, signingSecret ]
+      properties:
+        kind:
+          type: string
+          enum: [ email, webhook ]
+          description: The channel kind.
+          x-source: { kind: configuration, file: internal/api/alerts.go, pointer: null, detail: "The path's kind." }
+        target:
+          type: string
+          description: "What the channel sends to, safe to show: the webhook's host, or the recipient count."
+          x-source: { kind: configuration, file: internal/api/alerts.go, pointer: null, detail: "alert_channels.target." }
+        recipients:
+          type: [ array, "null" ]
+          description: The email channel's recipients.
+          x-null-reason: "Not an email channel."
+          x-source: { kind: configuration, file: internal/api/alerts.go, pointer: null, detail: "The saved recipients." }
+          items:
+            type: string
+        signingSecret:
+          type: [ string, "null" ]
+          description: "The webhook's Standard Webhooks signing secret (whsec_...), returned only when it was made. Verify each delivery's webhook-signature with it."
+          x-null-reason: "Not a webhook, or the existing secret was kept."
+          x-source: { kind: configuration, file: internal/api/alerts.go, pointer: null, detail: "newSigningSecret: whsec_ and 32 random bytes in base64." }
+    AlertDelivery:
+      type: object
+      additionalProperties: false
+      required: [ id, channel, change, state, attempts, nextAttemptAt, status, message, deliveredAt, createdAt ]
+      properties:
+        id:
+          type: string
+          description: The delivery.
+          x-source: { kind: computed, file: internal/store/pgstore/queries.sql, pointer: null, detail: "alert_deliveries.id." }
+        channel:
+          type: string
+          enum: [ email, webhook ]
+          description: Where it goes.
+          x-source: { kind: computed, file: internal/store/pgstore/queries.sql, pointer: null, detail: "alert_deliveries.channel." }
+        change:
+          type: string
+          enum: [ firing, reminder, resolved, test ]
+          description: The incident change it carries, or a channel test.
+          x-source: { kind: computed, file: internal/store/pgstore/queries.sql, pointer: null, detail: "alert_deliveries.change." }
+        state:
+          type: string
+          enum: [ pending, retrying, delivered, failed ]
+          description: "failed is final: refused (the channel is broken) or still failing after 24 hours of retries."
+          x-source: { kind: computed, file: internal/alert/deliverer.go, pointer: null, detail: "Deliverer.schedule." }
+        attempts:
+          type: [ integer, "null" ]
+          x-unit: count
+          x-null-reason: "Never null; nullable by the contract's rule for counts."
+          minimum: 0
+          description: Attempts made so far.
+          x-source: { kind: computed, file: internal/store/pgstore/queries.sql, pointer: null, detail: "alert_deliveries.attempts." }
+        nextAttemptAt:
+          type: [ string, "null" ]
+          format: date-time
+          description: When the next attempt is planned.
+          x-null-reason: "Delivered or failed: no attempt is planned."
+          x-source: { kind: computed, file: internal/alert/deliverer.go, pointer: null, detail: "30 s, 1 min, 2 min, doubling to 30 min, honouring Retry-After." }
+        status:
+          type: [ string, "null" ]
+          description: "The last answer: an HTTP status (HTTP 500), an SMTP class, or timeout, unreachable, channel_removed, smtp_not_configured."
+          x-null-reason: "No attempt yet."
+          x-source: { kind: computed, file: internal/alert/deliverer.go, pointer: null, detail: "outcome.status of the last attempt." }
+        message:
+          type: [ string, "null" ]
+          description: "The provider's message, at most 200 characters, with the channel's URL and secret removed."
+          x-null-reason: "No attempt yet, delivered, or the provider gave none."
+          x-source: { kind: computed, file: internal/alert/deliverer.go, pointer: null, detail: "providerMessage." }
+        deliveredAt:
+          type: [ string, "null" ]
+          format: date-time
+          description: When the channel accepted it.
+          x-null-reason: "Not delivered."
+          x-source: { kind: computed, file: internal/store/pgstore/queries.sql, pointer: null, detail: "alert_deliveries.delivered_at." }
+        createdAt:
+          type: string
+          format: date-time
+          description: When the change was queued.
+          x-source: { kind: computed, file: internal/store/pgstore/queries.sql, pointer: null, detail: "alert_deliveries.created_at." }
+    AlertChannel:
+      type: object
+      additionalProperties: false
+      required: [ kind, target, recipients, broken, updatedAt, lastDelivery ]
+      properties:
+        kind:
+          type: string
+          enum: [ email, webhook ]
+          description: The channel kind.
+          x-source: { kind: configuration, file: internal/store/pgstore/queries.sql, pointer: null, detail: "alert_channels.kind." }
+        target:
+          type: string
+          description: "What the channel sends to, safe to show: the webhook's host, or the recipient count. Never the URL or secret."
+          x-source: { kind: configuration, file: internal/store/pgstore/queries.sql, pointer: null, detail: "alert_channels.target." }
+        recipients:
+          type: [ array, "null" ]
+          description: The email channel's recipients.
+          x-null-reason: "Not an email channel, or the configuration could not be read."
+          x-source: { kind: configuration, file: internal/api/alerts.go, pointer: null, detail: "Opened from alert_channels.config_sealed." }
+          items:
+            type: string
+        broken:
+          type: boolean
+          description: "A delivery was refused with an answer retrying cannot fix. Cleared by a delivery that succeeds or by saving the channel."
+          x-source: { kind: computed, file: internal/alert/deliverer.go, pointer: null, detail: "alert_channels.broken." }
+        updatedAt:
+          type: string
+          format: date-time
+          description: When an Admin last saved the channel.
+          x-source: { kind: configuration, file: internal/store/pgstore/queries.sql, pointer: null, detail: "alert_channels.updated_at." }
+        lastDelivery:
+          description: The channel's latest delivery.
+          x-null-reason: "Nothing was sent to it yet."
+          x-source: { kind: computed, file: internal/store/pgstore/queries.sql, pointer: null, detail: "ListAlertChannels." }
+          oneOf:
+            - $ref: "#/components/schemas/AlertDelivery"
+            - type: "null"
+    AlertIncident:
+      type: object
+      additionalProperties: false
+      required: [ id, ruleId, subject, state, openedAt, resolvedAt, resolvedBy, occurrences, lastOccurrence, holdReason, silentSince, deliveries ]
+      properties:
+        id:
+          type: string
+          description: The incident.
+          x-source: { kind: computed, file: internal/store/pgstore/queries.sql, pointer: null, detail: "alert_incidents.id." }
+        ruleId:
+          type: string
+          enum: [ slow-answer, cut-off, job-failed, slow-join, plain-phone, recording-lost, ingress-error ]
+          description: The rule.
+          x-source: { kind: computed, file: internal/store/pgstore/queries.sql, pointer: null, detail: "alert_incidents.rule_id." }
+        subject:
+          type: string
+          description: "What the incident is about: an agent for call and job rules, else the trunk, egress or ingress."
+          x-source: { kind: computed, file: internal/alert/message.go, pointer: null, detail: "label(rule, subject)." }
+        state:
+          type: string
+          enum: [ firing, resolved ]
+          description: Firing until its resolve condition holds, or a person resolves a lost recording.
+          x-source: { kind: computed, file: internal/alert/evaluator.go, pointer: null, detail: "Evaluator.check." }
+        openedAt:
+          type: string
+          format: date-time
+          description: When it opened.
+          x-source: { kind: computed, file: internal/store/pgstore/queries.sql, pointer: null, detail: "alert_incidents.opened_at." }
+        resolvedAt:
+          type: [ string, "null" ]
+          format: date-time
+          description: When it resolved.
+          x-null-reason: "Firing."
+          x-source: { kind: computed, file: internal/store/pgstore/queries.sql, pointer: null, detail: "alert_incidents.resolved_at." }
+        resolvedBy:
+          type: [ string, "null" ]
+          enum: [ condition, person, null ]
+          description: "condition when the resolve rule held; person for a lost recording a person resolved."
+          x-null-reason: "Firing."
+          x-source: { kind: computed, file: internal/api/alerts.go, pointer: null, detail: "alert_incidents.resolved_by, without the user id." }
+        occurrences:
+          type: [ integer, "null" ]
+          x-unit: count
+          x-null-reason: "Never null; nullable by the contract's rule for counts."
+          minimum: 1
+          description: Occurrences grouped into it.
+          x-source: { kind: computed, file: internal/store/pgstore/queries.sql, pointer: null, detail: "alert_incidents.occurrences." }
+        lastOccurrence:
+          type: object
+          additionalProperties: false
+          required: [ at, where, detail, callId ]
+          description: The latest thing the rule matched.
+          x-source: { kind: computed, file: internal/store/pgstore/queries.sql, pointer: null, detail: "alert_incidents.last_detail." }
+          properties:
+            at:
+              type: [ string, "null" ]
+              format: date-time
+              description: When it happened.
+              x-null-reason: "The source reported no time."
+              x-source: { kind: computed, file: internal/store/pgstore/queries.sql, pointer: null, detail: "alert_incidents.last_occurrence_at." }
+            where:
+              type: string
+              description: The call room, job, trunk, egress or ingress, as a label.
+              x-source: { kind: computed, file: internal/store/pgstore/queries.sql, pointer: null, detail: "issue_occurrences.detail where." }
+            detail:
+              type: string
+              description: What happened.
+              x-source: { kind: computed, file: internal/store/pgstore/queries.sql, pointer: null, detail: "issue_occurrences.detail detail." }
+            callId:
+              type: [ string, "null" ]
+              description: The call, when it is on one.
+              x-null-reason: "Not on a call."
+              x-source: { kind: computed, file: internal/store/pgstore/queries.sql, pointer: null, detail: "issue_occurrences.call_id." }
+        holdReason:
+          type: [ string, "null" ]
+          description: "Why a firing incident has not resolved when the data cannot decide, such as fewer than 5 calls in the last 30 minutes."
+          x-null-reason: "Resolved, or firing because the rule still matches."
+          x-source: { kind: computed, file: internal/alert/evaluator.go, pointer: null, detail: "Evaluator.check hold." }
+        silentSince:
+          type: [ string, "null" ]
+          format: date-time
+          description: "The incident's source has reported nothing since this time. It stays firing: silence never resolves it."
+          x-null-reason: "The source is reporting, or the incident resolved."
+          x-source: { kind: computed, file: internal/alert/evaluator.go, pointer: null, detail: "silentSince, after 30 minutes without data." }
+        deliveries:
+          type: array
+          description: Every delivery of its changes, oldest first.
+          x-source: { kind: computed, file: internal/store/pgstore/queries.sql, pointer: null, detail: "ListAlertIncidentDeliveries." }
+          items:
+            $ref: "#/components/schemas/AlertDelivery"
+    AlertIncidents:
+      type: object
+      additionalProperties: false
+      required: [ from, to, complete, items ]
+      properties:
+        from:
+          type: string
+          format: date-time
+          description: "Inclusive range start, UTC."
+          x-source: { kind: computed, file: internal/api/alerts.go, pointer: null, detail: "The from parameter." }
+        to:
+          type: string
+          format: date-time
+          description: "Exclusive range end, UTC."
+          x-source: { kind: computed, file: internal/api/alerts.go, pointer: null, detail: "The to parameter." }
+        complete:
+          type: boolean
+          description: "false when more than 500 incidents are in the range."
+          x-source: { kind: computed, file: internal/api/alerts.go, pointer: null, detail: "listAlertIncidents limit." }
+        items:
+          type: array
+          description: Incidents, newest first.
+          x-source: { kind: computed, file: internal/store/pgstore/queries.sql, pointer: null, detail: "ListAlertIncidents." }
+          items:
+            $ref: "#/components/schemas/AlertIncident"
     CallTags:
       type: object
       additionalProperties: false
@@ -6910,7 +7437,7 @@ components:
           schema:
             $ref: "#/components/schemas/Error"
     Conflict:
-      description: revision_conflict, settings changed since they were read; last_admin, the change would leave the organisation without an admin; already_member, the invited email's account is a member already; member_of_other_organisations, a reset's member belongs to an organisation the requester does not administer; project_exists, the organisation already has a project with the new name's id.
+      description: revision_conflict, settings changed since they were read; last_admin, the change would leave the organisation without an admin; already_member, the invited email's account is a member already; member_of_other_organisations, a reset's member belongs to an organisation the requester does not administer; project_exists, the organisation already has a project with the new name's id; incident_not_resolvable, a person may resolve only a firing recording-lost incident.
       content:
         application/json:
           schema:
@@ -6951,6 +7478,29 @@ components:
         type: string
         minLength: 1
         maxLength: 200
+    AlertRuleId:
+      name: ruleId
+      in: path
+      required: true
+      description: One of the seven alert rules; any other value is not_found.
+      schema:
+        type: string
+        enum: [ slow-answer, cut-off, job-failed, slow-join, plain-phone, recording-lost, ingress-error ]
+    AlertChannelKind:
+      name: kind
+      in: path
+      required: true
+      description: A channel kind that delivers today; any other value is not_found.
+      schema:
+        type: string
+        enum: [ email, webhook ]
+    AlertIncidentId:
+      name: incidentId
+      in: path
+      required: true
+      description: An alert incident's id; one from another project, or not a UUID, is not_found.
+      schema:
+        type: string
     KeyId:
       name: keyId
       in: path

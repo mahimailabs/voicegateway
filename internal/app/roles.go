@@ -20,6 +20,7 @@ import (
 
 	apicontract "github.com/mahimailabs/voicegateway/docs/api"
 	"github.com/mahimailabs/voicegateway/ee/instance"
+	"github.com/mahimailabs/voicegateway/internal/alert"
 	"github.com/mahimailabs/voicegateway/internal/api"
 	"github.com/mahimailabs/voicegateway/internal/auth"
 	"github.com/mahimailabs/voicegateway/internal/bucket"
@@ -140,6 +141,7 @@ func Web(ctx context.Context, c config.Config, log *slog.Logger) error {
 	mountIngestion(mux, projects, producer, quota, recordings, connections, log, time.Now)
 	mux.Handle("/auth/", accounts.Routes())
 	v1 := &api.API{
+		Alerts: projects, AlertEmail: c.SMTPURL != "", AlertTest: alert.Composer{PublicURL: c.PublicURL, Now: time.Now}.Test,
 		Settings: projects, Origins: projects, Embeds: embeds, Metadata: projects, Issues: projects, StorageBucket: c.S3.Bucket,
 		Live:              live,
 		ResourceEndpoints: projects, ResourceSamples: events, Projects: projects, NewProjects: projects, Credentials: projects, VerifyLiveKit: scrape.NewVerifier(c.WorkerEndpointsPublicOnly), VerifyBucket: bucket.NewVerifier(bucketTransport), Calls: projects, Traces: events, Layers: events, Endpoints: projects, Accounts: projects, Stats: projects, Keys: projects, NewKey: auth.NewKey, Log: log, Now: time.Now, Gate: accounts.Gate,
@@ -373,6 +375,28 @@ func Worker(ctx context.Context, c config.Config, log *slog.Logger) error {
 		every(gctx, expireRecordingsEvery, "recording retention", retention.Run, log)
 		return nil
 	})
+	// Alerts (docs/specs/alerts-delivery.md): one worker evaluates at a time; every worker sends due
+	// deliveries, each leased to one of them. Without SMTP, email deliveries fail visibly.
+	alerts := pgstore.NewStore(pool, sealer)
+	var mail alert.Mailer
+	if c.SMTPURL != "" {
+		m, err := mailer.New(c.SMTPURL, c.SMTPFrom)
+		if err != nil {
+			return err
+		}
+		mail = m
+	}
+	composer := alert.Composer{PublicURL: c.PublicURL, Now: time.Now}
+	g.Go(func() error {
+		evaluator := &alert.Evaluator{Store: alerts, Ingress: events, Compose: composer.Compose, Log: log}
+		every(gctx, alertEvery, "alerts", evaluator.Tick, log)
+		return nil
+	})
+	g.Go(func() error {
+		deliverer := &alert.Deliverer{Store: alerts, HTTP: scrape.NewWorkerClient(c.WorkerEndpointsPublicOnly), Mailer: mail, Log: log, Now: time.Now}
+		every(gctx, deliverEvery, "alert delivery", deliverer.Tick, log)
+		return nil
+	})
 	g.Go(func() error {
 		return (&sink.Sink{
 			Changed:   live.Notify,
@@ -394,12 +418,15 @@ func Worker(ctx context.Context, c config.Config, log *slog.Logger) error {
 
 // sweepEvery is how often the worker closes idle calls and counts unlinked traces;
 // summarizeEvery is how often it rebuilds stale call summaries (phase 04d); expireRecordingsEvery
-// is how often it deletes recordings past retention (phase 07a). Every worker runs all three; all
-// are safe to run twice.
+// is how often it deletes recordings past retention (phase 07a); alertEvery is how often it
+// evaluates alerts and deliverEvery how often it sends due alert deliveries. Every worker runs all
+// of them; all are safe to run twice.
 const (
 	sweepEvery            = time.Minute
 	summarizeEvery        = 10 * time.Second
 	expireRecordingsEvery = time.Hour
+	alertEvery            = 15 * time.Second
+	deliverEvery          = 5 * time.Second
 )
 
 // every runs f each period until ctx is cancelled. A failure is logged and retried next period.

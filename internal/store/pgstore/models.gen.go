@@ -8,6 +8,82 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+type AlertChannel struct {
+	OrganisationID string
+	ProjectID      string
+	Kind           string
+	ConfigSealed   []byte
+	Target         string
+	Broken         bool
+	UpdatedAt      pgtype.Timestamptz
+}
+
+type AlertDelivery struct {
+	ID             pgtype.UUID
+	OrganisationID string
+	ProjectID      string
+	IncidentID     pgtype.UUID
+	Channel        string
+	Change         string
+	IdempotencyKey string
+	Message        []byte
+	State          string
+	Attempts       int32
+	NextAttemptAt  pgtype.Timestamptz
+	LeaseUntil     pgtype.Timestamptz
+	LastStatus     pgtype.Text
+	LastError      pgtype.Text
+	DeliveredAt    pgtype.Timestamptz
+	CreatedAt      pgtype.Timestamptz
+}
+
+type AlertDeliveryAttempt struct {
+	DeliveryID pgtype.UUID
+	Attempt    int32
+	At         pgtype.Timestamptz
+	Status     string
+	Error      pgtype.Text
+}
+
+type AlertIncident struct {
+	ID                  pgtype.UUID
+	OrganisationID      string
+	ProjectID           string
+	RuleID              string
+	Subject             string
+	SubjectLabel        string
+	State               string
+	OpenedAt            pgtype.Timestamptz
+	ResolvedAt          pgtype.Timestamptz
+	ResolvedBy          pgtype.Text
+	Occurrences         int32
+	NotifiedOccurrences int32
+	NotifiedAt          pgtype.Timestamptz
+	Changes             int32
+	LastOccurrenceAt    pgtype.Timestamptz
+	LastDetail          []byte
+	HoldReason          pgtype.Text
+	SilentSince         pgtype.Timestamptz
+}
+
+type AlertOccurrence struct {
+	OrganisationID string
+	ProjectID      string
+	RuleID         string
+	OccurrenceID   string
+	IncidentID     pgtype.UUID
+	SeenAt         pgtype.Timestamptz
+}
+
+type AlertRule struct {
+	OrganisationID string
+	ProjectID      string
+	RuleID         string
+	Enabled        bool
+	Channels       []string
+	UpdatedAt      pgtype.Timestamptz
+}
+
 type Call struct {
 	ID                      pgtype.UUID
 	OrganisationID          string

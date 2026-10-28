@@ -1,15 +1,15 @@
 import { issueMetadataOf, saveIssueMetadata } from "./issue-metadata"
 import { metadataOf, saveMetadata } from "./dispositions"
 import { http, HttpResponse, type PathParams } from "msw"
-import type { AlertEvents, AlertSetup, Call, CallPage, CallStats, CreatedInvitation, CreatedPasswordReset, CreatedProjectKey, Invitations, LiveKitCredentialsUpdate, OrganisationEntitlement, ProjectCreate, ProjectCreated, Member, Members, ProjectConnection, ProjectKeys, IssueList, ProjectSettings, ProviderProbes, Resources, Workers, CapacityRun, CloudAgents, Egress, Error as ApiErrorBody, Ingress, MediaServer, ProjectSnapshot, Sip, Workspaces } from "@/lib/api-types"
+import type { AlertEvents, AlertIncident, AlertIncidents, AlertRuleSetup, AlertSetup, SavedAlertChannel, Call, CallPage, CallStats, CreatedInvitation, CreatedPasswordReset, CreatedProjectKey, Invitations, LiveKitCredentialsUpdate, OrganisationEntitlement, ProjectCreate, ProjectCreated, Member, Members, ProjectConnection, ProjectKeys, IssueList, ProjectSettings, ProviderProbes, Resources, Workers, CapacityRun, CloudAgents, Egress, Error as ApiErrorBody, Ingress, MediaServer, ProjectSnapshot, Sip, Workspaces } from "@/lib/api-types"
 import { callStats } from "./call-stats"
 import { capturedCalls } from "./fixtures"
-import { alertEvents, issueList } from "./insights"
+import { alertEvents, alertIncidents, issueList, resolveAlertIncident } from "./insights"
 import { capacity, cloudAgents, egress, ingress, mediaServer, projectSnapshot, providerProbes, sip, workers } from "./livekit"
 import { summarize } from "./summaries"
 import { matchesFields, matchesFilters, parseFilters, sortCalls, totals } from "./calls-query"
 import { playbackUrl, recordingMedia } from "./recordings"
-import { alertSetup, changeMember, createKey, invitations, invite, members, passwordReset, projectKeys, projectSettings, updateSettings, updateAllowedOrigins, normaliseOrigin, revokeInvitation, revokeKey } from "./settings"
+import { alertSetup, changeMember, deleteAlertChannel, testAlertChannel, updateAlertChannel, updateAlertRule, createKey, invitations, invite, members, passwordReset, projectKeys, projectSettings, updateSettings, updateAllowedOrigins, normaliseOrigin, revokeInvitation, revokeKey } from "./settings"
 import { addProject, knownOrg, knownProject, workspaces } from "./workspaces"
 
 // Everything but the paging parameters, in a stable order, so a cursor can name what it was issued for.
@@ -184,6 +184,18 @@ export const handlers = [
     const r = range(new URL(request.url).searchParams)
     return typeof r === "string" ? fail(400, "invalid_request", r) : HttpResponse.json(alertEvents(r.from, r.to))
   }),
+  http.get<PathParams, never, AlertIncidents | ApiErrorBody>(`${project}/alert-incidents`, ({ params, request }) => {
+    if (!known(params)) return fail(404, "not_found", "No such project.")
+    const r = range(new URL(request.url).searchParams)
+    return typeof r === "string" ? fail(400, "invalid_request", r) : HttpResponse.json(alertIncidents(r.from, r.to))
+  }),
+  http.post<PathParams, never, AlertIncident | ApiErrorBody>(`${project}/alert-incidents/:incidentId/resolve`, ({ params }) => {
+    if (!known(params)) return fail(404, "not_found", "No such project.")
+    const r = resolveAlertIncident(String(params.incidentId))
+    if (r === "not_found") return fail(404, "not_found", "No such incident in this project.")
+    if (r === "not_resolvable") return fail(409, "incident_not_resolvable", "only a firing lost recording is resolved by a person")
+    return HttpResponse.json(r)
+  }),
 
   // LiveKit reads: one document each, as the capture recorded it.
   http.get<PathParams, never, Egress | ApiErrorBody>(`${project}/egress`, ({ params }) => (known(params) ? HttpResponse.json(egress()) : fail(404, "not_found", "No such project."))),
@@ -254,6 +266,27 @@ export const handlers = [
     return HttpResponse.json<OrganisationEntitlement>({ from, to, limitMinutes: 2000, active: true, revision: 1, callSeconds: 0, unmeasuredCalls: 0, openCalls: 0, warningPercent: 0, ingestAllowed: true })
   }),
   http.get<PathParams, never, AlertSetup | ApiErrorBody>(`${project}/alert-setup`, ({ params }) => (known(params) ? HttpResponse.json(alertSetup()) : fail(404, "not_found", "No such project."))),
+  // Alert rules and channels, in memory (settings.ts), with web's checks.
+  http.put<PathParams, never, AlertRuleSetup | ApiErrorBody>(`${project}/alert-rules/:ruleId`, async ({ params, request }) => {
+    if (!known(params)) return fail(404, "not_found", "No such project.")
+    const r = updateAlertRule(String(params.ruleId), await request.json().catch(() => null))
+    if (r === "not_found") return fail(404, "not_found", "no such alert rule")
+    return r === "invalid_request" ? fail(400, "invalid_request", "on must be a boolean and to a list of email and webhook") : HttpResponse.json(r)
+  }),
+  http.put<PathParams, never, SavedAlertChannel | ApiErrorBody>(`${project}/alert-channels/:kind`, async ({ params, request }) => {
+    if (!known(params)) return fail(404, "not_found", "No such project.")
+    const r = updateAlertChannel(String(params.kind), await request.json().catch(() => null))
+    if (r === "not_found") return fail(404, "not_found", "no such alert channel; email and webhook are available")
+    return r === "invalid_request" ? fail(400, "invalid_request", params.kind === "email" ? "recipients must be 1 to 20 email addresses" : "url must be an http or https URL with a host") : HttpResponse.json(r)
+  }),
+  http.delete<PathParams, never, ApiErrorBody>(`${project}/alert-channels/:kind`, ({ params }) => {
+    if (!known(params)) return fail(404, "not_found", "No such project.")
+    return deleteAlertChannel(String(params.kind)) ? new HttpResponse(null, { status: 204 }) : fail(404, "not_found", "this channel is not set up")
+  }),
+  http.post<PathParams, never, ApiErrorBody>(`${project}/alert-channels/:kind/test`, ({ params }) => {
+    if (!known(params)) return fail(404, "not_found", "No such project.")
+    return testAlertChannel(String(params.kind)) ? new HttpResponse(null, { status: 204 }) : fail(404, "not_found", "this channel is not set up")
+  }),
   http.get<PathParams, never, Workspaces>("*/api/v1/workspaces", () => HttpResponse.json(workspaces())),
 
   // Project API keys, in memory (settings.ts).

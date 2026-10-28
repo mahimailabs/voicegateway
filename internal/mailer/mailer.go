@@ -1,6 +1,6 @@
 // Package mailer sends plain-text email over the one SMTP setting, VOICEGATEWAY_SMTP_URL, with
-// github.com/wneessen/go-mail (phase 06d). Invitations use it now; the alerts email channel will
-// use the same setting.
+// github.com/wneessen/go-mail (phase 06d). Invitations and the alerts email
+// channel use it.
 package mailer
 
 import (
@@ -87,11 +87,16 @@ func loopback(host string) bool {
 
 // Send emails one plain-text message. A failure is an *Error naming its class.
 func (m *Mailer) Send(ctx context.Context, to, subject, body string) error {
+	return m.SendTo(ctx, []string{to}, subject, body)
+}
+
+// SendTo emails one plain-text message to every address in to, as one message.
+func (m *Mailer) SendTo(ctx context.Context, to []string, subject, body string) error {
 	msg := mail.NewMsg()
 	if err := msg.From(m.from); err != nil {
 		return &Error{class: "rejected", err: err}
 	}
-	if err := msg.To(to); err != nil {
+	if err := msg.To(to...); err != nil {
 		return &Error{class: "rejected", err: err}
 	}
 	msg.Subject(subject)
@@ -126,6 +131,16 @@ func (e *Error) DeliveryUnknown() bool {
 
 // Class names the failure.
 func (e *Error) Class() string { return e.class }
+
+// Temporary reports a refusal the server says may pass on retry (a 4xx SMTP reply), or a failure
+// that is not a refusal at all, such as an unreachable server.
+func (e *Error) Temporary() bool {
+	var se *mail.SendError
+	if errors.As(e.err, &se) {
+		return se.IsTemp()
+	}
+	return e.class != "rejected"
+}
 
 // classify sorts a go-mail failure. A *mail.SendError is the server refusing the message; go-mail
 // wraps a failed AUTH and a missing STARTTLS in plain errors, told apart by its own wording. AUTH

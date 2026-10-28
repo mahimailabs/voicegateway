@@ -10,6 +10,12 @@ import {
   createProject as createProjectCall,
   createProjectKey as createProjectKeyCall,
   getAlertSetup,
+  deleteAlertChannel as deleteAlertChannelCall,
+  listAlertIncidents,
+  resolveAlertIncident as resolveAlertIncidentCall,
+  testAlertChannel as testAlertChannelCall,
+  updateAlertChannel as updateAlertChannelCall,
+  updateAlertRule as updateAlertRuleCall,
   getCallMetadata,
   getCallTags,
   updateCallMetadata,
@@ -43,7 +49,7 @@ import {
   updateProjectSettings as updateProjectSettingsCall,
   updateProjectLiveKitCredentials as updateProjectLiveKitCredentialsCall,
 } from "@/lib/api-types"
-import type { Call as GeneratedCall, CreateEmbedToken, ProjectConnection, UpdateProjectSettings, CallPage, ProjectCreate, CallSummary, CallTotals, EndOfTurnEvent, ItemEvent, Member, OverlapEvent, RecordingSegment, Span, StateEvent, TranscriptEvent, Turn } from "@/lib/api-types"
+import type { AlertChannelUpdate, AlertRuleUpdate, AlertRuleId, AlertChannelKind, Call as GeneratedCall, CreateEmbedToken, ProjectConnection, UpdateProjectSettings, CallPage, ProjectCreate, CallSummary, CallTotals, EndOfTurnEvent, ItemEvent, Member, OverlapEvent, RecordingSegment, Span, StateEvent, TranscriptEvent, Turn } from "@/lib/api-types"
 
 export type { CallSummary, CallTotals, RecordingSegment, Span, Turn }
 export type SessionEvent = StateEvent | TranscriptEvent | EndOfTurnEvent | OverlapEvent | ItemEvent
@@ -291,6 +297,15 @@ export function connectionQuery(selected = currentScope()) {
 export const updateLiveKitCredentials = (selected: ReturnType<typeof currentScope>, livekitApiKey: string, livekitApiSecret: string) =>
   updateProjectLiveKitCredentialsCall({ ...thrown, path: { orgId: selected.org, projectId: selected.project }, body: { livekitApiKey, livekitApiSecret } }).then(() => undefined)
 export const alertSetupQuery = () => ({ queryKey: ["alert-setup", currentScope()], queryFn: () => data(getAlertSetup({ ...thrown, path: scope() })) })
+// Alert rules, channels and incidents (alerts-behaviour.md). A Member turns rules on and picks
+// channels; an Admin sets a channel, whose webhook URL and signing secret are sealed on the server:
+// the secret is in updateAlertChannel's answer when it is made and nowhere else.
+export const saveAlertRule = (ruleId: AlertRuleId, body: AlertRuleUpdate) => data(updateAlertRuleCall({ ...thrown, path: { ...scope(), ruleId }, body }))
+export const saveAlertChannel = (kind: AlertChannelKind, body: AlertChannelUpdate) => data(updateAlertChannelCall({ ...thrown, path: { ...scope(), kind }, body }))
+export const removeAlertChannel = (kind: AlertChannelKind) => deleteAlertChannelCall({ ...thrown, path: { ...scope(), kind } }).then(() => undefined)
+export const testAlertChannel = (kind: AlertChannelKind) => testAlertChannelCall({ ...thrown, path: { ...scope(), kind } }).then(() => undefined)
+export const alertIncidentsQuery = () => ({ queryKey: ["alert-incidents", currentScope()], queryFn: () => data(listAlertIncidents({ ...thrown, path: scope(), query: allTime() })), refetchInterval: 30_000 })
+export const resolveAlertIncident = (incidentId: string) => data(resolveAlertIncidentCall({ ...thrown, path: { ...scope(), incidentId } }))
 export const fetchWorkspaces = () => data(getWorkspaces(thrown))
 
 // The organisation's members (phase 06b). Any member reads the list; an Admin changes roles and

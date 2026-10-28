@@ -2,7 +2,7 @@
 
 ## Goal
 
-Agree what each of the seven alert rules does once the worker sends them: when a rule fires, how events are grouped and deduplicated, when it recovers, how delivery is retried, and what the console shows when delivery fails. This is the definition step from `v1-connect-plan.md` ("Define alert behaviour"); it does not claim delivery is built. The [worked example](#worked-example-slow-answer-to-webhook) follows one incident through that contract.
+Agree what each of the seven alert rules does once the worker sends them: when a rule fires, how events are grouped and deduplicated, when it recovers, how delivery is retried, and what the console shows when delivery fails. This is the definition step from `v1-connect-plan.md` ("Define alert behaviour"); delivery is built in [alerts-delivery.md](alerts-delivery.md). The [worked example](#worked-example-slow-answer-to-webhook) follows one incident through that contract.
 
 ## Context
 

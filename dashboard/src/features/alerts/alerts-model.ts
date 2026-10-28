@@ -1,12 +1,14 @@
-import type { AlertEvents, AlertSetup } from "@/lib/api-types"
-import { alertSetupQuery } from "@/lib/api"
-import { useLocalSave } from "@/lib/local-store"
+import { useMutation, useQueryClient } from "@tanstack/react-query"
+import { toast } from "sonner"
+import type { AlertChannel, AlertEvents, AlertIncident, AlertSetup } from "@/lib/api-types"
+import { alertSetupQuery, saveAlertRule } from "@/lib/api"
+import { errorText } from "@/components/page-state"
 import { BUDGET_MS, JOIN_MS } from "@/lib/thresholds"
 
 // Alerts are the console's own checks with somewhere to send them (decision 0020). Each rule below
 // reuses a check another page already runs, so an alert and a page never disagree, and the server
-// evaluates each one (mocks/insights.ts in the mock) to show what it would have fired on. Nothing
-// is sent in Phase 1: sending runs in the Phase 2 worker.
+// evaluates each one (mocks/insights.ts in the mock) to show what it would have fired on. The worker
+// groups what a rule matches into incidents and sends them to the rule's channels.
 
 // at is Unix seconds, null when the source reported no time.
 export type Event = { at: number | null; where: string; detail: string; link?: { to: "/calls/$callId"; callId: string } | { to: "/calls" | "/sip" | "/egress" | "/ingress" | "/agents" } }
@@ -61,15 +63,48 @@ export function rulesFrom(ev: AlertEvents): Rule[] {
   }))
 }
 
-// Which rules are on and where each one goes: getAlertSetup reads it; saving goes to this browser
-// until the server stores it.
+// Which rules are on and where each one goes, from getAlertSetup; updateAlertRule saves a change.
+// Email and webhook deliver today; the other kinds are listed as coming, and the server refuses them.
 export const CHANNELS = ["slack", "teams", "discord", "pagerduty", "opsgenie", "email", "webhook"] as const
 export type Channel = (typeof CHANNELS)[number]
+export const DELIVERING = ["email", "webhook"] as const satisfies readonly Channel[]
+export type Delivering = (typeof DELIVERING)[number]
+export const delivers = (c: Channel): c is Delivering => (DELIVERING as readonly Channel[]).includes(c)
 export const channelName: Record<Channel, string> = { slack: "Slack", teams: "Microsoft Teams", discord: "Discord", pagerduty: "PagerDuty", opsgenie: "Opsgenie", email: "Email", webhook: "Webhook" }
 export type Setup = Record<string, { on: boolean; to: Channel[] }>
 export const setupFrom = (a: AlertSetup): Setup => Object.fromEntries(a.items.map((r) => [r.ruleId, { on: r.on, to: r.to }]))
-export function useSetRule() {
-  const save = useLocalSave<Setup, AlertSetup>("vg.alert-rules", alertSetupQuery().queryKey, (a) => (a ? setupFrom(a) : {}))
-  return (id: string, change: Partial<{ on: boolean; to: Channel[] }>) => save((current) => ({ ...current, [id]: { ...ruleSetup(current, id), ...change } }))
-}
 export const ruleSetup = (s: Setup, id: string) => s[id] ?? { on: true, to: [] as Channel[] }
+
+// Saves one rule, showing the change at once and putting the saved setup back if the server refuses.
+export function useSetRule() {
+  const qc = useQueryClient()
+  const key = alertSetupQuery().queryKey
+  const save = useMutation({
+    mutationFn: (v: { id: RuleId; on: boolean; to: Delivering[] }) => saveAlertRule(v.id, { on: v.on, to: v.to }),
+    onMutate: async (v) => {
+      await qc.cancelQueries({ queryKey: key })
+      const prior = qc.getQueryData<AlertSetup>(key)
+      if (prior) qc.setQueryData<AlertSetup>(key, { ...prior, items: prior.items.map((r) => (r.ruleId === v.id ? { ...r, on: v.on, to: v.to } : r)) })
+      return { prior }
+    },
+    onError: (e: Error, _v, ctx) => {
+      if (ctx?.prior) qc.setQueryData(key, ctx.prior)
+      toast.error(`Could not save the rule: ${errorText(e)}`)
+    },
+    onSettled: () => qc.invalidateQueries({ queryKey: key }),
+  })
+  return (s: Setup, id: RuleId, change: Partial<{ on: boolean; to: Channel[] }>) => {
+    const next = { ...ruleSetup(s, id), ...change }
+    save.mutate({ id, on: next.on, to: next.to.filter(delivers) })
+  }
+}
+
+// The firing incidents of each rule.
+export function firingByRule(list: AlertIncident[]): Partial<Record<RuleId, AlertIncident[]>> {
+  const out: Partial<Record<RuleId, AlertIncident[]>> = {}
+  for (const i of list) if (i.state === "firing") (out[i.ruleId] ??= []).push(i)
+  return out
+}
+
+// A channel whose last delivery failed or that a refusal marked broken, named for the rule cards.
+export const failing = (channels: AlertChannel[]) => channels.filter((c) => c.broken || c.lastDelivery?.state === "failed")
