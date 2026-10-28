@@ -14,6 +14,9 @@ const version byte = 1
 // KeySize is the length of the key in bytes (AES-256).
 const KeySize = 32
 
+// MaxPlaintext bounds what one value may seal: secrets, URLs and channel settings, never bulk data.
+const MaxPlaintext = 1 << 20
+
 // ErrOpen means a sealed value did not open: wrong key, wrong record, or tampered data.
 var ErrOpen = errors.New("sealed value did not open: wrong VOICEGATEWAY_SECRET_KEY, wrong record or damaged data")
 
@@ -40,6 +43,9 @@ func New(key []byte) (*Sealer, error) {
 
 // Seal encrypts plaintext for the record named by context, for example "default/my-project".
 func (s *Sealer) Seal(plaintext []byte, context string) ([]byte, error) {
+	if len(plaintext) > MaxPlaintext {
+		return nil, fmt.Errorf("seal: value is %d bytes, more than %d", len(plaintext), MaxPlaintext)
+	}
 	nonce := make([]byte, s.aead.NonceSize())
 	if _, err := rand.Read(nonce); err != nil {
 		return nil, fmt.Errorf("seal nonce: %w", err)
