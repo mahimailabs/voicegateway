@@ -36,7 +36,7 @@ VOICEGATEWAY_CLICKHOUSE_URL=... VOICEGATEWAY_POSTGRES_URL=... VOICEGATEWAY_REDIS
   make load-test LOADTEST_FLAGS="-calls 1000 -ramp 20s -out load.json"
 ```
 
-The tool exits non-zero when any check fails. `-ramp 60s -stretch 4` holds all 1,000 calls open together for about two minutes. Run the generator on other cores than the stack (for example `taskset`), or it competes with what it measures.
+Every run leaves its calls in that project, so keep it off a production instance. The tool exits non-zero when any check fails. `-ramp 60s -stretch 4` holds all 1,000 calls open together for about two minutes. Run the generator on other cores than the stack (for example `taskset`), or it competes with what it measures.
 
 ## Results, 2026-10-28
 
