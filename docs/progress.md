@@ -14,14 +14,15 @@ project-scoped pushed notifications in #430, and real container resource collect
 (81d978ef97ce6051f5753b92e4be1a67243f30ac). Native source, stale/disconnect/recovery,
 HTTP permission and browser checks passed before merge. This roadmap task is complete.
 
-Issue workflows (2026-10-20): call tags/archive merged in #435
-(82c15b084831fb2b66ca253a7789c5416c20939c). The current branch adds persisted call findings,
-scoped issue decisions/tags/archive, revision-safe Undo, snapshot-consistent reads and historical
-backfill without summary rewrites. Targeted native race checks and Go lint pass; 232 frontend and
-88 browser checks passed before the backfill addition, and a clean full final run is still required. The backfill test now explicitly covers a backlog
-larger than one sweep after the full run exposed its original first-batch assumption. Standing
-component evaluation and webhook delivery are unfinished. Complete remains 2/14; do not count
-these partial issue/settings changes as completed tasks.
+Issue workflows (2026-10-28): complete. Call tags and archive merged in #435; persisted call,
+standing (SIP, Cloud agents), job, recording and ingress findings, scoped decisions, revision-safe
+Undo, snapshot-consistent reads, coverage reporting and bounded historical backfills merged in #436
+(Postgres 00017), and the escaped issue id fix in #440. A clean full run on main aecb612 passed on
+2026-10-28: the Go race suite with containers (`CI=1`), Go lint and sqlc diff, `make api-check`,
+410 dashboard tests, dashboard lint and TypeScript, SDK tests and lint, and 206 browser and
+accessibility checks (58 phone-width duplicates skip by design). A self-hosted LiveKit media server
+stays partial for job failure detection, as the spec records. Alert evaluation and delivery reuse
+these occurrences and are tracked separately (spec alerts-delivery).
 
 Call diagnosis (2026-10-19): turn-level latency comparison, trace-clock response breakdown, source-linked speech/tools and reported usage are implemented. Turn navigation stays in the fixed header and bounds comparison to six turns. Realtime calls show speech intervals, derived response gaps and interruptions without inventing STT/TTS stages. SIP termination remains separate evidence. The generic per-call architecture flow and topology were removed.
 
