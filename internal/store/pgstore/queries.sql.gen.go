@@ -1100,7 +1100,7 @@ type CreateCapacityRunParams struct {
 	RequestedAt    pgtype.Timestamptz
 }
 
-// A requested capacity test (Postgres 00024). capacity_runs_one_open refuses a second open run for
+// A requested capacity test (Postgres 00025). capacity_runs_one_open refuses a second open run for
 // the project.
 func (q *Queries) CreateCapacityRun(ctx context.Context, arg CreateCapacityRunParams) (pgtype.UUID, error) {
 	row := q.db.QueryRow(ctx, createCapacityRun,

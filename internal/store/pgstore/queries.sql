@@ -1346,7 +1346,7 @@ WHERE r.enabled AND EXISTS (
     WHERE c.organisation_id = r.organisation_id AND c.project_id = r.project_id AND c.kind = ANY(r.channels));
 
 -- name: CreateCapacityRun :one
--- A requested capacity test (Postgres 00024). capacity_runs_one_open refuses a second open run for
+-- A requested capacity test (Postgres 00025). capacity_runs_one_open refuses a second open run for
 -- the project.
 INSERT INTO capacity_runs (organisation_id, project_id, agent, max_step, requested_by, requested_at)
 VALUES (@organisation_id, @project_id, @agent, @max_step, sqlc.narg(requested_by), @requested_at)

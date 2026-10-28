@@ -4598,16 +4598,16 @@ components:
         id:
           type: string
           format: uuid
-          x-source: { kind: configuration, file: migrations/postgres/00024_capacity_runs.sql, pointer: null, detail: "The run's id, drawn by Postgres when the run is requested." }
+          x-source: { kind: configuration, file: migrations/postgres/00025_capacity_runs.sql, pointer: null, detail: "The run's id, drawn by Postgres when the run is requested." }
         agent:
           type: string
-          x-source: { kind: configuration, file: migrations/postgres/00024_capacity_runs.sql, pointer: null, detail: "The agent name the test dispatches by, as the person chose it." }
+          x-source: { kind: configuration, file: migrations/postgres/00025_capacity_runs.sql, pointer: null, detail: "The agent name the test dispatches by, as the person chose it." }
         maxStep:
           type: integer
           enum: [ 8, 16, 32, 64 ]
           x-unit: calls
           x-configuration: true
-          x-source: { kind: configuration, file: migrations/postgres/00024_capacity_runs.sql, pointer: null, detail: "The most calls at once the person allowed." }
+          x-source: { kind: configuration, file: migrations/postgres/00025_capacity_runs.sql, pointer: null, detail: "The most calls at once the person allowed." }
         state:
           type: string
           enum: [ requested, running, ended ]
@@ -4616,7 +4616,7 @@ components:
         requestedAt:
           type: string
           format: date-time
-          x-source: { kind: configuration, file: migrations/postgres/00024_capacity_runs.sql, pointer: null, detail: "When the person started the test." }
+          x-source: { kind: configuration, file: migrations/postgres/00025_capacity_runs.sql, pointer: null, detail: "When the person started the test." }
         startedAt:
           type: [ string, "null" ]
           format: date-time
@@ -4629,7 +4629,7 @@ components:
           x-source: { kind: computed, file: internal/capacity/run.go, pointer: null, detail: "When the run ended, for any reason." }
         stopRequested:
           type: boolean
-          x-source: { kind: configuration, file: migrations/postgres/00024_capacity_runs.sql, pointer: null, detail: "Whether a person pressed Stop; the runner stops within 2 s." }
+          x-source: { kind: configuration, file: migrations/postgres/00025_capacity_runs.sql, pointer: null, detail: "Whether a person pressed Stop; the runner stops within 2 s." }
         capacity:
           type: [ integer, "null" ]
           minimum: 1
@@ -4672,13 +4672,13 @@ components:
           minLength: 1
           maxLength: 256
           description: "The agent's name, as it registers with LiveKit (agent_name). An agent without a name joins every room and cannot be dispatched to a test room."
-          x-source: { kind: configuration, file: migrations/postgres/00024_capacity_runs.sql, pointer: null, detail: "The agent to test." }
+          x-source: { kind: configuration, file: migrations/postgres/00025_capacity_runs.sql, pointer: null, detail: "The agent to test." }
         maxStep:
           type: integer
           enum: [ 8, 16, 32, 64 ]
           x-unit: calls
           x-configuration: true
-          x-source: { kind: configuration, file: migrations/postgres/00024_capacity_runs.sql, pointer: null, detail: "The most calls at once to try." }
+          x-source: { kind: configuration, file: migrations/postgres/00025_capacity_runs.sql, pointer: null, detail: "The most calls at once to try." }
         consent:
           type: boolean
           const: true
