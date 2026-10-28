@@ -14,13 +14,12 @@ body:
     attributes:
       label: How to reproduce
       description: The smallest agent or command that shows it. Redact API keys.
-      render: python
     validations:
       required: true
   - type: input
     id: version
     attributes:
       label: Versions
-      description: Output of `voicegw --version`, your Python version, and LiveKit Agents or Pipecat version.
+      description: The VoiceGateway image tag, your LiveKit server version and your LiveKit Agents version.
     validations:
       required: true

@@ -20,6 +20,8 @@ import (
 type SIPScraper struct {
 	Projects Projects
 	Samples  SIPSamples
+	Findings Findings
+	Changed  func(context.Context, string, string)
 	Lock     Locker
 	Dial     Dial
 	Log      *slog.Logger
@@ -96,6 +98,14 @@ func (s *SIPScraper) SIP(ctx context.Context, p store.Project) error {
 	defer cancel()
 	if err := s.Samples.StoreSIPRead(sctx, read, cfg); err != nil {
 		return fmt.Errorf("store sip read: %w", err)
+	}
+	if s.Findings != nil {
+		if err := s.Findings.ApplyStandingFindings(sctx, read, sipFindings(cfg)); err != nil {
+			return fmt.Errorf("store sip findings: %w", err)
+		}
+	}
+	if s.Changed != nil {
+		s.Changed(ctx, p.OrganisationID, p.ID)
 	}
 	return nil
 }

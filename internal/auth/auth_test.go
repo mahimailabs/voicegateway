@@ -44,6 +44,9 @@ type fixture struct {
 	pool *pgxpool.Pool
 	pg   *pgstore.Store
 	logs *bytes.Buffer
+	// header is the last response's headers from send, under mu: sends run in parallel.
+	mu     sync.Mutex
+	header http.Header
 }
 
 func newFixture(t *testing.T) *fixture {
@@ -370,7 +373,7 @@ func (emptyTraces) CallTrace(context.Context, string, string, string) ([]store.S
 
 // apiWith returns the API behind the sign-in gate.
 func (f *fixture) apiWith(s *auth.Service) http.Handler {
-	return (&api.API{Projects: f.pg, Calls: f.pg, Traces: emptyTraces{}, Accounts: f.pg, Log: slog.New(slog.NewTextHandler(io.Discard, nil)), Now: time.Now, Gate: s.Gate}).Routes()
+	return (&api.API{Projects: f.pg, Settings: f.pg, Metadata: f.pg, Calls: f.pg, Traces: emptyTraces{}, Accounts: f.pg, Log: slog.New(slog.NewTextHandler(io.Discard, nil)), Now: time.Now, Gate: s.Gate}).Routes()
 }
 
 // Acceptance check 7.
@@ -503,6 +506,13 @@ func (failingAccounts) Members(context.Context, string) ([]store.Member, error) 
 	return nil, fmt.Errorf("members: dial tcp 127.0.0.1:5432: connection refused")
 }
 
+// failingProjects is the project store failing on create, to reach createProject's error path.
+type failingProjects struct{}
+
+func (failingProjects) CreateProject(context.Context, store.NewProject) (store.Project, error) {
+	return store.Project{}, fmt.Errorf("create project: the project store is down")
+}
+
 // failingUsers is the account store failing on lookups, to reach sign-in's error path.
 type failingUsers struct{ auth.Users }
 
@@ -543,7 +553,7 @@ func TestNoSecretInLogs(t *testing.T) {
 	created := f.createKey(web, c, "default", "logs").Secret
 	f.send(web, call{method: http.MethodGet, path: "/api/v1/org/default/project/logs/calls", token: created})
 	f.send(web, call{method: http.MethodGet, path: "/api/v1/org/default/project/logs/calls", token: created[:len(created)-2] + "xx"})
-	failing := (&api.API{Projects: f.pg, Calls: f.pg, Traces: emptyTraces{}, Accounts: failingAccounts{Accounts: f.pg}, Log: s.Log, Now: time.Now, Gate: s.Gate}).Routes()
+	failing := (&api.API{Projects: f.pg, Settings: f.pg, Metadata: f.pg, Calls: f.pg, Traces: emptyTraces{}, Accounts: failingAccounts{Accounts: f.pg}, Log: s.Log, Now: time.Now, Gate: s.Gate}).Routes()
 	f.send(failing, call{method: http.MethodGet, path: members, cookie: c})
 	// Phase 06d: links made, read, refused and used without SMTP, a reset, and a failed send whose
 	// SMTP URL holds a password.
@@ -562,9 +572,22 @@ func TestNoSecretInLogs(t *testing.T) {
 	down := f.web(unreachableMailer(t))
 	down.invite(c, "default", "unsent@example.com", "Viewer")
 	down.resetLink(c, "default", f.userID("invitee@example.com"))
+	// Phase 06f: a project created through the API, created again (409), and a create whose store
+	// fails, which logs.
+	newProject := call{method: http.MethodPost, path: "/api/v1/org/default/projects", body: projectBody("Logs project", "wss://logs.example.com", "APIlogsproject", testLiveKitSecret), cookie: c}
+	f.send(web, newProject)
+	f.send(web, newProject)
+	storeDown := (&api.API{Projects: f.pg, NewProjects: failingProjects{}, VerifyLiveKit: acceptLiveKit{}, Accounts: f.pg, Log: s.Log, Now: time.Now, Gate: s.Gate}).Routes()
+	f.send(storeDown, newProject)
+	if !strings.Contains(f.logs.String(), "the project store is down") {
+		t.Error("the failing project store did not log")
+	}
 	if !strings.Contains(f.logs.String(), `"class":"unreachable"`) {
 		t.Error("the failed send did not log")
 	}
+	// Phase 06e: the instance API off and on, refused, an invitation link made, repeated and used,
+	// and a failed send.
+	instance := instanceSecrets(t, f)
 	logs := f.logs.String()
 	if logs == "" {
 		t.Fatal("no log lines to check: the error path did not log")
@@ -572,10 +595,11 @@ func TestNoSecretInLogs(t *testing.T) {
 	if !strings.Contains(logs, "members") {
 		t.Error("the failing member store did not log")
 	}
-	for _, secret := range []string{
+	for _, secret := range append([]string{
 		password, "a wrong one", c.Value, key, key[len(key)-43:], created, created[len(created)-43:], reset, bob.Value,
 		invited, tokenOf(invited), existing, tokenOf(existing), *resetLink, tokenOf(*resetLink), newPassword, fromReset, joined.Value, smtpPassword,
-	} {
+		testLiveKitSecret,
+	}, instance...) {
 		if strings.Contains(logs, secret) {
 			t.Errorf("a log line holds a secret %q", secret)
 		}

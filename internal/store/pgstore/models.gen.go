@@ -9,21 +9,31 @@ import (
 )
 
 type Call struct {
-	ID              pgtype.UUID
-	OrganisationID  string
-	ProjectID       string
-	RoomName        pgtype.Text
-	RoomSid         pgtype.Text
-	JobID           pgtype.Text
-	StartedAt       pgtype.Timestamptz
-	EndedAt         pgtype.Timestamptz
-	EndState        string
-	LastActivityAt  pgtype.Timestamptz
-	UpdatedAt       pgtype.Timestamptz
-	FirstSeenAt     pgtype.Timestamptz
-	CreatedAt       pgtype.Timestamptz
-	SummaryStaleAt  pgtype.Timestamptz
-	SummaryFailures int32
+	ID                      pgtype.UUID
+	OrganisationID          string
+	ProjectID               string
+	RoomName                pgtype.Text
+	RoomSid                 pgtype.Text
+	JobID                   pgtype.Text
+	StartedAt               pgtype.Timestamptz
+	EndedAt                 pgtype.Timestamptz
+	EndState                string
+	LastActivityAt          pgtype.Timestamptz
+	UpdatedAt               pgtype.Timestamptz
+	FirstSeenAt             pgtype.Timestamptz
+	CreatedAt               pgtype.Timestamptz
+	SummaryStaleAt          pgtype.Timestamptz
+	SummaryFailures         int32
+	Tags                    []string
+	Archived                bool
+	MetadataRevision        int64
+	IssueEvaluatedAt        pgtype.Timestamptz
+	IssueSettingsRevision   int64
+	IssueSourceAvailable    bool
+	IssueRetryAt            pgtype.Timestamptz
+	IssueFailures           int32
+	IssueEvaluationRevision int64
+	Fields                  []byte
 }
 
 type CallList struct {
@@ -50,6 +60,8 @@ type CallList struct {
 	Models          []string
 	Pipeline        string
 	AgentKey        pgtype.Text
+	Recorded        bool
+	Fields          []byte
 }
 
 type CallParticipant struct {
@@ -61,6 +73,16 @@ type CallParticipant struct {
 	LeftAt         pgtype.Timestamptz
 }
 
+type CallRecording struct {
+	ID        pgtype.UUID
+	CallID    pgtype.UUID
+	ObjectKey string
+	SizeBytes int64
+	StartedAt pgtype.Timestamptz
+	StoredAt  pgtype.Timestamptz
+	CreatedAt pgtype.Timestamptz
+}
+
 type CallSummary struct {
 	CallID         pgtype.UUID
 	TurnCount      pgtype.Int4
@@ -70,6 +92,15 @@ type CallSummary struct {
 	Pipeline       string
 	AgentKey       pgtype.Text
 	ComputedAt     pgtype.Timestamptz
+}
+
+type Identity struct {
+	Provider   string
+	Subject    string
+	UserID     pgtype.UUID
+	Email      string
+	CreatedAt  pgtype.Timestamptz
+	LastUsedAt pgtype.Timestamptz
 }
 
 type Invitation struct {
@@ -87,6 +118,82 @@ type Invitation struct {
 	EmailedAt      pgtype.Timestamptz
 	AcceptedAt     pgtype.Timestamptz
 	RevokedAt      pgtype.Timestamptz
+	EmailStartedAt pgtype.Timestamptz
+	EmailFailedAt  pgtype.Timestamptz
+}
+
+type Issue struct {
+	OrganisationID           string
+	ProjectID                string
+	ID                       string
+	Title                    string
+	Kind                     string
+	Source                   string
+	Severity                 string
+	EvidenceRevision         int64
+	MetadataRevision         int64
+	State                    string
+	ReviewedEvidenceRevision int64
+	DecidedAt                pgtype.Timestamptz
+	Tags                     []string
+	Archived                 bool
+}
+
+type IssueJobObservation struct {
+	OrganisationID               string
+	ProjectID                    string
+	JobID                        string
+	RoomSid                      string
+	DispatchID                   string
+	AgentName                    pgtype.Text
+	ParticipantIdentity          pgtype.Text
+	DispatchedAt                 pgtype.Timestamptz
+	Status                       string
+	ReportedFailedAt             pgtype.Timestamptz
+	FailureObservedAt            pgtype.Timestamptz
+	ObservedAt                   pgtype.Timestamptz
+	ObservationRevision          int64
+	EvaluatedObservationRevision int64
+	EvaluationRevision           int64
+	EvaluatedSettingsRevision    int64
+	EvaluatedCallID              pgtype.UUID
+	EvaluatedJoinedAt            pgtype.Timestamptz
+}
+
+type IssueMediaBackfill struct {
+	OrganisationID string
+	ProjectID      string
+	CursorNs       int64
+	CursorKey      string
+	Revision       int64
+	Done           bool
+	RetryAt        pgtype.Timestamptz
+	Failures       int32
+}
+
+type IssueOccurrence struct {
+	OrganisationID string
+	ProjectID      string
+	IssueID        string
+	SourceID       string
+	CallID         pgtype.UUID
+	OccurredAt     pgtype.Timestamptz
+	Detail         []byte
+	Active         bool
+	ObservedAt     pgtype.Timestamptz
+	SourceLayer    string
+}
+
+type IssueSource struct {
+	OrganisationID     string
+	ProjectID          string
+	Layer              string
+	ReadAt             pgtype.Timestamptz
+	GoodAt             pgtype.Timestamptz
+	FreshUntil         pgtype.Timestamptz
+	EvaluationComplete bool
+	Ok                 bool
+	ErrorClass         string
 }
 
 type ListSnapshot struct {
@@ -111,6 +218,22 @@ type Organisation struct {
 	CreatedAt pgtype.Timestamptz
 }
 
+type OrganisationEntitlement struct {
+	OrganisationID string
+	FromAt         pgtype.Timestamptz
+	ToAt           pgtype.Timestamptz
+	LimitMinutes   int64
+	Active         bool
+	Revision       int64
+}
+
+type ProfiledCallUsage struct {
+	CallID         pgtype.UUID
+	OrganisationID string
+	EffectiveEnd   pgtype.Timestamptz
+	Seconds        pgtype.Numeric
+}
+
 type Project struct {
 	OrganisationID         string
 	ID                     string
@@ -119,6 +242,31 @@ type Project struct {
 	LivekitApiKey          string
 	LivekitApiSecretSealed []byte
 	CreatedAt              pgtype.Timestamptz
+	CallMetadataRevision   int64
+	IssueRevision          int64
+	Recordings             bool
+}
+
+type ProjectBucket struct {
+	OrganisationID  string
+	ProjectID       string
+	Endpoint        string
+	UseSsl          bool
+	Bucket          string
+	Region          string
+	AccessKey       string
+	SecretKeySealed []byte
+	CreatedAt       pgtype.Timestamptz
+}
+
+type ProjectConnection struct {
+	OrganisationID string
+	ProjectID      string
+	Source         string
+	LastAcceptedAt pgtype.Timestamptz
+	LastRejectedAt pgtype.Timestamptz
+	Reason         pgtype.Text
+	UsedKey        pgtype.Text
 }
 
 type ProjectKey struct {
@@ -131,6 +279,29 @@ type ProjectKey struct {
 	CreatedAt      pgtype.Timestamptz
 	LastUsedAt     pgtype.Timestamptz
 	RevokedAt      pgtype.Timestamptz
+}
+
+type ProjectResourceEndpoint struct {
+	OrganisationID string
+	ProjectID      string
+	ID             string
+	Host           string
+	UrlSealed      []byte
+	Kind           string
+	Target         string
+	ContainerID    string
+	CreatedAt      pgtype.Timestamptz
+}
+
+type ProjectSetting struct {
+	OrganisationID         string
+	ProjectID              string
+	AnswerMs               float64
+	JoinMs                 float64
+	TtsStartMs             float64
+	Revision               int64
+	AllowedOrigins         []string
+	AllowedOriginsRevision int64
 }
 
 type ProjectWorkerEndpoint struct {
@@ -155,10 +326,21 @@ type SignInAttempt struct {
 	At   pgtype.Timestamptz
 }
 
+type TelemetryAdmission struct {
+	OrganisationID string
+	ProjectID      string
+	IdentityKind   string
+	IdentityID     string
+	FromAt         pgtype.Timestamptz
+	ToAt           pgtype.Timestamptz
+}
+
 type User struct {
 	ID              pgtype.UUID
 	Email           string
-	PasswordHash    string
+	PasswordHash    pgtype.Text
 	CreatedAt       pgtype.Timestamptz
 	PasswordVersion int32
+	DisplayName     pgtype.Text
+	ProfileRevision int64
 }

@@ -10,13 +10,15 @@ The first product milestone is a real LiveKit call crossing the authenticated in
 
 ## Repository audit and cleanup boundaries
 
+Note: Phase 0 (2026-10-18) retired the old Python release. The lines below marked superseded describe the state before it; docs/contributing/ and the legacy files they name are gone.
+
 - Keep root entry points and discoverable project documents: README, LICENSE, SECURITY, CODE_OF_CONDUCT, CONTRIBUTING, AGENTS, CLAUDE, PRODUCT, ARCHITECTURE and DESIGN. Keep the Makefile and tool-recognised dotfiles.
-- Consolidate the detailed contributor guides in `docs/contributing/`. Preserve a short root CONTRIBUTING entry point. Put the optional legacy MCP example beside the legacy guides; retain the active tracked V1 `.mcp.json` tooling configuration.
-- Keep `dashboard/` as the V1 console. `src/dashboard/frontend/` still belongs to the released Python product; it is not a second V1 console to maintain indefinitely.
-- Keep `site/landing/` as the Pages frontend, `site/docs/` as the documentation app and `site/web/` as the existing D1/API Worker. Landing builds currently reuse that Worker's captured demo assets. Do not delete the Worker or its database when simplifying marketing files.
-- Keep `pyproject.toml`, `uv.lock`, `alembic.ini`, `alembic/`, the root Compose files, `railway.json`, legacy Dockerfile and publish workflows until the released Python runtime is deliberately retired. Packaging force-includes Alembic; collector CI consumes the root Compose files; Railway references the Python Dockerfile. These files are actively referenced, not deletion candidates today.
+- Superseded by Phase 0 (2026-10-18): Consolidate the detailed contributor guides in `docs/contributing/`. Preserve a short root CONTRIBUTING entry point. Put the optional legacy MCP example beside the legacy guides; retain the active tracked V1 `.mcp.json` tooling configuration.
+- Keep `dashboard/` as the V1 console. Superseded by Phase 0 (2026-10-18): `src/dashboard/frontend/` still belongs to the released Python product; it is not a second V1 console to maintain indefinitely.
+- Keep `site/docs/` as the documentation app. The landing page and its D1/API Worker moved to the private `voicegateway-web` repository (decision 0030).
+- Superseded by Phase 0 (2026-10-18): Keep `pyproject.toml`, `uv.lock`, `alembic.ini`, `alembic/`, the root Compose files, `railway.json`, legacy Dockerfile and publish workflows until the released Python runtime is deliberately retired. Packaging force-includes Alembic; collector CI consumes the root Compose files; Railway references the Python Dockerfile. These files are actively referenced, not deletion candidates today.
 - Do not move `install.sh` or `collector.sh`: public download paths and site builds consume them. Change implementation behind those paths only with install proof.
-- Phase 0 retirement needs a replacement install, migration/rollback policy and release decision. Remove obsolete runtime, deployment configuration, old frontend and their CI together in that PR; do not leave broken references or move hundreds of dead files into an archive directory. Git tags preserve source history.
+- Superseded by Phase 0 (2026-10-18): Phase 0 retirement needs a replacement install, migration/rollback policy and release decision. Remove obsolete runtime, deployment configuration, old frontend and their CI together in that PR; do not leave broken references or move hundreds of dead files into an archive directory. Git tags preserve source history.
 
 The sanitation PR changes documentation layout and stale guidance only. It does not create empty Go packages, delete active runtime code, change migrations, or rename public installer URLs.
 

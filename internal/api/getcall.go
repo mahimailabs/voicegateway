@@ -4,6 +4,8 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
+	"slices"
 	"strings"
 	"time"
 
@@ -17,21 +19,35 @@ import (
 // call is the contract's Call. It holds no field the contract does not name
 // (additionalProperties: false).
 type call struct {
-	ID               string      `json:"id"`
-	Room             string      `json:"room"`
-	RoomSID          *string     `json:"roomSid"`
-	StartedAt        time.Time   `json:"startedAt"`
-	EndedAt          *time.Time  `json:"endedAt"`
-	DurationSeconds  *float64    `json:"durationSeconds"`
-	ParticipantCount *int64      `json:"participantCount"`
-	EndReason        *string     `json:"endReason"`
-	Spans            *[]span     `json:"spans"`
-	Turns            *[]callTurn `json:"turns"`
-	Usage            *usage      `json:"usage,omitempty"`
-	EndState         string      `json:"endState"`
-	Tags             []string    `json:"tags"`
-	Archived         bool        `json:"archived"`
-	Clocks           []clock     `json:"clocks"`
+	ID               string            `json:"id"`
+	Room             string            `json:"room"`
+	RoomSID          *string           `json:"roomSid"`
+	StartedAt        time.Time         `json:"startedAt"`
+	EndedAt          *time.Time        `json:"endedAt"`
+	DurationSeconds  *float64          `json:"durationSeconds"`
+	ParticipantCount *int64            `json:"participantCount"`
+	EndReason        *string           `json:"endReason"`
+	Spans            *[]span           `json:"spans"`
+	Turns            *[]callTurn       `json:"turns"`
+	Usage            *usage            `json:"usage,omitempty"`
+	Recording        *recording        `json:"recording,omitempty"`
+	EndState         string            `json:"endState"`
+	Tags             []string          `json:"tags"`
+	Archived         bool              `json:"archived"`
+	Clocks           []clock           `json:"clocks"`
+	Fields           map[string]string `json:"fields"`
+	Live             *callLive         `json:"live"`
+}
+
+// callLive is the latest user and agent state an SDK reported (docs/specs/python-sdk.md).
+type callLive struct {
+	User  *liveState `json:"user"`
+	Agent *liveState `json:"agent"`
+}
+
+type liveState struct {
+	State string    `json:"state"`
+	At    time.Time `json:"at"`
 }
 
 type span struct {
@@ -45,6 +61,7 @@ type span struct {
 }
 
 type callTurn struct {
+	SpanID               *string  `json:"spanId"`
 	UserText             *string  `json:"userText"`
 	AgentText            *string  `json:"agentText"`
 	Model                *string  `json:"model"`
@@ -66,11 +83,24 @@ type callTurn struct {
 }
 
 type usage struct {
+	LLMCachedTokens *int64   `json:"llmCachedTokens"`
+	TTSSeconds      *float64 `json:"ttsSeconds"`
 	LLMInputTokens  *int64   `json:"llmInputTokens"`
 	LLMOutputTokens *int64   `json:"llmOutputTokens"`
 	TTSCharacters   *float64 `json:"ttsCharacters"`
 	STTSeconds      *float64 `json:"sttSeconds"`
 	Note            string   `json:"note"`
+}
+
+// recording is the contract's Call.recording. Duration, segments and peaks are not extracted from
+// the audio yet, so they are null: unknown, never zero.
+type recording struct {
+	URL      string     `json:"url"`
+	Duration *float64   `json:"duration"`
+	Segments []struct{} `json:"segments"`
+	Peaks    *struct{}  `json:"peaks"`
+	ID       string     `json:"id"`
+	ClockID  string     `json:"clockId"`
 }
 
 type clock struct {
@@ -83,8 +113,9 @@ type clock struct {
 
 // Clock ids and the alignment of a clock to the call's start.
 const (
-	clockCall  = "call"
-	clockTrace = "trace"
+	clockCall      = "call"
+	clockTrace     = "trace"
+	clockRecording = "recording"
 
 	alignObserved = "observed"
 	alignInferred = "inferred"
@@ -110,12 +141,42 @@ func (a *API) getCall(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	body, ok := buildCall(c, spans, built)
+	if ok && c.Recording != nil {
+		body.Recording = &recording{
+			URL: "/api/v1/org/" + url.PathEscape(org) + "/project/" + url.PathEscape(project) + "/recordings/" + c.Recording.ID,
+			ID:  c.Recording.ID, ClockID: clockRecording,
+		}
+		body.Clocks = append(body.Clocks, recordingClock(body.StartedAt, c.Recording.StartedAt))
+	}
 	if !ok {
 		// No source named the room or reported a start: the contract requires both.
 		writeError(w, r, http.StatusNotFound, codeNotFound, "call not found")
 		return
 	}
+	if p, _ := store.PrincipalFrom(ctx); p.Embed != nil && !p.Embed.Content {
+		withholdContent(&body)
+	}
 	writeJSON(w, http.StatusOK, body)
+}
+
+// withholdContent drops what callers and the agent said from a call for an embed token without the
+// content opt-in (decision 0034): turn text, span attributes, which carry prompts, transcripts and
+// tool arguments, the SDK's custom fields, which are the agent's own data, and the recording.
+// Timings, models, usage and live state stay.
+func withholdContent(c *call) {
+	c.Recording = nil
+	c.Fields = map[string]string{}
+	c.Clocks = slices.DeleteFunc(c.Clocks, func(k clock) bool { return k.ID == clockRecording })
+	if c.Turns != nil {
+		for i := range *c.Turns {
+			(*c.Turns)[i].UserText, (*c.Turns)[i].AgentText = nil, nil
+		}
+	}
+	if c.Spans != nil {
+		for i := range *c.Spans {
+			(*c.Spans)[i].Attrs = nil
+		}
+	}
 }
 
 // fail answers a storage error: not_found for a missing record, internal_error otherwise. The
@@ -164,7 +225,8 @@ func buildCall(c store.Call, spans []store.Span, built turn.Result) (call, bool)
 		StartedAt: *started,
 		EndedAt:   c.EndedAt,
 		EndState:  c.EndState,
-		Tags:      []string{},
+		Tags:      append([]string{}, c.Metadata.Tags...),
+		Archived:  c.Metadata.Archived,
 		Clocks:    clocks(*started, startObserved, traceStart),
 	}
 	if c.EndedAt != nil && startObserved {
@@ -184,6 +246,13 @@ func buildCall(c store.Call, spans []store.Span, built turn.Result) (call, bool)
 		out.Turns = &t
 	}
 	out.Usage = toUsage(built.Usage)
+	out.Fields = c.Fields
+	if out.Fields == nil {
+		out.Fields = map[string]string{}
+	}
+	if l := built.Live; l != nil {
+		out.Live = &callLive{User: toLiveState(l.User), Agent: toLiveState(l.Agent)}
+	}
 	return out, true
 }
 
@@ -219,6 +288,18 @@ func clocks(started time.Time, startObserved bool, traceStart *time.Time) []cloc
 	return append(out, trace)
 }
 
+// recordingClock is the recording's timeline, anchored at the wall-clock start the agent's upload
+// reported. Like the trace clock it compares the agent host's clock with LiveKit's, so its offset is
+// inferred, and unknown when the upload reported no start.
+func recordingClock(callStart time.Time, recordingStart *time.Time) clock {
+	c := clock{ID: clockRecording, Origin: "recording_start", Alignment: alignUnknown}
+	if recordingStart != nil {
+		offset := recordingStart.Sub(callStart).Seconds()
+		c.OriginAt, c.Offset, c.Alignment = recordingStart, &offset, alignInferred
+	}
+	return c
+}
+
 func toSpans(spans []store.Span, origin *time.Time) []span {
 	out := make([]span, 0, len(spans))
 	for _, s := range spans {
@@ -240,6 +321,7 @@ func toTurns(turns []turn.Turn) []callTurn {
 	out := make([]callTurn, 0, len(turns))
 	for _, t := range turns {
 		out = append(out, callTurn{
+			SpanID:               text(t.SpanID),
 			UserText:             t.UserText,
 			AgentText:            t.AgentText,
 			Model:                t.LLMModel,
@@ -261,10 +343,12 @@ func toTurns(turns []turn.Turn) []callTurn {
 // toUsage maps the call's usage; nil when nothing reported any of it. A total some requests did
 // not report is null, and the note says how many.
 func toUsage(u turn.CallUsage) *usage {
-	if u.InputTokens.Sum == nil && u.OutputTokens.Sum == nil && u.TTSCharacters.Sum == nil && u.STTAudioSeconds.Sum == nil {
+	if u.InputTokens.Sum == nil && u.OutputTokens.Sum == nil && u.TTSCharacters.Sum == nil && u.STTAudioSeconds.Sum == nil && u.CachedTokens.Sum == nil && u.TTSAudioSeconds.Sum == nil {
 		return nil
 	}
 	out := &usage{
+		LLMCachedTokens: complete(u.CachedTokens),
+		TTSSeconds:      complete(u.TTSAudioSeconds),
 		LLMInputTokens:  complete(u.InputTokens),
 		LLMOutputTokens: complete(u.OutputTokens),
 		TTSCharacters:   asFloat(complete(u.TTSCharacters)),
@@ -272,7 +356,8 @@ func toUsage(u turn.CallUsage) *usage {
 	}
 	notes := []string{
 		"LLM tokens summed from the llm_request spans (gen_ai.usage, else lk.llm_metrics).",
-		"TTS characters summed from the tts_request spans (lk.tts_metrics).",
+		"Cached tokens are a subset of input tokens, summed from cache_read.input_tokens else prompt_cached_tokens.",
+		"TTS characters and audio seconds summed from the tts_request spans (lk.tts_metrics).",
 		"STT seconds summed from the agent's lk.agents.usage.stt_audio_duration counter.",
 	}
 	for _, m := range []struct {
@@ -282,6 +367,8 @@ func toUsage(u turn.CallUsage) *usage {
 		{"LLM input tokens", u.InputTokens.Missing},
 		{"LLM output tokens", u.OutputTokens.Missing},
 		{"TTS characters", u.TTSCharacters.Missing},
+		{"LLM cached tokens", u.CachedTokens.Missing},
+		{"TTS audio seconds", u.TTSAudioSeconds.Missing},
 	} {
 		if m.missing > 0 {
 			notes = append(notes, fmt.Sprintf("%s left null: %d %s did not report them.", m.what, m.missing, plural(m.missing, "request", "requests")))
@@ -334,4 +421,11 @@ func earliestStart(spans []store.Span) *time.Time {
 		}
 	}
 	return out
+}
+
+func toLiveState(s *turn.LiveState) *liveState {
+	if s == nil {
+		return nil
+	}
+	return &liveState{State: s.State, At: s.At}
 }

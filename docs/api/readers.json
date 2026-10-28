@@ -21,28 +21,6 @@
     "exclusion": "Browser-only appearance preference, not server data."
   },
   {
-    "file": "dashboard/src/features/call/call-tags.tsx",
-    "fixtures": [],
-    "assets": [],
-    "browserStorage": true,
-    "operations": [
-      "getCall",
-      "listCalls"
-    ],
-    "assetNotes": {}
-  },
-  {
-    "file": "dashboard/src/features/calls/call-archive.ts",
-    "fixtures": [],
-    "assets": [],
-    "browserStorage": true,
-    "operations": [
-      "getCall",
-      "listCalls"
-    ],
-    "assetNotes": {}
-  },
-  {
     "file": "dashboard/src/features/calls/calls-page.tsx",
     "fixtures": [
       "preview"
@@ -79,23 +57,29 @@
     "assets": [],
     "browserStorage": false,
     "operations": [
+      "createEmbedToken",
       "createInvitation",
       "createPasswordReset",
+      "createProject", "updateProjectLiveKitCredentials",
       "createProjectKey",
       "getAlertSetup",
       "getCall",
+      "getCallMetadata",
       "getCallStats",
+      "getCallTags",
       "getCapacity",
       "getCloudAgents",
       "getEgress",
       "getIngress",
       "getInvitations",
-      "getIssueDispositions",
       "getMediaServer",
       "getMembers",
+      "getMyOrganisationEntitlement",
+      "getProjectConnection",
       "getProjectSettings",
       "getProjectSnapshot",
       "getProviderProbes",
+      "getResources",
       "getSip",
       "getWorkers",
       "getWorkspaces",
@@ -106,7 +90,11 @@
       "removeMember",
       "revokeInvitation",
       "revokeProjectKey",
-      "updateMember"
+      "updateAllowedOrigins",
+      "updateCallMetadata",
+      "updateIssueMetadata",
+      "updateMember",
+      "updateProjectSettings"
     ]
   },
   {
@@ -116,11 +104,10 @@
     "browserStorage": true,
     "operations": [
       "getAlertSetup",
-      "getIssueDispositions",
       "getProjectSettings"
     ],
     "assetNotes": {},
-    "exclusion": "The console's writes (thresholds, issue decisions, alert setup) kept in this browser until web stores them; the console reads them back only through these operations, which the mock serves from the same storage."
+    "exclusion": "Remaining browser-local alert setup preview storage. Issue decisions and thresholds use scoped API writes."
   },
   {
     "file": "dashboard/src/mocks/browser.ts",
@@ -138,7 +125,6 @@
     "fixtures": [
       "fixtures",
       "insights",
-      "livekit",
       "settings",
       "summaries"
     ],
@@ -148,7 +134,7 @@
       "getCallStats"
     ],
     "assetNotes": {},
-    "exclusion": "Server-side CallStats computation inside the mock API; the answer budget is the stored threshold (settings.ts) and the network hops come from the provider probes (livekit.ts)."
+    "exclusion": "Server-side CallStats computation inside the mock API; the answer budget is the stored threshold (settings.ts) and stage timings come only from captured trace evidence."
   },
   {
     "file": "dashboard/src/mocks/calls-query.ts",
@@ -200,8 +186,10 @@
     "fixtures": [
       "call-stats",
       "calls-query",
+      "dispositions",
       "fixtures",
       "insights",
+      "issue-metadata",
       "livekit",
       "recordings",
       "settings",
@@ -213,6 +201,7 @@
     "operations": [
       "createInvitation",
       "createPasswordReset",
+      "createProject", "updateProjectLiveKitCredentials",
       "createProjectKey",
       "getAlertSetup",
       "getCall",
@@ -222,13 +211,15 @@
       "getEgress",
       "getIngress",
       "getInvitations",
-      "getIssueDispositions",
       "getMediaServer",
       "getMembers",
+      "getProjectConnection",
       "getProjectSettings",
+      "updateProjectSettings",
       "getProjectSnapshot",
       "getProviderProbes",
       "getRecordingMedia",
+      "getResources",
       "getSip",
       "getWorkers",
       "getWorkspaces",
@@ -248,6 +239,7 @@
     "file": "dashboard/src/mocks/insights.ts",
     "fixtures": [
       "fixtures",
+      "issue-metadata",
       "livekit"
     ],
     "assets": [],
@@ -325,7 +317,6 @@
   {
     "file": "dashboard/src/mocks/summaries.ts",
     "fixtures": [
-      "dispositions",
       "media-server.json"
     ],
     "assets": [],
@@ -363,20 +354,81 @@
     "exclusion": "Accepting invitation and reset links, from web's /auth routes (decision 0027, phase 06d); not part of the read contract."
   },
   {
+    "file": "dashboard/src/lib/providers.ts",
+    "fixtures": [],
+    "assets": [
+      "/auth/providers",
+      "/auth/oauth/google/start",
+      "/auth/oauth/github/start",
+      "/auth/oauth/auth0/start"
+    ],
+    "browserStorage": false,
+    "operations": [],
+    "assetNotes": {
+      "/auth/providers": "Which Google, GitHub and Auth0 sign-in buttons to show (phase 06h, decision 0036); not a console read.",
+      "/auth/oauth/google/start": "Starts a Google sign-in and answers Google's URL (phase 06h); not a console read.",
+      "/auth/oauth/github/start": "Starts a GitHub sign-in and answers GitHub's URL (phase 06h); not a console read.",
+      "/auth/oauth/auth0/start": "Starts an Auth0 sign-in and answers the tenant's URL (decision 0036); not a console read."
+    },
+    "exclusion": "Google, GitHub and Auth0 sign-in, from web's /auth routes (decisions 0035 and 0036, phase 06h); not part of the read contract."
+  },
+  {
     "file": "dashboard/src/lib/session.ts",
     "fixtures": [],
     "assets": [
       "/auth/session",
       "/auth/sign-in",
-      "/auth/sign-out"
+      "/auth/sign-out",
+      "/auth/profile",
+      "/auth/profile"
     ],
     "browserStorage": false,
     "operations": [],
     "assetNotes": {
       "/auth/session": "Who is signed in (decision 0027); not a console read.",
       "/auth/sign-in": "Signs in with email and password (decision 0027); a write, not a console read.",
-      "/auth/sign-out": "Ends the session on the server (decision 0027); a write, not a console read."
+      "/auth/sign-out": "Ends the session on the server (decision 0027); a write, not a console read.",
+      "/auth/profile": "Reads and updates only the signed-in account profile through the auth service (account-settings.md); project keys cannot identify a user."
     },
-    "exclusion": "Sign-in and the session, from web's /auth routes (decision 0027, phase 06a); not part of the read contract."
+    "exclusion": "Account profile, sign-in and session routes belong to the auth service (decision 0027); not project-scoped console reads."
+  },
+  {
+    "file": "dashboard/src/lib/live-updates.ts",
+    "fixtures": [],
+    "assets": [
+      "<dynamic>"
+    ],
+    "browserStorage": false,
+    "operations": [
+      "getLiveEvents"
+    ],
+    "assetNotes": {
+      "<dynamic>": "Delegates the generated getLiveEvents request to native fetch, checking status before streaming to clear denied scoped telemetry. URL and parameters come from the generated SDK."
+    }
+  },
+  {
+    "file": "dashboard/src/mocks/issue-metadata.ts",
+    "fixtures": [],
+    "assets": [],
+    "browserStorage": true,
+    "operations": [
+      "listIssues",
+      "updateIssueMetadata"
+    ],
+    "assetNotes": {},
+    "exclusion": "Development-only simulated issue metadata storage, behind the mock API. Production writes use Postgres."
+  },
+  {
+    "file": "dashboard/src/lib/embed.ts",
+    "fixtures": [],
+    "assets": [
+      "<dynamic>"
+    ],
+    "browserStorage": false,
+    "operations": [],
+    "assetNotes": {
+      "<dynamic>": "A call's recording at the URL getCall returned (getRecordingMedia), read with the widget's embed token because an audio element cannot send it (decision 0034)."
+    },
+    "exclusion": "Sends an embedded widget's token with its reads (decision 0034); no read of its own."
   }
 ]

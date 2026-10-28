@@ -20,9 +20,29 @@ x-voicegateway-env: &voicegateway-env
   # nothing, and Settings shows each link to copy.
   VOICEGATEWAY_SMTP_URL: ${VOICEGATEWAY_SMTP_URL:-}
   VOICEGATEWAY_SMTP_FROM: ${VOICEGATEWAY_SMTP_FROM:-}
+  # Google and GitHub sign-in (decision 0035): each on when its client id and secret are both set,
+  # off when both are empty. Needs VOICEGATEWAY_PUBLIC_URL, the base of the callback URL that
+  # `voicegateway preflight` prints.
+  VOICEGATEWAY_GOOGLE_CLIENT_ID: ${VOICEGATEWAY_GOOGLE_CLIENT_ID:-}
+  VOICEGATEWAY_GOOGLE_CLIENT_SECRET: ${VOICEGATEWAY_GOOGLE_CLIENT_SECRET:-}
+  VOICEGATEWAY_GITHUB_CLIENT_ID: ${VOICEGATEWAY_GITHUB_CLIENT_ID:-}
+  VOICEGATEWAY_GITHUB_CLIENT_SECRET: ${VOICEGATEWAY_GITHUB_CLIENT_SECRET:-}
+  # Auth0 sign-in (decision 0036): on when the tenant's domain (a bare host such as
+  # voicegateway.us.auth0.com), client id and secret are all set.
+  VOICEGATEWAY_AUTH0_DOMAIN: ${VOICEGATEWAY_AUTH0_DOMAIN:-}
+  VOICEGATEWAY_AUTH0_CLIENT_ID: ${VOICEGATEWAY_AUTH0_CLIENT_ID:-}
+  VOICEGATEWAY_AUTH0_CLIENT_SECRET: ${VOICEGATEWAY_AUTH0_CLIENT_SECRET:-}
+  # Turns on the instance API (/api/v1/instance, ee/), for an operator's program that creates
+  # organisations: at least 32 characters, and needs VOICEGATEWAY_PUBLIC_URL and
+  # VOICEGATEWAY_WORKER_ENDPOINTS_PUBLIC_ONLY=true (every role refuses to start without it). Empty
+  # keeps it off.
+  VOICEGATEWAY_INSTANCE_TOKEN: ${VOICEGATEWAY_INSTANCE_TOKEN:-}
+  # Enforce explicit organisation allowances on Cloud ingestion; requires the instance token.
+  VOICEGATEWAY_CLOUD_QUOTAS: ${VOICEGATEWAY_CLOUD_QUOTAS:-false}
   VOICEGATEWAY_LOG_LEVEL: ${VOICEGATEWAY_LOG_LEVEL:-info}
   # true refuses private and loopback worker metrics endpoints too; link-local and cloud metadata
-  # addresses are always refused. Leave false when your agent workers share this network.
+  # addresses are always refused; it also guards the worker's LiveKit API reads. Leave false when
+  # your agent workers share this network. Required with VOICEGATEWAY_INSTANCE_TOKEN.
   VOICEGATEWAY_WORKER_ENDPOINTS_PUBLIC_ONLY: ${VOICEGATEWAY_WORKER_ENDPOINTS_PUBLIC_ONLY:-false}
   # Retired in phase 06c and no longer accepted. Passed through only so web can warn an upgrade
   # that still sets it; removed after V1.
@@ -57,7 +77,9 @@ services:
     ulimits:
       nofile: { soft: 262144, hard: 262144 }
     healthcheck:
-      test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1:8123/ping"]
+      # The initialization server listens only on loopback and shuts down before the final
+      # server starts. Query this container's network address with migrate's credentials.
+      test: ["CMD-SHELL", "clickhouse-client --host \"$$HOSTNAME\" --user \"$$CLICKHOUSE_USER\" --password \"$$CLICKHOUSE_PASSWORD\" --database \"$$CLICKHOUSE_DB\" -q 'SELECT 1'"]
       interval: 2s
       retries: 30
 
@@ -91,7 +113,7 @@ services:
   migrate:
     build: { context: .., dockerfile: deploy/Dockerfile }
     # VOICEGATEWAY_IMAGE runs a published image instead of building one, for example
-    # ghcr.io/mahimailabs/voicegateway:1.0.0-preview.1 (see docs/self-hosting.md).
+    # ghcr.io/mahimailabs/voicegateway:1.0.0-preview.2 (see docs/self-hosting.md).
     image: ${VOICEGATEWAY_IMAGE:-voicegateway:dev}
     command: ["migrate"]
     environment: *voicegateway-env

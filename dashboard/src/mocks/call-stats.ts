@@ -7,7 +7,6 @@ import { stageDefs } from "@/features/overview/visuals"
 import { waterfallRows } from "@/features/profile/ttfa-waterfall"
 import { capturedCalls } from "./fixtures"
 import { issueList } from "./insights"
-import { providerProbes } from "./livekit"
 import { summarize } from "./summaries"
 
 // What the server will compute for Overview (getCallStats), here in the mock: the Calls list's own
@@ -35,8 +34,11 @@ function anatomy(calls: Call[]): { stages: StageTiming[]; turns: number } {
         if (t.responseMs !== null) rt.push(t.responseMs)
         continue
       }
-      for (const r of waterfallRows(c, t, providerProbes()) ?? []) {
-        const key = r.label === "LLM" ? "LLM, call 1" : r.label
+      const seen = new Set<string>()
+      for (const r of waterfallRows(c, t) ?? []) {
+        const key = r.label === "LLM first token" ? "LLM, call 1" : r.label === "STT delay" ? "Speech to text" : r.label === "TTS first audio" ? "Text to speech" : r.label
+        if (seen.has(key)) continue
+        seen.add(key)
         const v = by.get(key) ?? { s: [], e: [] }
         v.s.push(r.start)
         v.e.push(r.end)
@@ -73,19 +75,19 @@ function chain(calls: Call[]): ChainStage[] {
       const within = (start: number) => start / 1000 >= t.window.start && start / 1000 <= t.window.end
       if (m.pipeline === "realtime") add("realtime", t.responseMs)
       else {
-        const rows = waterfallRows(c, t, providerProbes()) ?? []
+        const rows = waterfallRows(c, t) ?? []
         const dur = (label: string) => {
           const r = rows.find((x) => x.label === label)
           return r ? r.end - r.start : undefined
         }
-        add("stt", dur("Speech to text") ?? c.turns?.[t.i]?.transcriptionDelayMs)
+        add("stt", dur("STT delay") ?? c.turns?.[t.i]?.transcriptionDelayMs)
         add("eou", dur("Turn detection"))
         add("eot", t.eotMs)
-        add("llm1", dur("LLM") ?? dur("LLM, call 1") ?? t.ttftMs)
+        add("llm1", dur("LLM first token") ?? dur("LLM, call 1") ?? t.ttftMs)
         add("llm2", dur("LLM, call 2"))
         const tools = rows.filter((r) => r.label === "Tool")
         if (tools.length) add("tool", tools.reduce((a, r) => a + (r.end - r.start), 0))
-        add("tts", dur("Text to speech") ?? t.ttsMs)
+        add("tts", dur("TTS first audio") ?? t.ttsMs)
         add("hook", spans.find((x) => x.name === "on_user_turn_completed" && within(x.startMs))?.durationMs)
       }
       const stalls = spans.filter((x) => x.name === "event_loop_blocked" && within(x.startMs))
@@ -114,11 +116,11 @@ function providers(calls: Call[]): ProviderUse[] {
         if (t.responseMs !== null) add(providerOfModel(m.models.find((x) => x.includes("realtime")) ?? m.models[0]), "realtime", c.id, t.responseMs)
         continue
       }
-      for (const w of waterfallRows(c, t, providerProbes()) ?? []) {
+      for (const w of waterfallRows(c, t) ?? []) {
         const model = w.sub.replace(/ (first token|first audio)$/, "")
-        if (w.label === "Speech to text") add(providerOfModel(model), "stt", c.id, w.end - w.start)
-        else if (w.label === "LLM" || w.label === "LLM, call 1") add(providerOfModel(model), "llm", c.id, w.end - w.start)
-        else if (w.label === "Text to speech") add(providerOfModel(model), "tts", c.id, w.end - w.start)
+        if (w.label === "STT delay") add(providerOfModel(model), "stt", c.id, w.end - w.start)
+        else if (w.label === "LLM first token" || w.label === "LLM, call 1") add(providerOfModel(model), "llm", c.id, w.end - w.start)
+        else if (w.label === "TTS first audio") add(providerOfModel(model), "tts", c.id, w.end - w.start)
       }
     }
   }
@@ -126,7 +128,7 @@ function providers(calls: Call[]): ProviderUse[] {
   return [...by].map(([provider, v]) => ({ provider, callCount: v.calls.size, roles: roles.filter((r) => v.roles.has(r)).map((role) => ({ role, medianMs: median(v.roles.get(role)!), turns: v.roles.get(role)!.length })) }))
 }
 
-export function callStats(from: Date, to: Date): CallStats {
+export function callStats(from: Date, to: Date, budget = storedThresholds().answerMs): CallStats {
   const calls = capturedCalls()
     .filter((c) => !c.recording?.preview)
     .filter((c) => Date.parse(c.startedAt) >= +from && Date.parse(c.startedAt) < +to)
@@ -191,7 +193,6 @@ export function callStats(from: Date, to: Date): CallStats {
     })
     .sort((a, b) => (b.callCount ?? 0) - (a.callCount ?? 0))
 
-  const budget = storedThresholds().answerMs
   return {
     from: from.toISOString(),
     to: to.toISOString(),

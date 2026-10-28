@@ -80,6 +80,11 @@ func root() *cobra.Command {
 				if err != nil {
 					return err
 				}
+				for _, line := range app.SignInProviders(c) {
+					if _, err := fmt.Fprintln(cmd.OutOrStdout(), line); err != nil {
+						return err
+					}
+				}
 				if !ok {
 					return errChecksFailed
 				}
@@ -91,7 +96,8 @@ func root() *cobra.Command {
 }
 
 // projectCommand adds LiveKit projects. The secret is read from LIVEKIT_API_SECRET, never a flag,
-// so it stays out of shell history and process listings.
+// so it stays out of shell history and process listings; a recording bucket's secret likewise from
+// RECORDING_BUCKET_SECRET_KEY.
 func projectCommand() *cobra.Command {
 	var in app.ProjectInput
 	add := &cobra.Command{
@@ -104,11 +110,16 @@ func projectCommand() *cobra.Command {
 				return fmt.Errorf("configuration:\n%w", err)
 			}
 			in.LiveKitAPISecret = os.Getenv("LIVEKIT_API_SECRET")
+			in.BucketSecretKey = os.Getenv("RECORDING_BUCKET_SECRET_KEY")
 			p, err := app.AddProject(cmd.Context(), c, in)
 			if err != nil {
 				return fmt.Errorf("add project: %w", err)
 			}
-			_, err = fmt.Fprintf(cmd.OutOrStdout(), "added project %s/%s (%s) for %s, LiveKit key %s\n", p.OrganisationID, p.ID, p.Name, p.LiveKitURL, p.LiveKitAPIKey)
+			bucket := "the instance's bucket"
+			if in.BucketEndpoint != "" {
+				bucket = "its own bucket " + in.BucketName
+			}
+			_, err = fmt.Fprintf(cmd.OutOrStdout(), "added project %s/%s (%s) for %s, LiveKit key %s, recordings in %s\n", p.OrganisationID, p.ID, p.Name, p.LiveKitURL, p.LiveKitAPIKey, bucket)
 			return err
 		},
 	}
@@ -118,9 +129,14 @@ func projectCommand() *cobra.Command {
 	f.StringVar(&in.OrganisationID, "org", "default", "organisation id")
 	f.StringVar(&in.LiveKitURL, "livekit-url", os.Getenv("LIVEKIT_URL"), "LiveKit server URL (default: LIVEKIT_URL)")
 	f.StringVar(&in.LiveKitAPIKey, "livekit-api-key", os.Getenv("LIVEKIT_API_KEY"), "LiveKit API key (default: LIVEKIT_API_KEY)")
+	f.BoolVar(&in.SkipVerify, "skip-verify", false, "store the project without first checking its key and secret against LiveKit, for a server not reachable yet")
+	f.StringVar(&in.BucketEndpoint, "recording-bucket-endpoint", "", "keep this project's recordings in your own S3 bucket at this http or https endpoint instead of the instance's; set only now, never changed (secret from RECORDING_BUCKET_SECRET_KEY)")
+	f.StringVar(&in.BucketName, "recording-bucket", "", "the S3 bucket name, with --recording-bucket-endpoint")
+	f.StringVar(&in.BucketRegion, "recording-bucket-region", "", "the bucket's region (default: asked of the bucket)")
+	f.StringVar(&in.BucketAccessKey, "recording-bucket-access-key", "", "the S3 access key id, with --recording-bucket-endpoint")
 
 	cmd := &cobra.Command{Use: "project", Short: "Manage LiveKit projects"}
-	cmd.AddCommand(add, workersCommand())
+	cmd.AddCommand(add, workersCommand(), resourcesCommand(), recordingsCommand())
 	return cmd
 }
 
@@ -205,6 +221,117 @@ func workersCommand() *cobra.Command {
 	f.StringVar(&in.ProjectID, "project", "", "project id")
 	f.StringVar(&in.OrganisationID, "org", "default", "organisation id")
 	cmd.AddCommand(add, remove, list)
+	return cmd
+}
+
+func resourcesCommand() *cobra.Command {
+	var in app.WorkerEndpointCommand
+	var kind, target, containerID string
+	load := func() (config.Config, error) {
+		c, err := config.Load(os.Getenv)
+		if err != nil {
+			return c, fmt.Errorf("configuration:\n%w", err)
+		}
+		return c, nil
+	}
+	add := &cobra.Command{
+		Use:   "add [url]",
+		Short: "List a resource's metrics URL (or from VOICEGATEWAY_RESOURCE_METRICS_URL)",
+		Args:  cobra.MaximumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			c, err := load()
+			if err != nil {
+				return err
+			}
+			raw := os.Getenv("VOICEGATEWAY_RESOURCE_METRICS_URL")
+			if len(args) == 1 {
+				raw = args[0]
+			}
+			e, err := app.AddResourceEndpoint(cmd.Context(), c, in, raw, kind, target, containerID)
+			if err != nil {
+				return fmt.Errorf("add resource endpoint: %w", err)
+			}
+			_, err = fmt.Fprintf(cmd.OutOrStdout(), "added resource endpoint %s (%s) to project %s/%s\n", e.ID, e.Host, e.OrganisationID, e.ProjectID)
+			return err
+		},
+	}
+	remove := &cobra.Command{
+		Use:   "remove <id>",
+		Short: "Stop reading a resource metrics endpoint",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			c, err := load()
+			if err != nil {
+				return err
+			}
+			if err := app.RemoveResourceEndpoint(cmd.Context(), c, in, args[0]); err != nil {
+				return fmt.Errorf("remove resource endpoint: %w", err)
+			}
+			_, err = fmt.Fprintf(cmd.OutOrStdout(), "removed resource endpoint %s\n", args[0])
+			return err
+		},
+	}
+	list := &cobra.Command{
+		Use:   "list",
+		Short: "List a project's resource metrics endpoints",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			c, err := load()
+			if err != nil {
+				return err
+			}
+			endpoints, err := app.ListResourceEndpoints(cmd.Context(), c, in)
+			if err != nil {
+				return fmt.Errorf("list resource endpoints: %w", err)
+			}
+			out := cmd.OutOrStdout()
+			if len(endpoints) == 0 {
+				_, err = fmt.Fprintln(out, "no resource endpoints listed")
+				return err
+			}
+			for _, e := range endpoints {
+				if _, err := fmt.Fprintf(out, "%s\t%s\t%s\t%s\t%s\tadded %s\n", e.ID, e.Kind, e.Target, e.ContainerID, e.Host, e.CreatedAt.UTC().Format(time.RFC3339)); err != nil {
+					return err
+				}
+			}
+			return nil
+		},
+	}
+	cmd := &cobra.Command{Use: "resources", Short: "Manage a project's SFU and worker resource metrics endpoints"}
+	f := cmd.PersistentFlags()
+	f.StringVar(&in.ProjectID, "project", "", "project id")
+	f.StringVar(&in.OrganisationID, "org", "default", "organisation id")
+	add.Flags().StringVar(&kind, "kind", "", "component kind: sfu or worker")
+	add.Flags().StringVar(&target, "target", "", "component identifier")
+	add.Flags().StringVar(&containerID, "container", "", "exact cAdvisor container id")
+	cmd.AddCommand(add, remove, list)
+	return cmd
+}
+
+// recordingsCommand turns a project's recordings on or off (phase 07a, decisions 0008 and 0015).
+// They are off by default; the agent must also record its session for any audio to arrive.
+func recordingsCommand() *cobra.Command {
+	var in app.WorkerEndpointCommand
+	cmd := &cobra.Command{
+		Use:       "recordings on|off",
+		Short:     "Keep (on) or discard (off) the call audio a project's agents upload",
+		Args:      cobra.MatchAll(cobra.ExactArgs(1), cobra.OnlyValidArgs),
+		ValidArgs: []string{"on", "off"},
+		RunE: func(cmd *cobra.Command, args []string) error {
+			c, err := config.Load(os.Getenv)
+			if err != nil {
+				return fmt.Errorf("configuration:\n%w", err)
+			}
+			if err := app.SetRecordings(cmd.Context(), c, in, args[0] == "on"); err != nil {
+				return fmt.Errorf("recordings: %w", err)
+			}
+			_, err = fmt.Fprintf(cmd.OutOrStdout(), "recordings %s for project %s\n", args[0], in.ProjectID)
+			return err
+		},
+	}
+	f := cmd.Flags()
+	f.StringVar(&in.ProjectID, "project", "", "project id")
+	f.StringVar(&in.OrganisationID, "org", "default", "organisation id")
 	return cmd
 }
 

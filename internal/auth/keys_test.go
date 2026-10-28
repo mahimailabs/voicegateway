@@ -365,7 +365,7 @@ func TestCreateProjectKeyRetriesATakenKeyID(t *testing.T) {
 	admin := f.signedIn(s, "ada@example.com")
 	taken := f.createKey(f.membersAPI(s), admin, "org-a", "p").KeyID
 	newAPI := func(draw func() (string, []byte, string, error)) http.Handler {
-		return (&api.API{Projects: f.pg, Calls: f.pg, Accounts: f.pg, Keys: f.pg, NewKey: draw, Log: slog.New(slog.NewJSONHandler(io.Discard, nil)), Now: time.Now, Gate: s.Gate}).Routes()
+		return (&api.API{Projects: f.pg, Settings: f.pg, Metadata: f.pg, Calls: f.pg, Accounts: f.pg, Keys: f.pg, NewKey: draw, Log: slog.New(slog.NewJSONHandler(io.Discard, nil)), Now: time.Now, Gate: s.Gate}).Routes()
 	}
 	create := call{method: http.MethodPost, path: "/api/v1/org/org-a/project/p/keys", body: `{"name":"retry"}`, cookie: admin}
 	status, body := f.send(newAPI(keyIDs(taken)), create)

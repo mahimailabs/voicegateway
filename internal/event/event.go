@@ -21,6 +21,9 @@ const (
 	// KindAgentSessionReport is a LiveKit agent's session upload (decisions 0014, 0015): a
 	// SessionReport encoded as JSON.
 	KindAgentSessionReport Kind = "livekit.agent.session_report"
+	// KindSDKEvents is a batch from a VoiceGateway SDK (decision 0033): the request decompressed,
+	// JSON valid against sdk/contract/v1.schema.json, decoded as SDKBatch.
+	KindSDKEvents Kind = "voicegateway.sdk.events"
 )
 
 // SessionReport is the Payload of KindAgentSessionReport.
@@ -31,8 +34,18 @@ type SessionReport struct {
 	// the report does not reformat it; absent when the agent sent none.
 	ChatHistory string `json:"chat_history,omitempty"`
 	// AudioDiscarded is true when the upload carried recording.ogg and it was not kept, because
-	// the project has no recordings bucket (0015). The audio itself never enters the stream.
+	// the project has recordings off (0015, phase 07a). The audio itself never enters the stream.
 	AudioDiscarded bool `json:"audio_discarded"`
+	// Recording is where web stored recording.ogg, when the project has recordings on; absent
+	// otherwise.
+	Recording *StoredRecording `json:"recording,omitempty"`
+}
+
+// StoredRecording is a recording web stored in the S3 bucket, for the worker to link to its call.
+type StoredRecording struct {
+	Key       string    `json:"key"`
+	SizeBytes int64     `json:"size_bytes"`
+	StoredAt  time.Time `json:"stored_at"`
 }
 
 // Envelope is one ingested record, attributed to the project whose LiveKit key signed it.

@@ -25,13 +25,60 @@ tags:
     description: Authorised project-scoped console data.
   - name: Console writes
     description: Organisation changes a signed-in Admin makes (phase 06b).
+  - name: Instance
+    description: The instance API for an operator's program, behind VOICEGATEWAY_INSTANCE_TOKEN (phase 06e, Enterprise code under ee/).
 paths:
+  /api/v1/org/{orgId}/project/{projectId}/live-events:
+    get:
+      operationId: getLiveEvents
+      summary: Stream project change notifications
+      description: >-
+        SSE invalidation hints after worker storage. Events refresh and renew carry only an empty
+        JSON object, never telemetry. Refresh authoritative reads on connection and refresh events.
+        Connections expire within 15 seconds; reconnect rechecks credentials and project membership.
+        Redis loss closes the stream. Notifications are best effort, not a replay log. Every snapshot
+        read independently checks permissions; source freshness is separate from stream connectivity.
+      tags: [Console reads]
+      security:
+        - consoleSession: []
+        - projectKey: []
+      x-access:
+        principal: organisation_member
+        minimumRole: Viewer
+        projectIsolation: required
+        browserSessionTransport: session_cookie
+        scope: project
+      parameters:
+        - $ref: "#/components/parameters/OrganisationId"
+        - $ref: "#/components/parameters/ProjectId"
+      responses:
+        "200":
+          description: SSE refresh or renew events with an empty JSON object as data.
+          content:
+            text/event-stream:
+              schema:
+                type: string
+                description: Project-scoped invalidation hints, not a telemetry or event history API.
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "503":
+          $ref: "#/components/responses/SourceUnavailable"
+
   /api/v1/org/{orgId}/project/{projectId}/calls:
     get:
       operationId: listCalls
       security:
         - consoleSession: []
         - projectKey: []
+        - embedToken: []
       summary: List call summaries in a project, filtered and sorted on the server
       tags:
         - Console reads
@@ -44,7 +91,7 @@ paths:
       x-embed-access:
         credential: embed_token
         widgets:
-          - calls
+          - recent-calls
         projectIsolation: required
         originAllowList: required
         readOnly: true
@@ -153,6 +200,17 @@ paths:
             items:
               type: string
               enum: [ answerMs, durationSeconds, turnCount ]
+        - name: field
+          in: query
+          description: "An SDK call field as key:value. Repeat to keep calls holding every listed pair; one key with two values matches nothing. At most 16. An embed token without transcriptsAndAudio gets 403 (decision 0034)."
+          style: form
+          explode: true
+          schema:
+            type: array
+            maxItems: 16
+            items:
+              type: string
+              pattern: "^[a-z0-9_.-]{1,64}:.{0,256}$"
         - name: tag
           in: query
           description: User tag. Repeat to match calls carrying any listed tag.
@@ -212,6 +270,7 @@ paths:
       security:
         - consoleSession: []
         - projectKey: []
+        - embedToken: []
       summary: Read one conversation and its reported turns, events, spans and recording
       tags:
         - Console reads
@@ -228,7 +287,7 @@ paths:
         projectIsolation: required
         originAllowList: required
         readOnly: true
-      description: "Requires authenticated organisation membership and permission to read the named project. A browser signs in with the session cookie (decision 0027); the role gate admits the minimumRole and above. Credential absence is 401, denied membership is 403, cross-project resource ids are not_found. Server-side LiveKit credentials must never reach the browser."
+      description: "Requires authenticated organisation membership and permission to read the named project. A browser signs in with the session cookie (decision 0027); the role gate admits the minimumRole and above. Credential absence is 401, denied membership is 403, cross-project resource ids are not_found. Server-side LiveKit credentials must never reach the browser. For an embed token without transcriptsAndAudio (decision 0034) every turn's userText and agentText, every span's attrs and the recording are withheld: null, absent, and the recording clock dropped."
       parameters:
         - $ref: "#/components/parameters/OrganisationId"
         - $ref: "#/components/parameters/ProjectId"
@@ -264,6 +323,7 @@ paths:
       security:
         - consoleSession: []
         - projectKey: []
+        - embedToken: []
       summary: Totals, answer times and stage timings over calls in a range
       tags:
         - Console reads
@@ -277,11 +337,12 @@ paths:
         credential: embed_token
         widgets:
           - answer-time
-          - turn-anatomy
+          - calls
+          - time-per-turn
         projectIsolation: required
         originAllowList: required
         readOnly: true
-      description: "Overview figures, the agent rows, Turn anatomy and the answer-time and turn-anatomy widgets. Requires authenticated organisation membership and permission to read the named project. Credential absence is 401, denied membership is 403. Computed on the server over every stored record in the range; the console never totals pages of listCalls itself."
+      description: "Overview figures, the agent rows, Turn anatomy and the answer-time, calls, issues and time-per-turn widgets. Requires authenticated organisation membership and permission to read the named project. Credential absence is 401, denied membership is 403. Computed on the server over every stored record in the range; the console never totals pages of listCalls itself."
       parameters:
         - $ref: "#/components/parameters/OrganisationId"
         - $ref: "#/components/parameters/ProjectId"
@@ -324,6 +385,7 @@ paths:
       security:
         - consoleSession: []
         - projectKey: []
+        - embedToken: []
       summary: Issues grouped across calls, agents and the phone bridge in a range
       tags:
         - Console reads
@@ -340,7 +402,7 @@ paths:
         projectIsolation: required
         originAllowList: required
         readOnly: true
-      description: "The Issues page, the issues widget, issue counts and the command palette. Dispositions stay in getIssueDispositions. Requires authenticated organisation membership and permission to read the named project. Credential absence is 401, denied membership is 403. Computed on the server over every stored record in the range; the console never totals pages of listCalls itself."
+      description: "The Issues page, the issues widget, issue counts and the command palette. Decisions and metadata are included in each issue from the same database snapshot. Requires authenticated organisation membership and permission to read the named project. Credential absence is 401, denied membership is 403. Computed on the server over every stored record in the range; the console never totals pages of listCalls itself."
       parameters:
         - $ref: "#/components/parameters/OrganisationId"
         - $ref: "#/components/parameters/ProjectId"
@@ -358,6 +420,21 @@ paths:
           schema:
             type: string
             format: date-time
+        - name: q
+          in: query
+          description: Literal case-insensitive search over issue titles and occurrence details.
+          schema: { type: string, maxLength: 512 }
+        - name: tag
+          in: query
+          description: Match any persisted normalized issue tag.
+          schema:
+            type: array
+            maxItems: 32
+            items: { type: string, maxLength: 64 }
+        - name: archived
+          in: query
+          description: Filter persisted issue archive state. Omit to include both.
+          schema: { type: boolean }
       responses:
         "200":
           description: Authorised read result. Null means unreported or incomplete, never zero.
@@ -531,6 +608,44 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Workers"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/SourceUnavailable"
+  /api/v1/org/{orgId}/project/{projectId}/resources:
+    get:
+      operationId: getResources
+      security:
+        - consoleSession: []
+        - projectKey: []
+      summary: Read measured container resource samples
+      tags:
+        - Console reads
+      x-access:
+        principal: organisation_member
+        minimumRole: Viewer
+        projectIsolation: required
+        browserSessionTransport: session_cookie
+        scope: project
+      description: "Requires authenticated organisation membership and permission to read the named project. A browser signs in with the session cookie (decision 0027); the role gate admits the minimumRole and above. Credential absence is 401, denied membership is 403, cross-project resource ids are not_found. Server-side LiveKit credentials must never reach the browser."
+      parameters:
+        - $ref: "#/components/parameters/OrganisationId"
+        - $ref: "#/components/parameters/ProjectId"
+      responses:
+        "200":
+          description: Authorised read result. Null means unreported, never zero. Source-specific coverage limits remain visible.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Resources"
         "400":
           $ref: "#/components/responses/BadRequest"
         "401":
@@ -780,6 +895,232 @@ paths:
           $ref: "#/components/responses/InternalError"
         "503":
           $ref: "#/components/responses/SourceUnavailable"
+  /api/v1/org/{orgId}/project/{projectId}/call-tags:
+    get:
+      operationId: getCallTags
+      security:
+        - consoleSession: []
+        - projectKey: []
+      summary: Read distinct tags assigned to calls in this project
+      tags:
+        - Console reads
+      x-access:
+        principal: organisation_member
+        minimumRole: Viewer
+        projectIsolation: required
+        browserSessionTransport: session_cookie
+        scope: project
+      description: "Requires authenticated organisation membership and permission to read the named project. A browser signs in with the session cookie (decision 0027); the role gate admits the minimumRole and above. Credential absence is 401, denied membership is 403, cross-project resource ids are not_found. Server-side LiveKit credentials must never reach the browser."
+      parameters:
+        - $ref: "#/components/parameters/OrganisationId"
+        - $ref: "#/components/parameters/ProjectId"
+      responses:
+        "200":
+          description: Authorised read result. Null means unreported, never zero. Source-specific coverage limits remain visible.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CallTags"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/SourceUnavailable"
+  /api/v1/org/{orgId}/project/{projectId}/calls/{callId}/metadata:
+    get:
+      operationId: getCallMetadata
+      security:
+        - consoleSession: []
+        - projectKey: []
+      summary: Read persisted call tags, archive state and revision
+      tags:
+        - Console reads
+      x-access:
+        principal: organisation_member
+        minimumRole: Viewer
+        projectIsolation: required
+        browserSessionTransport: session_cookie
+        scope: project
+      description: "Requires authenticated organisation membership and permission to read the named project. A browser signs in with the session cookie (decision 0027); the role gate admits the minimumRole and above. Credential absence is 401, denied membership is 403, cross-project resource ids are not_found. Server-side LiveKit credentials must never reach the browser."
+      parameters:
+        - $ref: "#/components/parameters/OrganisationId"
+        - $ref: "#/components/parameters/ProjectId"
+        - name: callId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Immutable call UUID within the named project.
+      responses:
+        "200":
+          description: Authorised read result. Null means unreported, never zero. Source-specific coverage limits remain visible.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CallMetadata"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/SourceUnavailable"
+    put:
+      operationId: updateCallMetadata
+      summary: Save call tags and archive state if the read revision is still current
+      tags: [ Console writes ]
+      security:
+        - consoleSession: []
+      x-access:
+        principal: organisation_member
+        minimumRole: Member
+        projectIsolation: required
+        browserSessionTransport: session_cookie
+        scope: project
+      description: Members and Admins can save call metadata. Project keys and Viewers cannot write. A stale revision returns revision_conflict without overwriting a newer save.
+      parameters:
+        - $ref: "#/components/parameters/OrganisationId"
+        - $ref: "#/components/parameters/ProjectId"
+        - name: callId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Immutable call UUID within the named project.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateCallMetadata"
+      responses:
+        "200":
+          description: Persisted call metadata with the new revision.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CallMetadata"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/SourceUnavailable"
+  /api/v1/org/{orgId}/project/{projectId}/issues/{issueId}/metadata:
+    get:
+      operationId: getIssueMetadata
+      security:
+        - consoleSession: []
+        - projectKey: []
+      summary: Read persisted issue decisions, tags, archive state and revision
+      tags:
+        - Console reads
+      x-access:
+        principal: organisation_member
+        minimumRole: Viewer
+        projectIsolation: required
+        browserSessionTransport: session_cookie
+        scope: project
+      description: "Requires authenticated organisation membership and permission to read the named project. A browser signs in with the session cookie (decision 0027); the role gate admits the minimumRole and above. Credential absence is 401, denied membership is 403, cross-project resource ids are not_found. Server-side LiveKit credentials must never reach the browser."
+      parameters:
+        - $ref: "#/components/parameters/OrganisationId"
+        - $ref: "#/components/parameters/ProjectId"
+        - name: issueId
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Stable issue rule identity within the named project.
+      responses:
+        "200":
+          description: Authorised read result. Null means unreported, never zero. Source-specific coverage limits remain visible.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IssueMetadata"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/SourceUnavailable"
+    put:
+      operationId: updateIssueMetadata
+      summary: Save issue decisions, tags and archive state if the read revision is still current
+      tags: [ Console writes ]
+      security:
+        - consoleSession: []
+      x-access:
+        principal: organisation_member
+        minimumRole: Member
+        projectIsolation: required
+        browserSessionTransport: session_cookie
+        scope: project
+      description: Members and Admins can save issue metadata. Project keys and Viewers cannot write. A stale revision returns revision_conflict without overwriting a newer save.
+      parameters:
+        - $ref: "#/components/parameters/OrganisationId"
+        - $ref: "#/components/parameters/ProjectId"
+        - name: issueId
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Stable issue rule identity within the named project.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateIssueMetadata"
+      responses:
+        "200":
+          description: Persisted issue metadata with the new revision.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IssueMetadata"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/SourceUnavailable"
   /api/v1/org/{orgId}/project/{projectId}/settings:
     get:
       operationId: getProjectSettings
@@ -818,13 +1159,57 @@ paths:
           $ref: "#/components/responses/InternalError"
         "503":
           $ref: "#/components/responses/SourceUnavailable"
-  /api/v1/org/{orgId}/project/{projectId}/issue-dispositions:
+    put:
+      operationId: updateProjectSettings
+      summary: Save project thresholds if the read revision is still current
+      tags: [ Console writes ]
+      security:
+        - consoleSession: []
+      x-access:
+        principal: organisation_member
+        minimumRole: Member
+        projectIsolation: required
+        browserSessionTransport: session_cookie
+        scope: project
+      description: Members and Admins can save thresholds. Project keys and Viewers cannot write. A stale revision returns revision_conflict without overwriting a newer save.
+      parameters:
+        - $ref: "#/components/parameters/OrganisationId"
+        - $ref: "#/components/parameters/ProjectId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateProjectSettings"
+      responses:
+        "200":
+          description: Persisted settings with the new revision.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectSettings"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/SourceUnavailable"
+
+  /api/v1/org/{orgId}/project/{projectId}/connection:
     get:
-      operationId: getIssueDispositions
+      operationId: getProjectConnection
       security:
         - consoleSession: []
         - projectKey: []
-      summary: Read saved issue decisions
+      summary: Read the project's ingestion URLs, the last outcome of each source and its first stored call
       tags:
         - Console reads
       x-access:
@@ -833,17 +1218,17 @@ paths:
         projectIsolation: required
         browserSessionTransport: session_cookie
         scope: project
-      description: "Requires authenticated organisation membership and permission to read the named project. A browser signs in with the session cookie (decision 0027); the role gate admits the minimumRole and above. Credential absence is 401, denied membership is 403, cross-project resource ids are not_found. Server-side LiveKit credentials must never reach the browser."
+      description: "Requires authenticated organisation membership and permission to read the named project. The URLs are built from VOICEGATEWAY_PUBLIC_URL and are null when it is unset. Each source reports when ingestion last accepted and last refused a request for this project, and why it refused. firstCall is the earliest call the worker joined from verified ingest; sample data never counts. No LiveKit secret is ever returned; API keys are not secret."
       parameters:
         - $ref: "#/components/parameters/OrganisationId"
         - $ref: "#/components/parameters/ProjectId"
       responses:
         "200":
-          description: Authorised read result. Null means unreported, never zero. Source-specific coverage limits remain visible.
+          description: Authorised read result. Null means not yet seen, never zero.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/IssueDispositions"
+                $ref: "#/components/schemas/ProjectConnection"
         "400":
           $ref: "#/components/responses/BadRequest"
         "401":
@@ -856,6 +1241,95 @@ paths:
           $ref: "#/components/responses/InternalError"
         "503":
           $ref: "#/components/responses/SourceUnavailable"
+  /api/v1/org/{orgId}/project/{projectId}/settings/allowed-origins:
+    put:
+      operationId: updateAllowedOrigins
+      summary: Replace the sites allowed to frame the project's widgets
+      tags: [ Console writes ]
+      security:
+        - consoleSession: []
+      x-access:
+        principal: organisation_member
+        minimumRole: Admin
+        projectIsolation: required
+        browserSessionTransport: session_cookie
+        scope: project
+      description: "Admins only (decision 0034). Each origin is https://host[:port], or http://localhost[:port] for development, with no path, query or wildcard; it is stored as a browser serialises it (lowercase, default port dropped, punycode host). At most 20. An empty list or null clears the list, which allows no origin and stops every embed token at its next request. A stale revision returns revision_conflict."
+      parameters:
+        - $ref: "#/components/parameters/OrganisationId"
+        - $ref: "#/components/parameters/ProjectId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateAllowedOrigins"
+      responses:
+        "200":
+          description: Persisted settings with the new revision.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectSettings"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/SourceUnavailable"
+
+  /api/v1/org/{orgId}/project/{projectId}/embed-tokens:
+    post:
+      operationId: createEmbedToken
+      summary: Mint a short-lived, read-only token for some of the project's widgets
+      tags: [ Console writes ]
+      security:
+        - consoleSession: []
+        - projectKey: []
+      x-access:
+        principal: organisation_member
+        minimumRole: Viewer
+        projectIsolation: required
+        browserSessionTransport: session_cookie
+        scope: project
+      description: "Decision 0034. A platform's backend calls this with a project key and puts the token in the widget frame's address (?token=); the key never reaches the browser. The token reads only the named widgets of this project, may be framed only by origin, which must be one of the project's allowedOrigins (else origin_not_allowed), and expires after expiresInSeconds (60 to 86400, 3600 by default). Nothing is stored: every request with the token checks again that the minting key is unrevoked, or the minting member still in the organisation, and the origin still allowed. An embed token cannot mint another."
+      parameters:
+        - $ref: "#/components/parameters/OrganisationId"
+        - $ref: "#/components/parameters/ProjectId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateEmbedToken"
+      responses:
+        "201":
+          description: The token, shown in this answer only.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmbedToken"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/SourceUnavailable"
+
   /api/v1/org/{orgId}/project/{projectId}/alert-setup:
     get:
       operationId: getAlertSetup
@@ -985,6 +1459,98 @@ paths:
       responses:
         "204":
           description: Revoked.
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/SourceUnavailable"
+  /api/v1/org/{orgId}/projects:
+    post:
+      operationId: createProject
+      summary: Add a LiveKit project to the organisation
+      tags:
+        - Console writes
+      x-access:
+        principal: organisation_member
+        minimumRole: Admin
+        browserSessionTransport: session_cookie
+        scope: organisation
+      description: Requires Admin membership in the named organisation; a project API key is 403. Adds one LiveKit project (decision 0016) through the same checks and store as voicegateway project add (phase 06f). The id is the name as a slug, as the console makes it. The API secret is sealed under VOICEGATEWAY_SECRET_KEY before it is written and is never answered, logged or read back to the console. Before anything is stored, one LiveKit read (ListRooms under the room-list grant, signed with the given key and secret, through the worker's address guard, 5 s at most) checks connectivity to the supplied endpoint. This does not prove ownership of that server; project-scoped ingestion URLs enforce tenant isolation. LiveKit refusing it is 422 livekit_secret_invalid, and no LiveKit answer at all (no answer, an address the guard refuses, or not a LiveKit server) is 422 livekit_unreachable, which never says which. A project may bring its own S3 bucket for its recordings in recordingBucket; without it, recordings live in the instance's bucket. The bucket is chosen only here and never changes afterwards, so before anything is stored a write and a delete of one empty object, signed with the given key and secret, through the same address guard, 10 s at most, prove it takes what storing and expiring recordings need. The S3 endpoint refusing either is 422 recording_bucket_refused, and no S3 answer at all is 422 recording_bucket_unreachable, which never says which. An install with no bucket check refuses a recordingBucket with 403. Only then are the uniqueness rules answered. A name whose id the organisation already has is 409 project_exists. Identical key strings are allowed across projects. The answer is not cached.
+      parameters:
+        - $ref: "#/components/parameters/OrganisationId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProjectCreate"
+      responses:
+        "201":
+          description: The new project, as getWorkspaces lists it, and how many rooms its LiveKit project had live at the verify. Never its LiveKit key or secret.
+          headers:
+            Cache-Control:
+              description: Always no-store, so no cache keeps the answer.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectCreated"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/ProjectNotVerified"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/SourceUnavailable"
+  /api/v1/org/{orgId}/project/{projectId}/livekit-credentials:
+    put:
+      operationId: updateProjectLiveKitCredentials
+      summary: Replace the project's LiveKit API key and secret
+      tags:
+        - Console writes
+      x-access:
+        principal: organisation_member
+        minimumRole: Admin
+        projectIsolation: required
+        browserSessionTransport: session_cookie
+        scope: project
+      description: Requires Admin membership in the named organisation; a project API key is 403. Replaces the LiveKit API key and secret of an existing project. The LiveKit URL stays as it is, since one VoiceGateway project is one LiveKit project; to use another LiveKit server, add another project. The key and secret follow createProject's rules and are checked the same way first, with one signed LiveKit read against the project's stored URL; LiveKit refusing it is 422 livekit_secret_invalid and no LiveKit answer is 422 livekit_unreachable. The secret is sealed under VOICEGATEWAY_SECRET_KEY and is never answered, logged or read back. Ingestion and the LiveKit readers load the key on every request and poll, so the old key is refused and the new one accepted at once; agents and LiveKit webhooks must then sign with the new key. The answer is not cached.
+      parameters:
+        - $ref: "#/components/parameters/OrganisationId"
+        - $ref: "#/components/parameters/ProjectId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LiveKitCredentialsUpdate"
+      responses:
+        "204":
+          description: The project now uses the new key and secret.
+          headers:
+            Cache-Control:
+              description: Always no-store, so no cache keeps the answer.
+              schema:
+                type: string
+        "422":
+          $ref: "#/components/responses/ProjectNotVerified"
         "400":
           $ref: "#/components/responses/BadRequest"
         "401":
@@ -1287,6 +1853,7 @@ paths:
       security:
         - consoleSession: []
         - projectKey: []
+        - embedToken: []
       summary: Read retained opt-in recording audio
       tags:
         - Console reads
@@ -1303,7 +1870,8 @@ paths:
         projectIsolation: required
         originAllowList: required
         readOnly: true
-      description: "Requires authenticated organisation membership and permission to read the named project. A browser signs in with the session cookie (decision 0027); the role gate admits the minimumRole and above. Credential absence is 401, denied membership is 403, cross-project resource ids are not_found. Server-side LiveKit credentials must never reach the browser. Resolve the recording id server-side only after project authorisation. Do not fetch an arbitrary request URL. Enforce retention and recording opt-in; never synthesise media for a call without an observed recording."
+        transcriptsAndAudio: required
+      description: "Requires authenticated organisation membership and permission to read the named project. A browser signs in with the session cookie (decision 0027); the role gate admits the minimumRole and above. Credential absence is 401, denied membership is 403, cross-project resource ids are not_found. Server-side LiveKit credentials must never reach the browser. Resolve the recording id server-side only after project authorisation. Do not fetch an arbitrary request URL. Enforce retention and recording opt-in; never synthesise media for a call without an observed recording. An embed token reads it only with transcriptsAndAudio (decision 0034)."
       parameters:
         - $ref: "#/components/parameters/OrganisationId"
         - $ref: "#/components/parameters/ProjectId"
@@ -1368,6 +1936,304 @@ paths:
           $ref: "#/components/responses/InternalError"
         "503":
           $ref: "#/components/responses/SourceUnavailable"
+  /api/v1/instance/organisations/{orgId}:
+    put:
+      operationId: putOrganisation
+      summary: Create an organisation, or rename it
+      tags:
+        - Instance
+      security:
+        - instanceToken: []
+      x-access:
+        principal: instance
+        minimumRole: Instance
+        scope: instance
+      description: For an operator's program holding the instance token (phase 06e, decision 0028); off, and 404, unless VOICEGATEWAY_INSTANCE_TOKEN is set. The caller chooses the id, so a retried create never makes a second organisation. 201 when this call created it, 200 when it existed; a different name renames it. A session or a project API key is 403.
+      parameters:
+        - $ref: "#/components/parameters/InstanceOrganisationId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/InstanceOrganisationPut"
+      responses:
+        "200":
+          description: The organisation existed; it now has the name sent.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InstanceOrganisation"
+        "201":
+          description: This call created the organisation.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InstanceOrganisation"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/SourceUnavailable"
+    get:
+      operationId: getOrganisation
+      summary: Read an organisation and whether its admin has joined
+      tags:
+        - Instance
+      security:
+        - instanceToken: []
+      x-access:
+        principal: instance
+        minimumRole: Instance
+        scope: instance
+      description: For the instance token only (phase 06e). Counts are read at this request. An unknown id is not_found.
+      parameters:
+        - $ref: "#/components/parameters/InstanceOrganisationId"
+      responses:
+        "200":
+          description: The organisation and its counts.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InstanceOrganisation"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/SourceUnavailable"
+  /api/v1/instance/organisations/{orgId}/invitations:
+    post:
+      operationId: createOrganisationInvitation
+      summary: Invite someone to an organisation, with no inviting user
+      tags:
+        - Instance
+      security:
+        - instanceToken: []
+      x-access:
+        principal: instance
+        minimumRole: Instance
+        scope: instance
+      description: For the instance token only (phase 06e). Makes a phase 06d invitation with no inviting user. The Idempotency-Key header is required; a repeat with the same key answers 200 with the first invitation, link null, nothing revoked and nothing sent. The same key with another email or role is invalid_request. A repeat that arrives while the first call is still sending waits for that send's outcome. A new key for an email with an open invitation revokes the open link and sends or returns a new one, which is how a caller retries a failed send; resend only on emailed false, never on null. With SMTP set, link is always null and emailed says whether the send succeeded, or is null when SMTP acceptance is uncertain or a prior send's outcome was lost. An email whose account is already a member is 409 already_member.
+      parameters:
+        - $ref: "#/components/parameters/InstanceOrganisationId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/InvitationCreate"
+      responses:
+        "200":
+          description: The key made this invitation before; nothing was revoked or sent.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InstanceInvitation"
+        "201":
+          description: This call made the invitation.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InstanceInvitation"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/SourceUnavailable"
+  /api/v1/instance/organisations/{orgId}/usage:
+    get:
+      operationId: getOrganisationUsage
+      summary: Read an organisation's profiled call time in a period
+      tags:
+        - Instance
+      security:
+        - instanceToken: []
+      x-access:
+        principal: instance
+        minimumRole: Instance
+        scope: instance
+      description: For the instance token only (phase 06e, decision 0029). A call counts in the period its end falls in, when its start is known; an observed call ends at its end, an inferred one at its last activity, a lower bound. Exact durations are summed, then rounded down to whole seconds once. Calls that started in the period with no end yet are counted in unendedCalls and never summed. Closed calls with a null or negative duration are excluded from the measured totals and counted as unmeasuredCalls by start period. Inferred durations are separately summed in inferredCallSeconds. Turning seconds into billed minutes is the caller's job. A missing or bad from or to, to not after from, or a span over 62 days is invalid_request; an unknown organisation is not_found.
+      parameters:
+        - $ref: "#/components/parameters/InstanceOrganisationId"
+        - name: from
+          in: query
+          required: true
+          description: Inclusive start of the period, an RFC 3339 instant.
+          schema:
+            type: string
+            format: date-time
+        - name: to
+          in: query
+          required: true
+          description: Exclusive end of the period, an RFC 3339 instant, after from and at most 62 days later.
+          schema:
+            type: string
+            format: date-time
+      responses:
+        "200":
+          description: The organisation's call time in the period.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InstanceUsage"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/SourceUnavailable"
+  /api/v1/instance/organisations/{orgId}/entitlement:
+    get:
+      operationId: getOrganisationEntitlement
+      summary: Read the organisation allowance and measured usage
+      tags:
+      - Instance
+      security:
+      - instanceToken: []
+      x-access:
+        principal: instance
+        minimumRole: Instance
+        scope: instance
+      description: Hosted entitlement. Explicit [from,to) period; closed-call seconds
+        survive telemetry deletion. Revision is monotonic per organisation; conflicting
+        or stale updates return 409. Open calls can overshoot the cap. No automatic
+        overages. Disabled on self-hosted installs.
+      parameters:
+      - $ref: '#/components/parameters/InstanceOrganisationId'
+      responses:
+        '200':
+          description: Allowance, durable usage and ingestion status.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrganisationEntitlement'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/SourceUnavailable'
+    put:
+      operationId: putOrganisationEntitlement
+      summary: Set the organisation allowance and measured usage
+      tags:
+      - Instance
+      security:
+      - instanceToken: []
+      x-access:
+        principal: instance
+        minimumRole: Instance
+        scope: instance
+      description: Hosted entitlement. Explicit [from,to) period; closed-call seconds
+        survive telemetry deletion. Revision is monotonic per organisation; conflicting
+        or stale updates return 409. Open calls can overshoot the cap. No automatic
+        overages. Disabled on self-hosted installs.
+      parameters:
+      - $ref: '#/components/parameters/InstanceOrganisationId'
+      responses:
+        '200':
+          description: Allowance, durable usage and ingestion status.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrganisationEntitlement'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/SourceUnavailable'
+        '409':
+          description: Stale revision or conflicting replay.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrganisationEntitlementPut'
+  /api/v1/org/{orgId}/entitlement:
+    get:
+      operationId: getMyOrganisationEntitlement
+      summary: Read the organisation allowance and measured usage
+      tags:
+      - Console reads
+      security:
+      - consoleSession: []
+      x-access:
+        principal: organisation_member
+        minimumRole: Viewer
+        scope: organisation
+      description: Hosted entitlement. Explicit [from,to) period; closed-call seconds
+        survive telemetry deletion. Revision is monotonic per organisation; conflicting
+        or stale updates return 409. Open calls can overshoot the cap. No automatic
+        overages. Disabled on self-hosted installs.
+      parameters:
+      - $ref: '#/components/parameters/OrganisationId'
+      responses:
+        '200':
+          description: Allowance, durable usage and ingestion status.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrganisationEntitlement'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/SourceUnavailable'
 components:
   securitySchemes:
     consoleSession:
@@ -1380,6 +2246,15 @@ components:
       scheme: bearer
       bearerFormat: vgk_<keyId>_<secret>
       description: A project API key, which an Admin creates in the console. It reads its own project as a Viewer and is refused writes, other projects and organisation operations.
+    embedToken:
+      type: http
+      scheme: bearer
+      bearerFormat: vge_<JWT>
+      description: An embed token from createEmbedToken (decision 0034). It reads, in its one project, only the operations its widgets need (x-embed-access), until it expires or its minting key or member loses access.
+    instanceToken:
+      type: http
+      scheme: bearer
+      description: VOICEGATEWAY_INSTANCE_TOKEN, for an operator's program (phase 06e). It calls the instance API and nothing else; nothing else calls the instance API.
   schemas:
     Call:
       type: object
@@ -1462,6 +2337,16 @@ components:
               x-null-reason: Session usage not reported; never sum missing values as zero.
               x-source: { kind: agent_upload, file: dashboard/src/mocks/capture-session.json, pointer: /call/usage/sttSeconds, detail: Normalised captured call data; consult fixture source note and upstream-source inventory for conversions }
               x-unit: seconds
+            llmCachedTokens:
+              type: [ integer, "null" ]
+              x-unit: tokens
+              x-null-reason: No cached-token usage or at least one request did not report it.
+              x-source: { kind: computed, file: internal/turn/turn.go, pointer: null, detail: Sum of llm_request gen_ai.usage.cache_read.input_tokens else lk.llm_metrics.prompt_cached_tokens. A subset of input tokens, not additional tokens. }
+            ttsSeconds:
+              type: [ number, "null" ]
+              x-unit: seconds
+              x-null-reason: No TTS audio duration or at least one request did not report it; native zero means unavailable.
+              x-source: { kind: computed, file: internal/turn/turn.go, pointer: null, detail: Sum of tts_request lk.tts_metrics.audio_duration; zero normalizes to unknown. }
             note:
               type: string
               x-source: { kind: computed, file: dashboard/src/mocks/capture-session.json, pointer: /call/usage/note, detail: Capture annotation describing the recorded source and its limits; not a LiveKit API response field. }
@@ -1537,21 +2422,65 @@ components:
         tags:
           type: array
           description: User-assigned labels. Empty means no assigned labels; canonical call id replaces the preview room-name key.
-          x-source: { kind: configuration, file: dashboard/src/features/call/call-tags.tsx, pointer: null, detail: User-assigned labels. Empty means no assigned labels; canonical call id replaces the preview room-name key. }
+          x-source: { kind: configuration, file: migrations/postgres/00016_call_metadata.sql, pointer: null, detail: User-assigned labels. Empty means no assigned labels; canonical call id replaces the preview room-name key. }
           items:
             type: string
         archived:
           type: boolean
           description: User archive disposition for this conversation. Archived records remain readable; nothing is deleted.
-          x-source: { kind: configuration, file: dashboard/src/features/calls/call-archive.ts, pointer: null, detail: User archive disposition for this conversation. Archived records remain readable; nothing is deleted. }
+          x-source: { kind: configuration, file: migrations/postgres/00016_call_metadata.sql, pointer: null, detail: User archive disposition for this conversation. Archived records remain readable; nothing is deleted. }
         clocks:
           type: array
           items:
             $ref: "#/components/schemas/Clock"
           description: Distinct retained source clocks for this call. Every clockId resolves to exactly one entry; IDs are unique within this array. Empty only when no relative timeline is present. Metadata is derived from capture/adapter evidence, not a field already stored in the preview fixtures.
           x-source: { kind: computed, file: docs/api/coverage.md, pointer: null, detail: "Distinct retained source clocks for this call. Every clockId resolves to exactly one entry; IDs are unique within this array. Empty only when no relative timeline is present. Metadata is derived from capture/adapter evidence, not a field already stored in the preview fixtures." }
+        fields:
+          type: object
+          additionalProperties: { type: string }
+          description: Custom fields the agent attached through a VoiceGateway SDK (attach(fields=...) or set_field), later values winning; at most 64 per call, new keys past that are dropped. Empty when no SDK attached any, and for an embed token without transcriptsAndAudio (decision 0034). Absent from captures made before the SDK.
+          x-source: { kind: computed, file: migrations/postgres/00020_sdk_fields.sql, pointer: null, detail: "calls.fields, merged by the worker from SDK fields events (docs/specs/python-sdk.md)." }
+        live:
+          oneOf:
+            - $ref: "#/components/schemas/CallLive"
+            - type: "null"
+          description: The latest user and agent state a VoiceGateway SDK reported. Null when no SDK reported state for this call.
+          x-source: { kind: computed, file: internal/turn/sdk.go, pointer: null, detail: "Latest SDK state event per actor (LiveKit user_state_changed and agent_state_changed)." }
+          x-null-reason: No SDK reported a state for this call.
       required: [ room, roomSid, startedAt, endedAt, durationSeconds, participantCount, endReason, spans, turns, id, endState, tags, archived, clocks ]
       x-source: { kind: agent_upload, file: dashboard/src/mocks/calls.json, pointer: /calls/0, detail: Normalised captured call data; consult fixture source note and upstream-source inventory for conversions }
+    CallLive:
+      type: object
+      additionalProperties: false
+      required: [ user, agent ]
+      x-source: { kind: computed, file: internal/turn/sdk.go, pointer: null, detail: "Latest SDK state event per actor." }
+      properties:
+        user:
+          oneOf:
+            - $ref: "#/components/schemas/LiveState"
+            - type: "null"
+          x-source: { kind: computed, file: internal/turn/sdk.go, pointer: null, detail: "Latest LiveKit user_state_changed state the SDK reported." }
+          x-null-reason: The SDK reported no user state.
+        agent:
+          oneOf:
+            - $ref: "#/components/schemas/LiveState"
+            - type: "null"
+          x-source: { kind: computed, file: internal/turn/sdk.go, pointer: null, detail: "Latest LiveKit agent_state_changed state the SDK reported." }
+          x-null-reason: The SDK reported no agent state.
+    LiveState:
+      type: object
+      additionalProperties: false
+      required: [ state, at ]
+      x-source: { kind: computed, file: internal/turn/sdk.go, pointer: null, detail: "One SDK state event." }
+      properties:
+        state:
+          type: string
+          description: The framework's state name, for example listening, thinking or speaking.
+          x-source: { kind: computed, file: internal/turn/sdk.go, pointer: null, detail: "data.state of the SDK state event." }
+        at:
+          type: string
+          format: date-time
+          x-source: { kind: computed, file: internal/turn/sdk.go, pointer: null, detail: "When the SDK reported the state." }
     Span:
       type: object
       additionalProperties: false
@@ -1595,6 +2524,10 @@ components:
       type: object
       additionalProperties: false
       properties:
+        spanId:
+          type: [ string, "null" ]
+          x-null-reason: No source agent_turn span is available.
+          x-source: { kind: computed, file: internal/turn/turn.go, pointer: null, detail: Source agent_turn SpanID; matches Call.spans without relying on array position. }
         userText:
           type: [ string, "null" ]
           x-null-reason: The capture or source did not report this value. Preserve null rather than a protobuf default or guessed zero.
@@ -3173,6 +4106,79 @@ components:
           x-null-reason: Observation is off by default. Null when not opted in, no agent session was observed, or RemoteSession data was unavailable; never fabricate a framework, tools or model list.
       required: [ readAt, url, rooms, sip, egress, ingress, source, observed ]
       x-source: { kind: livekit_api, file: dashboard/src/mocks/project-snapshot.json, pointer: "", detail: RoomService/SIP/Egress/Ingress snapshot; observed subtree is an opt-in RemoteSession read }
+    Resources:
+      type: object
+      additionalProperties: false
+      required: [source, resources]
+      x-source: { kind: computed, file: internal/api/resources.go, pointer: null, detail: "Project-scoped cAdvisor container measurement and explicit endpoint mapping; missing data stays null." }
+      properties:
+        source:
+          type: string
+          x-source: { kind: computed, file: internal/api/resources.go, pointer: null, detail: "Project-scoped cAdvisor container measurement and explicit endpoint mapping; missing data stays null." }
+        resources:
+          type: array
+          x-source: { kind: computed, file: internal/api/resources.go, pointer: null, detail: "Project-scoped cAdvisor container measurement and explicit endpoint mapping; missing data stays null." }
+          items:
+            type: object
+            additionalProperties: false
+            required: [id, kind, target, containerId, host, sourceStatus, samples]
+            x-source: { kind: computed, file: internal/api/resources.go, pointer: null, detail: "Project-scoped cAdvisor container measurement and explicit endpoint mapping; missing data stays null." }
+            properties:
+              id:
+                type: string
+                x-source: { kind: computed, file: internal/api/resources.go, pointer: null, detail: "Project-scoped cAdvisor container measurement and explicit endpoint mapping; missing data stays null." }
+              kind:
+                type: string
+                x-source: { kind: computed, file: internal/api/resources.go, pointer: null, detail: "Project-scoped cAdvisor container measurement and explicit endpoint mapping; missing data stays null." }
+              target:
+                type: string
+                x-source: { kind: computed, file: internal/api/resources.go, pointer: null, detail: "Project-scoped cAdvisor container measurement and explicit endpoint mapping; missing data stays null." }
+              containerId:
+                type: string
+                x-source: { kind: computed, file: internal/api/resources.go, pointer: null, detail: "Project-scoped cAdvisor container measurement and explicit endpoint mapping; missing data stays null." }
+              host:
+                type: string
+                x-source: { kind: computed, file: internal/api/resources.go, pointer: null, detail: "Project-scoped cAdvisor container measurement and explicit endpoint mapping; missing data stays null." }
+              sourceStatus:
+                $ref: "#/components/schemas/SourceStatus"
+                x-source: { kind: computed, file: internal/api/resources.go, pointer: null, detail: "Project-scoped cAdvisor container measurement and explicit endpoint mapping; missing data stays null." }
+              samples:
+                type: array
+                x-source: { kind: computed, file: internal/api/resources.go, pointer: null, detail: "Project-scoped cAdvisor container measurement and explicit endpoint mapping; missing data stays null." }
+                items:
+                  type: object
+                  additionalProperties: false
+                  required: [t, observedAt, cpuUsed, cpuCores, memoryBytes, memoryLimitBytes]
+                  x-source: { kind: computed, file: internal/api/resources.go, pointer: null, detail: "Project-scoped cAdvisor container measurement and explicit endpoint mapping; missing data stays null." }
+                  properties:
+                    t:
+                      type: string
+                      format: date-time
+                      x-source: { kind: computed, file: internal/api/resources.go, pointer: null, detail: "Project-scoped cAdvisor container measurement and explicit endpoint mapping; missing data stays null." }
+                    observedAt:
+                      type: string
+                      format: date-time
+                      x-source: { kind: computed, file: internal/api/resources.go, pointer: null, detail: "Project-scoped cAdvisor container measurement and explicit endpoint mapping; missing data stays null." }
+                    cpuUsed:
+                      type: [number, "null"]
+                      x-unit: cores
+                      x-null-reason: "No measurement, no finite allocation, or insufficient counter history."
+                      x-source: { kind: computed, file: internal/api/resources.go, pointer: null, detail: "Project-scoped cAdvisor container measurement and explicit endpoint mapping; missing data stays null." }
+                    cpuCores:
+                      type: [number, "null"]
+                      x-unit: cores
+                      x-null-reason: "No measurement, no finite allocation, or insufficient counter history."
+                      x-source: { kind: computed, file: internal/api/resources.go, pointer: null, detail: "Project-scoped cAdvisor container measurement and explicit endpoint mapping; missing data stays null." }
+                    memoryBytes:
+                      type: [number, "null"]
+                      x-unit: bytes
+                      x-null-reason: "No measurement, no finite allocation, or insufficient counter history."
+                      x-source: { kind: computed, file: internal/api/resources.go, pointer: null, detail: "Project-scoped cAdvisor container measurement and explicit endpoint mapping; missing data stays null." }
+                    memoryLimitBytes:
+                      type: [number, "null"]
+                      x-unit: bytes
+                      x-null-reason: "No measurement, no finite allocation, or insufficient counter history."
+                      x-source: { kind: computed, file: internal/api/resources.go, pointer: null, detail: "Project-scoped cAdvisor container measurement and explicit endpoint mapping; missing data stays null." }
     Workers:
       type: object
       additionalProperties: false
@@ -3526,8 +4532,9 @@ components:
               x-null-reason: "Unknown when part of the range is not stored."
               x-source: { kind: computed, file: dashboard/src/mocks/summaries.ts, pointer: null, detail: "Measured turns over budgetMs." }
             budgetMs:
-              type: integer
-              minimum: 1
+              type: number
+              minimum: 100
+              maximum: 60000
               description: "The project's answer budget the overBudget count used; a setting, not a measurement."
               x-unit: milliseconds
               x-configuration: true
@@ -3712,13 +4719,13 @@ components:
         tags:
           type: array
           description: "User-assigned labels. Empty means none."
-          x-source: { kind: configuration, file: dashboard/src/features/call/call-tags.tsx, pointer: null, detail: "User-assigned labels. Empty means none." }
+          x-source: { kind: configuration, file: migrations/postgres/00016_call_metadata.sql, pointer: null, detail: "User-assigned labels. Empty means none." }
           items:
             type: string
         archived:
           type: boolean
           description: "User archive disposition. Archived calls stay readable."
-          x-source: { kind: configuration, file: dashboard/src/features/calls/call-archive.ts, pointer: null, detail: "User archive disposition. Archived calls stay readable." }
+          x-source: { kind: configuration, file: migrations/postgres/00016_call_metadata.sql, pointer: null, detail: "User archive disposition. Archived calls stay readable." }
         recorded:
           type: boolean
           description: "A retained recording exists for this call."
@@ -4204,7 +5211,7 @@ components:
     IssueList:
       type: object
       additionalProperties: false
-      required: [ from, to, complete, items ]
+      required: [ from, to, complete, coverage, items ]
       properties:
         from:
           type: string
@@ -4218,17 +5225,72 @@ components:
           x-source: { kind: computed, file: docs/api/coverage.md, pointer: null, detail: "Exclusive range end, UTC." }
         complete:
           type: boolean
-          description: "false when part of the range is not stored, so an issue may have more hits than listed."
-          x-source: { kind: computed, file: docs/api/coverage.md, pointer: null, detail: "false when part of the range is not stored, so an issue may have more hits than listed." }
+          description: "Whether retained calls in the selected range and project job observations are evaluated, and required component sources are fresh and fully evaluated. Does not prove complete upstream capture or absence of unreported failures."
+          x-source: { kind: computed, file: docs/api/coverage.md, pointer: null, detail: "Whether retained calls in the selected range and project job observations are evaluated, and required component sources are fresh and fully evaluated. Does not prove complete upstream capture or absence of unreported failures." }
+        coverage:
+          type: object
+          additionalProperties: false
+          required: [ pendingCalls, unavailableCalls, pendingJobs, sources ]
+          description: "Evaluation and source availability for retained evidence, independent of issue filters."
+          x-source: { kind: computed, file: internal/store/pgstore/issues.go, pointer: null, detail: "Read in the same snapshot as issue occurrences." }
+          properties:
+            pendingCalls:
+              type: [ integer, 'null' ]
+              x-unit: count
+              x-null-reason: "Evaluation counts could not be read."
+              minimum: 0
+              description: "Retained calls in the range awaiting evaluation, including retry backoff and changed thresholds."
+              x-source: { kind: computed, file: internal/store/pgstore/queries.sql, pointer: null, detail: "IssueEvaluationCoverage pending_calls." }
+            unavailableCalls:
+              type: [ integer, 'null' ]
+              x-unit: count
+              x-null-reason: "Evaluation counts could not be read."
+              minimum: 0
+              description: "Evaluated retained calls in the range whose source evidence was unavailable."
+              x-source: { kind: computed, file: internal/store/pgstore/queries.sql, pointer: null, detail: "IssueEvaluationCoverage unavailable_calls." }
+            pendingJobs:
+              type: [ integer, 'null' ]
+              x-unit: count
+              x-null-reason: "Evaluation counts could not be read."
+              minimum: 0
+              description: "Project job observations awaiting evaluation or correlation, across the retained history."
+              x-source: { kind: computed, file: internal/store/pgstore/queries.sql, pointer: null, detail: "IssueEvaluationCoverage pending_jobs." }
+            sources:
+              type: array
+              description: "Required component sources. Missing reads are unknown; successful reads with missing rule evidence are partial."
+              x-source: { kind: computed, file: internal/store/pgstore/issues.go, pointer: null, detail: "Explicit expected layer inventory, joined to latest stored source reads." }
+              items:
+                type: object
+                additionalProperties: false
+                required: [ layer, state, readAt ]
+                properties:
+                  layer:
+                    type: string
+                    enum: [ media_server, sip, cloud_agents, egress, ingress ]
+                    description: "Component source layer."
+                    x-source: { kind: computed, file: internal/store/layers.go, pointer: null, detail: "Native source layer identifiers." }
+                  state:
+                    type: string
+                    enum: [ unknown, current, partial, stale, unavailable ]
+                    description: "Current means fresh and evaluated, not healthy."
+                    x-source: { kind: computed, file: internal/store/pgstore/queries.sql, pointer: null, detail: "IssueSourceCoverage, with unknown for missing reads." }
+                  readAt:
+                    type: [ string, 'null' ]
+                    format: date-time
+                    description: "Latest source read time, or null when no read exists."
+                    x-source: { kind: computed, file: internal/store/pgstore/queries.sql, pointer: null, detail: "issue_sources.read_at." }
         items:
           type: array
-          description: "Event issues with a hit in the range, and every standing issue whatever the range, high severity first, then by hits. Grouping, titles and severities are the ones in issues-model.ts."
-          x-source: { kind: computed, file: dashboard/src/features/issues/issues-model.ts, pointer: null, detail: "Event issues with a hit in the range, and every standing issue whatever the range, high severity first, then by hits. Grouping, titles and severities are the ones in issues-model.ts." }
+          description: "Event issues with a hit in the range, and every standing issue whatever the range, high severity first, then by stable rule ID. Grouping, titles and severities come from persisted native evaluations."
+          x-source: { kind: computed, file: dashboard/src/features/issues/issues-model.ts, pointer: null, detail: "Event issues with a hit in the range, and every standing issue whatever the range, high severity first, then by stable rule ID. Grouping, titles and severities come from persisted native evaluations." }
           items:
             type: object
             additionalProperties: false
-            required: [ id, title, kind, severity, source, lastSeenAt, hits ]
+            required: [ id, title, kind, severity, source, lastSeenAt, hits, metadata ]
             properties:
+              metadata:
+                $ref: "#/components/schemas/IssueMetadata"
+                x-source: { kind: configuration, file: internal/store/issues.go, pointer: null, detail: Issue decision and metadata from the same snapshot as occurrences. }
               id:
                 type: string
                 description: "Stable grouping key; the issueId dispositions refer to."
@@ -4240,8 +5302,8 @@ components:
               kind:
                 type: string
                 enum: [ event, standing ]
-                description: "event: something that happened, each hit dated and kept only when from <= at < to. standing: a state true of the latest read (an agent worker or phone bridge check over what LiveKit lists now), listed in every range with undated hits and never counted as a problem in the range."
-                x-source: { kind: computed, file: dashboard/src/features/issues/issues-model.ts, pointer: null, detail: "Call findings are events dated by the call's start; Agent workers and Phone bridge checks run over the current read, so they are standing." }
+                description: "event: something that happened, each hit dated and kept only when from <= at < to. standing: a component finding listed in every range. Its evidenceState distinguishes confirmed, stale, unavailable and unknown observations; it is never counted as an event in the range."
+                x-source: { kind: computed, file: dashboard/src/features/issues/issues-model.ts, pointer: null, detail: "Call findings are events dated by the call's start; Component checks preserve prior findings when source reads fail or omit required fields." }
               severity:
                 type: string
                 enum: [ high, medium, low, info ]
@@ -4249,15 +5311,15 @@ components:
                 x-source: { kind: computed, file: dashboard/src/features/issues/issues-model.ts, pointer: null, detail: "Severity of the underlying check." }
               source:
                 type: string
-                enum: [ calls, agent_workers, phone_bridge ]
-                description: "The component the check runs on."
+                enum: [ calls, agent_workers, phone_bridge, delivery ]
+                description: "The component the check runs on. delivery is a recorded egress or ingress failure."
                 x-source: { kind: computed, file: dashboard/src/features/issues/issues-model.ts, pointer: null, detail: "The component the check runs on." }
               lastSeenAt:
                 type: [ string, "null" ]
                 format: date-time
-                description: "Most recent hit, UTC. Compared with a disposition's time to mark a resolved issue as regressed."
-                x-null-reason: "A standing issue, whose hits carry no time because it is true now."
-                x-source: { kind: computed, file: dashboard/src/features/issues/issues-model.ts, pointer: null, detail: "Most recent hit, UTC. Compared with a disposition's time to mark a resolved issue as regressed." }
+                description: "Most recent event hit, UTC. Regression uses the persisted evidence revision, independently of event time."
+                x-null-reason: "Standing findings use observedAt and evidenceState on each hit instead."
+                x-source: { kind: computed, file: dashboard/src/features/issues/issues-model.ts, pointer: null, detail: "Most recent event hit, UTC. Regression uses the persisted evidence revision, independently of event time." }
               hits:
                 type: array
                 description: "Where the issue was found, most recent first. Never empty."
@@ -4265,8 +5327,19 @@ components:
                 items:
                   type: object
                   additionalProperties: false
-                  required: [ at, where, detail, callId ]
+                  required: [ at, where, detail, callId, observedAt, evidenceState ]
                   properties:
+                    observedAt:
+                      type: [ string, "null" ]
+                      format: date-time
+                      description: Last source read that confirmed this standing finding.
+                      x-null-reason: Event hits use at instead.
+                      x-source: { kind: computed, file: internal/store/pgstore/issues.go, pointer: null, detail: Persisted last positive observation, not refreshed by unknown fields. }
+                    evidenceState:
+                      type: string
+                      enum: [ recorded, current, stale, unavailable, unknown ]
+                      description: Recorded event, currently confirmed standing finding, stale source, failed source, or unconfirmed latest read.
+                      x-source: { kind: computed, file: internal/store/pgstore/issues.go, pointer: null, detail: Source read health and expiry compared with the last confirmed finding. }
                     at:
                       type: [ string, "null" ]
                       format: date-time
@@ -4361,7 +5434,7 @@ components:
           type: string
           description: Stable error category.
           x-source: { kind: computed, file: docs/api/coverage.md, pointer: null, detail: Stable error category. }
-          enum: [ invalid_request, unauthenticated, forbidden, not_found, source_unavailable, internal_error, range_not_satisfiable, last_admin, already_member, member_of_other_organisations ]
+          enum: [ invalid_request, revision_conflict, unauthenticated, forbidden, not_found, source_unavailable, internal_error, range_not_satisfiable, last_admin, already_member, member_of_other_organisations, project_exists, livekit_secret_invalid, livekit_unreachable, recording_bucket_refused, recording_bucket_unreachable, origin_not_allowed ]
         message:
           type: string
           description: Safe human-readable explanation, excluding upstream credentials and request bodies.
@@ -4372,64 +5445,37 @@ components:
           x-source: { kind: computed, file: docs/api/coverage.md, pointer: null, detail: "Opaque request correlation identifier, not a trace body." }
     Thresholds:
       type: object
-      x-source: { kind: configuration, file: dashboard/src/lib/thresholds.ts, pointer: null, detail: Project check budgets read by every console page. }
+      x-source: { kind: configuration, file: internal/store/settings.go, pointer: null, detail: Project check budgets read by every console page. }
       additionalProperties: false
       required: [ answerMs, joinMs, ttsStartMs ]
       properties:
         answerMs:
           type: number
           description: answerMs project configuration in milliseconds; not a measured latency.
-          x-source: { kind: configuration, file: dashboard/src/lib/thresholds.ts, pointer: null, detail: answerMs project configuration in milliseconds; not a measured latency. }
+          x-source: { kind: configuration, file: internal/store/settings.go, pointer: null, detail: answerMs project configuration in milliseconds; not a measured latency. }
           x-unit: milliseconds
           x-configuration: true
-          exclusiveMinimum: 0
+          minimum: 100
+          maximum: 60000
           default: 1500
         joinMs:
           type: number
           description: joinMs project configuration in milliseconds; not a measured latency.
-          x-source: { kind: configuration, file: dashboard/src/lib/thresholds.ts, pointer: null, detail: joinMs project configuration in milliseconds; not a measured latency. }
+          x-source: { kind: configuration, file: internal/store/settings.go, pointer: null, detail: joinMs project configuration in milliseconds; not a measured latency. }
           x-unit: milliseconds
           x-configuration: true
-          exclusiveMinimum: 0
+          minimum: 100
+          maximum: 60000
           default: 2000
         ttsStartMs:
           type: number
           description: ttsStartMs project configuration in milliseconds; not a measured latency.
-          x-source: { kind: configuration, file: dashboard/src/lib/thresholds.ts, pointer: null, detail: ttsStartMs project configuration in milliseconds; not a measured latency. }
+          x-source: { kind: configuration, file: internal/store/settings.go, pointer: null, detail: ttsStartMs project configuration in milliseconds; not a measured latency. }
           x-unit: milliseconds
           x-configuration: true
-          exclusiveMinimum: 0
+          minimum: 100
+          maximum: 60000
           default: 1000
-    IssueDisposition:
-      type: object
-      additionalProperties: false
-      required: [ issueId, state, at ]
-      properties:
-        issueId:
-          type: string
-          description: Stable issue grouping key from issues-model.ts; disposition belongs to this project.
-          x-source: { kind: configuration, file: dashboard/src/features/issues/issue-state.ts, pointer: null, detail: Stable issue grouping key from issues-model.ts; disposition belongs to this project. }
-        state:
-          type: string
-          description: Explicit user disposition. No disposition means open, not resolved.
-          x-source: { kind: configuration, file: dashboard/src/features/issues/issue-state.ts, pointer: null, detail: "Explicit user disposition. No disposition means open, not resolved." }
-          enum: [ resolved, ignored ]
-        at:
-          type: string
-          format: date-time
-          description: User decision time, UTC. Compare with the issue's lastSeenAt to mark it regressed.
-          x-source: { kind: configuration, file: dashboard/src/features/issues/issue-state.ts, pointer: null, detail: "User decision time, UTC. Compare with the issue's lastSeenAt to mark it regressed." }
-          x-configuration: true
-    IssueDispositions:
-      type: object
-      additionalProperties: false
-      required: [ items ]
-      properties:
-        items:
-          type: array
-          items:
-            $ref: "#/components/schemas/IssueDisposition"
-          x-source: { kind: configuration, file: dashboard/src/features/issues/issue-state.ts, pointer: null, detail: "All saved dispositions for this project. Empty means none saved, not no issues." }
     AlertRuleSetup:
       type: object
       additionalProperties: false
@@ -4462,11 +5508,381 @@ components:
           items:
             $ref: "#/components/schemas/AlertRuleSetup"
           x-source: { kind: configuration, file: dashboard/src/features/alerts/alerts-model.ts, pointer: null, detail: Saved overrides for the seven rules. Absence of an override uses the documented preview default; it does not prove delivery is connected. }
+    CallTags:
+      type: object
+      additionalProperties: false
+      required: [ tags ]
+      properties:
+        tags:
+          type: array
+          uniqueItems: true
+          items:
+            type: string
+          x-source: { kind: configuration, file: migrations/postgres/00016_call_metadata.sql, pointer: null, detail: Distinct persisted tags of readable calls in the named project. }
+    IssueMetadata:
+      x-source: { kind: configuration, file: internal/store/issues.go, pointer: null, detail: Persisted issue metadata and evidence revisions. }
+      type: object
+      additionalProperties: false
+      required: [ issueId, state, regressed, decidedAt, evidenceRevision, reviewedEvidenceRevision, tags, archived, revision ]
+      properties:
+        issueId:
+          type: string
+          x-source: { kind: configuration, file: internal/store/issues.go, pointer: null, detail: Persisted issue decision and evidence version. }
+        state:
+          type: string
+          enum: [open, resolved, ignored]
+          x-source: { kind: configuration, file: internal/store/issues.go, pointer: null, detail: Persisted issue decision and evidence version. }
+        regressed:
+          type: boolean
+          x-source: { kind: configuration, file: internal/store/issues.go, pointer: null, detail: Persisted issue decision and evidence version. }
+        decidedAt:
+          description: Null when no explicit decision has been saved.
+          type: [string, "null"]
+          format: date-time
+          x-source: { kind: configuration, file: internal/store/issues.go, pointer: null, detail: Persisted issue decision and evidence version. }
+        evidenceRevision:
+          type: integer
+          minimum: 0
+          maximum: 9007199254740991
+          x-unit: count
+          x-configuration: true
+          x-source: { kind: configuration, file: internal/store/issues.go, pointer: null, detail: Persisted issue decision and evidence version. }
+        reviewedEvidenceRevision:
+          type: integer
+          minimum: 0
+          maximum: 9007199254740991
+          x-unit: count
+          x-configuration: true
+          x-source: { kind: configuration, file: internal/store/issues.go, pointer: null, detail: Persisted issue decision and evidence version. }
+        tags:
+          type: array
+          maxItems: 32
+          uniqueItems: true
+          items:
+            type: string
+            minLength: 1
+            maxLength: 64
+          description: Normalized lowercase tags belonging to this immutable issue ID.
+          x-source: { kind: configuration, file: migrations/postgres/00017_issue_workflows.sql, pointer: null, detail: Persisted issue tags. }
+        archived:
+          type: boolean
+          description: Reversible archive state. Does not delete evidence or resolve findings.
+          x-source: { kind: configuration, file: migrations/postgres/00017_issue_workflows.sql, pointer: null, detail: Persisted issue archive state. }
+        revision:
+          type: integer
+          minimum: 0
+          maximum: 9007199254740991
+          x-unit: count
+          x-configuration: true
+          x-source: { kind: configuration, file: migrations/postgres/00017_issue_workflows.sql, pointer: null, detail: Atomic issue metadata revision. }
+    UpdateIssueMetadata:
+      type: object
+      additionalProperties: false
+      required: [tags, archived, revision, evidenceRevision]
+      description: Compare metadata and evidence revisions atomically. Omitted or null state preserves the decision, including regression; setting state explicitly acknowledges current evidence.
+      properties:
+        tags:
+          $ref: "#/components/schemas/IssueMetadata/properties/tags"
+          x-source: { kind: configuration, file: internal/store/issues.go, pointer: null, detail: Validated issue metadata edit. }
+        archived:
+          $ref: "#/components/schemas/IssueMetadata/properties/archived"
+          x-source: { kind: configuration, file: internal/store/issues.go, pointer: null, detail: Validated issue metadata edit. }
+        revision:
+          $ref: "#/components/schemas/IssueMetadata/properties/revision"
+          x-source: { kind: configuration, file: internal/store/issues.go, pointer: null, detail: Validated issue metadata edit. }
+        evidenceRevision:
+          $ref: "#/components/schemas/IssueMetadata/properties/evidenceRevision"
+          x-source: { kind: configuration, file: internal/store/issues.go, pointer: null, detail: Validated issue metadata edit. }
+        state:
+          description: Null or omitted preserves the existing decision without acknowledging new evidence.
+          type: [string, "null"]
+          enum: [open, resolved, ignored, null]
+          x-source: { kind: configuration, file: internal/store/issues.go, pointer: null, detail: Persisted issue decision and evidence version. }
+    CallMetadata:
+      type: object
+      additionalProperties: false
+      required: [ tags, archived, revision ]
+      properties:
+        tags:
+          type: array
+          maxItems: 32
+          uniqueItems: true
+          items:
+            type: string
+            minLength: 1
+            maxLength: 64
+          description: Normalized lowercase tags belonging to this immutable call ID.
+          x-source: { kind: configuration, file: migrations/postgres/00016_call_metadata.sql, pointer: null, detail: Persisted call tags. }
+        archived:
+          type: boolean
+          description: Reversible archive state. Does not delete evidence or resolve findings.
+          x-source: { kind: configuration, file: migrations/postgres/00016_call_metadata.sql, pointer: null, detail: Persisted call archive state. }
+        revision:
+          type: integer
+          minimum: 0
+          maximum: 9007199254740991
+          x-unit: count
+          x-configuration: true
+          x-source: { kind: configuration, file: migrations/postgres/00016_call_metadata.sql, pointer: null, detail: Atomic call metadata revision. }
+    UpdateCallMetadata:
+      allOf:
+        - $ref: "#/components/schemas/CallMetadata"
+      description: Replace tags and archive state only when revision matches. Clear tags with an empty array. A stale revision returns 409 without changing persisted data.
+    ProjectConnection:
+      type: object
+      additionalProperties: false
+      required: [ livekit, urls, webhook, agent, sdk, firstCall ]
+      properties:
+        livekit:
+          $ref: "#/components/schemas/ProjectLiveKit"
+          x-source: { kind: configuration, file: internal/api/connection.go, pointer: null, detail: "The project's LiveKit URL and API key as stored; never its secret." }
+        urls:
+          $ref: "#/components/schemas/ConnectionUrls"
+          x-source: { kind: configuration, file: internal/api/connection.go, pointer: null, detail: "Scoped ingestion URLs built from VOICEGATEWAY_PUBLIC_URL and the project's ids (decision 0032)." }
+        webhook:
+          $ref: "#/components/schemas/ConnectionSource"
+          x-source: { kind: computed, file: internal/ingest/connection.go, pointer: null, detail: "Last outcome web recorded for LiveKit webhooks posted to this project's webhook URL." }
+        agent:
+          $ref: "#/components/schemas/ConnectionSource"
+          x-source: { kind: computed, file: internal/ingest/connection.go, pointer: null, detail: "Last outcome web recorded for agent observability uploads posted under this project's observability URL." }
+        sdk:
+          $ref: "#/components/schemas/ConnectionSource"
+          x-source: { kind: computed, file: internal/ingest/connection.go, pointer: null, detail: "Last outcome web recorded for VoiceGateway SDK batches posted to this project's sdk/v1/events URL." }
+        firstCall:
+          oneOf:
+            - $ref: "#/components/schemas/FirstCall"
+            - type: "null"
+          x-source: { kind: computed, file: internal/store/pgstore/connection.go, pointer: null, detail: "Earliest row of the calls index, which only the worker writes from verified ingest." }
+          x-null-reason: No call has been stored for this project yet. Sample data never counts.
+    ProjectCreated:
+      type: object
+      additionalProperties: false
+      required: [ id, name, liveRooms ]
+      x-source: { kind: computed, file: internal/api/projects.go, pointer: null, detail: "createProject's answer: the stored project and the verify read's room count." }
+      properties:
+        id:
+          type: string
+          x-source: { kind: configuration, file: internal/api/projects.go, pointer: null, detail: "The project id, the name as a slug." }
+        name:
+          type: string
+          x-source: { kind: configuration, file: internal/api/projects.go, pointer: null, detail: "The project name as stored." }
+        liveRooms:
+          type: [ integer, "null" ]
+          minimum: 0
+          x-unit: count
+          description: Rooms live on the LiveKit project at the verify, from the same signed ListRooms read. Null when the verifier did not count them; never a guessed zero.
+          x-source: { kind: computed, file: internal/scrape/verify.go, pointer: null, detail: "The number of rooms the verify's signed ListRooms read listed (server-sdk-go RoomServiceClient.ListRooms)." }
+          x-null-reason: The verifier did not count the rooms.
+    ProjectLiveKit:
+      type: object
+      additionalProperties: false
+      required: [ url, apiKey ]
+      x-source: { kind: configuration, file: migrations/postgres/00001_projects.sql, pointer: null, detail: "The project's LiveKit URL and API key; the secret is sealed and never returned." }
+      properties:
+        url:
+          type: string
+          description: The project's LiveKit URL. It never changes; another LiveKit server is another project.
+          x-source: { kind: configuration, file: migrations/postgres/00001_projects.sql, pointer: null, detail: "projects.livekit_url." }
+        apiKey:
+          type: string
+          description: The LiveKit API key agents and LiveKit webhooks must sign with. API keys are not secret.
+          x-source: { kind: configuration, file: migrations/postgres/00001_projects.sql, pointer: null, detail: "projects.livekit_api_key." }
+    LiveKitCredentialsUpdate:
+      type: object
+      additionalProperties: false
+      required: [ livekitApiKey, livekitApiSecret ]
+      x-source: { kind: configuration, file: internal/api/credentials.go, pointer: null, detail: "A new LiveKit key and secret for an existing project." }
+      properties:
+        livekitApiKey:
+          type: string
+          minLength: 1
+          maxLength: 256
+          description: The new LiveKit API key, with no spaces or control characters.
+          x-source: { kind: configuration, file: internal/api/credentials.go, pointer: null, detail: "Checked like createProject's key." }
+        livekitApiSecret:
+          type: string
+          minLength: 1
+          description: The new LiveKit API secret. Sealed before it is stored; never answered or logged.
+          x-source: { kind: configuration, file: internal/api/credentials.go, pointer: null, detail: "Checked like createProject's secret, then sealed." }
+    ConnectionUrls:
+      type: object
+      additionalProperties: false
+      x-source: { kind: configuration, file: internal/api/connection.go, pointer: null, detail: "Scoped ingestion URLs built from VOICEGATEWAY_PUBLIC_URL and the project ids (decision 0032)." }
+      required: [ observability, webhook ]
+      properties:
+        observability:
+          type: [ string, "null" ]
+          format: uri
+          description: The value for LIVEKIT_OBSERVABILITY_URL in the agent.
+          x-source: { kind: configuration, file: internal/api/connection.go, pointer: null, detail: "VOICEGATEWAY_PUBLIC_URL followed by /ingest/{orgId}/{projectId}." }
+          x-null-reason: VOICEGATEWAY_PUBLIC_URL is not set on this instance.
+        webhook:
+          type: [ string, "null" ]
+          format: uri
+          description: The webhook URL to add in LiveKit.
+          x-source: { kind: configuration, file: internal/api/connection.go, pointer: null, detail: "VOICEGATEWAY_PUBLIC_URL followed by /ingest/{orgId}/{projectId}/livekit/webhook." }
+          x-null-reason: VOICEGATEWAY_PUBLIC_URL is not set on this instance.
+    ConnectionSource:
+      type: object
+      additionalProperties: false
+      x-source: { kind: computed, file: internal/ingest/connection.go, pointer: null, detail: "Last outcome web recorded for one ingestion source of the project, in Postgres project_connections." }
+      required: [ lastAcceptedAt, lastRejectedAt, reason, usedKey, expectedKey ]
+      properties:
+        lastAcceptedAt:
+          type: [ string, "null" ]
+          format: date-time
+          description: When a request from this source was last accepted, to within 30 seconds.
+          x-source: { kind: computed, file: migrations/postgres/00019_project_connections.sql, pointer: null, detail: "Written by web when it appends a verified request; throttled to one write per outcome every 30 s." }
+          x-null-reason: No request from this source has been accepted.
+        lastRejectedAt:
+          type: [ string, "null" ]
+          format: date-time
+          description: When a request from this source was last refused, to within 30 seconds.
+          x-source: { kind: computed, file: migrations/postgres/00019_project_connections.sql, pointer: null, detail: "Written by web when it refuses a request addressed to this project." }
+          x-null-reason: No request from this source has been refused.
+        reason:
+          type: [ string, "null" ]
+          enum: [ token_missing, key_mismatch, signature_invalid, grant_missing, body_changed, plan_inactive, plan_cap, too_large, null ]
+          description: Why the last refused request was refused.
+          x-source: { kind: computed, file: internal/ingest/connection.go, pointer: null, detail: "Reason code picked from livekit/protocol's verification error, the entitlement check or the body limit." }
+          x-null-reason: No request from this source has been refused.
+        usedKey:
+          type: [ string, "null" ]
+          description: The LiveKit API key the refused token named, kept only when it has a LiveKit key's shape (letters, digits, _ and -, at most 64). API keys are not secret.
+          x-source: { kind: computed, file: internal/ingest/connection.go, pointer: null, detail: "Issuer of the refused token, kept only for key_mismatch and only in a LiveKit key's shape; the sender chooses it." }
+          x-null-reason: Only key_mismatch records the key used, and only when it is shaped like a LiveKit API key.
+        expectedKey:
+          type: [ string, "null" ]
+          description: This project's LiveKit API key, shown beside usedKey. The secret is never returned.
+          x-source: { kind: configuration, file: migrations/postgres/00001_projects.sql, pointer: null, detail: "The project's LiveKit API key, returned only with key_mismatch." }
+          x-null-reason: Only key_mismatch shows the key expected.
+    FirstCall:
+      type: object
+      additionalProperties: false
+      x-source: { kind: computed, file: internal/store/pgstore/connection.go, pointer: null, detail: "Earliest row of the calls index, which only the worker writes from verified ingest." }
+      required: [ id, startedAt ]
+      properties:
+        id:
+          type: string
+          format: uuid
+          x-source: { kind: computed, file: internal/store/pgstore/connection.go, pointer: null, detail: "Id of the earliest call in the calls index." }
+        startedAt:
+          type: [ string, "null" ]
+          format: date-time
+          x-source: { kind: computed, file: internal/store/pgstore/connection.go, pointer: null, detail: "The call's start, or when the worker first saw it when no source reported a start." }
+          x-null-reason: No source reported when the call started.
+    UpdateProjectSettings:
+      type: object
+      additionalProperties: false
+      required: [ thresholds, revision ]
+      properties:
+        thresholds:
+          $ref: "#/components/schemas/Thresholds"
+          x-source: { kind: configuration, file: internal/store/settings.go, pointer: null, detail: Project thresholds validated before persistence. }
+        revision:
+          x-unit: count
+          x-configuration: true
+          type: integer
+          minimum: 0
+          maximum: 9007199254740991
+          description: Revision checked atomically on save to prevent lost updates.
+          x-source: { kind: configuration, file: migrations/postgres/00014_project_settings.sql, pointer: null, detail: Project settings revision. }
+    UpdateAllowedOrigins:
+      type: object
+      additionalProperties: false
+      required: [ allowedOrigins, allowedOriginsRevision ]
+      properties:
+        allowedOrigins:
+          type: [ array, "null" ]
+          maxItems: 20
+          description: The sites allowed to frame the project's widgets. Empty or null allows none.
+          x-source: { kind: configuration, file: migrations/postgres/00021_embed_origins.sql, pointer: null, detail: project_settings.allowed_origins. }
+          items:
+            type: string
+            maxLength: 300
+        allowedOriginsRevision:
+          x-unit: count
+          x-configuration: true
+          type: integer
+          minimum: 0
+          maximum: 9007199254740991
+          description: The allowedOriginsRevision read with the settings, checked atomically on save to prevent lost updates. It versions the sites alone; the thresholds revision does not move.
+          x-source: { kind: configuration, file: migrations/postgres/00021_embed_origins.sql, pointer: null, detail: project_settings.allowed_origins_revision. }
+    CreateEmbedToken:
+      type: object
+      additionalProperties: false
+      required: [ widgets, origin ]
+      properties:
+        widgets:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          description: The widgets the token opens. A recent-calls frame whose rows open a call needs both recent-calls and call.
+          x-source: { kind: configuration, file: dashboard/src/features/embed/widgets.ts, pointer: null, detail: Widget ids. }
+          items:
+            type: string
+            enum: [ answer-time, calls, issues, recent-calls, time-per-turn, call ]
+        origin:
+          type: string
+          description: The one site that may frame the widgets, one of the project's allowedOrigins.
+          x-source: { kind: configuration, file: migrations/postgres/00021_embed_origins.sql, pointer: null, detail: One of project_settings.allowed_origins. }
+        expiresInSeconds:
+          type: integer
+          minimum: 60
+          maximum: 86400
+          default: 3600
+          x-unit: seconds
+          x-configuration: true
+          description: How long the token is valid.
+          x-source: { kind: configuration, file: internal/api/embeds.go, pointer: null, detail: Requested token lifetime. }
+        transcriptsAndAudio:
+          type: boolean
+          default: false
+          x-configuration: true
+          description: "Share what was said with the framing site: the one-call view's turn text, span attributes (prompts, transcripts, tool arguments), the SDK call fields and recording audio. Off by default, when the call widget shows timings only and listCalls refuses the field filter. Needs the call widget, and an Admin or a project key (decision 0034)."
+          x-source: { kind: configuration, file: internal/api/embeds.go, pointer: null, detail: Content opt-in requested by the minter. }
+    EmbedToken:
+      type: object
+      additionalProperties: false
+      required: [ token, expiresAt, widgets, origin, transcriptsAndAudio ]
+      properties:
+        token:
+          type: string
+          description: vge_ followed by a signed JWT. Put it in the frame's address as ?token=. Shown once; VoiceGateway does not store it.
+          x-source: { kind: computed, file: internal/auth/embed.go, pointer: null, detail: Signed embed token. }
+        expiresAt:
+          type: string
+          format: date-time
+          description: When the token stops working.
+          x-source: { kind: computed, file: internal/auth/embed.go, pointer: null, detail: Token expiry, by the server clock. }
+        widgets:
+          type: array
+          description: The widgets the token opens.
+          x-source: { kind: computed, file: internal/api/embeds.go, pointer: null, detail: Requested widgets without duplicates. }
+          items:
+            type: string
+            enum: [ answer-time, calls, issues, recent-calls, time-per-turn, call ]
+        origin:
+          type: string
+          description: The origin the token may be framed by, normalised.
+          x-source: { kind: computed, file: internal/api/embeds.go, pointer: null, detail: Normalised requested origin. }
+        transcriptsAndAudio:
+          type: boolean
+          description: Whether the token shares turn text, span attributes and recording audio.
+          x-source: { kind: computed, file: internal/api/embeds.go, pointer: null, detail: Content opt-in the token carries. }
     ProjectSettings:
       type: object
       additionalProperties: false
-      required: [ thresholds, storageBucket, transcriptRetentionDays, traceRetentionDays, recordingRetentionDays, allowedOrigins ]
+      required: [ thresholds, revision, storageBucket, transcriptRetentionDays, traceRetentionDays, recordingRetentionDays, allowedOrigins, allowedOriginsRevision ]
       properties:
+        revision:
+          x-unit: count
+          x-configuration: true
+          type: integer
+          minimum: 0
+          maximum: 9007199254740991
+          description: Revision checked atomically on save to prevent lost updates.
+          x-source: { kind: configuration, file: migrations/postgres/00014_project_settings.sql, pointer: null, detail: Project settings revision. }
         thresholds:
           $ref: "#/components/schemas/Thresholds"
           x-source: { kind: configuration, file: dashboard/src/lib/thresholds.ts, pointer: null, detail: Project check budgets read by every console page. }
@@ -4508,6 +5924,14 @@ components:
             type: string
             format: uri
           uniqueItems: true
+        allowedOriginsRevision:
+          x-unit: count
+          x-configuration: true
+          type: integer
+          minimum: 0
+          maximum: 9007199254740991
+          description: Version of allowedOrigins alone, sent back with updateAllowedOrigins. Saving sites never moves revision, which versions the thresholds.
+          x-source: { kind: configuration, file: migrations/postgres/00021_embed_origins.sql, pointer: null, detail: project_settings.allowed_origins_revision. }
     Invitation:
       type: object
       x-source: { kind: configuration, file: migrations/postgres/00009_invitations.sql, pointer: null, detail: One invitations row, never its token. }
@@ -4587,6 +6011,154 @@ components:
           type: boolean
           description: True when the email was sent; false without SMTP, or when the send failed.
           x-source: { kind: computed, file: internal/invite/invite.go, pointer: null, detail: The SMTP send's outcome. }
+    InstanceOrganisationPut:
+      type: object
+      additionalProperties: false
+      required: [ name ]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 200
+          description: The organisation's name, shown in the console.
+          x-source: { kind: configuration, file: migrations/postgres/00001_projects.sql, pointer: null, detail: "organisations.name." }
+    InstanceOrganisation:
+      type: object
+      additionalProperties: false
+      required: [ id, name, createdAt, members, admins, pendingInvitations ]
+      properties:
+        id:
+          type: string
+          pattern: "^[a-z0-9][a-z0-9-]{0,62}$"
+          description: The id the caller chose.
+          x-source: { kind: configuration, file: migrations/postgres/00001_projects.sql, pointer: null, detail: "organisations.id." }
+        name:
+          type: string
+          description: The organisation's name.
+          x-source: { kind: configuration, file: migrations/postgres/00001_projects.sql, pointer: null, detail: "organisations.name." }
+        createdAt:
+          type: string
+          format: date-time
+          description: When the organisation was created.
+          x-source: { kind: configuration, file: migrations/postgres/00001_projects.sql, pointer: null, detail: "organisations.created_at." }
+        members:
+          type: integer
+          minimum: 0
+          x-unit: count
+          x-configuration: true
+          description: Members of the organisation at this read; a count of stored rows, not a measurement.
+          x-source: { kind: configuration, file: migrations/postgres/00004_accounts.sql, pointer: null, detail: "memberships rows of the organisation." }
+        admins:
+          type: integer
+          minimum: 0
+          x-unit: count
+          x-configuration: true
+          description: Members with the Admin role at this read; a count of stored rows, not a measurement.
+          x-source: { kind: configuration, file: migrations/postgres/00004_accounts.sql, pointer: null, detail: "memberships rows of the organisation with role admin." }
+        pendingInvitations:
+          type: integer
+          minimum: 0
+          x-unit: count
+          x-configuration: true
+          description: Invitations neither accepted, revoked nor expired at this read; a count of stored rows, not a measurement.
+          x-source: { kind: configuration, file: migrations/postgres/00009_invitations.sql, pointer: null, detail: "invitations rows of kind invite, open and unexpired." }
+    InstanceInvitation:
+      type: object
+      additionalProperties: false
+      required: [ invitationId, email, role, expiresAt, emailed, link ]
+      properties:
+        invitationId:
+          type: string
+          description: The invitation's id.
+          x-source: { kind: configuration, file: migrations/postgres/00009_invitations.sql, pointer: null, detail: "invitations.id." }
+        email:
+          type: string
+          format: email
+          description: The invited address, case-folded.
+          x-source: { kind: configuration, file: migrations/postgres/00009_invitations.sql, pointer: null, detail: "invitations.email." }
+        role:
+          type: string
+          enum: [ Admin, Member, Viewer ]
+          description: The organisation role the invitation grants, per decision 0019.
+          x-source: { kind: configuration, file: migrations/postgres/00009_invitations.sql, pointer: null, detail: "invitations.role." }
+        expiresAt:
+          type: string
+          format: date-time
+          description: When the link stops working, 7 days after it was made.
+          x-source: { kind: configuration, file: migrations/postgres/00009_invitations.sql, pointer: null, detail: "invitations.expires_at." }
+        emailed:
+          type: [ boolean, "null" ]
+          description: True when the email was sent; false without SMTP, or when the send failed. On a repeat, as it was; a repeat during the first call's send waits for its outcome.
+          x-null-reason: SMTP acceptance is uncertain, or a prior send began but its outcome was never recorded. The email may have been sent; a caller that wants no duplicate must not resend on null.
+          x-source: { kind: computed, file: internal/invite/invite.go, pointer: null, detail: "The SMTP send's outcome; on a repeat, from invitations.emailed_at, email_failed_at and email_started_at." }
+        link:
+          type: [ string, "null" ]
+          format: uri
+          description: "<VOICEGATEWAY_PUBLIC_URL>/invite#<token>, only without SMTP and only in the answer that made it."
+          x-null-reason: SMTP is set, so the link went by email to its address only, whether or not the send succeeded; or this is a repeat, and only the token's hash is kept.
+          x-source: { kind: computed, file: internal/invite/invite.go, pointer: null, detail: "VOICEGATEWAY_PUBLIC_URL, /invite#, and the token." }
+    InstanceUsage:
+      type: object
+      additionalProperties: false
+      required: [ organisationId, from, to, callSeconds, calls, inferredCalls, inferredCallSeconds, unendedCalls, unmeasuredCalls ]
+      properties:
+        organisationId:
+          type: string
+          pattern: "^[a-z0-9][a-z0-9-]{0,62}$"
+          description: The organisation read.
+          x-source: { kind: configuration, file: migrations/postgres/00001_projects.sql, pointer: null, detail: "organisations.id." }
+        from:
+          type: string
+          format: date-time
+          description: The period's inclusive start, as sent, in UTC.
+          x-source: { kind: computed, file: ee/instance/instance.go, pointer: null, detail: "The request's from parameter." }
+        to:
+          type: string
+          format: date-time
+          description: The period's exclusive end, as sent, in UTC.
+          x-source: { kind: computed, file: ee/instance/instance.go, pointer: null, detail: "The request's to parameter." }
+        callSeconds:
+          type: integer
+          minimum: 0
+          x-unit: seconds
+          x-configuration: true
+          description: The calls counted in calls, each from its start to its end (an inferred call's end is its last activity), summed exactly and then rounded down to whole seconds once, never per call. Calls with missing or negative durations are excluded. A sum of stored rows at this read, so 0 is a true zero.
+          x-source: { kind: computed, file: migrations/postgres/00002_calls.sql, pointer: null, detail: "Sum of the end (ended_at when observed, last_activity_at when inferred) minus started_at over the calls counted in calls, floored once." }
+        calls:
+          type: integer
+          minimum: 0
+          x-unit: count
+          x-configuration: true
+          description: Calls whose end fell in the period, with a known start and an end at or after that start. An inferred call's end is its last activity.
+          x-source: { kind: computed, file: migrations/postgres/00002_calls.sql, pointer: null, detail: "calls rows with end_state observed and ended_at in the period, or inferred and last_activity_at in the period, and started_at known." }
+        inferredCalls:
+          type: integer
+          minimum: 0
+          x-unit: count
+          x-configuration: true
+          description: Of calls, those whose end was inferred from their last activity rather than observed.
+          x-source: { kind: computed, file: migrations/postgres/00002_calls.sql, pointer: null, detail: "The calls counted in calls with end_state inferred." }
+        inferredCallSeconds:
+          type: integer
+          minimum: 0
+          x-unit: seconds
+          x-configuration: true
+          description: Exact durations of measured inferred calls summed and floored once, independently of callSeconds, so their contribution can be labelled as inferred.
+          x-source: { kind: computed, file: internal/store/pgstore/queries.sql, pointer: null, detail: "Sum effective end minus start for measured inferred calls, floored once." }
+        unmeasuredCalls:
+          type: integer
+          minimum: 0
+          x-unit: count
+          x-configuration: true
+          description: Closed calls that started in the period but have a null effective end or an effective end before their start. Excluded from calls and callSeconds; unknown durations are not converted to zero.
+          x-source: { kind: computed, file: internal/store/pgstore/queries.sql, pointer: null, detail: "Closed calls with null or invalid effective end, grouped by started_at." }
+        unendedCalls:
+          type: integer
+          minimum: 0
+          x-unit: count
+          x-configuration: true
+          description: Open calls that started in the period; their time is unknown, so it is not in callSeconds. Open calls started before the period are excluded.
+          x-source: { kind: computed, file: migrations/postgres/00002_calls.sql, pointer: null, detail: "calls rows with end_state open and started_at in the period." }
     CreatedPasswordReset:
       type: object
       additionalProperties: false
@@ -4762,6 +6334,72 @@ components:
           items:
             $ref: "#/components/schemas/Invitation"
           x-source: { kind: configuration, file: migrations/postgres/00009_invitations.sql, pointer: null, detail: "The organisation's invitations and reset links, newest first, at most 500. Do not expose to members without Admin permission." }
+    ProjectCreate:
+      type: object
+      additionalProperties: false
+      required: [ name, livekitUrl, livekitApiKey, livekitApiSecret ]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 64
+          description: The project's display name; trimmed, with at least one letter or digit. Its slug is the project id.
+          x-source: { kind: configuration, file: dashboard/src/components/add-project-form.tsx, pointer: null, detail: The name an admin types. }
+        livekitUrl:
+          type: string
+          minLength: 1
+          maxLength: 2048
+          description: The LiveKit server URL, with the scheme ws, wss, http or https and a host, such as wss://your-project.livekit.cloud.
+          x-source: { kind: configuration, file: dashboard/src/components/add-project-form.tsx, pointer: null, detail: The LiveKit URL an admin pastes. }
+        livekitApiKey:
+          type: string
+          minLength: 1
+          maxLength: 256
+          description: The LiveKit API key; unique on this server, since ingest finds a project by the key that signed a webhook or upload.
+          x-source: { kind: configuration, file: dashboard/src/components/add-project-form.tsx, pointer: null, detail: The LiveKit API key an admin pastes. }
+        livekitApiSecret:
+          type: string
+          minLength: 1
+          description: The LiveKit API secret. Sealed before it is stored; never answered or logged.
+          x-source: { kind: configuration, file: dashboard/src/components/add-project-form.tsx, pointer: null, detail: The LiveKit API secret an admin pastes; the form clears it after submit. }
+        recordingBucket:
+          $ref: "#/components/schemas/RecordingBucketCreate"
+          x-source: { kind: configuration, file: dashboard/src/components/add-project-form.tsx, pointer: null, detail: "Present only when an admin brings their own bucket; without it, recordings live in the instance's bucket." }
+    RecordingBucketCreate:
+      type: object
+      additionalProperties: false
+      required: [ endpoint, bucket, accessKeyId, secretAccessKey ]
+      description: An S3 bucket the project keeps its recordings in instead of the instance's bucket. Set only when the project is created; it never changes afterwards, so recordings never move between buckets.
+      x-source: { kind: configuration, file: dashboard/src/components/add-project-form.tsx, pointer: null, detail: The bucket an admin brings, when they choose their own over the instance's. }
+      properties:
+        endpoint:
+          type: string
+          minLength: 1
+          maxLength: 2048
+          description: The S3 endpoint, an http or https URL with a host and no path, such as https://s3.us-east-1.amazonaws.com.
+          x-source: { kind: configuration, file: dashboard/src/components/add-project-form.tsx, pointer: null, detail: The S3 endpoint an admin pastes. }
+        bucket:
+          type: string
+          minLength: 3
+          maxLength: 63
+          description: The bucket's name, by S3's naming rules.
+          x-source: { kind: configuration, file: dashboard/src/components/add-project-form.tsx, pointer: null, detail: The bucket name an admin types. }
+        region:
+          type: string
+          maxLength: 256
+          description: The bucket's region, such as us-east-1. When empty, it is asked of the bucket.
+          x-source: { kind: configuration, file: dashboard/src/components/add-project-form.tsx, pointer: null, detail: The region an admin types, if any. }
+        accessKeyId:
+          type: string
+          minLength: 1
+          maxLength: 256
+          description: The S3 access key id; it needs to write, read, list and delete objects under recordings/.
+          x-source: { kind: configuration, file: dashboard/src/components/add-project-form.tsx, pointer: null, detail: The access key id an admin pastes. }
+        secretAccessKey:
+          type: string
+          minLength: 1
+          description: The S3 secret access key. Sealed before it is stored; never answered or logged.
+          x-source: { kind: configuration, file: dashboard/src/components/add-project-form.tsx, pointer: null, detail: The secret access key an admin pastes; the form clears it after submit. }
     WorkspaceProject:
       type: object
       additionalProperties: false
@@ -5079,6 +6717,173 @@ components:
           originAt: null
           offsetToCallStartSeconds: -0.25
           alignment: inferred
+    OrganisationEntitlementPut:
+      type: object
+      additionalProperties: false
+      required:
+      - from
+      - to
+      - limitMinutes
+      - active
+      - revision
+      properties:
+        from:
+          type: string
+          format: date-time
+          x-source:
+            kind: configuration
+            file: migrations/postgres/00012_entitlements.sql
+            pointer: null
+            detail: Operator-issued entitlement from.
+        to:
+          type: string
+          format: date-time
+          x-source:
+            kind: configuration
+            file: migrations/postgres/00012_entitlements.sql
+            pointer: null
+            detail: Operator-issued entitlement to.
+        limitMinutes:
+          type: integer
+          minimum: 0
+          maximum: 1000000000
+          x-unit: minutes
+          x-configuration: true
+          x-source:
+            kind: configuration
+            file: migrations/postgres/00012_entitlements.sql
+            pointer: null
+            detail: Operator-issued entitlement limitMinutes.
+        active:
+          type: boolean
+          x-source:
+            kind: configuration
+            file: migrations/postgres/00012_entitlements.sql
+            pointer: null
+            detail: Operator-issued entitlement active.
+        revision:
+          x-unit: count
+          type: integer
+          minimum: 1
+          x-configuration: true
+          x-source:
+            kind: configuration
+            file: migrations/postgres/00012_entitlements.sql
+            pointer: null
+            detail: Operator-issued entitlement revision.
+    OrganisationEntitlement:
+      type: object
+      additionalProperties: false
+      required:
+      - from
+      - to
+      - limitMinutes
+      - active
+      - revision
+      - callSeconds
+      - unmeasuredCalls
+      - openCalls
+      - warningPercent
+      - ingestAllowed
+      properties:
+        from:
+          type: string
+          format: date-time
+          x-source:
+            kind: configuration
+            file: migrations/postgres/00012_entitlements.sql
+            pointer: null
+            detail: Operator-issued entitlement from.
+        to:
+          type: string
+          format: date-time
+          x-source:
+            kind: configuration
+            file: migrations/postgres/00012_entitlements.sql
+            pointer: null
+            detail: Operator-issued entitlement to.
+        limitMinutes:
+          type: integer
+          minimum: 0
+          maximum: 1000000000
+          x-unit: minutes
+          x-configuration: true
+          x-source:
+            kind: configuration
+            file: migrations/postgres/00012_entitlements.sql
+            pointer: null
+            detail: Operator-issued entitlement limitMinutes.
+        active:
+          type: boolean
+          x-source:
+            kind: configuration
+            file: migrations/postgres/00012_entitlements.sql
+            pointer: null
+            detail: Operator-issued entitlement active.
+        revision:
+          x-unit: count
+          type: integer
+          minimum: 1
+          x-configuration: true
+          x-source:
+            kind: configuration
+            file: migrations/postgres/00012_entitlements.sql
+            pointer: null
+            detail: Operator-issued entitlement revision.
+        callSeconds:
+          type: integer
+          minimum: 0
+          x-unit: seconds
+          x-configuration: true
+          x-source:
+            kind: computed
+            file: ee/instance/entitlement.go
+            pointer: null
+            detail: Durable measured usage and current entitlement status.
+        unmeasuredCalls:
+          type: integer
+          minimum: 0
+          x-unit: count
+          x-configuration: true
+          description: Retained closed calls first seen in this billing period whose duration is missing or invalid. Excluded from measured seconds. This count can decrease with retention.
+          x-source:
+            kind: computed
+            file: internal/store/pgstore/entitlements.go
+            pointer: null
+            detail: Counts retained calls first seen within the explicit billing period.
+        openCalls:
+          type: integer
+          minimum: 0
+          x-unit: count
+          x-configuration: true
+          description: Retained open calls first seen in this billing period. Their duration is not yet measured. This count can decrease with retention.
+          x-source:
+            kind: computed
+            file: internal/store/pgstore/entitlements.go
+            pointer: null
+            detail: Counts retained calls first seen within the explicit billing period.
+        warningPercent:
+          x-unit: percent
+          type: integer
+          enum:
+          - 0
+          - 80
+          - 95
+          - 100
+          x-configuration: true
+          x-source:
+            kind: computed
+            file: ee/instance/entitlement.go
+            pointer: null
+            detail: Durable measured usage and current entitlement status.
+        ingestAllowed:
+          type: boolean
+          x-source:
+            kind: computed
+            file: ee/instance/entitlement.go
+            pointer: null
+            detail: Durable measured usage and current entitlement status.
+
   responses:
     BadRequest:
       description: invalid_request; never return an empty success result for this failure.
@@ -5105,7 +6910,13 @@ components:
           schema:
             $ref: "#/components/schemas/Error"
     Conflict:
-      description: last_admin, the change would leave the organisation without an admin; already_member, the invited email's account is a member already; member_of_other_organisations, a reset's member belongs to an organisation the requester does not administer.
+      description: revision_conflict, settings changed since they were read; last_admin, the change would leave the organisation without an admin; already_member, the invited email's account is a member already; member_of_other_organisations, a reset's member belongs to an organisation the requester does not administer; project_exists, the organisation already has a project with the new name's id.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    ProjectNotVerified:
+      description: livekit_secret_invalid, LiveKit refused a read signed with the given key and secret; livekit_unreachable, the LiveKit URL gave no LiveKit answer, without saying whether it did not answer, was refused by the address guard or is not a LiveKit server; recording_bucket_refused, the S3 endpoint refused a write or delete with the given access key, secret and bucket name; recording_bucket_unreachable, the S3 endpoint gave no S3 answer, without saying why. Nothing is stored.
       content:
         application/json:
           schema:
@@ -5123,6 +6934,23 @@ components:
           schema:
             $ref: "#/components/schemas/Error"
   parameters:
+    InstanceOrganisationId:
+      name: orgId
+      in: path
+      required: true
+      description: The organisation's id, chosen by the caller; any other shape is invalid_request.
+      schema:
+        type: string
+        pattern: "^[a-z0-9][a-z0-9-]{0,62}$"
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: 1 to 200 printable characters; a Cloud control plane sends its checkout session id. A repeat with the same key returns the first invitation.
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 200
     KeyId:
       name: keyId
       in: path

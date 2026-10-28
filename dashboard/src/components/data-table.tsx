@@ -189,6 +189,8 @@ export function DataTable<T extends RowData & object>({
     data: rows,
     getRowId,
     getRowCanExpand: canExpand ? (row) => canExpand(row.original) : undefined,
+    // Rows are keyed by id, so an open row stays open when a save refetches its data.
+    autoResetExpanded: false,
     // Server mode shows every row read so far on one page; "Show more" reads the next.
     state: {
       sorting,

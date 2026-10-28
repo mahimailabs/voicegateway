@@ -1,6 +1,6 @@
 import { useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { CircleHalf, DotsThree, Stack, EnvelopeSimple as Envelope, WebhooksLogo, Buildings, Database, Key as KeyIcon, Clock, EnvelopeSimple, GearSix, FrameCorners, Lock, UsersThree, X, Plug, Plus, TreeStructure, User } from "@phosphor-icons/react"
+import { CircleHalf, DotsThree, Stack, EnvelopeSimple as Envelope, WebhooksLogo, Buildings, Database, Key as KeyIcon, Clock, EnvelopeSimple, GearSix, FrameCorners, Lock, UsersThree, X, Plug, PlugsConnected, Plus, TreeStructure, User } from "@phosphor-icons/react"
 import type { Icon } from "@phosphor-icons/react"
 import { toast } from "sonner"
 import { Badge } from "@/components/ui/badge"
@@ -17,33 +17,36 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue, SelectGr
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Sidebar, SidebarContent, SidebarGroup, SidebarGroupContent, SidebarGroupLabel, SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarProvider } from "@/components/ui/sidebar"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
+import { Switch } from "@/components/ui/switch"
 import { useTheme } from "@/components/theme"
 import { NewProjectDialog } from "@/components/new-project-dialog"
 import { currentOrg, currentScope, scopePrefix, useUrlState } from "@/lib/url-state"
-import { type WidgetId, widgets } from "@/features/embed/widgets"
+import { type Size, type WidgetId, sizes, widgets } from "@/features/embed/widgets"
 import { DEFAULTS, type Thresholds as T } from "@/lib/thresholds"
-import { ApiError, callTotalsQuery, createInvitation, createPasswordReset, createProjectKey, projectKeysQuery, revokeInvitation, revokeProjectKey, invitationsQuery, latestMatchingCallQuery, mediaServerQuery, membersQuery, projectSettingsQuery, removeMember, updateMember } from "@/lib/api"
-import type { Invitation, Member, ProjectKey, ProjectSettings } from "@/lib/api-types"
+import { ApiError, callTotalsQuery, connectionQuery, createInvitation, createPasswordReset, createProjectKey, projectKeysQuery, revokeInvitation, revokeProjectKey, invitationsQuery, latestMatchingCallQuery, mediaServerQuery, membersQuery, projectSettingsQuery, saveProjectSettings, removeMember, updateMember, saveAllowedOrigins, createEmbedToken } from "@/lib/api"
+import type { CreateEmbedToken, Invitation, Member, ProjectKey, ProjectSettings } from "@/lib/api-types"
 import { DataTable, type Columns, type Field as FilterField } from "@/components/data-table"
 import { DataGridColumnHeader } from "@/components/reui/data-grid/data-grid-column-header"
+import { mod } from "@/components/command-palette"
 import { CopyCommand } from "@/components/copy-command"
-import { refreshSession, roleIn, useSession } from "@/lib/session"
-import { useLocalSave } from "@/lib/local-store"
+import { type AccountProfile, ProfileError, readAccountProfile, saveAccountProfile, refreshSession, roleIn, useSession } from "@/lib/session"
+import { UsageAllowance } from "@/components/usage-allowance"
 import { errorText } from "@/components/page-state"
+import { ConnectAgentPanel } from "@/features/connection/connect-agent"
+import { ChangeLiveKitKey } from "@/features/connection/livekit-credentials"
+import { useHosted } from "@/lib/hosted"
 
 // Settings as a modal over the page you are on (layout from shadcn's sidebar-13 block). Three groups,
 // as in ShipVoice Pro's settings: the project picked at the top of the sidebar (integrations, data,
 // thresholds), the organisation (its projects, Enterprise shown locked per decision 0018, and Access:
-// people, API keys, MCP and the audit log as tabs) and you. What the Phase 1 console can change
-// (thresholds, tags, appearance) works and is kept in this browser, with undo; what the Phase 2
-// server will own is read from the captured project or says "Not set".
+// people, API keys, MCP and the audit log as tabs) and you. Thresholds persist per project
+// through the API; unavailable deployment policies remain explicitly unknown.
 
 // The organisation and its projects as getWorkspaces named them (lib/workspaces.ts). When it named
 // none, the scope's id stands in and no project is listed.
 const org = () => currentOrg() ?? { id: currentScope().org, name: currentScope().org, projects: [] }
-const projectName = () => org().projects.find((p) => p.id === currentScope().project)?.name ?? currentScope().project
 
-type Key = "account" | "organisation" | "access" | "integrations" | "embeds" | "data" | "thresholds"
+type Key = "account" | "organisation" | "access" | "connection" | "integrations" | "embeds" | "data" | "thresholds"
 type Page = { key: Key; label: string; icon: Icon; scope: "project" | "organisation" | "you" }
 const groups: { label: string; scope: Page["scope"]; pages: Page[] }[] = [
   {
@@ -51,6 +54,7 @@ const groups: { label: string; scope: Page["scope"]; pages: Page[] }[] = [
     scope: "project",
     pages: [
       { key: "integrations", label: "Integrations", icon: Plug, scope: "project" },
+      { key: "connection", label: "Connection", icon: PlugsConnected, scope: "project" },
       { key: "embeds", label: "Embeds", icon: FrameCorners, scope: "project" },
       { key: "data", label: "Data", icon: Database, scope: "project" },
       { key: "thresholds", label: "Thresholds", icon: Clock, scope: "project" },
@@ -122,14 +126,86 @@ const NotSet = () => <span className="text-muted-foreground">Not set</span>
 const Muted = ({ children }: { children: React.ReactNode }) => <span className="text-muted-foreground">{children}</span>
 
 // The project's LiveKit server as getMediaServer reports it.
-function ServerUrl() {
-  const read = useQuery(mediaServerQuery())
+function ServerUrl({ projectId }: { projectId: string }) {
+  const read = useQuery(mediaServerQuery({ ...currentScope(), project: projectId }))
   if (read.isPending) return <Muted>Loading</Muted>
   if (read.isError) return <Muted>Could not be read</Muted>
   return read.data.server ? <span className="font-mono text-[13px]">{read.data.server.url}</span> : <Muted>not reported</Muted>
 }
 
 // --- Pages ---
+
+function AccountName() {
+  const session = useSession()
+  const client = useQueryClient()
+  const key = ["account-profile", session?.email]
+  const read = useQuery({ queryKey: key, queryFn: ({ signal }) => readAccountProfile(signal), enabled: !!session, staleTime: 15_000, retry: false })
+  const [edit, setEdit] = useState<{ name: string; revision: number } | null>(null)
+  const name = edit?.name ?? read.data?.name ?? ""
+  const valid = Array.from(name.trim()).length <= 100 && !/\p{Cc}/u.test(name)
+  const save = useMutation({
+    mutationFn: () => saveAccountProfile(name, edit?.revision ?? read.data!.revision),
+    onSuccess: async (profile) => {
+      await client.cancelQueries({ queryKey: key, exact: true })
+      // A save answers the editable fields only; how the account signs in stays as read.
+      client.setQueryData<AccountProfile>(key, (prior) => prior && prior.revision > profile.revision ? prior : { ...prior, ...profile })
+      setEdit(null)
+      toast("Profile saved")
+    },
+    onError: async (error) => {
+      if (error instanceof ProfileError && error.status === 401) {
+        await client.cancelQueries({ queryKey: key, exact: true })
+        client.getQueryCache().find({ queryKey: key, exact: true })?.setState({ data: undefined, error, status: "error" })
+      }
+      toast.error(errorText(error))
+    },
+  })
+  if (!session) return <Row title="Name" value={<NotSet />} />
+  if (!read.data || (read.isError && read.error instanceof ProfileError && read.error.status === 401)) return <Row title="Name" value={read.isError ? <Button variant="outline" size="sm" onClick={() => void read.refetch()}>Retry profile</Button> : <Muted>Loading</Muted>} />
+  return <Row title="Name" value={<div className="space-y-2">
+    <div className="flex items-center gap-2">
+      <InputGroup><InputGroupInput aria-label="Name" autoComplete="name" value={name} disabled={save.isPending} onChange={(e) => setEdit({ name: e.target.value, revision: edit?.revision ?? read.data!.revision })} /></InputGroup>
+      <Button size="sm" disabled={save.isPending || !valid || name.trim() === (read.data.name ?? "")} onClick={() => save.mutate()}>{save.isPending ? "Saving…" : "Save"}</Button>
+    </div>
+    {!valid && <p className="text-xs text-destructive">Use at most 100 characters without control characters.</p>}
+    {save.isError && <p role="alert" className="text-xs text-destructive">{errorText(save.error)}{save.error instanceof ProfileError && save.error.status === 409 && <Button variant="link" size="sm" onClick={() => { setEdit(null); void client.invalidateQueries({ queryKey: key, exact: true }) }}>Reload profile</Button>}</p>}
+  </div>} />
+}
+
+const PROVIDER_NAMES = { google: "Google", github: "GitHub", auth0: "Auth0" } as const
+
+// How the account signs in (phase 06h): its password, if any, and the providers linked to it.
+// Read only; a reset link from an admin is the way to set a first password.
+function SignInMethods() {
+  const session = useSession()
+  // The same read as the name above, so the page asks once.
+  const read = useQuery({ queryKey: ["account-profile", session?.email], queryFn: ({ signal }) => readAccountProfile(signal), enabled: !!session, staleTime: 15_000, retry: false })
+  if (!session) return null
+  const linked = read.data?.identities ?? []
+  return (
+    <Group label="Sign-in">
+      <Row
+        title="Password"
+        value={read.isPending ? <Muted>Loading</Muted> : read.isError || read.data.hasPassword === undefined ? <Muted>Could not be read</Muted> : read.data.hasPassword ? "Set" : <Muted>No password set</Muted>}
+      />
+      <Row
+        title="Linked accounts"
+        description="Google, GitHub or Auth0 accounts that sign you in."
+        value={
+          read.isPending ? <Muted>Loading</Muted> : read.isError ? <Muted>Could not be read</Muted> : linked.length === 0 ? <Muted>None</Muted> : (
+            <div className="flex flex-wrap gap-2">
+              {/* One badge per provider: an Auth0 tenant links each of its connections apart. */}
+              {[...new Set(linked.map((i) => i.provider))].map((p) => (
+                <Badge key={p} variant="secondary">{PROVIDER_NAMES[p]}</Badge>
+              ))}
+            </div>
+          )
+        }
+        last
+      />
+    </Group>
+  )
+}
 
 export function Account() {
   const { theme, set } = useTheme()
@@ -140,10 +216,11 @@ export function Account() {
     <>
       <Header title="Account" description="You, and how the console looks for you." />
       <Group label="Profile">
-        <Row title="Name" value={<NotSet />} />
+        <AccountName key={session?.email} />
         <Row title="Email" value={email ?? <NotSet />} />
         <Row title="Role" description={`Your role across ${org().name}.`} value={role ?? <Muted>Not a member</Muted>} last />
       </Group>
+      <SignInMethods />
       <Group label="Appearance" footer="Kept in this browser.">
         <Row
           title="Theme"
@@ -172,14 +249,17 @@ const enterpriseRows = [
   { title: "License", description: "A key that turns Enterprise on, checked on this install.", oss: "No key needed." },
 ]
 
-function Organisation() {
+export function Organisation() {
   const [adding, setAdding] = useState(false)
+  // The open-source terms are said only on a self-hosted install, never while it is unknown.
+  const selfHosted = useHosted() === "self-hosted"
   return (
     <>
-      <Header title={org().name} description="The organisation that owns your projects. The open-source edition is one organisation with any number of projects and no usage limits." />
+      <Header title={org().name} description={`The organisation that owns your projects.${selfHosted ? " The open-source edition is one organisation with any number of projects and no usage limits." : ""}`} />
+      <UsageAllowance />
       <Group label="Projects">
-        {org().projects.map(({ name: p }, k) => (
-          <Row key={p} icon={TreeStructure} title={p} description="Current project" value={<ServerUrl />} last={k === org().projects.length - 1} />
+        {org().projects.map(({ id, name: p }, k) => (
+          <Row key={id} icon={TreeStructure} title={p} description={id === currentScope().project ? "Current project" : "LiveKit project"} value={<ServerUrl projectId={id} />} last={k === org().projects.length - 1} />
         ))}
       </Group>
       <div className="pt-3">
@@ -353,7 +433,7 @@ function Delivery({ outcome, what, onDone, pending }: { outcome: Outcome; what: 
     return (
       <div className="space-y-3">
         <p className="text-[13px] text-muted-foreground">{`Copy the ${what} for ${outcome.email} now. It is not shown again; the server keeps only its hash.`}</p>
-        <CopyCommand text={outcome.link} label={`${what[0].toUpperCase()}${what.slice(1)}`} />
+        <CopyCommand text={outcome.link} label={`${what[0].toUpperCase()}${what.slice(1)}`} copyLabel="Copy link" />
         <Button size="sm" variant="outline" onClick={onDone}>
           Done
         </Button>
@@ -580,6 +660,41 @@ const notifications: Integration[] = [
   { logo: "", icon: Envelope, name: "Email", description: "Send alerts to an address or a list.", status: "", connect: true },
   { logo: "", icon: WebhooksLogo, name: "Webhook", description: "POST each alert as JSON to your endpoint.", status: "", connect: true },
 ]
+// The LiveKit project this project reads (getProjectConnection's livekit): its URL, which never
+// changes, and the API key agents and webhooks sign with. An Admin changes the key and secret here.
+function LiveKitProject() {
+  const read = useQuery(connectionQuery())
+  const isAdmin = roleIn(org().id, useSession()) === "Admin"
+  const lk = read.data?.livekit
+  const pending = <Muted>{read.isError ? "Could not be read" : "Loading"}</Muted>
+  return (
+    <>
+      <Group label="LiveKit project" footer={isAdmin ? undefined : "Only an Admin changes the key and secret."}>
+        <Row title="LiveKit URL" description="Another LiveKit project is another VoiceGateway project." value={lk ? <span className="font-mono text-[13px] break-all">{lk.url}</span> : pending} />
+        <Row title="API key" description="Agents and LiveKit webhooks sign with this key." value={lk ? <span className="font-mono text-[13px] break-all">{lk.apiKey}</span> : pending} last />
+      </Group>
+      {isAdmin && lk && (
+        <section className="pt-6">
+          <h3 className="pb-3 text-[14px] font-semibold">Change key and secret</h3>
+          <ChangeLiveKitKey url={lk.url} />
+        </section>
+      )}
+    </>
+  )
+}
+
+export function Connection() {
+  return (
+    <>
+      <Header title="Connection" description="The LiveKit project this project reads, the URLs your agent and LiveKit send to, and the last outcome of each." />
+      <LiveKitProject />
+      <div className="pt-8">
+        <ConnectAgentPanel framed={false} />
+      </div>
+    </>
+  )
+}
+
 function Integrations() {
   return (
     <>
@@ -792,13 +907,15 @@ function Mcp() {
 }
 
 function AuditLog() {
+  // The open-source terms are said only on a self-hosted install.
+  const selfHosted = useHosted() === "self-hosted"
   return (
     <>
       <Header title="Audit log" description="Every change, who made it and when. Nobody can edit it." badge="Enterprise" />
       <div className="mt-6 flex flex-col items-center gap-2 rounded-2xl border border-dashed px-6 py-10 text-center">
         <Lock size={20} className="text-muted-foreground" />
         <p className="text-[14px] font-medium">Part of VoiceGateway Enterprise</p>
-        <p className="max-w-[46ch] text-[13px] text-muted-foreground">Who changed a setting, created a key or opened a recording. The open-source edition does not record changes (decision 0017).</p>
+        <p className="max-w-[46ch] text-[13px] text-muted-foreground">{`Who changed a setting, created a key or opened a recording.${selfHosted ? " The open-source edition does not record changes (decision 0017)." : ""}`}</p>
       </div>
     </>
   )
@@ -855,7 +972,7 @@ function DataPane({ s }: { s: ProjectSettings }) {
       </Group>
       <Group label="Retention" footer="The server deletes what is older. Until it runs, nothing is deleted.">
         <Row title="Transcripts" value={days(s.transcriptRetentionDays)} />
-        <Row title="Traces and metrics" value={days(s.traceRetentionDays)} />
+        <Row title="Raw traces and metrics" value={days(s.traceRetentionDays)} />
         <Row title="Recordings" value={days(s.recordingRetentionDays)} last />
       </Group>
     </>
@@ -878,22 +995,48 @@ function WithSettings({ title, children }: { title: string; children: (s: Projec
   )
 }
 
-const Thresholds = () => <WithSettings title="Thresholds">{(s) => <ThresholdsForm t={s.thresholds} />}</WithSettings>
+export const Thresholds = () => <WithSettings title="Thresholds">{(s) => <ThresholdsForm key={`${currentScope().org}/${currentScope().project}`} settings={s} />}</WithSettings>
 
-function ThresholdsForm({ t }: { t: T }) {
-  // Every page's checks and the server's judgements use these, so a save asks every read again.
-  const setThresholds = useLocalSave<T>("vg.thresholds", [])
+function ThresholdsForm({ settings }: { settings: ProjectSettings }) {
+  const t = settings.thresholds
+  const selected = currentScope()
+  const qc = useQueryClient()
+  const role = roleIn(selected.org, useSession())
+  const canEdit = role === "Member" || role === "Admin"
   const asDraft = (x: T) => ({ answer: String(x.answerMs / 1000), join: String(x.joinMs / 1000), tts: String(x.ttsStartMs / 1000) })
-  const [draft, setDraft] = useState(asDraft(t))
+  const [edit, setEdit] = useState<{ revision: number; values: ReturnType<typeof asDraft> } | null>(null)
+  const draft = edit?.values ?? asDraft(t)
   const n = (v: string) => Number(v)
-  const valid = [draft.answer, draft.join, draft.tts].every((v) => v.trim() !== "" && Number.isFinite(n(v)) && n(v) > 0 && n(v) <= 60)
-  const changed = n(draft.answer) * 1000 !== t.answerMs || n(draft.join) * 1000 !== t.joinMs || n(draft.tts) * 1000 !== t.ttsStartMs
-  const apply = (next: T, message: string) => {
-    const before = t
-    setThresholds(next)
-    setDraft(asDraft(next))
-    toast(message, { action: { label: "Undo", onClick: () => (setThresholds(before), setDraft(asDraft(before))) } })
+  const valid = [draft.answer, draft.join, draft.tts].every((v) => v.trim() !== "" && Number.isFinite(n(v)) && n(v) >= 0.1 && n(v) <= 60)
+  // Shift the decimal exponent before parsing, avoiding binary multiplication drift.
+  // Unlike rounding to whole milliseconds, this retains fractional thresholds.
+  const ms = (v: string) => {
+    const [significand, exponent = "0"] = n(v).toString().split("e")
+    return Number(`${significand}e${Number(exponent) + 3}`)
   }
+  const changed = ms(draft.answer) !== t.answerMs || ms(draft.join) !== t.joinMs || ms(draft.tts) !== t.ttsStartMs
+  const save = useMutation({
+    mutationFn: (v: { thresholds: T; revision: number; message: string; undo?: T }) => saveProjectSettings(selected, { thresholds: v.thresholds, revision: v.revision }),
+    onSuccess: async (saved, variables) => {
+      setEdit(null)
+      await qc.cancelQueries({ queryKey: ["settings", selected], exact: true })
+      qc.setQueryData<ProjectSettings>(["settings", selected], (prior) => prior && prior.revision > saved.revision ? prior : saved)
+      await qc.invalidateQueries({ predicate: (query) => {
+        const scope = query.queryKey[1] as { org?: string; project?: string } | undefined
+        return query.queryKey[0] !== "settings" && scope?.org === selected.org && scope?.project === selected.project
+      } })
+      toast(variables.message, variables.undo ? { action: { label: "Undo", onClick: () => save.mutate({ thresholds: variables.undo!, revision: saved.revision, message: "Thresholds restored" }) } } : undefined)
+    },
+    onError: async (error) => {
+      if (error instanceof ApiError && (error.status === 401 || error.status === 403)) {
+        await qc.cancelQueries({ queryKey: ["settings", selected], exact: true })
+        qc.getQueryCache().find({ queryKey: ["settings", selected], exact: true })?.setState({ data: undefined, dataUpdatedAt: 0, error, status: "error" })
+        void refreshSession().catch(() => toast.error("Could not refresh your session."))
+      }
+      toast.error(errorText(error))
+    },
+  })
+  const apply = (next: T, message: string) => save.mutate({ thresholds: next, revision: edit?.revision ?? settings.revision, message, undo: t })
   const field = (key: keyof typeof draft, label: string, hint: string) => (
     <Field orientation="horizontal" className="grid grid-cols-1 items-start gap-3 sm:grid-cols-[minmax(0,220px)_minmax(0,1fr)] sm:gap-8 py-4">
       <div className="space-y-0.5">
@@ -903,51 +1046,66 @@ function ThresholdsForm({ t }: { t: T }) {
         <FieldDescription className="text-[13px]">{hint}</FieldDescription>
       </div>
       <InputGroup className="w-28">
-        <InputGroupInput id={`th-${key}`} type="number" min={0.1} max={60} step={0.1} value={draft[key]} onChange={(e) => setDraft({ ...draft, [key]: e.target.value })} className="tnum" />
+        <InputGroupInput id={`th-${key}`} disabled={!canEdit || save.isPending} type="number" min={0.1} max={60} step={0.1} value={draft[key]} onChange={(e) => setEdit({ revision: edit?.revision ?? settings.revision, values: { ...draft, [key]: e.target.value } })} className="tnum" />
         <InputGroupAddon align="inline-end">s</InputGroupAddon>
       </InputGroup>
     </Field>
   )
   return (
     <>
-      <Header title="Thresholds" description="The numbers this project's checks judge calls against. Settings, not measurements; every page uses the same ones." badge="This browser" />
+      <Header title="Thresholds" description="The numbers this project's checks judge calls against. Settings, not measurements; every page uses the same ones." badge="Project" />
       <FieldGroup className="gap-0 pt-2 [&>[data-slot=field]+[data-slot=field]]:border-t">
         {field("answer", "Answer time", "Caller finishing to the agent's first audio.")}
         {field("join", "Agent join", "Dispatch to the agent joining the room.")}
         {field("tts", "Speech start", "Text to speech's time to first audio.")}
       </FieldGroup>
+      {!canEdit && <p className="py-3 text-[13px] text-muted-foreground">A Member or Admin can change project thresholds.</p>}
+      {save.isError && <p role="alert" className="py-3 text-[13px] text-destructive">
+        {errorText(save.error)}
+        {save.error instanceof ApiError && save.error.status === 409 && <Button variant="link" onClick={() => { setEdit(null); void qc.invalidateQueries({ queryKey: ["settings", selected], exact: true }) }}>Reload settings</Button>}
+      </p>}
       <div className="flex items-center justify-end gap-3 border-t pt-5">
         {!valid && <span className="mr-auto text-[13px] text-destructive">Use a number between 0.1 and 60.</span>}
-        <Button variant="outline" onClick={() => apply(DEFAULTS, "Thresholds reset to defaults")}>
+        <Button variant="outline" disabled={!canEdit || save.isPending} onClick={() => apply(DEFAULTS, "Thresholds reset to defaults")}>
           Reset to defaults
         </Button>
-        <Button disabled={!valid || !changed} onClick={() => apply({ answerMs: n(draft.answer) * 1000, joinMs: n(draft.join) * 1000, ttsStartMs: n(draft.tts) * 1000 }, "Thresholds saved")}>
-          Save changes
+        <Button disabled={!canEdit || save.isPending || !valid || !changed} onClick={() => apply({ answerMs: ms(draft.answer), joinMs: ms(draft.join), ttsStartMs: ms(draft.tts) }, "Thresholds saved")}>
+          {save.isPending ? "Saving…" : "Save changes"}
         </Button>
       </div>
     </>
   )
 }
 
-// Widgets a platform puts in its own product (decision 0023). The preview is the real widget in a frame.
+// Widgets a platform puts in its own product (decisions 0023, 0034). The preview is the real widget
+// in a frame of its real size, read with this session; on another site it reads with an embed token.
 function Embeds() {
-  const origins = useQuery(projectSettingsQuery())
   const [pick, setPick] = useUrlState<WidgetId>("widget", "answer-time")
-  const [theme, setTheme] = useState<"light" | "dark">("light")
   const w = widgets.find((x) => x.id === pick) ?? widgets[0]
+  const [sizePick, setSize] = useUrlState<string>("size", w.sizes[0])
+  const size: Size = (w.sizes as readonly string[]).includes(sizePick) ? (sizePick as Size) : w.sizes[0]
+  const [theme, setTheme] = useState<"light" | "dark">("light")
+  const frame = sizes[size]
   // The call widget previews the newest call with a turn; other widgets need no call.
   const latest = useQuery({ ...latestMatchingCallQuery(new URLSearchParams({ turnsMin: "1" })), enabled: pick === "call" })
   const callId = latest.data?.id
   const src = `${window.location.origin}${scopePrefix()}/embed/${w.id}`
-  const preview = `${src}?theme=${theme}${w.id === "call" && callId ? `&call=${encodeURIComponent(callId)}` : ""}`
-  const snippet = `<iframe\n  src="${src}?token=EMBED_TOKEN&theme=${theme}${w.id === "call" ? "&call=CALL_ID" : ""}"\n  width="100%"\n  height="${w.height}"\n  style="border: 0"\n  title="${w.title}, VoiceGateway"\n></iframe>`
+  const query = (token: string) => `?token=${token}&theme=${theme}${w.sizes.length > 1 ? `&size=${size}` : ""}${w.id === "call" ? "&call=CALL_ID" : ""}`
+  const preview = `${src}?theme=${theme}${w.sizes.length > 1 ? `&size=${size}` : ""}${w.id === "call" && callId ? `&call=${encodeURIComponent(callId)}` : ""}`
+  const snippet = `<iframe\n  src="${src}${query("EMBED_TOKEN")}"\n  width="${frame.width}"\n  height="${frame.height}"\n  style="border: 0; border-radius: 22px"\n  title="${w.title}, VoiceGateway"\n></iframe>`
+  const grant = [w.id, ...w.with]
+  // Transcripts and audio reach the other site only when asked for (decision 0034).
+  const [contentPick, setContent] = useUrlState<string>("content", "off")
+  const hasCall = grant.includes("call")
+  const content = hasCall && contentPick === "on"
+  const mint = `curl -X POST ${window.location.origin}/api/v1${scopePrefix()}/embed-tokens \\\n  -H "Authorization: Bearer $VOICEGATEWAY_KEY" \\\n  -H "Content-Type: application/json" \\\n  -d '{"widgets": ${JSON.stringify(grant)}, "origin": "https://your-app.example.com"${content ? `, "transcriptsAndAudio": true` : ""}}'`
   return (
     <>
-      <Header title="Embeds" description="Put this project's views in your own product. Each widget is a frame behind a short-lived, read-only token, so your API key never reaches the page." />
+      <Header title="Embeds" description="Put this project's widgets in your own product. Each one is a small frame behind a short-lived, read-only token, so your API key never reaches the page." />
       <section className="space-y-3 pt-6">
-        <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           <Select value={w.id} onValueChange={(v) => setPick(v as WidgetId)}>
-            <SelectTrigger size="sm" className="w-56" aria-label="Widget">
+            <SelectTrigger size="sm" className="w-48" aria-label="Widget">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -958,6 +1116,15 @@ function Embeds() {
               ))}
             </SelectContent>
           </Select>
+          {w.sizes.length > 1 && (
+            <ToggleGroup type="single" variant="outline" size="sm" value={size} onValueChange={(v) => v && setSize(v)} aria-label="Widget size">
+              {w.sizes.map((x) => (
+                <ToggleGroupItem key={x} value={x} className="px-3 capitalize data-[state=on]:bg-accent">
+                  {x}
+                </ToggleGroupItem>
+              ))}
+            </ToggleGroup>
+          )}
           <ToggleGroup type="single" variant="outline" size="sm" value={theme} onValueChange={(v) => v && setTheme(v as "light" | "dark")} aria-label="Widget theme">
             <ToggleGroupItem value="light" className="px-3 data-[state=on]:bg-accent">
               Light
@@ -967,32 +1134,39 @@ function Embeds() {
             </ToggleGroupItem>
           </ToggleGroup>
         </div>
-        <p className="text-[13px] text-muted-foreground">{w.description}</p>
+        <p className="text-[13px] text-muted-foreground">{w.question}</p>
         {w.id === "call" && !callId ? (
           <p className="rounded-xl border px-4 py-10 text-center text-[13px] text-muted-foreground">
             {latest.isPending ? "Loading a call for the preview." : latest.isError ? `A call for the preview could not be read. ${errorText(latest.error)}` : "No call with a turn yet, so there is nothing to preview."}
           </p>
         ) : (
-          <iframe key={preview} src={preview} title={`${w.title} preview`} className="block w-full rounded-xl border" style={{ height: Math.min(w.height, 420) }} />
+          <div className="overflow-x-auto rounded-2xl bg-muted/50 p-6">
+            <iframe key={preview} src={preview} title={`${w.title} preview`} className="mx-auto block max-w-full rounded-[22px] shadow-sm" width={frame.width} height={Math.min(frame.height, 520)} />
+          </div>
         )}
       </section>
       <section className="pt-6">
-        <h3 className="pb-1 text-[14px] font-semibold">Snippet</h3>
-        <p className="pb-3 text-[13px] text-muted-foreground">Your backend asks VoiceGateway for a token and puts it in place of EMBED_TOKEN.</p>
+        <h3 className="pb-1 text-[14px] font-semibold">1. Your backend asks for a token</h3>
+        <p className="pb-3 text-[13px] text-muted-foreground">With a project API key, for the widgets the frame shows and the site that shows them. A token lasts an hour unless you pass expiresInSeconds (1 minute to 1 day).</p>
+        {hasCall && (
+          <Group label="What the call view shares">
+            <Row
+              title="Share transcripts and audio"
+              description="Off: the one-call view shows timings, models and issues only. On: the other site sees what callers and the agent said, prompts and tool arguments, and can play the recording. Needs an Admin or a project key."
+              last
+              value={<Switch checked={content} onCheckedChange={(on) => setContent(on ? "on" : "off")} aria-label="Share transcripts and audio" />}
+            />
+          </Group>
+        )}
+        <CopyCommand text={mint} label="Token request" />
+      </section>
+      <section className="pt-6">
+        <h3 className="pb-1 text-[14px] font-semibold">2. Your page shows the frame</h3>
+        <p className="pb-3 text-[13px] text-muted-foreground">Put the token in place of EMBED_TOKEN.</p>
         <CopyCommand text={snippet} label="Embed snippet" />
       </section>
-      <Group label="Access" footer="Tokens and allowed origins are kept on the server, from Phase 2. Until then widgets show captured data and say they are a preview.">
-        <Row
-          title="Embed tokens"
-          description="Read-only, one project, and they expire."
-          value={
-            <Button variant="outline" size="sm" disabled>
-              <Plus /> Create token
-            </Button>
-          }
-        />
-        <Row title="Allowed origins" description="Only these sites can show the widgets." value={origins.data ? (origins.data.allowedOrigins?.join(", ") ?? <NotSet />) : origins.isError ? "Could not be read" : "Loading"} last />
-      </Group>
+      <AllowedOrigins />
+      <TestToken key={`${grant.join(",")}|${content}`} grant={grant} content={content} query={query} src={src} />
       <Group label="Enterprise">
         <Row icon={Lock} muted title="Per-customer tokens" description="A token that shows only one of your customers' calls." />
         <Row icon={Lock} muted title="Remove VoiceGateway branding" description="Widgets without Powered by VoiceGateway." value={<span className="text-[12px] text-muted-foreground">Open source: always shown.</span>} last />
@@ -1001,7 +1175,119 @@ function Embeds() {
   )
 }
 
-const body: Record<Key, () => React.ReactNode> = { account: Account, organisation: Organisation, access: Access, integrations: Integrations, embeds: Embeds, data: Data, thresholds: Thresholds }
+// The sites allowed to show the widgets. Admins change them; removing a site stops its tokens at
+// their next request.
+function AllowedOrigins() {
+  const client = useQueryClient()
+  const read = useQuery(projectSettingsQuery())
+  const isAdmin = roleIn(org().id, useSession()) === "Admin"
+  const [draft, setDraft] = useState("")
+  const save = useMutation({
+    mutationFn: (origins: string[]) => saveAllowedOrigins(currentScope(), origins, read.data!.allowedOriginsRevision),
+    onSuccess: (settings) => {
+      client.setQueryData(projectSettingsQuery().queryKey, settings)
+      setDraft("")
+      toast("Allowed sites saved")
+    },
+    onError: (error) => {
+      if (error instanceof ApiError && error.status === 409) void client.invalidateQueries({ queryKey: projectSettingsQuery().queryKey })
+      toast.error(errorText(error))
+    },
+  })
+  const origins = read.data?.allowedOrigins ?? []
+  return (
+    <Group label="Allowed sites" footer={isAdmin ? "An origin is https://host or https://host:port, with no path. http works only for localhost." : "Only an Admin changes the allowed sites."}>
+      {!read.data ? (
+        <Row title="Sites" value={read.isError ? "Could not be read" : "Loading"} last />
+      ) : (
+        <>
+          {origins.length === 0 && <Row title="No site yet" description="Until you add one, no token can be made and no site can show the widgets." />}
+          {origins.map((o) => (
+            <Row
+              key={o}
+              title={o}
+              value={
+                isAdmin && (
+                  <Button variant="ghost" size="sm" disabled={save.isPending} onClick={() => save.mutate(origins.filter((x) => x !== o))} aria-label={`Remove ${o}`}>
+                    <X /> Remove
+                  </Button>
+                )
+              }
+            />
+          ))}
+          {isAdmin && (
+            <Row
+              title="Add a site"
+              last
+              value={
+                <form
+                  className="flex w-full items-center gap-2"
+                  onSubmit={(e) => {
+                    e.preventDefault()
+                    if (draft.trim()) save.mutate([...origins, draft.trim()])
+                  }}
+                >
+                  <InputGroup>
+                    <InputGroupInput aria-label="Site origin" placeholder="https://app.example.com" value={draft} disabled={save.isPending} onChange={(e) => setDraft(e.target.value)} />
+                  </InputGroup>
+                  <Button size="sm" type="submit" disabled={save.isPending || !draft.trim()}>
+                    <Plus /> Add
+                  </Button>
+                </form>
+              }
+            />
+          )}
+        </>
+      )}
+    </Group>
+  )
+}
+
+// A token made here, for trying the snippet on an allowed site. It is shown once and never stored.
+function TestToken({ grant, content, query, src }: { grant: string[]; content: boolean; query: (token: string) => string; src: string }) {
+  const read = useQuery(projectSettingsQuery())
+  const origins = read.data?.allowedOrigins ?? []
+  const [origin, setOrigin] = useState<string | null>(null)
+  const chosen = origin && origins.includes(origin) ? origin : (origins[0] ?? null)
+  const mint = useMutation({ mutationFn: () => createEmbedToken({ widgets: grant as CreateEmbedToken["widgets"], origin: chosen!, expiresInSeconds: 3600, transcriptsAndAudio: content }), onError: (error) => toast.error(errorText(error)) })
+  return (
+    <Group label="Try it" footer={mint.data ? `For ${mint.data.origin}, until ${new Date(mint.data.expiresAt).toLocaleTimeString()}. It opens ${mint.data.widgets.join(" and ")}${mint.data.transcriptsAndAudio ? ", with transcripts and audio" : ", without transcripts or audio"}.` : "A test token for one hour, made with your sign-in. Your product's backend makes its own with an API key."}>
+      <Row
+        title="Test token"
+        last
+        value={
+          !origins.length ? (
+            <Muted>Add an allowed site first.</Muted>
+          ) : mint.data ? (
+            <div className="w-full min-w-0">
+              <CopyCommand text={`${src}${query(mint.data.token)}`} label="Widget address with a test token" />
+            </div>
+          ) : (
+            <div className="flex flex-wrap items-center gap-2">
+              <Select value={chosen ?? undefined} onValueChange={setOrigin}>
+                <SelectTrigger size="sm" className="w-64" aria-label="Site for the token">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {origins.map((o) => (
+                    <SelectItem key={o} value={o}>
+                      {o}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Button variant="outline" size="sm" disabled={mint.isPending || !chosen} onClick={() => mint.mutate()}>
+                <Plus /> {mint.isPending ? "Making…" : "Make a test token"}
+              </Button>
+            </div>
+          )
+        }
+      />
+    </Group>
+  )
+}
+
+const body: Record<Key, () => React.ReactNode> = { account: Account, organisation: Organisation, access: Access, connection: Connection, integrations: Integrations, embeds: Embeds, data: Data, thresholds: Thresholds }
 
 export type SettingsPage = Key
 export function SettingsDialog({ open, onOpenChange, page, onPageChange, orgOnly = false }: { open: boolean; onOpenChange: (o: boolean) => void; page: string | null; onPageChange: (p: Key) => void; orgOnly?: boolean }) {
@@ -1015,10 +1301,13 @@ export function SettingsDialog({ open, onOpenChange, page, onPageChange, orgOnly
   const current = shownPages.find((p) => p.key === active)!
   // The picked project follows the URL: after a project switch the picker starts on the new one.
   const scope = currentScope()
-  const at = `${scope.org}/${scope.project}`
-  const [pick, setPick] = useState({ at, name: projectName() })
-  const picked = pick.at === at ? pick.name : projectName()
-  const setPicked = (name: string) => setPick({ at, name })
+  const picked = scope.project
+  const pickedName = org().projects.find((p) => p.id === picked)?.name ?? picked
+  const setPicked = (id: string) => {
+    if (id === scope.project || !org().projects.some((p) => p.id === id)) return
+    // A new document resets all project-bound drafts and query observers together.
+    window.location.assign(`/org/${encodeURIComponent(scope.org)}/project/${encodeURIComponent(id)}/overview?settings=${active}`)
+  }
   const Body = body[active]
   const nav = (p: Page) => (
     <SidebarMenuItem key={p.key}>
@@ -1050,11 +1339,11 @@ export function SettingsDialog({ open, onOpenChange, page, onPageChange, orgOnly
           <div className="min-w-0 flex-1 space-y-0.5">
             <DialogTitle className="text-[18px] font-semibold">Settings</DialogTitle>
             <DialogDescription className="text-[14px]">
-              {current.scope === "you" ? "Your own account." : current.scope === "organisation" ? `Settings for ${org().name}.` : `Settings for ${picked}.`}{" "}
+              {current.scope === "you" ? "Your own account." : current.scope === "organisation" ? `Settings for ${org().name}.` : `Settings for ${pickedName}.`}{" "}
               <span className="whitespace-nowrap">
                 Open anywhere with{" "}
                 <KbdGroup>
-                  <Kbd>⌘</Kbd>
+                  <Kbd>{mod}</Kbd>
                   <Kbd>,</Kbd>
                 </KbdGroup>
               </span>
@@ -1076,8 +1365,8 @@ export function SettingsDialog({ open, onOpenChange, page, onPageChange, orgOnly
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        {org().projects.map(({ name: p }) => (
-                          <SelectItem key={p} value={p}>
+                        {org().projects.map(({ id, name: p }) => (
+                          <SelectItem key={id} value={id}>
                             {p}
                           </SelectItem>
                         ))}
@@ -1117,8 +1406,8 @@ export function SettingsDialog({ open, onOpenChange, page, onPageChange, orgOnly
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {org().projects.map(({ name: p }) => (
-                      <SelectItem key={p} value={p}>
+                    {org().projects.map(({ id, name: p }) => (
+                      <SelectItem key={id} value={id}>
                         {p}
                       </SelectItem>
                     ))}
@@ -1126,7 +1415,8 @@ export function SettingsDialog({ open, onOpenChange, page, onPageChange, orgOnly
                 </Select>
               )}
             </div>
-            <div className="flex-1 overflow-y-auto px-4 pt-6 pb-10 sm:px-8">
+            {/* The page scrolls here; it takes focus so a keyboard can scroll a page with no control in it. */}
+            <div role="region" aria-label={current.label} tabIndex={0} className="flex-1 overflow-y-auto px-4 pt-6 pb-10 outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:ring-inset sm:px-8">
               <Body />
             </div>
           </main>

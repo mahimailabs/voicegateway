@@ -17,6 +17,15 @@ const (
 	codeInternal          = "internal_error"
 )
 
+// The contract's Error codes the instance API answers with (phase 06e).
+const (
+	CodeRevisionConflict = "revision_conflict"
+	CodeInvalidRequest   = codeInvalidRequest
+	CodeNotFound         = codeNotFound
+	CodeAlreadyMember    = codeAlreadyMember
+	CodeInternal         = codeInternal
+)
+
 // apiError is the contract's Error: a stable code, a safe message and the request id. It never
 // carries an upstream credential, a request body, a storage error's text or LiveKit's own error text.
 type apiError struct {
@@ -24,6 +33,15 @@ type apiError struct {
 	Message   string `json:"message"`
 	RequestID string `json:"requestId"`
 }
+
+// WriteError writes the contract's Error for a handler registered from outside this package: the
+// instance API's, in ee/instance (phase 06e).
+func WriteError(w http.ResponseWriter, r *http.Request, status int, code, message string) {
+	writeError(w, r, status, code, message)
+}
+
+// WriteJSON writes v as a JSON answer with status, for the same handlers.
+func WriteJSON(w http.ResponseWriter, status int, v any) { writeJSON(w, status, v) }
 
 func writeError(w http.ResponseWriter, r *http.Request, status int, code, message string) {
 	writeJSON(w, status, apiError{Code: code, Message: message, RequestID: middleware.GetReqID(r.Context())})

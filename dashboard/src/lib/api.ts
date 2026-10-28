@@ -1,11 +1,19 @@
 import { infiniteQueryOptions } from "@tanstack/react-query"
 import { currentScope } from "@/lib/url-state"
+import { keepPolling } from "@/features/connection/connection-model"
 import { client } from "@/lib/api-types/client.gen"
 import {
+  createEmbedToken as createEmbedTokenCall,
+  updateAllowedOrigins as updateAllowedOriginsCall,
   createInvitation as createInvitationCall,
   createPasswordReset as createPasswordResetCall,
+  createProject as createProjectCall,
   createProjectKey as createProjectKeyCall,
   getAlertSetup,
+  getCallMetadata,
+  getCallTags,
+  updateCallMetadata,
+  updateIssueMetadata,
   getCall,
   getCallStats,
   getCapacity,
@@ -13,14 +21,16 @@ import {
   getEgress,
   getIngress,
   getInvitations,
-  getIssueDispositions,
   getMediaServer,
   getMembers,
+  getMyOrganisationEntitlement,
+  getProjectConnection,
   getProjectSettings,
   getProjectSnapshot,
   getProviderProbes,
   getSip,
   getWorkers,
+  getResources,
   getWorkspaces,
   listAlertEvents,
   listCalls,
@@ -30,8 +40,10 @@ import {
   revokeInvitation as revokeInvitationCall,
   revokeProjectKey as revokeProjectKeyCall,
   updateMember as updateMemberCall,
+  updateProjectSettings as updateProjectSettingsCall,
+  updateProjectLiveKitCredentials as updateProjectLiveKitCredentialsCall,
 } from "@/lib/api-types"
-import type { Call as GeneratedCall, CallPage, CallSummary, CallTotals, EndOfTurnEvent, ItemEvent, Member, OverlapEvent, RecordingSegment, Span, StateEvent, TranscriptEvent, Turn } from "@/lib/api-types"
+import type { Call as GeneratedCall, CreateEmbedToken, ProjectConnection, UpdateProjectSettings, CallPage, ProjectCreate, CallSummary, CallTotals, EndOfTurnEvent, ItemEvent, Member, OverlapEvent, RecordingSegment, Span, StateEvent, TranscriptEvent, Turn } from "@/lib/api-types"
 
 export type { CallSummary, CallTotals, RecordingSegment, Span, Turn }
 export type SessionEvent = StateEvent | TranscriptEvent | EndOfTurnEvent | OverlapEvent | ItemEvent
@@ -49,6 +61,9 @@ export class ApiError extends Error {
     this.code = code
   }
 }
+
+// Never render cached telemetry after the API denies access.
+export const accessDenied = (error: unknown) => error instanceof ApiError && [401, 403, 404].includes(error.status)
 
 // The console reads only through web's API (CLAUDE.md Boundaries), with the SDK hey-api generates
 // from docs/api/openapi.yaml: paths, parameters and answers are typed by the contract. Every call
@@ -166,18 +181,72 @@ export const callQuery = (id: string) => ({ queryKey: ["call", currentScope(), i
 export const egressQuery = () => ({ queryKey: ["egress", currentScope()], queryFn: () => data(getEgress({ ...thrown, path: scope() })) })
 export const ingressQuery = () => ({ queryKey: ["ingress", currentScope()], queryFn: () => data(getIngress({ ...thrown, path: scope() })) })
 export const sipQuery = () => ({ queryKey: ["sip", currentScope()], queryFn: () => data(getSip({ ...thrown, path: scope() })) })
-export const mediaServerQuery = () => ({ queryKey: ["media-server", currentScope()], queryFn: () => data(getMediaServer({ ...thrown, path: scope() })) })
-export const cloudAgentsQuery = () => ({ queryKey: ["agents", currentScope()], queryFn: () => data(getCloudAgents({ ...thrown, path: scope() })) })
+export function mediaServerQuery(selectedScope = currentScope()) {
+  // Capture the scope with the key; retries must never read a newly selected project.
+  const selected = { ...selectedScope }
+  return {
+    queryKey: ["media-server", selected],
+    queryFn: ({ signal }: { signal: AbortSignal }) => data(getMediaServer({ ...thrown, path: { orgId: selected.org, projectId: selected.project }, cache: "no-store", signal: AbortSignal.any([signal, AbortSignal.timeout(10000)]) })),
+    staleTime: 0,
+    refetchInterval: 10000,
+    refetchOnWindowFocus: true,
+    refetchOnReconnect: true,
+    retry: false,
+  }
+}
+export function cloudAgentsQuery() {
+  // Capture the scope with the key; retries must never read a newly selected project.
+  const selected = currentScope()
+  return {
+    queryKey: ["agents", selected],
+    queryFn: ({ signal }: { signal: AbortSignal }) => data(getCloudAgents({ ...thrown, path: { orgId: selected.org, projectId: selected.project }, cache: "no-store", signal: AbortSignal.any([signal, AbortSignal.timeout(10000)]) })),
+    staleTime: 0,
+    refetchInterval: 60000,
+    refetchOnWindowFocus: true,
+    refetchOnReconnect: true,
+    retry: false,
+  }
+}
 // The contract requires the agent whose run to read, and the console does not pass one yet: it
 // shows one run for every agent. The cast keeps that known gap in one visible place.
 export const capacityQuery = () => ({ queryKey: ["capacity", currentScope()], queryFn: () => data(getCapacity({ ...thrown, path: scope() } as Parameters<typeof getCapacity<true>>[0])) })
-export const workersQuery = () => ({ queryKey: ["workers", currentScope()], queryFn: () => data(getWorkers({ ...thrown, path: scope() })) })
+export function workersQuery() {
+  // Capture the scope with the key; retries must never read a newly selected project.
+  const selected = currentScope()
+  return {
+    queryKey: ["workers", selected],
+    queryFn: ({ signal }: { signal: AbortSignal }) => data(getWorkers({ ...thrown, path: { orgId: selected.org, projectId: selected.project }, cache: "no-store", signal: AbortSignal.any([signal, AbortSignal.timeout(10000)]) })),
+    staleTime: 0,
+    refetchInterval: 15000,
+    refetchOnWindowFocus: true,
+    refetchOnReconnect: true,
+    retry: false,
+  }
+}
+export function resourcesQuery() {
+  // Capture the scope with the key; retries must never read a newly selected project.
+  const selected = currentScope()
+  return {
+    queryKey: ["resources", selected],
+    queryFn: ({ signal }: { signal: AbortSignal }) => data(getResources({ ...thrown, path: { orgId: selected.org, projectId: selected.project }, cache: "no-store", signal: AbortSignal.any([signal, AbortSignal.timeout(10000)]) })),
+    staleTime: 0,
+    refetchInterval: 15000,
+    refetchOnWindowFocus: true,
+    refetchOnReconnect: true,
+    retry: false,
+  }
+}
 export const providerProbesQuery = () => ({ queryKey: ["provider-probes", currentScope()], queryFn: () => data(getProviderProbes({ ...thrown, path: scope() })) })
 export const snapshotQuery = () => ({ queryKey: ["snapshot", currentScope()], queryFn: () => data(getProjectSnapshot({ ...thrown, path: scope() })) })
 
 // Issues and alert evaluation over all of time up to now: the pages have no range picker yet.
 const allTime = () => ({ from: new Date(0).toISOString(), to: new Date(Date.now() + 60_000).toISOString() })
 export const issuesQuery = () => ({ queryKey: ["issues", currentScope()], queryFn: () => data(listIssues({ ...thrown, path: scope(), query: allTime() })) })
+// Issues over a range, the same groups getCallStats counts in issueCounts for that range.
+export const issuesInQuery = (from: Date, to: Date) => ({
+  queryKey: ["issues", currentScope(), from.toISOString(), to.toISOString()],
+  queryFn: () => data(listIssues({ ...thrown, path: scope(), query: { from: from.toISOString(), to: to.toISOString() } })),
+})
 export const alertEventsQuery = () => ({ queryKey: ["alert-events", currentScope()], queryFn: () => data(listAlertEvents({ ...thrown, path: scope(), query: allTime() })) })
 
 // Overview's aggregates over a range, computed by the server over every call in it.
@@ -186,10 +255,41 @@ export const callStatsQuery = (from: Date, to: Date) => ({
   queryFn: () => data(getCallStats({ ...thrown, path: scope(), query: { from: from.toISOString(), to: to.toISOString() } })),
 })
 
-// Settings. Until web stores them the console saves them in this browser (lib/local-store.ts) and
-// these reads return them; after a save the console invalidates the read it changed.
-export const projectSettingsQuery = () => ({ queryKey: ["settings", currentScope()], queryFn: () => data(getProjectSettings({ ...thrown, path: scope() })) })
-export const issueDispositionsQuery = () => ({ queryKey: ["issue-dispositions", currentScope()], queryFn: () => data(getIssueDispositions({ ...thrown, path: scope() })) })
+// Bind each request to its query key, even if navigation happens before it executes.
+export const projectSettingsQuery = () => {
+  const selected = currentScope()
+  return {
+    queryKey: ["settings", selected],
+    queryFn: ({ signal }: { signal: AbortSignal }) => data(getProjectSettings({ ...thrown, path: { orgId: selected.org, projectId: selected.project }, signal })),
+    staleTime: 15_000,
+    refetchInterval: 15_000,
+    refetchOnWindowFocus: true,
+  }
+}
+export const saveProjectSettings = (selected: ReturnType<typeof currentScope>, body: UpdateProjectSettings) =>
+  data(updateProjectSettingsCall({ ...thrown, path: { orgId: selected.org, projectId: selected.project }, body }))
+// Allowed embed origins (Admin) and test embed tokens, decision 0034.
+export const saveAllowedOrigins = (selected: ReturnType<typeof currentScope>, allowedOrigins: string[], allowedOriginsRevision: number) =>
+  data(updateAllowedOriginsCall({ ...thrown, path: { orgId: selected.org, projectId: selected.project }, body: { allowedOrigins, allowedOriginsRevision } }))
+export const createEmbedToken = (body: CreateEmbedToken) => data(createEmbedTokenCall({ ...thrown, path: scope(), body }))
+
+// The project's ingestion URLs, each source's last outcome and its first stored call (first-call
+// setup). Asked again every 5 s while no call is stored or a source is in Error, judged as of the
+// last read; no more once the first call is stored and every source is Connected or Waiting.
+export const CONNECTION_POLL_MS = 5_000
+export function connectionQuery(selected = currentScope()) {
+  const bound = { ...selected }
+  return {
+    queryKey: ["connection", bound],
+    queryFn: ({ signal }: { signal: AbortSignal }) => data(getProjectConnection({ ...thrown, path: { orgId: bound.org, projectId: bound.project }, signal })),
+    refetchInterval: (query: { state: { data?: ProjectConnection; dataUpdatedAt: number } }) => (keepPolling(query.state.data, query.state.dataUpdatedAt) ? CONNECTION_POLL_MS : false),
+  }
+}
+// Replaces the project's LiveKit API key and secret, Admin only. web checks them with one LiveKit
+// read against the stored URL first (422 livekit_secret_invalid or livekit_unreachable); a 204 has
+// no body. The secret is sealed and never answered.
+export const updateLiveKitCredentials = (selected: ReturnType<typeof currentScope>, livekitApiKey: string, livekitApiSecret: string) =>
+  updateProjectLiveKitCredentialsCall({ ...thrown, path: { orgId: selected.org, projectId: selected.project }, body: { livekitApiKey, livekitApiSecret } }).then(() => undefined)
 export const alertSetupQuery = () => ({ queryKey: ["alert-setup", currentScope()], queryFn: () => data(getAlertSetup({ ...thrown, path: scope() })) })
 export const fetchWorkspaces = () => data(getWorkspaces(thrown))
 
@@ -210,3 +310,22 @@ export const invitationsQuery = () => ({ queryKey: ["invitations", currentScope(
 export const createInvitation = (email: string, role: Member["role"]) => data(createInvitationCall({ ...thrown, path: { orgId: currentScope().org }, body: { email, role } }))
 export const revokeInvitation = (invitationId: string) => data(revokeInvitationCall({ ...thrown, path: { orgId: currentScope().org, invitationId } })).then(() => undefined)
 export const createPasswordReset = (userId: string) => data(createPasswordResetCall({ ...thrown, path: { orgId: currentScope().org, userId } }))
+// Adds a LiveKit project to an organisation (phase 06f), Admin only. The secret goes to web, which
+// seals it; the answer is the new project's id and name, never a credential.
+export const createProject = (orgId: string, body: ProjectCreate) => data(createProjectCall({ ...thrown, path: { orgId }, body }))
+
+export const entitlementQuery = () => ({ queryKey: ["entitlement", currentScope().org], queryFn: () => data(getMyOrganisationEntitlement({ ...thrown, path: { orgId: currentScope().org } })), refetchInterval: 30_000, retry: false as const })
+
+export const metadataQuery = (id: string, selected = currentScope()) => ({
+ queryKey: ["call-metadata", selected, id],
+ queryFn: ({signal}: {signal: AbortSignal}) => data(getCallMetadata({...thrown,path:{orgId:selected.org,projectId:selected.project,callId:id},signal})),
+ staleTime: 0, retry: false,
+})
+export const callTagsQuery = (selected = currentScope()) => ({
+ queryKey:["call-tags",selected],
+ queryFn: ({signal}: {signal:AbortSignal}) => data(getCallTags({...thrown,path:{orgId:selected.org,projectId:selected.project},signal})),
+ staleTime:0, retry:false,
+})
+export const saveCallMetadata = (id: string, body: import("@/lib/api-types").CallMetadata, selected = currentScope()) => data(updateCallMetadata({...thrown,path:{orgId:selected.org,projectId:selected.project,callId:id},body}))
+
+export const saveIssueMetadata = (id: string, body: import("@/lib/api-types").UpdateIssueMetadata, selected = currentScope()) => data(updateIssueMetadata({...thrown,path:{orgId:selected.org,projectId:selected.project,issueId:id},body}))

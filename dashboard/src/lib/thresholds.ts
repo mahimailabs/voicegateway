@@ -1,7 +1,7 @@
 import type { Thresholds } from "@/lib/api-types"
 
 // The numbers the checks judge against. They are settings, not measurements: getProjectSettings
-// returns them and every page reads them from here. Saving goes to this browser until web stores it.
+// returns them and every page reads them from here. Saving persists through the project API.
 
 export type { Thresholds }
 // The contract's defaults, for "Reset to defaults" and for a project whose settings could not be read.

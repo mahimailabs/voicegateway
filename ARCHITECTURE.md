@@ -13,19 +13,20 @@ VoiceGateway is one Go binary, `voicegateway`, run in two roles (0013): `web` ta
 
 | Component | Responsibility | Owns |
 | --- | --- | --- |
-| web | Checks keys, accepts events, webhooks, OTLP spans and LiveKit agents' observability uploads (0014), appends them to the stream and answers fast. Serves the API, MCP and the dashboard files. | Configuration and request state in Postgres only: list snapshots, and from 0027 accounts, sessions and sign-in counts. Reads Postgres and ClickHouse for queries; never writes ClickHouse |
+| web | Checks keys, accepts webhooks and LiveKit agents' observability uploads (0014, 0033), appends them to the stream and answers fast. Serves the API, MCP and the dashboard files. | Configuration and request state in Postgres only: list snapshots, from 0027 accounts, sessions and sign-in counts, and each project's last ingestion outcome per source. Reads Postgres and ClickHouse for queries; never writes ClickHouse |
 | worker | Reads the stream, joins events into calls, writes batches to ClickHouse, scrapes server metrics, closes stale calls, applies retention. | All telemetry writes to ClickHouse, and all writes to the call index and call summaries |
-| SDK (`sdk/python`) | `attach()` inside the agent, for frameworks without LiveKit's uploader and for data it lacks: sends turns, metrics and usage. Fails open. | Nothing |
+| Example agent (`examples/livekit-agent`) | The documented LiveKit Agents voice agent and scripted caller. It connects through LiveKit's own uploader and `LIVEKIT_OBSERVABILITY_URL`, the default agent connection (0033). | Nothing |
+| SDK (`sdk/python`) | Optional `attach()` add-on for what the uploader cannot do: keep LiveKit Cloud's own observability, custom call fields, live mid-call events (0002, 0033). Maps session events to the shared wire batch; fails open. Python first, other languages as needed. | Nothing |
 | Dashboard (`dashboard/`) | React app, built in its own Docker stage and served from disk by web (0011). | Nothing |
 | Postgres | Projects (each one LiveKit project, with its URL, key and encrypted secret, 0016), API keys, settings, the call index. | Configuration |
 | ClickHouse | Events, turns, spans, usage and server metrics. | Everything measured |
 | Redis | The ingest stream, the live view feed, and locks for one-at-a-time jobs (0007). | Data in flight |
-| S3 bucket (SeaweedFS in Compose, 0026) | Recordings from the agent's session upload, or from LiveKit Egress, opt-in per project (0008, 0015). | Audio |
+| S3 bucket (SeaweedFS in Compose, 0026) | Recordings from the agent's session upload, or from LiveKit Egress, opt-in per project (0008, 0015), in the instance's bucket or one the project brought when it was created (0031). | Audio |
 
 ## Data Flow
 
-1. LiveKit agents' observability uploads (0014), the SDK, LiveKit webhooks and OTLP spans reach web.
-2. web checks the key or the webhook signature, appends the event to the Redis stream and answers.
+1. LiveKit agents' own observability uploads (0014, 0033) and LiveKit webhooks reach web at the project's scoped URLs (0032).
+2. web checks the token or the webhook signature against the project's LiveKit key, appends the event to the Redis stream, records the outcome for the console's connection check (at most once per outcome every 30 s) and answers.
 3. worker reads the stream in a consumer group and matches each event to a call by room and time window, job id or trace id (0012).
 4. worker writes in batches to ClickHouse and acknowledges the stream entries only after the write lands. Entries that fail repeatedly go to a dead-letter stream.
 5. worker publishes call changes to Redis, and web pushes them to the live view.
@@ -35,11 +36,11 @@ VoiceGateway is one Go binary, `voicegateway`, run in two roles (0013): `web` ta
 ## Boundaries
 
 - web never writes to ClickHouse; worker never answers HTTP traffic.
-- The Redis stream format is the only contract between web and worker.
 - The SDK never blocks or fails the call; capture errors are dropped and counted.
+- The Redis stream format is the only contract between web and worker.
 - Nothing logs raw webhook bodies; they carry a TURN password.
 - A missing value is stored as unknown, never as zero.
-- Code outside `internal/` packages cannot import them; the public surface is the HTTP API, MCP and the SDK.
+- Code outside `internal/` packages cannot import them; the public surface is the HTTP API, MCP and the ingestion URLs.
 
 ## Stack
 
@@ -51,9 +52,9 @@ VoiceGateway is one Go binary, `voicegateway`, run in two roles (0013): `web` ta
 | Storage | Postgres, ClickHouse, any S3 bucket (SeaweedFS in Compose, 0026) | docs/decisions/0005-self-hosted-platform-only.md |
 | Libraries | chi, go-redis v9, clickhouse-go v2, pgx v5 with sqlc, goose, livekit/protocol, OTel pdata, slog, errgroup, cobra | docs/decisions/0009-go-core.md |
 | Dashboard | React, served from files in the image | docs/decisions/0011-dashboard-served-from-files.md |
-| SDK | Python, `attach()` for any agent framework | docs/decisions/0002-framework-agnostic-attach.md |
+| Agent connection | LiveKit Agents' own uploader through `LIVEKIT_OBSERVABILITY_URL` by default; optional `attach()` SDK, Python first | docs/decisions/0033-livekit-uploader-is-the-agent-connection.md |
 
-Exact versions are pinned in `go.mod`, `deploy/compose.yaml` and the SDK's lock file.
+Exact versions are pinned in `go.mod`, `deploy/compose.yaml`, `dashboard/package-lock.json` and the example agent's `uv.lock`.
 
 ## Repository Layout
 
@@ -78,6 +79,7 @@ voicegateway/
 │   ├── sink/              Sink
 │   ├── live/              Broadcaster
 │   ├── scrape/            Scraper
+│   ├── bucket/            Bucket: recordings in S3, ranged reads, 90-day expiry by day
 │   ├── settle/            Settler, Closer, Rollup, Retention, RecCheck
 │   ├── api/               dashboard API
 │   ├── mcp/               MCP tools
@@ -89,12 +91,13 @@ voicegateway/
 │   └── obs/               logs, own metrics, /healthz
 ├── ee/                    commercial code, same package names as internal/
 ├── dashboard/src/features/   one folder per page: calls/ call/ sfu/ sip/ live/ settings/
-├── sdk/python/            attach(), with its own packaging and tests
+├── examples/livekit-agent/  the documented agent and scripted caller (make example-call)
+├── sdk/python/            optional attach(), with its own packaging and tests
 ├── migrations/            postgres/ and clickhouse/
 ├── test/                  end-to-end: full stack plus livekit-server --dev, fixtures
 ├── deploy/                compose.yaml, Dockerfile
 ├── docs/                  decisions/, specs/, progress.md
-└── Makefile               make dev | test | lint | build for Go, the dashboard and the SDK
+└── Makefile               make dev | test | lint | build for Go and the dashboard; make example-call
 ```
 
 Every package has the same shape: `doc.go` (its job, the rule it keeps, its decision), a file named after its main type, `store.go` for the interfaces it needs, its tests and `testdata/`. Anything that does I/O keeps its interface, real implementation and test fake side by side. Folders never exist only to group.
@@ -108,6 +111,7 @@ Every package has the same shape: `doc.go` (its job, the rule it keeps, its deci
 - **Span**: an OTLP span, linked to a call and turn through its trace id.
 - **Server sample**: CPU, memory and network of an SFU, SIP or agent node at a point in time.
 - **Recording**: a link to an audio file in the bucket.
+- **Connection**: per project and source (webhook, agent), when ingestion last accepted and last refused a request, and the refusal's reason code.
 
 ## External Services
 
@@ -122,7 +126,6 @@ Proposed, for review:
 - web answers an ingest request in under 50 ms at p99.
 - No event is lost at 1,000 concurrent calls.
 - A call appears in the live view within 2 seconds of the event.
-- The SDK adds under 1 ms per turn to the agent.
 
 ## Security and Privacy
 

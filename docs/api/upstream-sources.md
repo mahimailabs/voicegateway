@@ -72,3 +72,48 @@ Source-unit conversions, nullable observations/media, dynamic maps, saved config
 
 - Cloud agents: `AgentClient.ListAgents` and `ListAgentVersions` in server-sdk-go v2.19.0 `agent_client.go`, both signed with `withAgentGrant{Admin: true}`; messages `AgentInfo`, `AgentDeployment` and `AgentVersion` in protocol v1.52.1 `protobufs/livekit_cloud_agent.proto`. `NewAgentClient` derives the agents host from any URL (or `LK_AGENTS_URL`), so the worker decides Cloud from the project URL itself: a host ending in `.livekit.cloud`. Any other URL is recorded as a good read where Cloud agents do not apply, with no Cloud API call. `AgentInfo.secrets`, `AgentVersion.attributes` and `owner`, and `AgentDeployment.events` are not kept. Timestamps are `google.protobuf.Timestamp`; absent, the epoch or earlier (lk's `0001-01-01`) is null. `version` of `---` or empty is null. proto3 `int32` replica counts cannot tell 0 from unset, so 0 is null; booleans are kept as reported.
 - Agent workers: livekit-agents `livekit-agents/livekit/agents/telemetry/metrics.py` (default branch commit `01fb91f3e16407db6e2dbb4922014eeff8454b1c`, read through the LiveKit Docs MCP `code_search` on 2026-10-18) defines `lk_agents_worker_load` (`CPU_LOAD_GAUGE`, "Worker load percentage", a 0 to 1 ratio) and `lk_agents_active_job_count` (`RUNNING_JOB_GAUGE`, multiprocess `livesum`), both labelled `nodename`. They are parsed with `github.com/prometheus/common` v0.70.1 `expfmt.NewDecoder` and `dto.MetricFamily` from `prometheus/client_model`. `load_threshold` is a `WorkerOptions` value with no metric, so `loadThreshold` stays null.
+
+### Project live invalidations (2026-10-20)
+
+The live-events endpoint carries internal invalidation hints, not native LiveKit metrics. It uses
+Go's net/http ResponseController for bounded SSE writes, the pinned go-redis v9.23.0 Subscribe /
+ReceiveMessage / Publish methods for Redis pub/sub (decision 0007), and hey-api/openapi-ts 0.99.0's
+generated SSE client in the browser. Redis hints are not durable; snapshot refetch on reconnect
+and existing polling recover missed hints. Source metrics retain their original provenance above.
+
+## Container resource collection (2026-10-20)
+
+cAdvisor v0.60.6, lib/metrics/prometheus.go, supplies container CPU counters, memory working set,
+quota/period, memory limit and start identity. CPU is either a total or unique per-CPU series;
+never add both. Resource metrics carry the underlying stats timestamp. container_last_seen uses
+exporter time, so it cannot establish measurement freshness. specMemoryValue exports unlimited
+memory as zero; the API preserves the allocation as null. The pinned image and setup are recorded
+in docs/container-resources.md. LiveKit Agents 1.8.7 telemetry/metrics.py and http_server.py do not
+provide equivalent process-tree CPU and memory in the native multiprocess endpoint. Its worker
+load remains a separate metric. Prometheus common v0.70.1 expfmt parses the exporter text.
+
+
+## Recording and ingress issue evidence (2026-10-20)
+
+LiveKit Docs MCP verified the pinned server v1.13.3 source at
+https://github.com/livekit/livekit/blob/v1.13.3/pkg/service/ioservice_ingress.go:
+UpdateIngressState invokes IngressEnded when the reported status changes to
+ENDPOINT_ERROR, ENDPOINT_INACTIVE or ENDPOINT_COMPLETE. It invokes IngressStarted
+on ENDPOINT_PUBLISHING. Therefore ingress_ended alone is not an error signal;
+the nested state status must explicitly report ENDPOINT_ERROR. An absent state
+cannot establish either failure or recovery. Native emitted-webhook verification
+remains required; source inspection does not replace that check.
+
+For terminal recording evidence, use protocol v1.52.1 EgressStatus and native
+WebhookEvent identity. FAILED/ABORTED mean lost; LIMIT_REACHED means cut short.
+Do not persist raw error text or output URLs in issue descriptions. Event identity
+is scoped by organisation and project, independently of whether a call is linked.
+
+
+Native ingress webhook verification now passes against pinned livekit-server v1.13.3:
+TestIngressErrorEmitsSignedTerminalWebhook sends PUBLISHING, ERROR and PUBLISHING
+through protocol v1.52.1 IOInfoClient over Redis. It receives the server's actual HTTP
+webhooks and verifies signatures with webhook.ReceiveWebhookEvent. The error event
+is ingress_ended with ENDPOINT_ERROR; recovery is ingress_started with PUBLISHING.
+Both carry native event IDs and creation timestamps. This verifies native server
+state/event propagation, not an encoder or ingress media pipeline's failure detection.

@@ -30,6 +30,7 @@ func TestWebServesHealthAndStopsCleanly(t *testing.T) {
 		PostgresURL:   "postgres://voicegateway@127.0.0.1:1/voicegateway",
 		ClickHouseURL: "clickhouse://voicegateway@127.0.0.1:1/voicegateway",
 		RedisURL:      "redis://127.0.0.1:1/0",
+		S3:            config.S3{Endpoint: "127.0.0.1:1", Bucket: "recordings"},
 		SecretKey:     bytes.Repeat([]byte{7}, seal.KeySize),
 	}
 	go func() { done <- Web(ctx, c, slog.New(slog.NewTextHandler(io.Discard, nil))) }()

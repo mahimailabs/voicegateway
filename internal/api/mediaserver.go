@@ -68,6 +68,8 @@ const mediaServerSource = "Sampled by the worker from the project's LiveKit serv
 	"an RTC join and is not read. SIP trunks are served by the SIP read."
 
 func (a *API) mediaServer(w http.ResponseWriter, r *http.Request) {
+	// Live snapshots must not be replayed from an HTTP cache.
+	w.Header().Set("Cache-Control", "no-store")
 	ctx := r.Context()
 	org, proj := chi.URLParam(r, "orgId"), chi.URLParam(r, "projectId")
 	if _, err := a.Projects.Project(ctx, org, proj); err != nil {

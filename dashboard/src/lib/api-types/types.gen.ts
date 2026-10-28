@@ -20,6 +20,8 @@ export type Call = {
         llmOutputTokens: number | null;
         ttsCharacters: number | null;
         sttSeconds: number | null;
+        llmCachedTokens?: number | null;
+        ttsSeconds?: number | null;
         note: string;
     } | null;
     recording?: {
@@ -71,6 +73,29 @@ export type Call = {
      * Distinct retained source clocks for this call. Every clockId resolves to exactly one entry; IDs are unique within this array. Empty only when no relative timeline is present. Metadata is derived from capture/adapter evidence, not a field already stored in the preview fixtures.
      */
     clocks: Array<Clock>;
+    /**
+     * Custom fields the agent attached through a VoiceGateway SDK (attach(fields=...) or set_field), later values winning; at most 64 per call, new keys past that are dropped. Empty when no SDK attached any, and for an embed token without transcriptsAndAudio (decision 0034). Absent from captures made before the SDK.
+     */
+    fields?: {
+        [key: string]: string;
+    };
+    /**
+     * The latest user and agent state a VoiceGateway SDK reported. Null when no SDK reported state for this call.
+     */
+    live?: CallLive | null;
+};
+
+export type CallLive = {
+    user: LiveState | null;
+    agent: LiveState | null;
+};
+
+export type LiveState = {
+    /**
+     * The framework's state name, for example listening, thinking or speaking.
+     */
+    state: string;
+    at: string;
 };
 
 export type Span = {
@@ -92,6 +117,7 @@ export type Span = {
 };
 
 export type Turn = {
+    spanId?: string | null;
     userText: string | null;
     agentText: string | null;
     model: string | null;
@@ -560,6 +586,26 @@ export type ProjectSnapshot = {
             model: string;
         }>;
     } | null;
+};
+
+export type Resources = {
+    source: string;
+    resources: Array<{
+        id: string;
+        kind: string;
+        target: string;
+        containerId: string;
+        host: string;
+        sourceStatus: SourceStatus;
+        samples: Array<{
+            t: string;
+            observedAt: string;
+            cpuUsed: number | null;
+            cpuCores: number | null;
+            memoryBytes: number | null;
+            memoryLimitBytes: number | null;
+        }>;
+    }>;
 };
 
 export type Workers = {
@@ -1154,13 +1200,48 @@ export type IssueList = {
      */
     to: string;
     /**
-     * false when part of the range is not stored, so an issue may have more hits than listed.
+     * Whether retained calls in the selected range and project job observations are evaluated, and required component sources are fresh and fully evaluated. Does not prove complete upstream capture or absence of unreported failures.
      */
     complete: boolean;
     /**
-     * Event issues with a hit in the range, and every standing issue whatever the range, high severity first, then by hits. Grouping, titles and severities are the ones in issues-model.ts.
+     * Evaluation and source availability for retained evidence, independent of issue filters.
+     */
+    coverage: {
+        /**
+         * Retained calls in the range awaiting evaluation, including retry backoff and changed thresholds.
+         */
+        pendingCalls: number | null;
+        /**
+         * Evaluated retained calls in the range whose source evidence was unavailable.
+         */
+        unavailableCalls: number | null;
+        /**
+         * Project job observations awaiting evaluation or correlation, across the retained history.
+         */
+        pendingJobs: number | null;
+        /**
+         * Required component sources. Missing reads are unknown; successful reads with missing rule evidence are partial.
+         */
+        sources: Array<{
+            /**
+             * Component source layer.
+             */
+            layer: 'media_server' | 'sip' | 'cloud_agents' | 'egress' | 'ingress';
+            /**
+             * Current means fresh and evaluated, not healthy.
+             */
+            state: 'unknown' | 'current' | 'partial' | 'stale' | 'unavailable';
+            /**
+             * Latest source read time, or null when no read exists.
+             */
+            readAt: string | null;
+        }>;
+    };
+    /**
+     * Event issues with a hit in the range, and every standing issue whatever the range, high severity first, then by stable rule ID. Grouping, titles and severities come from persisted native evaluations.
      */
     items: Array<{
+        metadata: IssueMetadata;
         /**
          * Stable grouping key; the issueId dispositions refer to.
          */
@@ -1170,7 +1251,7 @@ export type IssueList = {
          */
         title: string;
         /**
-         * event: something that happened, each hit dated and kept only when from <= at < to. standing: a state true of the latest read (an agent worker or phone bridge check over what LiveKit lists now), listed in every range with undated hits and never counted as a problem in the range.
+         * event: something that happened, each hit dated and kept only when from <= at < to. standing: a component finding listed in every range. Its evidenceState distinguishes confirmed, stale, unavailable and unknown observations; it is never counted as an event in the range.
          */
         kind: 'event' | 'standing';
         /**
@@ -1178,17 +1259,25 @@ export type IssueList = {
          */
         severity: 'high' | 'medium' | 'low' | 'info';
         /**
-         * The component the check runs on.
+         * The component the check runs on. delivery is a recorded egress or ingress failure.
          */
-        source: 'calls' | 'agent_workers' | 'phone_bridge';
+        source: 'calls' | 'agent_workers' | 'phone_bridge' | 'delivery';
         /**
-         * Most recent hit, UTC. Compared with a disposition's time to mark a resolved issue as regressed.
+         * Most recent event hit, UTC. Regression uses the persisted evidence revision, independently of event time.
          */
         lastSeenAt: string | null;
         /**
          * Where the issue was found, most recent first. Never empty.
          */
         hits: Array<{
+            /**
+             * Last source read that confirmed this standing finding.
+             */
+            observedAt: string | null;
+            /**
+             * Recorded event, currently confirmed standing finding, stale source, failed source, or unconfirmed latest read.
+             */
+            evidenceState: 'recorded' | 'current' | 'stale' | 'unavailable' | 'unknown';
             /**
              * When the hit happened, UTC.
              */
@@ -1262,7 +1351,7 @@ export type Error = {
     /**
      * Stable error category.
      */
-    code: 'invalid_request' | 'unauthenticated' | 'forbidden' | 'not_found' | 'source_unavailable' | 'internal_error' | 'range_not_satisfiable' | 'last_admin' | 'already_member' | 'member_of_other_organisations';
+    code: 'invalid_request' | 'revision_conflict' | 'unauthenticated' | 'forbidden' | 'not_found' | 'source_unavailable' | 'internal_error' | 'range_not_satisfiable' | 'last_admin' | 'already_member' | 'member_of_other_organisations' | 'project_exists' | 'livekit_secret_invalid' | 'livekit_unreachable' | 'recording_bucket_refused' | 'recording_bucket_unreachable' | 'origin_not_allowed';
     /**
      * Safe human-readable explanation, excluding upstream credentials and request bodies.
      */
@@ -1288,25 +1377,6 @@ export type Thresholds = {
     ttsStartMs: number;
 };
 
-export type IssueDisposition = {
-    /**
-     * Stable issue grouping key from issues-model.ts; disposition belongs to this project.
-     */
-    issueId: string;
-    /**
-     * Explicit user disposition. No disposition means open, not resolved.
-     */
-    state: 'resolved' | 'ignored';
-    /**
-     * User decision time, UTC. Compare with the issue's lastSeenAt to mark it regressed.
-     */
-    at: string;
-};
-
-export type IssueDispositions = {
-    items: Array<IssueDisposition>;
-};
-
 export type AlertRuleSetup = {
     /**
      * Identifier of an existing console rule.
@@ -1326,7 +1396,213 @@ export type AlertSetup = {
     items: Array<AlertRuleSetup>;
 };
 
+export type CallTags = {
+    tags: Array<string>;
+};
+
+export type IssueMetadata = {
+    issueId: string;
+    state: 'open' | 'resolved' | 'ignored';
+    regressed: boolean;
+    /**
+     * Null when no explicit decision has been saved.
+     */
+    decidedAt: string | null;
+    evidenceRevision: number;
+    reviewedEvidenceRevision: number;
+    /**
+     * Normalized lowercase tags belonging to this immutable issue ID.
+     */
+    tags: Array<string>;
+    /**
+     * Reversible archive state. Does not delete evidence or resolve findings.
+     */
+    archived: boolean;
+    revision: number;
+};
+
+/**
+ * Compare metadata and evidence revisions atomically. Omitted or null state preserves the decision, including regression; setting state explicitly acknowledges current evidence.
+ */
+export type UpdateIssueMetadata = {
+    /**
+     * Normalized lowercase tags belonging to this immutable issue ID.
+     */
+    tags: Array<string>;
+    /**
+     * Reversible archive state. Does not delete evidence or resolve findings.
+     */
+    archived: boolean;
+    revision: number;
+    evidenceRevision: number;
+    /**
+     * Null or omitted preserves the existing decision without acknowledging new evidence.
+     */
+    state?: 'open' | 'resolved' | 'ignored' | null;
+};
+
+export type CallMetadata = {
+    /**
+     * Normalized lowercase tags belonging to this immutable call ID.
+     */
+    tags: Array<string>;
+    /**
+     * Reversible archive state. Does not delete evidence or resolve findings.
+     */
+    archived: boolean;
+    revision: number;
+};
+
+/**
+ * Replace tags and archive state only when revision matches. Clear tags with an empty array. A stale revision returns 409 without changing persisted data.
+ */
+export type UpdateCallMetadata = CallMetadata;
+
+export type ProjectConnection = {
+    livekit: ProjectLiveKit;
+    urls: ConnectionUrls;
+    webhook: ConnectionSource;
+    agent: ConnectionSource;
+    sdk: ConnectionSource;
+    firstCall: FirstCall | null;
+};
+
+export type ProjectCreated = {
+    id: string;
+    name: string;
+    /**
+     * Rooms live on the LiveKit project at the verify, from the same signed ListRooms read. Null when the verifier did not count them; never a guessed zero.
+     */
+    liveRooms: number | null;
+};
+
+export type ProjectLiveKit = {
+    /**
+     * The project's LiveKit URL. It never changes; another LiveKit server is another project.
+     */
+    url: string;
+    /**
+     * The LiveKit API key agents and LiveKit webhooks must sign with. API keys are not secret.
+     */
+    apiKey: string;
+};
+
+export type LiveKitCredentialsUpdate = {
+    /**
+     * The new LiveKit API key, with no spaces or control characters.
+     */
+    livekitApiKey: string;
+    /**
+     * The new LiveKit API secret. Sealed before it is stored; never answered or logged.
+     */
+    livekitApiSecret: string;
+};
+
+export type ConnectionUrls = {
+    /**
+     * The value for LIVEKIT_OBSERVABILITY_URL in the agent.
+     */
+    observability: string | null;
+    /**
+     * The webhook URL to add in LiveKit.
+     */
+    webhook: string | null;
+};
+
+export type ConnectionSource = {
+    /**
+     * When a request from this source was last accepted, to within 30 seconds.
+     */
+    lastAcceptedAt: string | null;
+    /**
+     * When a request from this source was last refused, to within 30 seconds.
+     */
+    lastRejectedAt: string | null;
+    /**
+     * Why the last refused request was refused.
+     */
+    reason: 'token_missing' | 'key_mismatch' | 'signature_invalid' | 'grant_missing' | 'body_changed' | 'plan_inactive' | 'plan_cap' | 'too_large' | null;
+    /**
+     * The LiveKit API key the refused token named, kept only when it has a LiveKit key's shape (letters, digits, _ and -, at most 64). API keys are not secret.
+     */
+    usedKey: string | null;
+    /**
+     * This project's LiveKit API key, shown beside usedKey. The secret is never returned.
+     */
+    expectedKey: string | null;
+};
+
+export type FirstCall = {
+    id: string;
+    startedAt: string | null;
+};
+
+export type UpdateProjectSettings = {
+    thresholds: Thresholds;
+    /**
+     * Revision checked atomically on save to prevent lost updates.
+     */
+    revision: number;
+};
+
+export type UpdateAllowedOrigins = {
+    /**
+     * The sites allowed to frame the project's widgets. Empty or null allows none.
+     */
+    allowedOrigins: Array<string> | null;
+    /**
+     * The allowedOriginsRevision read with the settings, checked atomically on save to prevent lost updates. It versions the sites alone; the thresholds revision does not move.
+     */
+    allowedOriginsRevision: number;
+};
+
+export type CreateEmbedToken = {
+    /**
+     * The widgets the token opens. A recent-calls frame whose rows open a call needs both recent-calls and call.
+     */
+    widgets: Array<'answer-time' | 'calls' | 'issues' | 'recent-calls' | 'time-per-turn' | 'call'>;
+    /**
+     * The one site that may frame the widgets, one of the project's allowedOrigins.
+     */
+    origin: string;
+    /**
+     * How long the token is valid.
+     */
+    expiresInSeconds?: number;
+    /**
+     * Share what was said with the framing site: the one-call view's turn text, span attributes (prompts, transcripts, tool arguments), the SDK call fields and recording audio. Off by default, when the call widget shows timings only and listCalls refuses the field filter. Needs the call widget, and an Admin or a project key (decision 0034).
+     */
+    transcriptsAndAudio?: boolean;
+};
+
+export type EmbedToken = {
+    /**
+     * vge_ followed by a signed JWT. Put it in the frame's address as ?token=. Shown once; VoiceGateway does not store it.
+     */
+    token: string;
+    /**
+     * When the token stops working.
+     */
+    expiresAt: string;
+    /**
+     * The widgets the token opens.
+     */
+    widgets: Array<'answer-time' | 'calls' | 'issues' | 'recent-calls' | 'time-per-turn' | 'call'>;
+    /**
+     * The origin the token may be framed by, normalised.
+     */
+    origin: string;
+    /**
+     * Whether the token shares turn text, span attributes and recording audio.
+     */
+    transcriptsAndAudio: boolean;
+};
+
 export type ProjectSettings = {
+    /**
+     * Revision checked atomically on save to prevent lost updates.
+     */
+    revision: number;
     thresholds: Thresholds;
     /**
      * Configured storage destination label only, null when not configured. Never return access credentials.
@@ -1348,6 +1624,10 @@ export type ProjectSettings = {
      * Configured embed framing origin allow-list, null when not configured. Missing configuration never authorises arbitrary origins.
      */
     allowedOrigins: Array<string> | null;
+    /**
+     * Version of allowedOrigins alone, sent back with updateAllowedOrigins. Saving sites never moves revision, which versions the thresholds.
+     */
+    allowedOriginsRevision: number;
 };
 
 export type Invitation = {
@@ -1406,6 +1686,106 @@ export type CreatedInvitation = {
      * True when the email was sent; false without SMTP, or when the send failed.
      */
     emailed: boolean;
+};
+
+export type InstanceOrganisationPut = {
+    /**
+     * The organisation's name, shown in the console.
+     */
+    name: string;
+};
+
+export type InstanceOrganisation = {
+    /**
+     * The id the caller chose.
+     */
+    id: string;
+    /**
+     * The organisation's name.
+     */
+    name: string;
+    /**
+     * When the organisation was created.
+     */
+    createdAt: string;
+    /**
+     * Members of the organisation at this read; a count of stored rows, not a measurement.
+     */
+    members: number;
+    /**
+     * Members with the Admin role at this read; a count of stored rows, not a measurement.
+     */
+    admins: number;
+    /**
+     * Invitations neither accepted, revoked nor expired at this read; a count of stored rows, not a measurement.
+     */
+    pendingInvitations: number;
+};
+
+export type InstanceInvitation = {
+    /**
+     * The invitation's id.
+     */
+    invitationId: string;
+    /**
+     * The invited address, case-folded.
+     */
+    email: string;
+    /**
+     * The organisation role the invitation grants, per decision 0019.
+     */
+    role: 'Admin' | 'Member' | 'Viewer';
+    /**
+     * When the link stops working, 7 days after it was made.
+     */
+    expiresAt: string;
+    /**
+     * True when the email was sent; false without SMTP, or when the send failed. On a repeat, as it was; a repeat during the first call's send waits for its outcome.
+     */
+    emailed: boolean | null;
+    /**
+     * <VOICEGATEWAY_PUBLIC_URL>/invite#<token>, only without SMTP and only in the answer that made it.
+     */
+    link: string | null;
+};
+
+export type InstanceUsage = {
+    /**
+     * The organisation read.
+     */
+    organisationId: string;
+    /**
+     * The period's inclusive start, as sent, in UTC.
+     */
+    from: string;
+    /**
+     * The period's exclusive end, as sent, in UTC.
+     */
+    to: string;
+    /**
+     * The calls counted in calls, each from its start to its end (an inferred call's end is its last activity), summed exactly and then rounded down to whole seconds once, never per call. Calls with missing or negative durations are excluded. A sum of stored rows at this read, so 0 is a true zero.
+     */
+    callSeconds: number;
+    /**
+     * Calls whose end fell in the period, with a known start and an end at or after that start. An inferred call's end is its last activity.
+     */
+    calls: number;
+    /**
+     * Of calls, those whose end was inferred from their last activity rather than observed.
+     */
+    inferredCalls: number;
+    /**
+     * Exact durations of measured inferred calls summed and floored once, independently of callSeconds, so their contribution can be labelled as inferred.
+     */
+    inferredCallSeconds: number;
+    /**
+     * Closed calls that started in the period but have a null effective end or an effective end before their start. Excluded from calls and callSeconds; unknown durations are not converted to zero.
+     */
+    unmeasuredCalls: number;
+    /**
+     * Open calls that started in the period; their time is unknown, so it is not in callSeconds. Open calls started before the period are excluded.
+     */
+    unendedCalls: number;
 };
 
 export type CreatedPasswordReset = {
@@ -1528,6 +1908,52 @@ export type MemberRoleChange = {
 
 export type Invitations = {
     items: Array<Invitation>;
+};
+
+export type ProjectCreate = {
+    /**
+     * The project's display name; trimmed, with at least one letter or digit. Its slug is the project id.
+     */
+    name: string;
+    /**
+     * The LiveKit server URL, with the scheme ws, wss, http or https and a host, such as wss://your-project.livekit.cloud.
+     */
+    livekitUrl: string;
+    /**
+     * The LiveKit API key; unique on this server, since ingest finds a project by the key that signed a webhook or upload.
+     */
+    livekitApiKey: string;
+    /**
+     * The LiveKit API secret. Sealed before it is stored; never answered or logged.
+     */
+    livekitApiSecret: string;
+    recordingBucket?: RecordingBucketCreate;
+};
+
+/**
+ * An S3 bucket the project keeps its recordings in instead of the instance's bucket. Set only when the project is created; it never changes afterwards, so recordings never move between buckets.
+ */
+export type RecordingBucketCreate = {
+    /**
+     * The S3 endpoint, an http or https URL with a host and no path, such as https://s3.us-east-1.amazonaws.com.
+     */
+    endpoint: string;
+    /**
+     * The bucket's name, by S3's naming rules.
+     */
+    bucket: string;
+    /**
+     * The bucket's region, such as us-east-1. When empty, it is asked of the bucket.
+     */
+    region?: string;
+    /**
+     * The S3 access key id; it needs to write, read, list and delete objects under recordings/.
+     */
+    accessKeyId: string;
+    /**
+     * The S3 secret access key. Sealed before it is stored; never answered or logged.
+     */
+    secretAccessKey: string;
 };
 
 export type WorkspaceProject = {
@@ -1692,6 +2118,43 @@ export type Clock = unknown & {
     alignment: 'observed' | 'inferred' | 'unknown';
 };
 
+export type OrganisationEntitlementPut = {
+    from: string;
+    to: string;
+    limitMinutes: number;
+    active: boolean;
+    revision: number;
+};
+
+export type OrganisationEntitlement = {
+    from: string;
+    to: string;
+    limitMinutes: number;
+    active: boolean;
+    revision: number;
+    callSeconds: number;
+    /**
+     * Retained closed calls first seen in this billing period whose duration is missing or invalid. Excluded from measured seconds. This count can decrease with retention.
+     */
+    unmeasuredCalls: number;
+    /**
+     * Retained open calls first seen in this billing period. Their duration is not yet measured. This count can decrease with retention.
+     */
+    openCalls: number;
+    warningPercent: 0 | 80 | 95 | 100;
+    ingestAllowed: boolean;
+};
+
+/**
+ * The organisation's id, chosen by the caller; any other shape is invalid_request.
+ */
+export type InstanceOrganisationId = string;
+
+/**
+ * 1 to 200 printable characters; a Cloud control plane sends its checkout session id. A repeat with the same key returns the first invitation.
+ */
+export type IdempotencyKey = string;
+
 /**
  * A project key's id, the 12 characters after vgk_; one from another project is not_found, and any other value is invalid_request.
  */
@@ -1716,6 +2179,60 @@ export type OrganisationId = string;
  * Authorised projectId; the server must verify organisation/project ownership before any read.
  */
 export type ProjectId = string;
+
+export type GetLiveEventsData = {
+    body?: never;
+    path: {
+        /**
+         * Authorised orgId; the server must verify organisation/project ownership before any read.
+         */
+        orgId: string;
+        /**
+         * Authorised projectId; the server must verify organisation/project ownership before any read.
+         */
+        projectId: string;
+    };
+    query?: never;
+    url: '/api/v1/org/{orgId}/project/{projectId}/live-events';
+};
+
+export type GetLiveEventsErrors = {
+    /**
+     * invalid_request; never return an empty success result for this failure.
+     */
+    400: Error;
+    /**
+     * unauthenticated; never return an empty success result for this failure.
+     */
+    401: Error;
+    /**
+     * forbidden; never return an empty success result for this failure.
+     */
+    403: Error;
+    /**
+     * not_found; never return an empty success result for this failure.
+     */
+    404: Error;
+    /**
+     * internal_error; never return an empty success result for this failure.
+     */
+    500: Error;
+    /**
+     * source_unavailable; never return an empty success result for this failure.
+     */
+    503: Error;
+};
+
+export type GetLiveEventsError = GetLiveEventsErrors[keyof GetLiveEventsErrors];
+
+export type GetLiveEventsResponses = {
+    /**
+     * Project-scoped invalidation hints, not a telemetry or event history API.
+     */
+    200: string;
+};
+
+export type GetLiveEventsResponse = GetLiveEventsResponses[keyof GetLiveEventsResponses];
 
 export type ListCallsData = {
     body?: never;
@@ -1790,6 +2307,10 @@ export type ListCallsData = {
          * Only calls where every listed value is unknown. This is how the console's "is empty" filter reaches the server; an unknown value is never matched as zero.
          */
         unknown?: Array<'answerMs' | 'durationSeconds' | 'turnCount'>;
+        /**
+         * An SDK call field as key:value. Repeat to keep calls holding every listed pair; one key with two values matches nothing. At most 16. An embed token without transcriptsAndAudio gets 403 (decision 0034).
+         */
+        field?: Array<string>;
         /**
          * User tag. Repeat to match calls carrying any listed tag.
          */
@@ -1994,6 +2515,18 @@ export type ListIssuesData = {
          * Exclusive UTC end of the range.
          */
         to: string;
+        /**
+         * Literal case-insensitive search over issue titles and occurrence details.
+         */
+        q?: string;
+        /**
+         * Match any persisted normalized issue tag.
+         */
+        tag?: Array<string>;
+        /**
+         * Filter persisted issue archive state. Omit to include both.
+         */
+        archived?: boolean;
     };
     url: '/api/v1/org/{orgId}/project/{projectId}/issues';
 };
@@ -2260,6 +2793,60 @@ export type GetWorkersResponses = {
 };
 
 export type GetWorkersResponse = GetWorkersResponses[keyof GetWorkersResponses];
+
+export type GetResourcesData = {
+    body?: never;
+    path: {
+        /**
+         * Authorised orgId; the server must verify organisation/project ownership before any read.
+         */
+        orgId: string;
+        /**
+         * Authorised projectId; the server must verify organisation/project ownership before any read.
+         */
+        projectId: string;
+    };
+    query?: never;
+    url: '/api/v1/org/{orgId}/project/{projectId}/resources';
+};
+
+export type GetResourcesErrors = {
+    /**
+     * invalid_request; never return an empty success result for this failure.
+     */
+    400: Error;
+    /**
+     * unauthenticated; never return an empty success result for this failure.
+     */
+    401: Error;
+    /**
+     * forbidden; never return an empty success result for this failure.
+     */
+    403: Error;
+    /**
+     * not_found; never return an empty success result for this failure.
+     */
+    404: Error;
+    /**
+     * internal_error; never return an empty success result for this failure.
+     */
+    500: Error;
+    /**
+     * source_unavailable; never return an empty success result for this failure.
+     */
+    503: Error;
+};
+
+export type GetResourcesError = GetResourcesErrors[keyof GetResourcesErrors];
+
+export type GetResourcesResponses = {
+    /**
+     * Authorised read result. Null means unreported, never zero. Source-specific coverage limits remain visible.
+     */
+    200: Resources;
+};
+
+export type GetResourcesResponse = GetResourcesResponses[keyof GetResourcesResponses];
 
 export type GetSipData = {
     body?: never;
@@ -2590,6 +3177,300 @@ export type GetProviderProbesResponses = {
 
 export type GetProviderProbesResponse = GetProviderProbesResponses[keyof GetProviderProbesResponses];
 
+export type GetCallTagsData = {
+    body?: never;
+    path: {
+        /**
+         * Authorised orgId; the server must verify organisation/project ownership before any read.
+         */
+        orgId: string;
+        /**
+         * Authorised projectId; the server must verify organisation/project ownership before any read.
+         */
+        projectId: string;
+    };
+    query?: never;
+    url: '/api/v1/org/{orgId}/project/{projectId}/call-tags';
+};
+
+export type GetCallTagsErrors = {
+    /**
+     * invalid_request; never return an empty success result for this failure.
+     */
+    400: Error;
+    /**
+     * unauthenticated; never return an empty success result for this failure.
+     */
+    401: Error;
+    /**
+     * forbidden; never return an empty success result for this failure.
+     */
+    403: Error;
+    /**
+     * not_found; never return an empty success result for this failure.
+     */
+    404: Error;
+    /**
+     * internal_error; never return an empty success result for this failure.
+     */
+    500: Error;
+    /**
+     * source_unavailable; never return an empty success result for this failure.
+     */
+    503: Error;
+};
+
+export type GetCallTagsError = GetCallTagsErrors[keyof GetCallTagsErrors];
+
+export type GetCallTagsResponses = {
+    /**
+     * Authorised read result. Null means unreported, never zero. Source-specific coverage limits remain visible.
+     */
+    200: CallTags;
+};
+
+export type GetCallTagsResponse = GetCallTagsResponses[keyof GetCallTagsResponses];
+
+export type GetCallMetadataData = {
+    body?: never;
+    path: {
+        /**
+         * Authorised orgId; the server must verify organisation/project ownership before any read.
+         */
+        orgId: string;
+        /**
+         * Authorised projectId; the server must verify organisation/project ownership before any read.
+         */
+        projectId: string;
+        /**
+         * Immutable call UUID within the named project.
+         */
+        callId: string;
+    };
+    query?: never;
+    url: '/api/v1/org/{orgId}/project/{projectId}/calls/{callId}/metadata';
+};
+
+export type GetCallMetadataErrors = {
+    /**
+     * invalid_request; never return an empty success result for this failure.
+     */
+    400: Error;
+    /**
+     * unauthenticated; never return an empty success result for this failure.
+     */
+    401: Error;
+    /**
+     * forbidden; never return an empty success result for this failure.
+     */
+    403: Error;
+    /**
+     * not_found; never return an empty success result for this failure.
+     */
+    404: Error;
+    /**
+     * internal_error; never return an empty success result for this failure.
+     */
+    500: Error;
+    /**
+     * source_unavailable; never return an empty success result for this failure.
+     */
+    503: Error;
+};
+
+export type GetCallMetadataError = GetCallMetadataErrors[keyof GetCallMetadataErrors];
+
+export type GetCallMetadataResponses = {
+    /**
+     * Authorised read result. Null means unreported, never zero. Source-specific coverage limits remain visible.
+     */
+    200: CallMetadata;
+};
+
+export type GetCallMetadataResponse = GetCallMetadataResponses[keyof GetCallMetadataResponses];
+
+export type UpdateCallMetadataData = {
+    body: UpdateCallMetadata;
+    path: {
+        /**
+         * Authorised orgId; the server must verify organisation/project ownership before any read.
+         */
+        orgId: string;
+        /**
+         * Authorised projectId; the server must verify organisation/project ownership before any read.
+         */
+        projectId: string;
+        /**
+         * Immutable call UUID within the named project.
+         */
+        callId: string;
+    };
+    query?: never;
+    url: '/api/v1/org/{orgId}/project/{projectId}/calls/{callId}/metadata';
+};
+
+export type UpdateCallMetadataErrors = {
+    /**
+     * invalid_request; never return an empty success result for this failure.
+     */
+    400: Error;
+    /**
+     * unauthenticated; never return an empty success result for this failure.
+     */
+    401: Error;
+    /**
+     * forbidden; never return an empty success result for this failure.
+     */
+    403: Error;
+    /**
+     * not_found; never return an empty success result for this failure.
+     */
+    404: Error;
+    /**
+     * revision_conflict, settings changed since they were read; last_admin, the change would leave the organisation without an admin; already_member, the invited email's account is a member already; member_of_other_organisations, a reset's member belongs to an organisation the requester does not administer; project_exists, the organisation already has a project with the new name's id.
+     */
+    409: Error;
+    /**
+     * internal_error; never return an empty success result for this failure.
+     */
+    500: Error;
+    /**
+     * source_unavailable; never return an empty success result for this failure.
+     */
+    503: Error;
+};
+
+export type UpdateCallMetadataError = UpdateCallMetadataErrors[keyof UpdateCallMetadataErrors];
+
+export type UpdateCallMetadataResponses = {
+    /**
+     * Persisted call metadata with the new revision.
+     */
+    200: CallMetadata;
+};
+
+export type UpdateCallMetadataResponse = UpdateCallMetadataResponses[keyof UpdateCallMetadataResponses];
+
+export type GetIssueMetadataData = {
+    body?: never;
+    path: {
+        /**
+         * Authorised orgId; the server must verify organisation/project ownership before any read.
+         */
+        orgId: string;
+        /**
+         * Authorised projectId; the server must verify organisation/project ownership before any read.
+         */
+        projectId: string;
+        /**
+         * Stable issue rule identity within the named project.
+         */
+        issueId: string;
+    };
+    query?: never;
+    url: '/api/v1/org/{orgId}/project/{projectId}/issues/{issueId}/metadata';
+};
+
+export type GetIssueMetadataErrors = {
+    /**
+     * invalid_request; never return an empty success result for this failure.
+     */
+    400: Error;
+    /**
+     * unauthenticated; never return an empty success result for this failure.
+     */
+    401: Error;
+    /**
+     * forbidden; never return an empty success result for this failure.
+     */
+    403: Error;
+    /**
+     * not_found; never return an empty success result for this failure.
+     */
+    404: Error;
+    /**
+     * internal_error; never return an empty success result for this failure.
+     */
+    500: Error;
+    /**
+     * source_unavailable; never return an empty success result for this failure.
+     */
+    503: Error;
+};
+
+export type GetIssueMetadataError = GetIssueMetadataErrors[keyof GetIssueMetadataErrors];
+
+export type GetIssueMetadataResponses = {
+    /**
+     * Authorised read result. Null means unreported, never zero. Source-specific coverage limits remain visible.
+     */
+    200: IssueMetadata;
+};
+
+export type GetIssueMetadataResponse = GetIssueMetadataResponses[keyof GetIssueMetadataResponses];
+
+export type UpdateIssueMetadataData = {
+    body: UpdateIssueMetadata;
+    path: {
+        /**
+         * Authorised orgId; the server must verify organisation/project ownership before any read.
+         */
+        orgId: string;
+        /**
+         * Authorised projectId; the server must verify organisation/project ownership before any read.
+         */
+        projectId: string;
+        /**
+         * Stable issue rule identity within the named project.
+         */
+        issueId: string;
+    };
+    query?: never;
+    url: '/api/v1/org/{orgId}/project/{projectId}/issues/{issueId}/metadata';
+};
+
+export type UpdateIssueMetadataErrors = {
+    /**
+     * invalid_request; never return an empty success result for this failure.
+     */
+    400: Error;
+    /**
+     * unauthenticated; never return an empty success result for this failure.
+     */
+    401: Error;
+    /**
+     * forbidden; never return an empty success result for this failure.
+     */
+    403: Error;
+    /**
+     * not_found; never return an empty success result for this failure.
+     */
+    404: Error;
+    /**
+     * revision_conflict, settings changed since they were read; last_admin, the change would leave the organisation without an admin; already_member, the invited email's account is a member already; member_of_other_organisations, a reset's member belongs to an organisation the requester does not administer; project_exists, the organisation already has a project with the new name's id.
+     */
+    409: Error;
+    /**
+     * internal_error; never return an empty success result for this failure.
+     */
+    500: Error;
+    /**
+     * source_unavailable; never return an empty success result for this failure.
+     */
+    503: Error;
+};
+
+export type UpdateIssueMetadataError = UpdateIssueMetadataErrors[keyof UpdateIssueMetadataErrors];
+
+export type UpdateIssueMetadataResponses = {
+    /**
+     * Persisted issue metadata with the new revision.
+     */
+    200: IssueMetadata;
+};
+
+export type UpdateIssueMetadataResponse = UpdateIssueMetadataResponses[keyof UpdateIssueMetadataResponses];
+
 export type GetProjectSettingsData = {
     body?: never;
     path: {
@@ -2644,7 +3525,65 @@ export type GetProjectSettingsResponses = {
 
 export type GetProjectSettingsResponse = GetProjectSettingsResponses[keyof GetProjectSettingsResponses];
 
-export type GetIssueDispositionsData = {
+export type UpdateProjectSettingsData = {
+    body: UpdateProjectSettings;
+    path: {
+        /**
+         * Authorised orgId; the server must verify organisation/project ownership before any read.
+         */
+        orgId: string;
+        /**
+         * Authorised projectId; the server must verify organisation/project ownership before any read.
+         */
+        projectId: string;
+    };
+    query?: never;
+    url: '/api/v1/org/{orgId}/project/{projectId}/settings';
+};
+
+export type UpdateProjectSettingsErrors = {
+    /**
+     * invalid_request; never return an empty success result for this failure.
+     */
+    400: Error;
+    /**
+     * unauthenticated; never return an empty success result for this failure.
+     */
+    401: Error;
+    /**
+     * forbidden; never return an empty success result for this failure.
+     */
+    403: Error;
+    /**
+     * not_found; never return an empty success result for this failure.
+     */
+    404: Error;
+    /**
+     * revision_conflict, settings changed since they were read; last_admin, the change would leave the organisation without an admin; already_member, the invited email's account is a member already; member_of_other_organisations, a reset's member belongs to an organisation the requester does not administer; project_exists, the organisation already has a project with the new name's id.
+     */
+    409: Error;
+    /**
+     * internal_error; never return an empty success result for this failure.
+     */
+    500: Error;
+    /**
+     * source_unavailable; never return an empty success result for this failure.
+     */
+    503: Error;
+};
+
+export type UpdateProjectSettingsError = UpdateProjectSettingsErrors[keyof UpdateProjectSettingsErrors];
+
+export type UpdateProjectSettingsResponses = {
+    /**
+     * Persisted settings with the new revision.
+     */
+    200: ProjectSettings;
+};
+
+export type UpdateProjectSettingsResponse = UpdateProjectSettingsResponses[keyof UpdateProjectSettingsResponses];
+
+export type GetProjectConnectionData = {
     body?: never;
     path: {
         /**
@@ -2657,10 +3596,10 @@ export type GetIssueDispositionsData = {
         projectId: string;
     };
     query?: never;
-    url: '/api/v1/org/{orgId}/project/{projectId}/issue-dispositions';
+    url: '/api/v1/org/{orgId}/project/{projectId}/connection';
 };
 
-export type GetIssueDispositionsErrors = {
+export type GetProjectConnectionErrors = {
     /**
      * invalid_request; never return an empty success result for this failure.
      */
@@ -2687,16 +3626,128 @@ export type GetIssueDispositionsErrors = {
     503: Error;
 };
 
-export type GetIssueDispositionsError = GetIssueDispositionsErrors[keyof GetIssueDispositionsErrors];
+export type GetProjectConnectionError = GetProjectConnectionErrors[keyof GetProjectConnectionErrors];
 
-export type GetIssueDispositionsResponses = {
+export type GetProjectConnectionResponses = {
     /**
-     * Authorised read result. Null means unreported, never zero. Source-specific coverage limits remain visible.
+     * Authorised read result. Null means not yet seen, never zero.
      */
-    200: IssueDispositions;
+    200: ProjectConnection;
 };
 
-export type GetIssueDispositionsResponse = GetIssueDispositionsResponses[keyof GetIssueDispositionsResponses];
+export type GetProjectConnectionResponse = GetProjectConnectionResponses[keyof GetProjectConnectionResponses];
+
+export type UpdateAllowedOriginsData = {
+    body: UpdateAllowedOrigins;
+    path: {
+        /**
+         * Authorised orgId; the server must verify organisation/project ownership before any read.
+         */
+        orgId: string;
+        /**
+         * Authorised projectId; the server must verify organisation/project ownership before any read.
+         */
+        projectId: string;
+    };
+    query?: never;
+    url: '/api/v1/org/{orgId}/project/{projectId}/settings/allowed-origins';
+};
+
+export type UpdateAllowedOriginsErrors = {
+    /**
+     * invalid_request; never return an empty success result for this failure.
+     */
+    400: Error;
+    /**
+     * unauthenticated; never return an empty success result for this failure.
+     */
+    401: Error;
+    /**
+     * forbidden; never return an empty success result for this failure.
+     */
+    403: Error;
+    /**
+     * not_found; never return an empty success result for this failure.
+     */
+    404: Error;
+    /**
+     * revision_conflict, settings changed since they were read; last_admin, the change would leave the organisation without an admin; already_member, the invited email's account is a member already; member_of_other_organisations, a reset's member belongs to an organisation the requester does not administer; project_exists, the organisation already has a project with the new name's id.
+     */
+    409: Error;
+    /**
+     * internal_error; never return an empty success result for this failure.
+     */
+    500: Error;
+    /**
+     * source_unavailable; never return an empty success result for this failure.
+     */
+    503: Error;
+};
+
+export type UpdateAllowedOriginsError = UpdateAllowedOriginsErrors[keyof UpdateAllowedOriginsErrors];
+
+export type UpdateAllowedOriginsResponses = {
+    /**
+     * Persisted settings with the new revision.
+     */
+    200: ProjectSettings;
+};
+
+export type UpdateAllowedOriginsResponse = UpdateAllowedOriginsResponses[keyof UpdateAllowedOriginsResponses];
+
+export type CreateEmbedTokenData = {
+    body: CreateEmbedToken;
+    path: {
+        /**
+         * Authorised orgId; the server must verify organisation/project ownership before any read.
+         */
+        orgId: string;
+        /**
+         * Authorised projectId; the server must verify organisation/project ownership before any read.
+         */
+        projectId: string;
+    };
+    query?: never;
+    url: '/api/v1/org/{orgId}/project/{projectId}/embed-tokens';
+};
+
+export type CreateEmbedTokenErrors = {
+    /**
+     * invalid_request; never return an empty success result for this failure.
+     */
+    400: Error;
+    /**
+     * unauthenticated; never return an empty success result for this failure.
+     */
+    401: Error;
+    /**
+     * forbidden; never return an empty success result for this failure.
+     */
+    403: Error;
+    /**
+     * not_found; never return an empty success result for this failure.
+     */
+    404: Error;
+    /**
+     * internal_error; never return an empty success result for this failure.
+     */
+    500: Error;
+    /**
+     * source_unavailable; never return an empty success result for this failure.
+     */
+    503: Error;
+};
+
+export type CreateEmbedTokenError = CreateEmbedTokenErrors[keyof CreateEmbedTokenErrors];
+
+export type CreateEmbedTokenResponses = {
+    /**
+     * The token, shown in this answer only.
+     */
+    201: EmbedToken;
+};
+
+export type CreateEmbedTokenResponse = CreateEmbedTokenResponses[keyof CreateEmbedTokenResponses];
 
 export type GetAlertSetupData = {
     body?: never;
@@ -2832,7 +3883,7 @@ export type CreateInvitationErrors = {
      */
     404: Error;
     /**
-     * last_admin, the change would leave the organisation without an admin; already_member, the invited email's account is a member already; member_of_other_organisations, a reset's member belongs to an organisation the requester does not administer.
+     * revision_conflict, settings changed since they were read; last_admin, the change would leave the organisation without an admin; already_member, the invited email's account is a member already; member_of_other_organisations, a reset's member belongs to an organisation the requester does not administer; project_exists, the organisation already has a project with the new name's id.
      */
     409: Error;
     /**
@@ -2909,6 +3960,122 @@ export type RevokeInvitationResponses = {
 };
 
 export type RevokeInvitationResponse = RevokeInvitationResponses[keyof RevokeInvitationResponses];
+
+export type CreateProjectData = {
+    body: ProjectCreate;
+    path: {
+        /**
+         * Authorised orgId; the server must verify organisation/project ownership before any read.
+         */
+        orgId: string;
+    };
+    query?: never;
+    url: '/api/v1/org/{orgId}/projects';
+};
+
+export type CreateProjectErrors = {
+    /**
+     * invalid_request; never return an empty success result for this failure.
+     */
+    400: Error;
+    /**
+     * unauthenticated; never return an empty success result for this failure.
+     */
+    401: Error;
+    /**
+     * forbidden; never return an empty success result for this failure.
+     */
+    403: Error;
+    /**
+     * not_found; never return an empty success result for this failure.
+     */
+    404: Error;
+    /**
+     * revision_conflict, settings changed since they were read; last_admin, the change would leave the organisation without an admin; already_member, the invited email's account is a member already; member_of_other_organisations, a reset's member belongs to an organisation the requester does not administer; project_exists, the organisation already has a project with the new name's id.
+     */
+    409: Error;
+    /**
+     * livekit_secret_invalid, LiveKit refused a read signed with the given key and secret; livekit_unreachable, the LiveKit URL gave no LiveKit answer, without saying whether it did not answer, was refused by the address guard or is not a LiveKit server; recording_bucket_refused, the S3 endpoint refused a write or delete with the given access key, secret and bucket name; recording_bucket_unreachable, the S3 endpoint gave no S3 answer, without saying why. Nothing is stored.
+     */
+    422: Error;
+    /**
+     * internal_error; never return an empty success result for this failure.
+     */
+    500: Error;
+    /**
+     * source_unavailable; never return an empty success result for this failure.
+     */
+    503: Error;
+};
+
+export type CreateProjectError = CreateProjectErrors[keyof CreateProjectErrors];
+
+export type CreateProjectResponses = {
+    /**
+     * The new project, as getWorkspaces lists it, and how many rooms its LiveKit project had live at the verify. Never its LiveKit key or secret.
+     */
+    201: ProjectCreated;
+};
+
+export type CreateProjectResponse = CreateProjectResponses[keyof CreateProjectResponses];
+
+export type UpdateProjectLiveKitCredentialsData = {
+    body: LiveKitCredentialsUpdate;
+    path: {
+        /**
+         * Authorised orgId; the server must verify organisation/project ownership before any read.
+         */
+        orgId: string;
+        /**
+         * Authorised projectId; the server must verify organisation/project ownership before any read.
+         */
+        projectId: string;
+    };
+    query?: never;
+    url: '/api/v1/org/{orgId}/project/{projectId}/livekit-credentials';
+};
+
+export type UpdateProjectLiveKitCredentialsErrors = {
+    /**
+     * invalid_request; never return an empty success result for this failure.
+     */
+    400: Error;
+    /**
+     * unauthenticated; never return an empty success result for this failure.
+     */
+    401: Error;
+    /**
+     * forbidden; never return an empty success result for this failure.
+     */
+    403: Error;
+    /**
+     * not_found; never return an empty success result for this failure.
+     */
+    404: Error;
+    /**
+     * livekit_secret_invalid, LiveKit refused a read signed with the given key and secret; livekit_unreachable, the LiveKit URL gave no LiveKit answer, without saying whether it did not answer, was refused by the address guard or is not a LiveKit server; recording_bucket_refused, the S3 endpoint refused a write or delete with the given access key, secret and bucket name; recording_bucket_unreachable, the S3 endpoint gave no S3 answer, without saying why. Nothing is stored.
+     */
+    422: Error;
+    /**
+     * internal_error; never return an empty success result for this failure.
+     */
+    500: Error;
+    /**
+     * source_unavailable; never return an empty success result for this failure.
+     */
+    503: Error;
+};
+
+export type UpdateProjectLiveKitCredentialsError = UpdateProjectLiveKitCredentialsErrors[keyof UpdateProjectLiveKitCredentialsErrors];
+
+export type UpdateProjectLiveKitCredentialsResponses = {
+    /**
+     * The project now uses the new key and secret.
+     */
+    204: void;
+};
+
+export type UpdateProjectLiveKitCredentialsResponse = UpdateProjectLiveKitCredentialsResponses[keyof UpdateProjectLiveKitCredentialsResponses];
 
 export type GetMembersData = {
     body?: never;
@@ -2994,7 +4161,7 @@ export type RemoveMemberErrors = {
      */
     404: Error;
     /**
-     * last_admin, the change would leave the organisation without an admin; already_member, the invited email's account is a member already; member_of_other_organisations, a reset's member belongs to an organisation the requester does not administer.
+     * revision_conflict, settings changed since they were read; last_admin, the change would leave the organisation without an admin; already_member, the invited email's account is a member already; member_of_other_organisations, a reset's member belongs to an organisation the requester does not administer; project_exists, the organisation already has a project with the new name's id.
      */
     409: Error;
     /**
@@ -3052,7 +4219,7 @@ export type UpdateMemberErrors = {
      */
     404: Error;
     /**
-     * last_admin, the change would leave the organisation without an admin; already_member, the invited email's account is a member already; member_of_other_organisations, a reset's member belongs to an organisation the requester does not administer.
+     * revision_conflict, settings changed since they were read; last_admin, the change would leave the organisation without an admin; already_member, the invited email's account is a member already; member_of_other_organisations, a reset's member belongs to an organisation the requester does not administer; project_exists, the organisation already has a project with the new name's id.
      */
     409: Error;
     /**
@@ -3110,7 +4277,7 @@ export type CreatePasswordResetErrors = {
      */
     404: Error;
     /**
-     * last_admin, the change would leave the organisation without an admin; already_member, the invited email's account is a member already; member_of_other_organisations, a reset's member belongs to an organisation the requester does not administer.
+     * revision_conflict, settings changed since they were read; last_admin, the change would leave the organisation without an admin; already_member, the invited email's account is a member already; member_of_other_organisations, a reset's member belongs to an organisation the requester does not administer; project_exists, the organisation already has a project with the new name's id.
      */
     409: Error;
     /**
@@ -3416,3 +4583,384 @@ export type GetRecordingMediaResponses = {
 };
 
 export type GetRecordingMediaResponse = GetRecordingMediaResponses[keyof GetRecordingMediaResponses];
+
+export type GetOrganisationData = {
+    body?: never;
+    path: {
+        /**
+         * The organisation's id, chosen by the caller; any other shape is invalid_request.
+         */
+        orgId: string;
+    };
+    query?: never;
+    url: '/api/v1/instance/organisations/{orgId}';
+};
+
+export type GetOrganisationErrors = {
+    /**
+     * invalid_request; never return an empty success result for this failure.
+     */
+    400: Error;
+    /**
+     * unauthenticated; never return an empty success result for this failure.
+     */
+    401: Error;
+    /**
+     * forbidden; never return an empty success result for this failure.
+     */
+    403: Error;
+    /**
+     * not_found; never return an empty success result for this failure.
+     */
+    404: Error;
+    /**
+     * internal_error; never return an empty success result for this failure.
+     */
+    500: Error;
+    /**
+     * source_unavailable; never return an empty success result for this failure.
+     */
+    503: Error;
+};
+
+export type GetOrganisationError = GetOrganisationErrors[keyof GetOrganisationErrors];
+
+export type GetOrganisationResponses = {
+    /**
+     * The organisation and its counts.
+     */
+    200: InstanceOrganisation;
+};
+
+export type GetOrganisationResponse = GetOrganisationResponses[keyof GetOrganisationResponses];
+
+export type PutOrganisationData = {
+    body: InstanceOrganisationPut;
+    path: {
+        /**
+         * The organisation's id, chosen by the caller; any other shape is invalid_request.
+         */
+        orgId: string;
+    };
+    query?: never;
+    url: '/api/v1/instance/organisations/{orgId}';
+};
+
+export type PutOrganisationErrors = {
+    /**
+     * invalid_request; never return an empty success result for this failure.
+     */
+    400: Error;
+    /**
+     * unauthenticated; never return an empty success result for this failure.
+     */
+    401: Error;
+    /**
+     * forbidden; never return an empty success result for this failure.
+     */
+    403: Error;
+    /**
+     * not_found; never return an empty success result for this failure.
+     */
+    404: Error;
+    /**
+     * internal_error; never return an empty success result for this failure.
+     */
+    500: Error;
+    /**
+     * source_unavailable; never return an empty success result for this failure.
+     */
+    503: Error;
+};
+
+export type PutOrganisationError = PutOrganisationErrors[keyof PutOrganisationErrors];
+
+export type PutOrganisationResponses = {
+    /**
+     * The organisation existed; it now has the name sent.
+     */
+    200: InstanceOrganisation;
+    /**
+     * This call created the organisation.
+     */
+    201: InstanceOrganisation;
+};
+
+export type PutOrganisationResponse = PutOrganisationResponses[keyof PutOrganisationResponses];
+
+export type CreateOrganisationInvitationData = {
+    body: InvitationCreate;
+    headers: {
+        /**
+         * 1 to 200 printable characters; a Cloud control plane sends its checkout session id. A repeat with the same key returns the first invitation.
+         */
+        'Idempotency-Key': string;
+    };
+    path: {
+        /**
+         * The organisation's id, chosen by the caller; any other shape is invalid_request.
+         */
+        orgId: string;
+    };
+    query?: never;
+    url: '/api/v1/instance/organisations/{orgId}/invitations';
+};
+
+export type CreateOrganisationInvitationErrors = {
+    /**
+     * invalid_request; never return an empty success result for this failure.
+     */
+    400: Error;
+    /**
+     * unauthenticated; never return an empty success result for this failure.
+     */
+    401: Error;
+    /**
+     * forbidden; never return an empty success result for this failure.
+     */
+    403: Error;
+    /**
+     * not_found; never return an empty success result for this failure.
+     */
+    404: Error;
+    /**
+     * revision_conflict, settings changed since they were read; last_admin, the change would leave the organisation without an admin; already_member, the invited email's account is a member already; member_of_other_organisations, a reset's member belongs to an organisation the requester does not administer; project_exists, the organisation already has a project with the new name's id.
+     */
+    409: Error;
+    /**
+     * internal_error; never return an empty success result for this failure.
+     */
+    500: Error;
+    /**
+     * source_unavailable; never return an empty success result for this failure.
+     */
+    503: Error;
+};
+
+export type CreateOrganisationInvitationError = CreateOrganisationInvitationErrors[keyof CreateOrganisationInvitationErrors];
+
+export type CreateOrganisationInvitationResponses = {
+    /**
+     * The key made this invitation before; nothing was revoked or sent.
+     */
+    200: InstanceInvitation;
+    /**
+     * This call made the invitation.
+     */
+    201: InstanceInvitation;
+};
+
+export type CreateOrganisationInvitationResponse = CreateOrganisationInvitationResponses[keyof CreateOrganisationInvitationResponses];
+
+export type GetOrganisationUsageData = {
+    body?: never;
+    path: {
+        /**
+         * The organisation's id, chosen by the caller; any other shape is invalid_request.
+         */
+        orgId: string;
+    };
+    query: {
+        /**
+         * Inclusive start of the period, an RFC 3339 instant.
+         */
+        from: string;
+        /**
+         * Exclusive end of the period, an RFC 3339 instant, after from and at most 62 days later.
+         */
+        to: string;
+    };
+    url: '/api/v1/instance/organisations/{orgId}/usage';
+};
+
+export type GetOrganisationUsageErrors = {
+    /**
+     * invalid_request; never return an empty success result for this failure.
+     */
+    400: Error;
+    /**
+     * unauthenticated; never return an empty success result for this failure.
+     */
+    401: Error;
+    /**
+     * forbidden; never return an empty success result for this failure.
+     */
+    403: Error;
+    /**
+     * not_found; never return an empty success result for this failure.
+     */
+    404: Error;
+    /**
+     * internal_error; never return an empty success result for this failure.
+     */
+    500: Error;
+    /**
+     * source_unavailable; never return an empty success result for this failure.
+     */
+    503: Error;
+};
+
+export type GetOrganisationUsageError = GetOrganisationUsageErrors[keyof GetOrganisationUsageErrors];
+
+export type GetOrganisationUsageResponses = {
+    /**
+     * The organisation's call time in the period.
+     */
+    200: InstanceUsage;
+};
+
+export type GetOrganisationUsageResponse = GetOrganisationUsageResponses[keyof GetOrganisationUsageResponses];
+
+export type GetOrganisationEntitlementData = {
+    body?: never;
+    path: {
+        /**
+         * The organisation's id, chosen by the caller; any other shape is invalid_request.
+         */
+        orgId: string;
+    };
+    query?: never;
+    url: '/api/v1/instance/organisations/{orgId}/entitlement';
+};
+
+export type GetOrganisationEntitlementErrors = {
+    /**
+     * invalid_request; never return an empty success result for this failure.
+     */
+    400: Error;
+    /**
+     * unauthenticated; never return an empty success result for this failure.
+     */
+    401: Error;
+    /**
+     * forbidden; never return an empty success result for this failure.
+     */
+    403: Error;
+    /**
+     * not_found; never return an empty success result for this failure.
+     */
+    404: Error;
+    /**
+     * internal_error; never return an empty success result for this failure.
+     */
+    500: Error;
+    /**
+     * source_unavailable; never return an empty success result for this failure.
+     */
+    503: Error;
+};
+
+export type GetOrganisationEntitlementError = GetOrganisationEntitlementErrors[keyof GetOrganisationEntitlementErrors];
+
+export type GetOrganisationEntitlementResponses = {
+    /**
+     * Allowance, durable usage and ingestion status.
+     */
+    200: OrganisationEntitlement;
+};
+
+export type GetOrganisationEntitlementResponse = GetOrganisationEntitlementResponses[keyof GetOrganisationEntitlementResponses];
+
+export type PutOrganisationEntitlementData = {
+    body: OrganisationEntitlementPut;
+    path: {
+        /**
+         * The organisation's id, chosen by the caller; any other shape is invalid_request.
+         */
+        orgId: string;
+    };
+    query?: never;
+    url: '/api/v1/instance/organisations/{orgId}/entitlement';
+};
+
+export type PutOrganisationEntitlementErrors = {
+    /**
+     * invalid_request; never return an empty success result for this failure.
+     */
+    400: Error;
+    /**
+     * unauthenticated; never return an empty success result for this failure.
+     */
+    401: Error;
+    /**
+     * forbidden; never return an empty success result for this failure.
+     */
+    403: Error;
+    /**
+     * not_found; never return an empty success result for this failure.
+     */
+    404: Error;
+    /**
+     * Stale revision or conflicting replay.
+     */
+    409: Error;
+    /**
+     * internal_error; never return an empty success result for this failure.
+     */
+    500: Error;
+    /**
+     * source_unavailable; never return an empty success result for this failure.
+     */
+    503: Error;
+};
+
+export type PutOrganisationEntitlementError = PutOrganisationEntitlementErrors[keyof PutOrganisationEntitlementErrors];
+
+export type PutOrganisationEntitlementResponses = {
+    /**
+     * Allowance, durable usage and ingestion status.
+     */
+    200: OrganisationEntitlement;
+};
+
+export type PutOrganisationEntitlementResponse = PutOrganisationEntitlementResponses[keyof PutOrganisationEntitlementResponses];
+
+export type GetMyOrganisationEntitlementData = {
+    body?: never;
+    path: {
+        /**
+         * Authorised orgId; the server must verify organisation/project ownership before any read.
+         */
+        orgId: string;
+    };
+    query?: never;
+    url: '/api/v1/org/{orgId}/entitlement';
+};
+
+export type GetMyOrganisationEntitlementErrors = {
+    /**
+     * invalid_request; never return an empty success result for this failure.
+     */
+    400: Error;
+    /**
+     * unauthenticated; never return an empty success result for this failure.
+     */
+    401: Error;
+    /**
+     * forbidden; never return an empty success result for this failure.
+     */
+    403: Error;
+    /**
+     * not_found; never return an empty success result for this failure.
+     */
+    404: Error;
+    /**
+     * internal_error; never return an empty success result for this failure.
+     */
+    500: Error;
+    /**
+     * source_unavailable; never return an empty success result for this failure.
+     */
+    503: Error;
+};
+
+export type GetMyOrganisationEntitlementError = GetMyOrganisationEntitlementErrors[keyof GetMyOrganisationEntitlementErrors];
+
+export type GetMyOrganisationEntitlementResponses = {
+    /**
+     * Allowance, durable usage and ingestion status.
+     */
+    200: OrganisationEntitlement;
+};
+
+export type GetMyOrganisationEntitlementResponse = GetMyOrganisationEntitlementResponses[keyof GetMyOrganisationEntitlementResponses];

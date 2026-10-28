@@ -1,9 +1,16 @@
 import { useState, type FormEvent } from "react"
+import { WarningCircle } from "@phosphor-icons/react"
 import { CopyCommand } from "@/components/copy-command"
+import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
+import { Popover, PopoverContent, PopoverDescription, PopoverHeader, PopoverTitle, PopoverTrigger } from "@/components/ui/popover"
+import { Spinner } from "@/components/ui/spinner"
+import { AuthShell } from "@/features/auth/auth-shell"
+import { PasswordInput } from "@/features/auth/password-input"
+import { ProviderButtons } from "@/features/auth/provider-buttons"
+import { PROVIDER_REFUSED, readProviderRefusal } from "@/lib/providers"
 import { signIn, type SignInResult } from "@/lib/session"
 
 // The command that creates an install's first admin (decision 0027). There is no open sign-up.
@@ -30,7 +37,8 @@ function message(r: SignInResult): string | null {
 export function SignInScreen({ needsAdmin, onSignedIn }: { needsAdmin: boolean; onSignedIn: () => void }) {
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
-  const [error, setError] = useState<string | null>(null)
+  // A refused Google or GitHub sign-in lands here with ?error=oauth_refused, read once.
+  const [error, setError] = useState<string | null>(() => (readProviderRefusal() ? PROVIDER_REFUSED : null))
   const [busy, setBusy] = useState(false)
 
   async function submit(e: FormEvent) {
@@ -46,64 +54,72 @@ export function SignInScreen({ needsAdmin, onSignedIn }: { needsAdmin: boolean; 
   }
 
   return (
-    <main className="flex min-h-svh items-center justify-center bg-muted p-4">
-      <Card className="w-full max-w-sm">
-        <CardHeader>
-          <CardTitle>Sign in to VoiceGateway</CardTitle>
-          {needsAdmin ? (
-            <CardDescription>No account exists yet. Create the first admin on the server, then sign in.</CardDescription>
-          ) : (
-            <CardDescription>Use the email and password your admin gave you.</CardDescription>
-          )}
-        </CardHeader>
-        <CardContent>
-          {needsAdmin && (
-            <div className="mb-4">
-              <CopyCommand text={FIRST_ADMIN_COMMAND} label="First admin command" />
-            </div>
-          )}
-          <form onSubmit={submit}>
-            <FieldGroup>
-              <Field>
-                <FieldLabel htmlFor="email">Email</FieldLabel>
-                <Input
-                  id="email"
-                  type="email"
-                  autoComplete="username"
-                  required
-                  value={email}
-                  onChange={(e) => {
-                    setEmail(e.target.value)
-                    setError(null)
-                  }}
-                />
-              </Field>
-              <Field>
-                <FieldLabel htmlFor="password">Password</FieldLabel>
-                <Input
-                  id="password"
-                  type="password"
-                  autoComplete="current-password"
-                  required
-                  value={password}
-                  onChange={(e) => {
-                    setPassword(e.target.value)
-                    setError(null)
-                  }}
-                />
-              </Field>
-              {error && (
-                <p role="alert" className="text-sm text-destructive">
-                  {error}
-                </p>
+    <AuthShell
+      title={needsAdmin ? "Create the first admin" : "Sign in to VoiceGateway"}
+      description={needsAdmin ? "No account exists yet. Create the first admin on the server, then sign in." : "Use your VoiceGateway email and password."}
+      footer={needsAdmin ? undefined : "Need an account? Ask an admin of your organisation for an invitation."}
+    >
+      {needsAdmin && <CopyCommand text={FIRST_ADMIN_COMMAND} label="First admin command" />}
+      <form onSubmit={submit}>
+        <FieldGroup>
+          {!needsAdmin && <ProviderButtons onError={setError} />}
+          <Field>
+            <FieldLabel htmlFor="email">Email</FieldLabel>
+            <Input
+              id="email"
+              type="email"
+              autoComplete="username"
+              placeholder="you@company.com"
+              className="h-9"
+              required
+              value={email}
+              onChange={(e) => {
+                setEmail(e.target.value)
+                setError(null)
+              }}
+            />
+          </Field>
+          <Field>
+            <div className="flex items-center justify-between gap-2">
+              <FieldLabel htmlFor="password">Password</FieldLabel>
+              {!needsAdmin && (
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button type="button" variant="link" size="sm" className="-mr-2.5 text-muted-foreground">
+                      Forgot password?
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent align="end" className="w-72" aria-labelledby="reset-help-title">
+                    <PopoverHeader>
+                      <PopoverTitle id="reset-help-title">Ask an admin for a reset link</PopoverTitle>
+                      <PopoverDescription>An admin of your organisation can send you one from Settings, Members. It works for 24 hours.</PopoverDescription>
+                    </PopoverHeader>
+                  </PopoverContent>
+                </Popover>
               )}
-              <Button type="submit" disabled={busy}>
-                {busy ? "Signing in" : "Sign in"}
-              </Button>
-            </FieldGroup>
-          </form>
-        </CardContent>
-      </Card>
-    </main>
+            </div>
+            <PasswordInput
+              id="password"
+              autoComplete="current-password"
+              value={password}
+              onChange={(v) => {
+                setPassword(v)
+                setError(null)
+              }}
+            />
+          </Field>
+          {error && (
+            <Alert variant="destructive">
+              <WarningCircle />
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
+          )}
+          <Button type="submit" size="lg" disabled={busy}>
+            {busy && <Spinner />}
+            {busy ? "Signing in" : "Sign in"}
+          </Button>
+        </FieldGroup>
+      </form>
+    </AuthShell>
   )
 }

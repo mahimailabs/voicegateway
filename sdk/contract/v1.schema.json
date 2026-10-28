@@ -1,0 +1,411 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://voicegateway.dev/schemas/sdk/v1.json",
+  "title": "VoiceGateway SDK batch, version 1",
+  "description": "What every VoiceGateway SDK POSTs to {VOICEGATEWAY_URL}/sdk/v1/events (docs/specs/python-sdk.md). SDKs map their framework's events onto it; the engine joins and builds turns. Unknown event types are accepted and ignored, so an older engine takes a newer SDK.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version",
+    "batchId",
+    "sdk",
+    "framework",
+    "call",
+    "events"
+  ],
+  "properties": {
+    "version": {
+      "const": 1
+    },
+    "batchId": {
+      "description": "Unique per batch; a retry resends the same id, which is stored once.",
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{8,64}$"
+    },
+    "sdk": {
+      "$ref": "#/$defs/component"
+    },
+    "framework": {
+      "$ref": "#/$defs/component"
+    },
+    "call": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "jobId": {
+          "$ref": "#/$defs/id"
+        },
+        "roomName": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 256
+        },
+        "roomSid": {
+          "$ref": "#/$defs/id"
+        }
+      },
+      "anyOf": [
+        {
+          "required": [
+            "roomSid"
+          ],
+          "properties": {
+            "roomSid": {
+              "type": "string"
+            }
+          }
+        },
+        {
+          "required": [
+            "jobId"
+          ],
+          "properties": {
+            "jobId": {
+              "type": "string"
+            }
+          }
+        }
+      ]
+    },
+    "events": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 1000,
+      "items": {
+        "$ref": "#/$defs/event"
+      }
+    }
+  },
+  "$defs": {
+    "id": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "component": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "version"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        }
+      }
+    },
+    "event": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "at",
+        "data"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "pattern": "^[a-z_]{1,32}$"
+        },
+        "at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "data": {
+          "type": "object"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "state"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "data": {
+                "$ref": "#/$defs/state"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "message"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "data": {
+                "$ref": "#/$defs/message"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "usage"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "data": {
+                "$ref": "#/$defs/usage"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "tool"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "data": {
+                "$ref": "#/$defs/tool"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "error"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "data": {
+                "$ref": "#/$defs/error"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "fields"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "data": {
+                "$ref": "#/$defs/fields"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "close"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "data": {
+                "$ref": "#/$defs/close"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "state": {
+      "description": "A participant's state changed: LiveKit user_state_changed or agent_state_changed.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "actor",
+        "state"
+      ],
+      "properties": {
+        "actor": {
+          "enum": [
+            "user",
+            "agent"
+          ]
+        },
+        "state": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32
+        }
+      }
+    },
+    "message": {
+      "description": "A conversation item was added: LiveKit conversation_item_added. metrics is the framework's per-message report as it gave it (LiveKit ChatMessage.metrics: transcription_delay and end_of_turn_delay on a user message; llm_node_ttft, tts_node_ttfb, started_speaking_at and llm_metadata/tts_metadata on an assistant message), seconds where it is a duration; null when it gave none.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "role",
+        "text",
+        "interrupted",
+        "metrics"
+      ],
+      "properties": {
+        "role": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32
+        },
+        "text": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 32768
+        },
+        "interrupted": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "metrics": {
+          "type": [
+            "object",
+            "null"
+          ]
+        }
+      }
+    },
+    "tool": {
+      "description": "A function tool finished: LiveKit function_tools_executed, one event per call.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "error"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "error": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 1024
+        }
+      }
+    },
+    "error": {
+      "description": "The session reported an error: LiveKit error.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source",
+        "message",
+        "recoverable"
+      ],
+      "properties": {
+        "source": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "message": {
+          "type": "string",
+          "maxLength": 1024
+        },
+        "recoverable": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        }
+      }
+    },
+    "fields": {
+      "description": "Custom call fields from attach(fields=...) or set_field; merged onto the call, later values winning. One call holds at most 64 keys across all its batches: new keys past that are dropped by the engine (the batch is still accepted).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "fields"
+      ],
+      "properties": {
+        "fields": {
+          "type": "object",
+          "minProperties": 1,
+          "maxProperties": 32,
+          "propertyNames": {
+            "pattern": "^[a-z0-9_.-]{1,64}$"
+          },
+          "additionalProperties": {
+            "type": "string",
+            "maxLength": 256
+          }
+        }
+      }
+    },
+    "close": {
+      "description": "The session closed: LiveKit close.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "reason"
+      ],
+      "properties": {
+        "reason": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 64
+        }
+      }
+    },
+    "usage": {
+      "description": "The session's usage so far, per model, as the framework reports it (LiveKit session_usage_updated: AgentSessionUsage.model_usage). Cumulative: the latest event is the call's usage.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "models"
+      ],
+      "properties": {
+        "models": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "type": "object"
+          }
+        }
+      }
+    }
+  }
+}

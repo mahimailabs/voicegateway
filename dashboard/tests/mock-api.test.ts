@@ -7,12 +7,13 @@ import { Ajv2020 } from "ajv/dist/2020.js"
 import { setupServer } from "msw/node"
 import { afterAll, afterEach, beforeAll, describe, expect, test, vi } from "vitest"
 import { parse } from "yaml"
-import { handlers } from "../src/mocks/handlers.ts"
+import { resetProjectSettings } from "../src/mocks/settings.ts"
+import { handlers, resetMockLiveKit } from "../src/mocks/handlers.ts"
 import { capturedCalls } from "../src/mocks/fixtures.ts"
 import { buildModel, turnCount } from "../src/features/call/call-model.ts"
 import { QueryClient } from "@tanstack/react-query"
 import type { AlertSetup } from "../src/lib/api-types"
-import { localSave, writeLocal } from "../src/lib/local-store.ts"
+import { localSave } from "../src/lib/local-store.ts"
 import { type Setup, setupFrom } from "../src/features/alerts/alerts-model.ts"
 import { agentsFrom, checks as agentChecks } from "../src/features/agents/agents-model.ts"
 import { fromContract } from "../src/features/media-server/room-drawer.tsx"
@@ -169,6 +170,17 @@ describe("listCalls filters", () => {
   test("a value the contract does not allow is refused", async () => {
     expect((await fetch(`${base}/calls?channel=fax`)).status).toBe(400)
     expect((await fetch(`${base}/calls?turnsMin=1.5`)).status).toBe(400)
+    expect((await fetch(`${base}/calls?field=Customer%3Dacme`)).status).toBe(400)
+    expect((await fetch(`${base}/calls?${Array.from({ length: 17 }, (_, i) => `field=k${i}%3Av`).join("&")}`)).status).toBe(400)
+  })
+
+  test("SDK field filters keep calls holding every pair; one key with two values matches nothing", async () => {
+    const withSdk = capturedCalls().filter((c) => c.fields?.customer === "acme" && c.fields?.plan === "trial").map((c) => c.id).sort()
+    expect(withSdk.length).toBeGreaterThan(0)
+    expect((await all("field=customer%3Aacme")).items.map((c) => c.id).sort()).toEqual(withSdk)
+    expect((await all("field=customer%3Aacme&field=plan%3Atrial")).items.map((c) => c.id).sort()).toEqual(withSdk)
+    expect((await all("field=customer%3Aacme&field=customer%3Aother")).items).toEqual([])
+    expect((await all("field=customer%3Aother")).items).toEqual([])
   })
 })
 
@@ -182,13 +194,31 @@ describe("getCall", () => {
     expect(call.id).toBe(id)
   })
 
+  test("an SDK call carries its fields and live state in the contract shape; others are empty and null", async () => {
+    const sdk = capturedCalls().find((c) => c.live)!
+    const call = await (await fetch(`${base}/calls/${encodeURIComponent(sdk.id)}`)).json()
+    expect(valid("Call", call)).toBe("")
+    expect(Object.keys(call.fields).length).toBeGreaterThan(0)
+    expect(call.live.user.state).toBeTruthy()
+    expect(call.live.agent.state).toBeTruthy()
+    const plain = capturedCalls().find((c) => !c.live)!
+    const other = await (await fetch(`${base}/calls/${encodeURIComponent(plain.id)}`)).json()
+    expect(valid("Call", other)).toBe("")
+    expect([other.fields, other.live]).toEqual([{}, null])
+  })
+
   test("the list's turn count is the number of turns the call view shows, for every captured call", async () => {
     const list = (await (await fetch(`${base}/calls?limit=100`)).json()).items as { id: string; turnCount: number | null }[]
     expect(list.length).toBe(capturedCalls().length)
     for (const row of list) {
       const call = await (await fetch(`${base}/calls/${encodeURIComponent(row.id)}`)).json()
       // The drawer's count: a known count is the same number, and unknown is unknown on both sides.
-      expect(turnCount(call, buildModel(call)), row.id).toBe(row.turnCount)
+      // getCall carries no session events (internal/api/getcall.go), so a call whose turns exist only
+      // can be placed only from stored events (the console captures, with no spans or recording) has an
+      // unknown count in the drawer, never a guess.
+      const eventsOnly = !!capturedCalls().find((c) => c.id === row.id)?.events?.length && !call.spans?.length && !call.recording
+      expect(call.events, row.id).toBeUndefined()
+      expect(turnCount(call, buildModel(call)), row.id).toBe(eventsOnly ? null : row.turnCount)
     }
     // The phone test call has four agent_turn spans, but only two of them spoke.
     expect(list.find((r) => r.id.includes("937b5111"))?.turnCount).toBe(2)
@@ -444,6 +474,7 @@ const get = async (url: string) => {
 
 describe("settings reads", () => {
   afterEach(() => {
+    resetProjectSettings()
     vi.unstubAllGlobals()
   })
 
@@ -452,47 +483,40 @@ describe("settings reads", () => {
     const { status, body } = await get(`${base}/settings`)
     expect(status).toBe(200)
     expect(valid("ProjectSettings", body)).toBe("")
-    expect(body).toEqual({ thresholds: { answerMs: 1500, joinMs: 2000, ttsStartMs: 1000 }, storageBucket: null, transcriptRetentionDays: null, traceRetentionDays: null, recordingRetentionDays: null, allowedOrigins: null })
+    expect(body).toEqual({ revision: 0, thresholds: { answerMs: 1500, joinMs: 2000, ttsStartMs: 1000 }, storageBucket: null, transcriptRetentionDays: null, traceRetentionDays: null, recordingRetentionDays: null, allowedOrigins: null, allowedOriginsRevision: 0 })
   })
 
-  test.each([
-    ["valid values are served as saved", { answerMs: 1200, joinMs: 2500, ttsStartMs: 500 }, [1200, 2500, 500]],
-    ["each invalid field falls back on its own", { answerMs: "1500", joinMs: 3000, ttsStartMs: -1 }, [1500, 3000, 1000]],
-    ["zero and NaN are not thresholds", { answerMs: 0, joinMs: null, ttsStartMs: {} }, [1500, 2000, 1000]],
-    ["malformed storage serves the defaults", "{broken", [1500, 2000, 1000]],
-    ["a non-object serves the defaults", "[]", [1500, 2000, 1000]],
-  ])("thresholds: %s", async (_name, saved, expected) => {
-    storage({ "vg.thresholds": saved })
-    const { body } = await get(`${base}/settings`)
-    expect(valid("ProjectSettings", body)).toBe("")
-    expect([body.thresholds.answerMs, body.thresholds.joinMs, body.thresholds.ttsStartMs]).toEqual(expected)
-  })
-
-  test("blocked storage serves the defaults", async () => {
-    storage({}, true)
-    expect((await get(`${base}/settings`)).body.thresholds).toEqual({ answerMs: 1500, joinMs: 2000, ttsStartMs: 1000 })
-  })
-
-  test("a saved answer threshold is the budget the server judges calls by", async () => {
-    storage({ "vg.thresholds": { answerMs: 900 } })
+  test("saved settings use the API, preserve revision conflicts and ignore browser storage", async () => {
+    storage({ "vg.thresholds": { answerMs: 100 } })
+    expect((await get(`${base}/settings`)).body.thresholds.answerMs).toBe(1500)
+    const body = { thresholds: { answerMs: 900, joinMs: 2000, ttsStartMs: 1000 }, revision: 0 }
+    const put = () => fetch(`${base}/settings`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })
+    const saved = await put()
+    expect(saved.status).toBe(200)
+    expect(valid("ProjectSettings", await saved.json())).toBe("")
+    expect((await put()).status).toBe(409)
     const range = "from=2000-01-01T00:00:00Z&to=2100-01-01T00:00:00Z"
     const stats = (await get(`${base}/call-stats?${range}`)).body
     const page = (await get(`${base}/calls?limit=1`)).body
     expect(stats.answers.budgetMs).toBe(900)
     expect(stats.answers.overBudget).toBe(stats.answers.values.filter((v: { ms: number }) => v.ms > 900).length)
     expect(page.totals.answers.budgetMs).toBe(900)
+    expect((await get(`${base}/settings`)).body.revision).toBe(1)
   })
 
-  test("issue decisions come back as saved, in RFC 3339, and a malformed one is left out", async () => {
-    const at = Date.UTC(2026, 9, 17, 10, 0, 0)
-    storage({ "vg.issue-state": { slow: { state: "resolved", at }, sip: { state: "ignored", at }, bad: { state: "maybe", at }, undated: { state: "resolved" } } })
-    const { status, body } = await get(`${base}/issue-dispositions`)
-    expect(status).toBe(200)
-    expect(valid("IssueDispositions", body)).toBe("")
-    expect(body.items).toEqual([
-      { issueId: "slow", state: "resolved", at: "2026-10-17T10:00:00.000Z" },
-      { issueId: "sip", state: "ignored", at: "2026-10-17T10:00:00.000Z" },
-    ])
+  test("issue metadata persists through the scoped API and refuses stale writes", async () => {
+    storage({})
+    const path=`${base}/issues/slow/metadata`
+    const before=(await get(path)).body
+    expect(valid("IssueMetadata",before)).toBe("")
+    const body={state:"resolved",tags:[" Follow-up "],archived:true,revision:before.revision,evidenceRevision:before.evidenceRevision}
+    const save=()=>fetch(path,{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)})
+    expect((await save()).status).toBe(200)
+    const saved=(await get(path)).body
+    expect(valid("IssueMetadata",saved)).toBe("")
+    expect(saved).toMatchObject({state:"resolved",tags:["follow-up"],archived:true,revision:before.revision+1})
+    expect(saved.decidedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/)
+    expect((await save()).status).toBe(409)
   })
 
   test("alert setup names every rule; an unchanged rule is on and sends nowhere, and an unknown channel is dropped", async () => {
@@ -502,15 +526,6 @@ describe("settings reads", () => {
     expect(body.items).toHaveLength(7)
     expect(body.items.find((r: { ruleId: string }) => r.ruleId === "slow-join")).toEqual({ ruleId: "slow-join", on: false, to: ["email"] })
     expect(body.items.find((r: { ruleId: string }) => r.ruleId === "cut-off")).toEqual({ ruleId: "cut-off", on: true, to: [] })
-  })
-
-  test("when storage reads but refuses writes, a save still comes back for this page view", async () => {
-    storage({ "vg.thresholds": { answerMs: 900 } }, "writes")
-    writeLocal("vg.thresholds", { answerMs: 2500, joinMs: 2000, ttsStartMs: 1000 })
-    expect((await get(`${base}/settings`)).body.thresholds.answerMs).toBe(2500)
-    // A write storage takes again ends the memory-only value.
-    storage({})
-    writeLocal("vg.thresholds", null)
   })
 
   test("two saves made before the read is answered again both land", async () => {
@@ -548,7 +563,7 @@ describe("settings reads", () => {
     const { body } = await get("http://console.test/api/v1/workspaces")
     expect(valid("Workspaces", body)).toBe("")
     expect(body.items.flatMap((o: { id: string; projects: { id: string }[] }) => o.projects.map((p) => `${o.id}/${p.id}`))).toEqual(["default/default-project"])
-    for (const path of ["settings", "issue-dispositions", "alert-setup"]) {
+    for (const path of ["settings", "issues/slow/metadata", "alert-setup"]) {
       const res = await get(`http://console.test/api/v1/org/default/project/elsewhere/${path}`)
       expect(res.status).toBe(404)
       expect(valid("Error", res.body)).toBe("")
@@ -609,6 +624,104 @@ describe("getRecordingMedia", () => {
     ["a captured recording whose file is not on this machine", "RM_4rPUQqJUkbpr"],
   ])("%s is not found, never another file or the app's page", async (_name, id) => {
     const res = await fetch(`${project()}/recordings/${id}`)
+    expect(res.status).toBe(404)
+    expect(valid("Error", await res.json())).toBe("")
+  })
+})
+
+describe("createProject", () => {
+  const projects = "http://console.test/api/v1/org/default/projects"
+  const post = (body: unknown) => fetch(projects, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })
+  const fields = { name: "Mock Staging", livekitUrl: "wss://staging.example.com", livekitApiKey: "APImockstaging", livekitApiSecret: "made-up-for-the-test" }
+
+  test("adds a project the workspaces then list, and refuses it twice", async () => {
+    const res = await post(fields)
+    expect(res.status).toBe(201)
+    expect(res.headers.get("Cache-Control")).toBe("no-store")
+    const created = await res.json()
+    expect(valid("ProjectCreated", created)).toBe("")
+    // The mock counts the rooms in its captured media server snapshot; it reaches no LiveKit.
+    expect(created).toEqual({ id: "mock-staging", name: "Mock Staging", liveRooms: expect.any(Number) })
+    const ws = await (await fetch("http://console.test/api/v1/workspaces")).json()
+    expect(ws.items[0].projects).toContainEqual({ id: created.id, name: created.name })
+    // The new project reads the LiveKit key it was created with, not the built-in project's.
+    const connection = await (await fetch(`http://console.test/api/v1/org/default/project/${created.id}/connection`)).json()
+    expect(connection.livekit.apiKey).toBe("APImockstaging")
+    const again = await post(fields)
+    expect(again.status).toBe(409)
+    const e = await again.json()
+    expect(valid("Error", e)).toBe("")
+    expect(e.code).toBe("project_exists")
+  })
+
+  test("a LiveKit URL that answers nothing is 422 livekit_unreachable, and nothing is added", async () => {
+    const res = await post({ ...fields, name: "Nowhere", livekitUrl: "wss://lk.nowhere.invalid", livekitApiKey: "APInowhere" })
+    expect(res.status).toBe(422)
+    const e = await res.json()
+    expect(valid("Error", e)).toBe("")
+    expect(e.code).toBe("livekit_unreachable")
+    const ws = await (await fetch("http://console.test/api/v1/workspaces")).json()
+    expect(ws.items[0].projects.map((p: { id: string }) => p.id)).not.toContain("nowhere")
+  })
+
+  test("a recording bucket whose endpoint answers nothing is 422 recording_bucket_unreachable, and nothing is added", async () => {
+    const recordingBucket = { endpoint: "https://s3.nowhere.invalid", bucket: "acme-recordings", accessKeyId: "AKIA", secretAccessKey: "bucket-secret" }
+    const res = await post({ ...fields, name: "Bucketless", livekitApiKey: "APIbucketless", recordingBucket })
+    expect(res.status).toBe(422)
+    const e = await res.json()
+    expect(valid("Error", e)).toBe("")
+    expect(e.code).toBe("recording_bucket_unreachable")
+    const ws = await (await fetch("http://console.test/api/v1/workspaces")).json()
+    expect(ws.items[0].projects.map((p: { id: string }) => p.id)).not.toContain("bucketless")
+  })
+
+  test.each([
+    ["a missing secret", { ...fields, name: "Other", livekitApiSecret: "" }],
+    ["a bucket endpoint with a path", { ...fields, name: "Other", recordingBucket: { endpoint: "https://s3.example.com/acme", bucket: "b-1", accessKeyId: "k", secretAccessKey: "s" } }],
+    ["a URL with another scheme", { ...fields, name: "Other", livekitUrl: "ftp://x.example.com" }],
+  ])("%s is 400 in the Error shape", async (_name, body) => {
+    const res = await post(body)
+    expect(res.status).toBe(400)
+    expect(valid("Error", await res.json())).toBe("")
+  })
+})
+
+describe("getProjectConnection", () => {
+  test("every source waits, the SDK included, in the contract shape", async () => {
+    const res = await fetch(`${base}/connection`)
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(valid("ProjectConnection", body)).toBe("")
+    expect(body.sdk).toEqual({ lastAcceptedAt: null, lastRejectedAt: null, reason: null, usedKey: null, expectedKey: null })
+    expect(body.livekit).toEqual({ url: "wss://example-project.livekit.cloud", apiKey: "APIexample123" })
+  })
+})
+
+describe("updateProjectLiveKitCredentials", () => {
+  afterEach(() => resetMockLiveKit())
+  const put = (body: unknown) => fetch(`${base}/livekit-credentials`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })
+  test("a new key is 204 and the next connection read shows it", async () => {
+    const res = await put({ livekitApiKey: "APInewexample456", livekitApiSecret: "secretexample" })
+    expect(res.status).toBe(204)
+    expect((await (await fetch(`${base}/connection`)).json()).livekit.apiKey).toBe("APInewexample456")
+  })
+  test.each([
+    [422, "livekit_secret_invalid", { livekitApiKey: "APIinvalidexample", livekitApiSecret: "secretexample" }],
+    [400, "invalid_request", { livekitApiKey: "APIexample123", livekitApiSecret: "" }],
+    [400, "invalid_request", { livekitApiKey: "API example", livekitApiSecret: "secretexample" }],
+  ])("%i %s in the Error shape, and the key is unchanged", async (status, code, body) => {
+    const res = await put(body)
+    expect(res.status).toBe(status)
+    const err = await res.json()
+    expect(valid("Error", err)).toBe("")
+    expect(err.code).toBe(code)
+    expect((await (await fetch(`${base}/connection`)).json()).livekit.apiKey).toBe("APIexample123")
+  })
+})
+
+describe("getMyOrganisationEntitlement", () => {
+  test("the mock is a self-hosted install: 404 in the Error shape", async () => {
+    const res = await fetch("http://console.test/api/v1/org/default/entitlement")
     expect(res.status).toBe(404)
     expect(valid("Error", await res.json())).toBe("")
   })

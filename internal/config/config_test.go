@@ -21,6 +21,18 @@ func env(overrides map[string]string) func(string) string {
 	return func(k string) string { return base[k] }
 }
 
+func TestSelfHostedDoesNotEnableCloudQuotas(t *testing.T) {
+	for _, value := range []string{"", "false"} {
+		c, err := Load(env(map[string]string{"VOICEGATEWAY_CLOUD_QUOTAS": value}))
+		if err != nil || c.CloudQuotas || c.InstanceTokenSHA256 != nil {
+			t.Fatalf("self-hosted configuration requires Cloud access: quotas=%v err=%v", c.CloudQuotas, err)
+		}
+	}
+	if _, err := Load(env(map[string]string{"VOICEGATEWAY_CLOUD_QUOTAS": "true"})); err == nil || !strings.Contains(err.Error(), "VOICEGATEWAY_INSTANCE_TOKEN") {
+		t.Fatalf("Cloud enforcement must require explicit operator authentication: %v", err)
+	}
+}
+
 func TestConfigMissingAndRedacted(t *testing.T) {
 	secrets := []string{"pg-secret", "ch-secret", "redis-secret", "s3-secret", "c2hvcnQta2V5"}
 	tests := []struct {
@@ -106,6 +118,153 @@ func TestRedact(t *testing.T) {
 				if !strings.Contains(got, s) {
 					t.Errorf("Redact() = %q, lost %q", got, s)
 				}
+			}
+		})
+	}
+}
+
+// A shared instance (the instance token is set) refuses to start without the worker address guard,
+// in every role; a self-hosted instance starts with either value.
+func TestSharedInstanceNeedsPublicOnly(t *testing.T) {
+	const token = "aW5zdGFuY2UtdG9rZW4tZm9yLXRoZS10ZXN0cy0wMDA="
+	tests := []struct {
+		name       string
+		token      string
+		publicOnly string
+		wantErr    bool
+	}{
+		{"shared, public-only unset", token, "", true},
+		{"shared, public-only false", token, "false", true},
+		{"shared, public-only true", token, "true", false},
+		{"self-hosted, public-only unset", "", "", false},
+		{"self-hosted, public-only false", "", "false", false},
+		{"self-hosted, public-only true", "", "true", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c, err := Load(env(map[string]string{
+				"VOICEGATEWAY_INSTANCE_TOKEN":               tt.token,
+				"VOICEGATEWAY_WORKER_ENDPOINTS_PUBLIC_ONLY": tt.publicOnly,
+			}))
+			if !tt.wantErr {
+				if err != nil {
+					t.Fatalf("Load() error = %v", err)
+				}
+				if want := tt.publicOnly == "true"; c.WorkerEndpointsPublicOnly != want {
+					t.Errorf("WorkerEndpointsPublicOnly = %v, want %v", c.WorkerEndpointsPublicOnly, want)
+				}
+				return
+			}
+			if err == nil {
+				t.Fatal("Load() started a shared instance without the address guard")
+			}
+			for _, name := range []string{"VOICEGATEWAY_INSTANCE_TOKEN", "VOICEGATEWAY_WORKER_ENDPOINTS_PUBLIC_ONLY must be true"} {
+				if !strings.Contains(err.Error(), name) {
+					t.Errorf("error %q does not name %s", err, name)
+				}
+			}
+			if strings.Contains(err.Error(), token) {
+				t.Error("the error holds the instance token")
+			}
+		})
+	}
+	// An unparseable flag is named once, as itself, not again as the shared-instance rule.
+	_, err := Load(env(map[string]string{"VOICEGATEWAY_INSTANCE_TOKEN": token, "VOICEGATEWAY_WORKER_ENDPOINTS_PUBLIC_ONLY": "maybe"}))
+	if err == nil || !strings.Contains(err.Error(), "VOICEGATEWAY_WORKER_ENDPOINTS_PUBLIC_ONLY must be true or false") || strings.Contains(err.Error(), "is set, so") {
+		t.Errorf("Load() with an unparseable flag = %v", err)
+	}
+}
+
+// Phase 06h acceptance check 2: a provider's id and secret come as a pair, and need a public URL a
+// provider can call back.
+func TestSignInProviders(t *testing.T) {
+	const public = "https://vg.example"
+	tests := []struct {
+		name    string
+		env     map[string]string
+		wantErr string
+	}{
+		{name: "google id alone", env: map[string]string{"VOICEGATEWAY_PUBLIC_URL": public, "VOICEGATEWAY_GOOGLE_CLIENT_ID": "id"}, wantErr: "VOICEGATEWAY_GOOGLE_CLIENT_SECRET is required"},
+		{name: "google secret alone", env: map[string]string{"VOICEGATEWAY_PUBLIC_URL": public, "VOICEGATEWAY_GOOGLE_CLIENT_SECRET": "gs-secret"}, wantErr: "VOICEGATEWAY_GOOGLE_CLIENT_ID is required"},
+		{name: "github id alone", env: map[string]string{"VOICEGATEWAY_PUBLIC_URL": public, "VOICEGATEWAY_GITHUB_CLIENT_ID": "id"}, wantErr: "VOICEGATEWAY_GITHUB_CLIENT_SECRET is required"},
+		{name: "github secret alone", env: map[string]string{"VOICEGATEWAY_PUBLIC_URL": public, "VOICEGATEWAY_GITHUB_CLIENT_SECRET": "gh-secret"}, wantErr: "VOICEGATEWAY_GITHUB_CLIENT_ID is required"},
+		{name: "no public URL", env: map[string]string{"VOICEGATEWAY_GITHUB_CLIENT_ID": "id", "VOICEGATEWAY_GITHUB_CLIENT_SECRET": "gh-secret"}, wantErr: "needs VOICEGATEWAY_PUBLIC_URL"},
+		{name: "plain http away from localhost", env: map[string]string{"VOICEGATEWAY_PUBLIC_URL": "http://vg.example", "VOICEGATEWAY_GOOGLE_CLIENT_ID": "id", "VOICEGATEWAY_GOOGLE_CLIENT_SECRET": "gs-secret"}, wantErr: "needs VOICEGATEWAY_PUBLIC_URL"},
+		{name: "http on localhost", env: map[string]string{"VOICEGATEWAY_PUBLIC_URL": "http://localhost:8080", "VOICEGATEWAY_GOOGLE_CLIENT_ID": "id", "VOICEGATEWAY_GOOGLE_CLIENT_SECRET": "gs-secret"}},
+		{name: "both on", env: map[string]string{"VOICEGATEWAY_PUBLIC_URL": public, "VOICEGATEWAY_GOOGLE_CLIENT_ID": "id", "VOICEGATEWAY_GOOGLE_CLIENT_SECRET": "gs-secret", "VOICEGATEWAY_GITHUB_CLIENT_ID": "id2", "VOICEGATEWAY_GITHUB_CLIENT_SECRET": "gh-secret"}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			c, err := Load(env(tc.env))
+			if tc.wantErr == "" {
+				if err != nil {
+					t.Fatalf("Load: %v", err)
+				}
+				if !c.Google.On() {
+					t.Fatal("Google is off")
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+				t.Fatalf("Load err = %v, want %q", err, tc.wantErr)
+			}
+			for _, secret := range []string{"gs-secret", "gh-secret"} {
+				if strings.Contains(err.Error(), secret) {
+					t.Fatalf("the error echoes a client secret: %v", err)
+				}
+			}
+		})
+	}
+	if c, err := Load(env(nil)); err != nil || c.Google.On() || c.GitHub.On() || c.Auth0.On() {
+		t.Fatalf("no settings: providers on or error %v", err)
+	}
+	if got := Callback("https://vg.example/", "github"); got != "https://vg.example/auth/oauth/github/callback" {
+		t.Fatalf("Callback = %s", got)
+	}
+}
+
+// Decision 0036: Auth0 takes its tenant's domain, a bare host, with its id and secret.
+func TestAuth0Settings(t *testing.T) {
+	const public = "https://vg.example"
+	app := map[string]string{"VOICEGATEWAY_PUBLIC_URL": public, "VOICEGATEWAY_AUTH0_CLIENT_ID": "id", "VOICEGATEWAY_AUTH0_CLIENT_SECRET": "a0-secret"}
+	with := func(extra map[string]string) map[string]string {
+		m := map[string]string{}
+		for k, v := range app {
+			m[k] = v
+		}
+		for k, v := range extra {
+			m[k] = v
+		}
+		return m
+	}
+	tests := []struct {
+		name    string
+		env     map[string]string
+		wantErr string
+	}{
+		{name: "tenant domain", env: with(map[string]string{"VOICEGATEWAY_AUTH0_DOMAIN": "voicegateway.us.auth0.com"})},
+		{name: "custom domain", env: with(map[string]string{"VOICEGATEWAY_AUTH0_DOMAIN": "login.voicegateway.dev"})},
+		{name: "no domain", env: app, wantErr: "VOICEGATEWAY_AUTH0_DOMAIN is required"},
+		{name: "domain alone", env: map[string]string{"VOICEGATEWAY_PUBLIC_URL": public, "VOICEGATEWAY_AUTH0_DOMAIN": "voicegateway.us.auth0.com"}, wantErr: "VOICEGATEWAY_AUTH0_CLIENT_ID is required"},
+		{name: "secret missing", env: map[string]string{"VOICEGATEWAY_PUBLIC_URL": public, "VOICEGATEWAY_AUTH0_DOMAIN": "voicegateway.us.auth0.com", "VOICEGATEWAY_AUTH0_CLIENT_ID": "id"}, wantErr: "VOICEGATEWAY_AUTH0_CLIENT_SECRET is required"},
+		{name: "domain with scheme", env: with(map[string]string{"VOICEGATEWAY_AUTH0_DOMAIN": "https://voicegateway.us.auth0.com"}), wantErr: "bare host"},
+		{name: "domain with path", env: with(map[string]string{"VOICEGATEWAY_AUTH0_DOMAIN": "voicegateway.us.auth0.com/"}), wantErr: "bare host"},
+		{name: "plain http public URL", env: with(map[string]string{"VOICEGATEWAY_AUTH0_DOMAIN": "voicegateway.us.auth0.com", "VOICEGATEWAY_PUBLIC_URL": "http://vg.example"}), wantErr: "needs VOICEGATEWAY_PUBLIC_URL"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			c, err := Load(env(tc.env))
+			if tc.wantErr == "" {
+				if err != nil || !c.Auth0.On() || c.Auth0.Domain != tc.env["VOICEGATEWAY_AUTH0_DOMAIN"] {
+					t.Fatalf("Load = %+v, %v; want Auth0 on", c.Auth0.Domain, err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+				t.Fatalf("Load err = %v, want %q", err, tc.wantErr)
+			}
+			if strings.Contains(err.Error(), "a0-secret") {
+				t.Fatalf("the error echoes the client secret: %v", err)
 			}
 		})
 	}

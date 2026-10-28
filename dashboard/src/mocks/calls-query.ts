@@ -22,6 +22,8 @@ export type CallFilters = {
   turnsMax?: number
   unknown?: ("answerMs" | "durationSeconds" | "turnCount")[]
   tag?: string[]
+  // SDK call fields as [key, value] pairs; a call must hold every pair.
+  field?: [string, string][]
   recorded?: boolean
   archived?: boolean
   sort: SortKey
@@ -32,6 +34,9 @@ const CHANNELS: Channel[] = ["phone", "web", "console", "local", "unknown"]
 const SEVERITIES: Severity[] = ["high", "medium", "none"]
 const SORTS: SortKey[] = ["startedAt", "durationSeconds", "turnCount", "answerMs", "issues"]
 const UNKNOWNS = ["answerMs", "durationSeconds", "turnCount"] as const
+// The contract's field parameter: key:value, the key as the SDK allows it, at most 16.
+const FIELD = /^([a-z0-9_.-]{1,64}):(.{0,256})$/u
+const MAX_FIELDS = 16
 
 // Reads the query string; returns the problem as text when a value is not what the contract allows.
 export function parseFilters(q: URLSearchParams): CallFilters | string {
@@ -70,6 +75,14 @@ export function parseFilters(q: URLSearchParams): CallFilters | string {
     f.turnsMax = num("turnsMax", true)
     f.unknown = list("unknown", UNKNOWNS)
     f.tag = list("tag")
+    const fields = q.getAll("field")
+    if (fields.length > MAX_FIELDS) throw `field takes at most ${MAX_FIELDS} values.`
+    if (fields.length)
+      f.field = fields.map((v) => {
+        const m = FIELD.exec(v)
+        if (!m) throw `field must be key:value, got ${v}.`
+        return [m[1], m[2]]
+      })
     for (const k of ["recorded", "archived"] as const) {
       const v = q.get(k)
       if (v !== null && v !== "true" && v !== "false") throw `${k} must be true or false.`
@@ -86,6 +99,10 @@ export function parseFilters(q: URLSearchParams): CallFilters | string {
   }
   return f
 }
+
+// SDK fields live on the call, not its summary. Every pair must hold, so one key asked with two
+// values matches nothing.
+export const matchesFields = (fields: Record<string, string> | undefined, pairs: CallFilters["field"]) => !pairs || pairs.every(([k, v]) => fields?.[k] === v)
 
 // The highest severity, or null when the call had nothing to check.
 export function severity(c: CallSummary): Severity | null {
@@ -151,13 +168,12 @@ const median = (xs: number[]) => {
 // The most answer times a response carries for the distribution strip.
 const MAX_VALUES = 1000
 
-export function totals(calls: CallSummary[]): CallTotals {
+export function totals(calls: CallSummary[], budget = storedThresholds().answerMs): CallTotals {
   const byChannel = Object.fromEntries(CHANNELS.map((ch) => [ch, calls.filter((c) => c.channel === ch).length])) as CallTotals["byChannel"]
   // Newest calls first, so a cut drops the oldest.
   const newest = [...calls].sort((a, b) => Date.parse(b.startedAt) - Date.parse(a.startedAt))
   const all = newest.flatMap((c) => c.answerMs ?? [])
   const sev = calls.map(severity)
-  const budget = storedThresholds().answerMs
   return {
     callCount: calls.length,
     byChannel,

@@ -9,17 +9,14 @@ import { Switch } from "@/components/ui/switch"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { QueryState } from "@/components/page-state"
-import { callInRoomQuery, mediaServerQuery } from "@/lib/api"
+import { callInRoomQuery, mediaServerQuery, accessDenied } from "@/lib/api"
+import { SourceStatus, useObservationClock } from "@/components/source-status"
+import { observedState } from "@/lib/live-status"
 import { cn } from "@/lib/utils"
 import { type MediaServerData, type Room, RoomDrawer, fromContract, roomOrigin } from "../media-server/room-drawer"
 import { useUrlPick, useUrlState } from "@/lib/url-state"
 
-// Live, in the shape of Logfire's live view: the real clock runs, the window slides with Now on
-// the right, and every room is a bar that grows while the room is open and stops when it closes.
-// Clicking a room opens the usual call drawer, or the room drawer when the room has no call trace.
-// Until the Phase 2 server streams rooms, the 15 rooms we captured on Oct 14 replay on today's clock
-// from when the page opens, in their real order and length; quiet gaps over 30 s are shortened and
-// the set repeats. Each row's tooltip keeps the room's real capture time.
+// The timeline uses original observation timestamps. Failed reads never imply a closed room.
 
 const windows = [
   { s: 300, short: "5m", long: "Last 5 minutes", tick: 60 },
@@ -31,27 +28,10 @@ const windows = [
   { s: 86400, short: "1d", long: "Last day", tick: 14400 },
 ]
 
-// The captured rooms on a compressed timeline: real lengths and order, gaps capped at 30 s.
-// Rooms with no reported creation or last-seen time cannot be replayed and are left out.
 type Timed = Room & { createdMs: number; lastSeen: number }
-type Slot = { room: Timed; start: number; end: number }
-function replay(ms: MediaServerData) {
-  const captured: Timed[] = ms.rooms
-    .map((r, k) => ({ ...r, n: k + 1 }))
+function observedRooms(ms: MediaServerData): Timed[] {
+  return ms.rooms.map((r, k) => ({ ...r, n: k + 1 }))
     .filter((r): r is Timed => r.createdMs !== null && r.lastSeen !== null)
-    .sort((a, b) => a.createdMs - b.createdMs)
-  const slots: Slot[] = []
-  let cursor = 0
-  let prevEnd = captured.length ? captured[0].createdMs / 1000 : 0
-  for (const r of captured) {
-    const start = r.createdMs / 1000
-    cursor += Math.min(Math.max(start - prevEnd, 0), 30)
-    const len = r.lastSeen - start
-    slots.push({ room: r, start: cursor, end: cursor + len })
-    cursor += len
-    prevEnd = Math.max(prevEnd, r.lastSeen)
-  }
-  return { captured, slots, cycle: Math.max(0, ...slots.map((s) => s.end)) + 30 }
 }
 
 const hms = (s: number) => new Date(s * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false })
@@ -73,20 +53,21 @@ function useNow(running: boolean) {
 export function LivePage() {
   const read = useQuery(mediaServerQuery())
   const ms = useMemo(() => (read.data ? fromContract(read.data) : null), [read.data])
-  if (!ms) return <QueryState icon={Broadcast} what="the rooms" query={read} />
-  return <LiveView ms={ms} />
+  if (!ms || accessDenied(read.error)) return <QueryState icon={Broadcast} what="the rooms" query={read} />
+  return <div className="space-y-4">
+    <SourceStatus name="LiveKit SFU" source={read.data?.sourceStatus} interval={10000} query={read} />
+    <LiveView ms={ms} disconnected={read.isError || read.fetchStatus === "paused"} />
+  </div>
 }
 
-function LiveView({ ms }: { ms: MediaServerData }) {
-  const { captured, slots, cycle } = useMemo(() => replay(ms), [ms])
+function LiveView({ ms, disconnected }: { ms: MediaServerData; disconnected: boolean }) {
+  const captured = useMemo(() => observedRooms(ms), [ms])
   const queryClient = useQueryClient()
   const navigate = useNavigate()
   const [running, setRunning] = useState(true)
   const [wi, setWi] = useState(0)
   const [q, setQ] = useUrlState("search", "")
   const [openRoom, setOpenRoom] = useUrlPick<Room>("room", captured, (r) => r.sid)
-  // Anchor the replay so the page opens with one room just finished and one live.
-  const [anchor] = useState(() => Date.now() / 1000 - ((slots[Math.min(1, slots.length - 1)]?.start ?? 0) + 20))
   // A dragged range on the time strip pauses the stream and shows just that range.
   const [range, setRange] = useState<{ from: number; to: number } | null>(null)
   const [drag, setDrag] = useState<{ a: number; b: number } | null>(null)
@@ -95,6 +76,7 @@ function LiveView({ ms }: { ms: MediaServerData }) {
   const strip = useRef<HTMLDivElement>(null)
   const filter = useRef<HTMLInputElement>(null)
   const clockNow = useNow(running && !range)
+  const observationNow = useObservationClock()
   const w = windows[wi]
   const now = range ? range.to : clockNow
   const span = range ? range.to - range.from : w.s
@@ -117,20 +99,15 @@ function LiveView({ ms }: { ms: MediaServerData }) {
     return Math.min(Math.max((clientX - r.left - 16) / (r.width - 32), 0), 1)
   }
 
-  // Every repetition of the captured set that overlaps the window.
-  const rows: { key: string; room: Timed; start: number; end: number }[] = []
-  for (let c = Math.floor((from - anchor) / cycle) - 1; c <= Math.floor((now - anchor) / cycle); c++) {
-    for (const s of slots) {
-      const start = anchor + c * cycle + s.start
-      const end = anchor + c * cycle + s.end
-      if (start <= now && end >= from) rows.push({ key: `${c}-${s.room.sid}`, room: s.room, start, end })
-    }
-  }
+  const rows = captured.map((room) => ({
+    key: room.sid, room, start: room.createdMs / 1000, end: room.lastSeen,
+    state: observedState(room.lastSeen * 1000, ms.sourceStatus, 10000, observationNow, disconnected),
+  })).filter((r) => r.start <= now && r.end >= from)
   const shown = rows
     .filter((r) => clearedAt === null || r.start >= clearedAt)
     .filter((r) => r.room.name.toLowerCase().includes(q.trim().toLowerCase()))
     .sort((a, b) => b.start - a.start)
-  const live = shown.filter((r) => r.end >= now).length
+  const live = shown.filter((r) => r.state === "Observed active").length
   const x = (s: number) => ((Math.min(Math.max(s, from), now) - from) / span) * 100
   const ticks: number[] = []
   const step = range ? (windows.find((o) => o.s >= span * 0.9) ?? windows[windows.length - 1]).tick / (span < 300 ? 5 : 1) : w.tick
@@ -172,7 +149,7 @@ function LiveView({ ms }: { ms: MediaServerData }) {
         </div>
         {range && (
           <Button variant="outline" size="sm" onClick={() => setRange(null)} className="gap-1.5">
-            <ArrowCounterClockwise /> Back to live
+            <ArrowCounterClockwise /> Back to now
           </Button>
         )}
         <div className="flex items-center">
@@ -194,7 +171,7 @@ function LiveView({ ms }: { ms: MediaServerData }) {
           </DropdownMenu>
           <Button variant="outline" size="sm" onClick={() => (range ? setRange(null) : setRunning(!running))} aria-pressed={running && !range} className="-ml-px gap-2 rounded-l-none">
             <span className={cn("size-2 rounded-full", running && !range ? "animate-pulse bg-primary" : "bg-muted-foreground")} />
-            {running && !range ? "Live" : "Paused"}
+            {running && !range ? "Following" : "Paused"}
           </Button>
         </div>
       </div>
@@ -247,7 +224,7 @@ function LiveView({ ms }: { ms: MediaServerData }) {
 
       <div className="flex items-center gap-4 px-1 text-[12px] text-muted-foreground tnum">
         <span>
-          {live} live · {shown.length} in view
+          {live} observed active · {shown.length} in view
         </span>
         <Button variant="ghost" size="sm" className="h-7 gap-1.5 px-2 text-[12px] text-muted-foreground" onClick={() => setClearedAt(clearedAt === null ? now : null)}>
           <Broom /> {clearedAt === null ? "Clear" : `Cleared at ${hms(clearedAt)} · Show all`}
@@ -256,7 +233,7 @@ function LiveView({ ms }: { ms: MediaServerData }) {
           Column headers
           <Switch checked={headers} onCheckedChange={setHeaders} className="data-[state=checked]:bg-foreground" />
         </label>
-        <span className="ml-auto">Replay of the 15 rooms captured on Oct 14, on today's clock.</span>
+        <span className="ml-auto">Observed timestamps · bars end at the last sample{ms.rooms.length > captured.length && ` · ${ms.rooms.length - captured.length} rooms lack timestamps`}</span>
       </div>
 
       <div className="rounded-xl border">
@@ -293,7 +270,7 @@ function LiveView({ ms }: { ms: MediaServerData }) {
               </li>
             )}
             {shown.map((r) => {
-              const isLive = r.end >= now
+              const isLive = r.state === "Observed active"
               const o = roomOrigin(r.room)
               const Kind = o.kind === "phone-in" || o.kind === "phone-out" ? Phone : Robot
               return (
@@ -302,7 +279,7 @@ function LiveView({ ms }: { ms: MediaServerData }) {
                     <TooltipTrigger asChild>
                       <button type="button" onClick={() => open(r.room)} className="grid w-full grid-cols-[minmax(0,150px)_minmax(0,1fr)] items-center sm:grid-cols-[300px_minmax(0,1fr)] gap-4 px-4 py-2.5 text-left hover:bg-muted/50">
                         <span className="flex min-w-0 items-center gap-2.5">
-                          <span className={cn("size-2 shrink-0 rounded-full", isLive ? "animate-pulse bg-primary" : "bg-muted-foreground/40")} aria-label={isLive ? "Live" : "Ended"} />
+                          <span className={cn("size-2 shrink-0 rounded-full", isLive ? "animate-pulse bg-primary" : "bg-muted-foreground/40")} aria-label={r.state} />
                           <Kind size={14} className="shrink-0 text-muted-foreground" />
                           <span className="truncate font-mono text-[12px]">{r.room.name}</span>
                           <span className={cn("ml-auto shrink-0 text-[11px] tnum", isLive ? "text-foreground" : "text-muted-foreground")}>{length(Math.min(r.end, now) - r.start)}</span>
@@ -317,7 +294,7 @@ function LiveView({ ms }: { ms: MediaServerData }) {
                         </span>
                       </button>
                     </TooltipTrigger>
-                    <TooltipContent side="bottom" align="start" className="text-xs">{`Captured ${new Date(r.room.createdMs).toLocaleString()} · ${length(r.room.lastSeen - r.room.createdMs / 1000)}`}</TooltipContent>
+                    <TooltipContent side="bottom" align="start" className="text-xs">{`${r.state} · Last observed ${new Date(r.room.lastSeen * 1000).toLocaleString()} · ${length(r.room.lastSeen - r.room.createdMs / 1000)}`}</TooltipContent>
                   </Tooltip>
                 </li>
               )

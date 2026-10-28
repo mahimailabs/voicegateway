@@ -18,8 +18,11 @@ import (
 // redacted projection. A project whose server is not LiveKit Cloud is recorded as a good read where
 // Cloud agents do not apply, without any Cloud API call.
 type CloudAgentScraper struct {
+	// Changed runs only after the read is durably stored, including failed source reads.
+	Changed  func(context.Context, string, string)
 	Projects Projects
 	Samples  CloudAgentSamples
+	Findings Findings
 	Lock     Locker
 	Dial     Dial
 	Log      *slog.Logger
@@ -103,6 +106,14 @@ func (s *CloudAgentScraper) CloudAgents(ctx context.Context, p store.Project) er
 	defer cancel()
 	if err := s.Samples.StoreCloudAgentsRead(sctx, read, agents); err != nil {
 		return fmt.Errorf("store cloud agents read: %w", err)
+	}
+	if s.Findings != nil {
+		if err := s.Findings.ApplyStandingFindings(sctx, read, cloudAgentFindings(agents)); err != nil {
+			return fmt.Errorf("store agent findings: %w", err)
+		}
+	}
+	if s.Changed != nil {
+		s.Changed(ctx, read.OrganisationID, read.ProjectID)
 	}
 	return nil
 }

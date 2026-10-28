@@ -1,6 +1,3 @@
-default_language_version:
-    python: python3
-
 # .claude/skills/impeccable/ is a vendored third-party skill, kept byte for
 # byte so `npx impeccable update` diffs cleanly. Its font index is over the
 # size cap by design.
@@ -12,23 +9,17 @@ repos:
     hooks:
     -   id: check-added-large-files
         # 250 KiB, not the 500 KiB default. The default is why a 404 KiB
-        # duplicate screenshot once reached main and stayed there. uv.lock
-        # and the dashboard's npm lockfile are tracked files allowed over it.
+        # duplicate screenshot once reached main and stayed there. The
+        # lockfiles are the tracked files allowed over it: the dashboard's npm lock and the Python
+        # SDK's uv.lock, which pins livekit-agents' whole dependency tree.
         args: [--maxkb=250]
-        exclude: ^(uv\.lock|dashboard/package-lock\.json|site/landing/pnpm-lock\.yaml)$
+        exclude: ^(dashboard/package-lock\.json|sdk/python/uv\.lock)$
     -   id: check-toml
     -   id: check-yaml
         args:
         -   --unsafe
     -   id: end-of-file-fixer
     -   id: trailing-whitespace
--   repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.14.3
-    hooks:
-    -   id: ruff
-        args:
-        - --fix
-    -   id: ruff-format
 # Go checks (CLAUDE.md Code quality). They use the tool versions pinned in go.mod, so they run only
 # where Go is installed; the Go workflow runs the same checks in CI.
 -   repo: local
@@ -51,8 +42,59 @@ repos:
         language: system
         files: ^go\.(mod|sum)$
         pass_filenames: false
+# The example agent. ruff and mypy come from its own dev group in uv.lock, so
+# the hooks run the pinned versions; ruff and mypy read its pyproject.toml.
+-   repo: local
+    hooks:
+    -   id: example-uv-lock
+        name: example agent uv.lock is current
+        entry: uv lock --check --project examples/livekit-agent
+        language: system
+        files: ^examples/livekit-agent/(pyproject\.toml|uv\.lock)$
+        pass_filenames: false
+    -   id: example-ruff
+        name: example agent ruff
+        entry: uv run --locked --project examples/livekit-agent ruff check
+        language: system
+        files: ^examples/livekit-agent/.*\.py$
+    -   id: example-ruff-format
+        name: example agent ruff format
+        entry: uv run --locked --project examples/livekit-agent ruff format --check
+        language: system
+        files: ^examples/livekit-agent/.*\.py$
+    -   id: example-mypy
+        name: example agent mypy
+        entry: uv run --locked --project examples/livekit-agent mypy --config-file examples/livekit-agent/pyproject.toml
+        language: system
+        files: ^examples/livekit-agent/.*\.py$
+# The Python SDK. Same pinned tools from its own uv.lock; mypy runs on the whole
+# package from sdk/python so its strict config and the tests' imports resolve.
+-   repo: local
+    hooks:
+    -   id: sdk-uv-lock
+        name: python sdk uv.lock is current
+        entry: uv lock --check --project sdk/python
+        language: system
+        files: ^sdk/python/(pyproject\.toml|uv\.lock)$
+        pass_filenames: false
+    -   id: sdk-ruff
+        name: python sdk ruff
+        entry: uv run --locked --project sdk/python ruff check
+        language: system
+        files: ^sdk/python/.*\.pyi?$
+    -   id: sdk-ruff-format
+        name: python sdk ruff format
+        entry: uv run --locked --project sdk/python ruff format --check
+        language: system
+        files: ^sdk/python/.*\.(py|pyi|md)$
+    -   id: sdk-mypy
+        name: python sdk mypy
+        entry: bash -c 'cd sdk/python && uv run --locked mypy'
+        language: system
+        files: ^sdk/python/(.*\.py|pyproject\.toml)$
+        pass_filenames: false
 
 ci:
-    skip: [go-fmt, go-lint, go-mod-tidy]
+    skip: [go-fmt, go-lint, go-mod-tidy, example-uv-lock, example-ruff, example-ruff-format, example-mypy, sdk-uv-lock, sdk-ruff, sdk-ruff-format, sdk-mypy]
     autofix_commit_msg: 🎨 [pre-commit.ci] Auto format from pre-commit.com hooks
     autoupdate_commit_msg: ⬆ [pre-commit.ci] pre-commit autoupdate

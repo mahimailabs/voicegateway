@@ -18,15 +18,19 @@ import (
 	"github.com/redis/go-redis/v9"
 	"golang.org/x/sync/errgroup"
 
+	apicontract "github.com/mahimailabs/voicegateway/docs/api"
+	"github.com/mahimailabs/voicegateway/ee/instance"
 	"github.com/mahimailabs/voicegateway/internal/api"
 	"github.com/mahimailabs/voicegateway/internal/auth"
+	"github.com/mahimailabs/voicegateway/internal/bucket"
 	"github.com/mahimailabs/voicegateway/internal/config"
 	"github.com/mahimailabs/voicegateway/internal/console"
-	"github.com/mahimailabs/voicegateway/internal/event"
 	"github.com/mahimailabs/voicegateway/internal/ingest"
 	"github.com/mahimailabs/voicegateway/internal/invite"
 	"github.com/mahimailabs/voicegateway/internal/join"
 	"github.com/mahimailabs/voicegateway/internal/mailer"
+	"github.com/mahimailabs/voicegateway/internal/mcp"
+	"github.com/mahimailabs/voicegateway/internal/oauth"
 	"github.com/mahimailabs/voicegateway/internal/obs"
 	"github.com/mahimailabs/voicegateway/internal/scrape"
 	"github.com/mahimailabs/voicegateway/internal/seal"
@@ -58,6 +62,8 @@ func Web(ctx context.Context, c config.Config, log *slog.Logger) error {
 	}
 	rdb := redis.NewClient(opts)
 	defer func() { _ = rdb.Close() }()
+	live := stream.NewLive(opts, log)
+	defer func() { _ = live.Close() }()
 
 	// The API reads what the worker stored; web never writes ClickHouse (CLAUDE.md Boundaries).
 	events, err := chstore.OpenReadOnly(c.ClickHouseURL)
@@ -68,7 +74,17 @@ func Web(ctx context.Context, c config.Config, log *slog.Logger) error {
 
 	projects := pgstore.NewStore(pool, sealer)
 	producer := stream.NewProducer(rdb, stream.Ingest)
-	uploads := &ingest.Uploads{Projects: projects, Stream: producer, Log: log, Now: time.Now}
+	var quota ingest.Quota
+	if c.CloudQuotas {
+		quota = &instance.Quota{Store: projects, Now: time.Now}
+	}
+	instanceBucket, err := bucket.New(c.S3)
+	if err != nil {
+		return err
+	}
+	// A bucket a project brought is dialed through the worker's address guard, as its LiveKit URL is.
+	bucketTransport := scrape.NewWorkerClient(c.WorkerEndpointsPublicOnly).Transport
+	recordings := &bucket.Buckets{Default: instanceBucket, Projects: projects, Transport: bucketTransport}
 
 	warnRetiredToken(os.Getenv, log)
 	trusted, err := auth.ParseTrusted(c.TrustedProxies)
@@ -93,36 +109,65 @@ func Web(ctx context.Context, c config.Config, log *slog.Logger) error {
 		}
 		links.Mailer = m
 	}
+	embeds, err := auth.NewEmbedTokens(c.SecretKey)
+	if err != nil {
+		return err
+	}
 	accounts := &auth.Service{
 		Users: projects, Secure: secure, Plain: plain, Trusted: trusted,
 		PublicHTTPS: strings.HasPrefix(strings.ToLower(c.PublicURL), "https://"),
 		PublicURL:   c.PublicURL, Links: links,
+		InstanceTokenSHA256: c.InstanceTokenSHA256, Embeds: embeds,
+		Providers: signInProviders(c), Identities: projects,
 		Log: log, Now: time.Now,
+	}
+	// The instance API (phase 06e, ee/instance) is on only with VOICEGATEWAY_INSTANCE_TOKEN.
+	var instanceAPI api.InstanceHandlers
+	if c.InstanceTokenSHA256 != nil {
+		// An invitation link's base never comes from the request's Host header.
+		if c.PublicURL == "" {
+			return errors.New("VOICEGATEWAY_INSTANCE_TOKEN needs VOICEGATEWAY_PUBLIC_URL, the base of every invitation link")
+		}
+		instanceAPI = NewInstanceAPI(projects, links, c.PublicURL, log)
+		if c.CloudQuotas {
+			instanceAPI = (&instance.Handlers{Store: projects, Entitlements: projects, Invites: links, BaseURL: c.PublicURL, Log: log}).API()
+		}
 	}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", obs.Health)
-	// LiveKit's webhooks and Agents' observability paths (decision 0014), under
-	// LIVEKIT_OBSERVABILITY_URL. They take only POST; any other method is a 405, never the console.
-	handlePost(mux, map[string]http.Handler{
-		"/livekit/webhook":               &ingest.Webhooks{Projects: projects, Stream: producer, Log: log, Now: time.Now},
-		"/observability/traces/otlp/v0":  uploads.OTLP(event.KindAgentTraces),
-		"/observability/logs/otlp/v0":    uploads.OTLP(event.KindAgentLogs),
-		"/observability/metrics/otlp/v0": uploads.OTLP(event.KindAgentMetrics),
-		"/observability/recordings/v0":   http.HandlerFunc(uploads.SessionReport),
-	})
+	connections := &ingest.Connections{Store: projects, Log: log, Now: time.Now}
+	mountIngestion(mux, projects, producer, quota, recordings, connections, log, time.Now)
 	mux.Handle("/auth/", accounts.Routes())
-	mux.Handle("/api/v1/", (&api.API{
-		Projects: projects, Calls: projects, Traces: events, Layers: events, Endpoints: projects, Accounts: projects, Stats: projects, Keys: projects, NewKey: auth.NewKey, Log: log, Now: time.Now, Gate: accounts.Gate,
+	v1 := &api.API{
+		Settings: projects, Origins: projects, Embeds: embeds, Metadata: projects, Issues: projects, StorageBucket: c.S3.Bucket,
+		Live:              live,
+		ResourceEndpoints: projects, ResourceSamples: events, Projects: projects, NewProjects: projects, Credentials: projects, VerifyLiveKit: scrape.NewVerifier(c.WorkerEndpointsPublicOnly), VerifyBucket: bucket.NewVerifier(bucketTransport), Calls: projects, Traces: events, Layers: events, Endpoints: projects, Accounts: projects, Stats: projects, Keys: projects, NewKey: auth.NewKey, Log: log, Now: time.Now, Gate: accounts.Gate,
 		Invitations: projects, Inviter: NewInviter(links), LinkBase: accounts.LinkBase,
-		AnswerBudgetMs: c.AnswerBudgetMs,
-	}).Routes())
+		Recordings: projects, Media: recordings,
+		Connections: projects, PublicURL: c.PublicURL,
+		Instance: instanceAPI,
+	}
+	mux.Handle("/api/v1/", v1.Routes())
+	// MCP (PRODUCT.md): its tools call the /api/v1 router in process, as the key the same gate
+	// identified in front of /mcp, so that router runs without a gate of its own.
+	tools := *v1
+	tools.Gate = nil
+	inProcess, ok := tools.Routes().(mcp.API)
+	if !ok {
+		return errors.New("the API router is not a chi router")
+	}
+	agents, err := mcp.New(apicontract.OpenAPI, inProcess, log)
+	if err != nil {
+		return err
+	}
+	mux.Handle("/mcp", agents.Handler(accounts.Gate))
 	if c.ConsoleDir != "" {
 		dist := os.DirFS(c.ConsoleDir)
 		if _, err := fs.Stat(dist, "index.html"); err != nil {
 			return fmt.Errorf("VOICEGATEWAY_CONSOLE_DIR %q holds no built console: %w", c.ConsoleDir, err)
 		}
-		mountConsole(mux, dist)
+		mountConsole(mux, dist, accounts.Frames)
 	}
 
 	srv := &http.Server{
@@ -179,27 +224,43 @@ func Worker(ctx context.Context, c config.Config, log *slog.Logger) error {
 	}
 	rdb := redis.NewClient(opts)
 	defer func() { _ = rdb.Close() }()
+	live := stream.NewLive(opts, log)
+	defer func() { _ = live.Close() }()
 	events, err := chstore.Open(c.ClickHouseURL)
 	if err != nil {
 		return redactErr(err, c.ClickHouseURL)
 	}
 	defer func() { _ = events.Close() }()
 	// The call index needs no sealer: it never reads a LiveKit secret.
-	joiner := &join.Joiner{Calls: pgstore.NewStore(pool, nil), Traces: events, Log: log, Timeout: 30 * time.Second}
+	joiner := &join.Joiner{Changed: live.Notify, Calls: pgstore.NewStore(pool, nil), Traces: events, Log: log, Timeout: 30 * time.Second}
+	instanceBucket, err := bucket.New(c.S3)
+	if err != nil {
+		return err
+	}
+	recordings := &bucket.Buckets{
+		Default: instanceBucket, Projects: pgstore.NewStore(pool, sealer),
+		Transport: scrape.NewWorkerClient(c.WorkerEndpointsPublicOnly).Transport,
+	}
+	retention := &bucket.Retention{Bucket: recordings, Links: pgstore.NewStore(pool, nil), Log: log}
 	// One consumer per worker process; a worker that dies leaves its entries to be claimed.
 	name, err := os.Hostname()
 	if err != nil {
 		return fmt.Errorf("consumer name: %w", err)
 	}
 
+	// With VOICEGATEWAY_WORKER_ENDPOINTS_PUBLIC_ONLY, the LiveKit API reads dial through the same
+	// address guard as the worker metrics endpoints.
+	dial := scrape.NewDial(c.WorkerEndpointsPublicOnly)
 	log.Info("worker started", "consumer", name)
 	g, gctx := errgroup.WithContext(ctx)
 	g.Go(func() error {
 		return (&scrape.Scraper{
+			Jobs:      pgstore.NewStore(pool, nil),
+			Changed:   live.Notify,
 			Projects:  pgstore.NewStore(pool, sealer),
 			Samples:   events,
 			Lock:      &scrape.RedisLock{Client: rdb},
-			Dial:      scrape.DialSDK,
+			Dial:      dial,
 			ID:        name,
 			Log:       log,
 			Now:       time.Now,
@@ -210,10 +271,12 @@ func Worker(ctx context.Context, c config.Config, log *slog.Logger) error {
 	})
 	g.Go(func() error {
 		return (&scrape.SIPScraper{
+			Findings: pgstore.NewStore(pool, nil),
+			Changed:  live.Notify,
 			Projects: pgstore.NewStore(pool, sealer),
 			Samples:  events,
 			Lock:     &scrape.RedisLock{Client: rdb},
-			Dial:     scrape.DialSDK,
+			Dial:     dial,
 			Log:      log,
 			Now:      time.Now,
 			Every:    time.Minute,
@@ -222,10 +285,12 @@ func Worker(ctx context.Context, c config.Config, log *slog.Logger) error {
 	})
 	g.Go(func() error {
 		return (&scrape.EgressScraper{
+			Findings: pgstore.NewStore(pool, nil),
+			Changed:  live.Notify,
 			Projects: pgstore.NewStore(pool, sealer),
 			Samples:  events,
 			Lock:     &scrape.RedisLock{Client: rdb},
-			Dial:     scrape.DialSDK,
+			Dial:     dial,
 			Log:      log,
 			Now:      time.Now,
 			Every:    15 * time.Second,
@@ -234,10 +299,12 @@ func Worker(ctx context.Context, c config.Config, log *slog.Logger) error {
 	})
 	g.Go(func() error {
 		return (&scrape.IngressScraper{
+			Findings: pgstore.NewStore(pool, nil),
+			Changed:  live.Notify,
 			Projects: pgstore.NewStore(pool, sealer),
 			Samples:  events,
 			Lock:     &scrape.RedisLock{Client: rdb},
-			Dial:     scrape.DialSDK,
+			Dial:     dial,
 			Log:      log,
 			Now:      time.Now,
 			Every:    15 * time.Second,
@@ -246,10 +313,12 @@ func Worker(ctx context.Context, c config.Config, log *slog.Logger) error {
 	})
 	g.Go(func() error {
 		return (&scrape.CloudAgentScraper{
+			Findings: pgstore.NewStore(pool, nil),
+			Changed:  live.Notify,
 			Projects: pgstore.NewStore(pool, sealer),
 			Samples:  events,
 			Lock:     &scrape.RedisLock{Client: rdb},
-			Dial:     scrape.DialSDK,
+			Dial:     dial,
 			Log:      log,
 			Now:      time.Now,
 			Every:    time.Minute,
@@ -259,6 +328,7 @@ func Worker(ctx context.Context, c config.Config, log *slog.Logger) error {
 	g.Go(func() error {
 		endpoints := pgstore.NewStore(pool, sealer)
 		return (&scrape.WorkerScraper{
+			Changed:   live.Notify,
 			Projects:  endpoints,
 			Endpoints: endpoints,
 			Samples:   events,
@@ -271,7 +341,28 @@ func Worker(ctx context.Context, c config.Config, log *slog.Logger) error {
 		}).Run(gctx)
 	})
 	g.Go(func() error {
+		endpoints := pgstore.NewStore(pool, sealer)
+		return (&scrape.ResourceScraper{
+			Changed: live.Notify, Projects: endpoints, Endpoints: endpoints, Samples: events,
+			Lock: &scrape.RedisLock{Client: rdb}, Client: scrape.NewWorkerClient(c.WorkerEndpointsPublicOnly),
+			Log: log, Now: time.Now, Every: 15 * time.Second, Timeout: 10 * time.Second,
+		}).Run(gctx)
+	})
+	g.Go(func() error {
 		every(gctx, sweepEvery, "sweep", joiner.Sweep, log)
+		return nil
+	})
+	g.Go(func() error {
+		evaluator := &scrape.JobEvaluator{Store: pgstore.NewStore(pool, nil), Changed: live.Notify}
+		every(gctx, summarizeEvery, "job findings", evaluator.Tick, log)
+		return nil
+	})
+	g.Go(func() error {
+		every(gctx, summarizeEvery, "findings backfill", joiner.BackfillFindings, log)
+		return nil
+	})
+	g.Go(func() error {
+		every(gctx, summarizeEvery, "recording backfill", joiner.BackfillMediaFindings, log)
 		return nil
 	})
 	g.Go(func() error {
@@ -279,7 +370,12 @@ func Worker(ctx context.Context, c config.Config, log *slog.Logger) error {
 		return nil
 	})
 	g.Go(func() error {
+		every(gctx, expireRecordingsEvery, "recording retention", retention.Run, log)
+		return nil
+	})
+	g.Go(func() error {
 		return (&sink.Sink{
+			Changed:   live.Notify,
 			Stream:    stream.NewConsumer(rdb, stream.Ingest, workerGroup, name),
 			Events:    events,
 			Join:      joiner,
@@ -297,11 +393,13 @@ func Worker(ctx context.Context, c config.Config, log *slog.Logger) error {
 }
 
 // sweepEvery is how often the worker closes idle calls and counts unlinked traces;
-// summarizeEvery is how often it rebuilds stale call summaries (phase 04d). Every worker runs both;
-// both are safe to run twice.
+// summarizeEvery is how often it rebuilds stale call summaries (phase 04d); expireRecordingsEvery
+// is how often it deletes recordings past retention (phase 07a). Every worker runs all three; all
+// are safe to run twice.
 const (
-	sweepEvery     = time.Minute
-	summarizeEvery = 10 * time.Second
+	sweepEvery            = time.Minute
+	summarizeEvery        = 10 * time.Second
+	expireRecordingsEvery = time.Hour
 )
 
 // every runs f each period until ctx is cancelled. A failure is logged and retried next period.
@@ -351,10 +449,11 @@ func warnRetiredToken(getenv func(string) string, log *slog.Logger) {
 
 // mountConsole serves the built console on the least specific pattern, so every route registered
 // on mux wins over it. The accept page holds a token in its fragment, so it sends no Referer and
-// is never cached.
-func mountConsole(mux *http.ServeMux, dist fs.FS) {
-	mux.Handle("/", console.Handler(dist))
-	mux.Handle("GET /invite", auth.LinkHeaders(console.Handler(dist)))
+// is never cached. frames decides who may frame each page (auth.Service.Frames): an embedded
+// widget's allowed origin, otherwise the console alone.
+func mountConsole(mux *http.ServeMux, dist fs.FS, frames func(http.Handler) http.Handler) {
+	mux.Handle("/", frames(console.Handler(dist)))
+	mux.Handle("GET /invite", frames(auth.LinkHeaders(console.Handler(dist))))
 }
 
 // handlePost registers each POST-only route, and a 405 for any other method on its path.
@@ -370,4 +469,20 @@ func handlePost(mux *http.ServeMux, routes map[string]http.Handler) {
 func postOnly(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Allow", http.MethodPost)
 	http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
+}
+
+// signInProviders are the Google, GitHub and Auth0 sign-ins configuration turns on (phase 06h,
+// decision 0036); config has already refused a half-set app or a missing public URL.
+func signInProviders(c config.Config) map[string]auth.Provider {
+	on := map[string]auth.Provider{}
+	if c.Google.On() {
+		on["google"] = oauth.NewGoogle(oauth.Config{ClientID: c.Google.ClientID, ClientSecret: c.Google.ClientSecret, RedirectURL: config.Callback(c.PublicURL, "google")}, nil)
+	}
+	if c.GitHub.On() {
+		on["github"] = oauth.NewGitHub(oauth.Config{ClientID: c.GitHub.ClientID, ClientSecret: c.GitHub.ClientSecret, RedirectURL: config.Callback(c.PublicURL, "github")}, nil)
+	}
+	if c.Auth0.On() {
+		on["auth0"] = oauth.NewAuth0(c.Auth0.Domain, oauth.Config{ClientID: c.Auth0.ClientID, ClientSecret: c.Auth0.ClientSecret, RedirectURL: config.Callback(c.PublicURL, "auth0")}, nil)
+	}
+	return on
 }

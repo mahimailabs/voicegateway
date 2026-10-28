@@ -1,14 +1,16 @@
+import { issueMetadataOf, saveIssueMetadata } from "./issue-metadata"
+import { metadataOf, saveMetadata } from "./dispositions"
 import { http, HttpResponse, type PathParams } from "msw"
-import type { AlertEvents, AlertSetup, Call, CallPage, CallStats, CreatedInvitation, CreatedPasswordReset, CreatedProjectKey, Invitations, IssueDispositions, Member, Members, ProjectKeys, IssueList, ProjectSettings, ProviderProbes, Workers, CapacityRun, CloudAgents, Egress, Error as ApiErrorBody, Ingress, MediaServer, ProjectSnapshot, Sip, Workspaces } from "@/lib/api-types"
+import type { AlertEvents, AlertSetup, Call, CallPage, CallStats, CreatedInvitation, CreatedPasswordReset, CreatedProjectKey, Invitations, LiveKitCredentialsUpdate, OrganisationEntitlement, ProjectCreate, ProjectCreated, Member, Members, ProjectConnection, ProjectKeys, IssueList, ProjectSettings, ProviderProbes, Resources, Workers, CapacityRun, CloudAgents, Egress, Error as ApiErrorBody, Ingress, MediaServer, ProjectSnapshot, Sip, Workspaces } from "@/lib/api-types"
 import { callStats } from "./call-stats"
 import { capturedCalls } from "./fixtures"
 import { alertEvents, issueList } from "./insights"
 import { capacity, cloudAgents, egress, ingress, mediaServer, projectSnapshot, providerProbes, sip, workers } from "./livekit"
 import { summarize } from "./summaries"
-import { matchesFilters, parseFilters, sortCalls, totals } from "./calls-query"
+import { matchesFields, matchesFilters, parseFilters, sortCalls, totals } from "./calls-query"
 import { playbackUrl, recordingMedia } from "./recordings"
-import { alertSetup, changeMember, createKey, invitations, invite, issueDispositions, members, passwordReset, projectKeys, projectSettings, revokeInvitation, revokeKey } from "./settings"
-import { knownOrg, knownProject, workspaces } from "./workspaces"
+import { alertSetup, changeMember, createKey, invitations, invite, members, passwordReset, projectKeys, projectSettings, updateSettings, updateAllowedOrigins, normaliseOrigin, revokeInvitation, revokeKey } from "./settings"
+import { addProject, knownOrg, knownProject, workspaces } from "./workspaces"
 
 // Everything but the paging parameters, in a stable order, so a cursor can name what it was issued for.
 function filterKey(q: URLSearchParams) {
@@ -27,7 +29,51 @@ const project = "*/api/v1/org/:orgId/project/:projectId"
 const fail = (status: number, code: ApiErrorBody["code"], message: string) =>
   HttpResponse.json<ApiErrorBody>({ code, message, requestId: `mock-${crypto.randomUUID()}` }, { status })
 
+const settingsScope = (params: PathParams) => `${params.orgId}/${params.projectId}`
 const known = (params: PathParams) => knownProject(params.orgId, params.projectId)
+// A browser check's replacement fields for the connection read; none in Node or without storage.
+function connectionOverride(): Partial<ProjectConnection> {
+  try {
+    return JSON.parse(globalThis.localStorage?.getItem("vg.mock-connection") ?? "{}") as Partial<ProjectConnection>
+  } catch {
+    return {}
+  }
+}
+
+// The LiveKit project each mock project reads: fake values, since the mock reaches no LiveKit. The key
+// is the one the project was created with or last changed to (updateProjectLiveKitCredentials), kept
+// in memory only, never in browser storage, so the next connection read shows it.
+const MOCK_LIVEKIT_URL = "wss://example-project.livekit.cloud"
+const livekitKeys = new Map<string, string>()
+const livekitOf = (params: PathParams) => ({ url: MOCK_LIVEKIT_URL, apiKey: livekitKeys.get(settingsScope(params)) ?? "APIexample123" })
+export const resetMockLiveKit = () => livekitKeys.clear()
+
+// The entitlement API exists only on a hosted install; the mock is a self-hosted one and answers
+// web's 404, unless a browser check sets localStorage "vg.mock-entitlement" to "hosted".
+function mockHosted(): boolean {
+  try {
+    return globalThis.localStorage?.getItem("vg.mock-entitlement") === "hosted"
+  } catch {
+    return false
+  }
+}
+
+// Mock only: a browser check of the first-run journey sets localStorage "vg.mock-no-calls" to
+// "true", and the calls list answers as a project with no call yet.
+function mockNoCalls(): boolean {
+  try {
+    return globalThis.localStorage?.getItem("vg.mock-no-calls") === "true"
+  } catch {
+    return false
+  }
+}
+
+// web's getCall has no events field (internal/api/getcall.go), so the mock's getCall answers none
+// either. The list and the call figures are web's own summaries, built from the stored events.
+const withoutEvents = <T extends { events?: unknown }>(c: T): Omit<T, "events"> => {
+  const { events: _events, ...rest } = c
+  return rest
+}
 
 // Playback goes through the API in the project that was asked for, never to the captured file.
 function withPlayback<T extends { recording?: { id: string; url: string } | null }>(x: T, params: PathParams): T {
@@ -52,6 +98,44 @@ function range(q: URLSearchParams): { from: Date; to: Date } | string {
 const SNAPSHOT = "captured"
 
 export const handlers = [
+ http.get(`${project}/issues/:issueId/metadata`,({params})=>{
+  if(!known(params)) return fail(404,"not_found","No such project.")
+  const selected=settingsScope(params),id=String(params.issueId)
+  if(!issueList(new Date(0),new Date(Date.now()+60000),selected).items.some(i=>i.id===id)) return fail(404,"not_found","No such issue.")
+  return HttpResponse.json(issueMetadataOf(selected,id))
+ }),
+ http.put(`${project}/issues/:issueId/metadata`,async({params,request})=>{
+  if(!known(params)) return fail(404,"not_found","No such project.")
+  const selected=settingsScope(params), id=String(params.issueId)
+  const exists=issueList(new Date(0),new Date(Date.now()+60000),selected).items.some(i=>i.id===id)
+  if(!exists) return fail(404,"not_found","No such issue.")
+  const body=await request.json() as import("@/lib/api-types").UpdateIssueMetadata
+  const before=issueMetadataOf(selected,id)
+  if(!Array.isArray(body.tags)||typeof body.archived!=="boolean"||!Number.isSafeInteger(body.revision)||!Number.isSafeInteger(body.evidenceRevision)|| (body.state!=null&&!['open','resolved','ignored'].includes(body.state))) return fail(400,"invalid_request","Invalid issue metadata.")
+  if(body.revision!==before.revision||body.evidenceRevision!==before.evidenceRevision) return fail(409,"revision_conflict","Issue changed; reload before saving.")
+  const next={...before,tags:[...new Set(body.tags.map(t=>t.trim().toLowerCase()))],archived:body.archived,revision:before.revision+1,...(body.state==null?{}:{state:body.state,regressed:false,decidedAt:new Date().toISOString(),reviewedEvidenceRevision:before.evidenceRevision})}
+  saveIssueMetadata(selected,id,next)
+  return HttpResponse.json(next)
+ }),
+
+ http.get(`${project}/call-tags`,({params})=>{
+  if(!known(params)) return fail(404,"not_found","No such project.")
+  return HttpResponse.json({tags:[...new Set(capturedCalls().flatMap(c=>metadataOf(settingsScope(params),c.id).tags))].sort()})
+ }),
+ http.get(`${project}/calls/:callId/metadata`,({params})=>{
+  if(!known(params)||!capturedCalls().some(c=>c.id===params.callId)) return fail(404,"not_found","No such call.")
+  return HttpResponse.json(metadataOf(settingsScope(params),String(params.callId)))
+ }),
+ http.put(`${project}/calls/:callId/metadata`,async({params,request})=>{
+  if(!known(params)||!capturedCalls().some(c=>c.id===params.callId)) return fail(404,"not_found","No such call.")
+  const body=await request.json() as {tags?:unknown;archived?:unknown;revision?:unknown}
+  if(!Array.isArray(body.tags)||body.tags.length>32||body.tags.some(t=>typeof t!=="string"||!t.trim()||Array.from(t.trim()).length>64||/\p{Cc}/u.test(t))||typeof body.archived!=="boolean"||!Number.isSafeInteger(body.revision)) return fail(400,"invalid_request","Invalid metadata.")
+  const before=metadataOf(settingsScope(params),String(params.callId))
+  if(body.revision!==before.revision) return fail(409,"revision_conflict","Call metadata changed; reload before saving.")
+  const next={tags:[...new Set((body.tags as string[]).map(t=>t.trim().toLowerCase()))].sort(),archived:body.archived,revision:before.revision+1}
+  saveMetadata(settingsScope(params),String(params.callId),next)
+  return HttpResponse.json(next)
+ }),
   http.get<PathParams, never, CallPage | ApiErrorBody>(`${project}/calls`, ({ params, request }) => {
     if (!known(params)) return fail(404, "not_found", "No such project.")
     const q = new URL(request.url).searchParams
@@ -71,28 +155,29 @@ export const handlers = [
       if (!Number.isInteger(start) || start < 0 || key !== bound) return fail(400, "invalid_request", "The cursor does not belong to these filters.")
     }
 
-    const matching = sortCalls(capturedCalls().map(summarize).filter((c) => matchesFilters(c, filters)), filters)
+    const matching = sortCalls((mockNoCalls() ? [] : capturedCalls()).filter((c) => matchesFields(c.fields, filters.field)).map(c=>summarize({...c,...metadataOf(settingsScope(params),c.id)})).filter((c) => matchesFilters(c, filters)), filters)
     const items = matching.slice(start, start + limit)
     const next = start + limit < matching.length ? `${start + limit}:${bound}` : null
-    return HttpResponse.json<CallPage>({ items, page: { nextCursor: next, snapshot: SNAPSHOT }, totals: totals(matching) })
+    return HttpResponse.json<CallPage>({ items, page: { nextCursor: next, snapshot: SNAPSHOT }, totals: totals(matching, projectSettings(settingsScope(params)).thresholds.answerMs) })
   }),
 
   http.get<PathParams, never, Call | ApiErrorBody>(`${project}/calls/:callId`, ({ params }) => {
     if (!known(params)) return fail(404, "not_found", "No such project.")
-    const call = capturedCalls().find((c) => c.id === params.callId)
-    return call ? HttpResponse.json(withPlayback(call, params)) : fail(404, "not_found", "No such call in this project.")
+    const found = capturedCalls().find((c) => c.id === params.callId)
+    const call = found && withoutEvents(found)
+    return call ? HttpResponse.json(withPlayback({...call,tags:metadataOf(settingsScope(params),call.id).tags,archived:metadataOf(settingsScope(params),call.id).archived}, params)) : fail(404, "not_found", "No such call in this project.")
   }),
 
   // Overview's aggregates, issues and alert evaluation over a range; both bounds are required.
   http.get<PathParams, never, CallStats | ApiErrorBody>(`${project}/call-stats`, ({ params, request }) => {
     if (!known(params)) return fail(404, "not_found", "No such project.")
     const r = range(new URL(request.url).searchParams)
-    return typeof r === "string" ? fail(400, "invalid_request", r) : HttpResponse.json(callStats(r.from, r.to))
+    return typeof r === "string" ? fail(400, "invalid_request", r) : HttpResponse.json(callStats(r.from, r.to, projectSettings(settingsScope(params)).thresholds.answerMs))
   }),
   http.get<PathParams, never, IssueList | ApiErrorBody>(`${project}/issues`, ({ params, request }) => {
     if (!known(params)) return fail(404, "not_found", "No such project.")
     const r = range(new URL(request.url).searchParams)
-    return typeof r === "string" ? fail(400, "invalid_request", r) : HttpResponse.json(issueList(r.from, r.to))
+    return typeof r === "string" ? fail(400, "invalid_request", r) : HttpResponse.json(issueList(r.from, r.to, settingsScope(params)))
   }),
   http.get<PathParams, never, AlertEvents | ApiErrorBody>(`${project}/alert-events`, ({ params, request }) => {
     if (!known(params)) return fail(404, "not_found", "No such project.")
@@ -107,13 +192,67 @@ export const handlers = [
   http.get<PathParams, never, CloudAgents | ApiErrorBody>(`${project}/agents`, ({ params }) => (known(params) ? HttpResponse.json(cloudAgents()) : fail(404, "not_found", "No such project."))),
   http.get<PathParams, never, CapacityRun | null | ApiErrorBody>(`${project}/capacity`, ({ params }) => (known(params) ? HttpResponse.json(capacity()) : fail(404, "not_found", "No such project."))),
   http.get<PathParams, never, ProjectSnapshot | ApiErrorBody>(`${project}/snapshot`, ({ params }) => (known(params) ? HttpResponse.json(projectSnapshot()) : fail(404, "not_found", "No such project."))),
+  http.get<PathParams, never, Resources | ApiErrorBody>(`${project}/resources`, ({ params }) => (known(params) ? HttpResponse.json({source: "No container resource exporter configured.", resources: []}) : fail(404, "not_found", "No such project."))),
   http.get<PathParams, never, Workers | ApiErrorBody>(`${project}/workers`, ({ params }) => (known(params) ? HttpResponse.json(workers()) : fail(404, "not_found", "No such project."))),
   http.get<PathParams, never, ProviderProbes | ApiErrorBody>(`${project}/provider-probes`, ({ params }) => (known(params) ? HttpResponse.json(providerProbes()) : fail(404, "not_found", "No such project."))),
   http.get<PathParams, never, Sip | ApiErrorBody>(`${project}/sip`, ({ params }) => (known(params) ? HttpResponse.json(sip()) : fail(404, "not_found", "No such project."))),
 
   // Settings, saved in this browser until web stores them (settings.ts). Writes stay in the console.
-  http.get<PathParams, never, ProjectSettings | ApiErrorBody>(`${project}/settings`, ({ params }) => (known(params) ? HttpResponse.json(projectSettings()) : fail(404, "not_found", "No such project."))),
-  http.get<PathParams, never, IssueDispositions | ApiErrorBody>(`${project}/issue-dispositions`, ({ params }) => (known(params) ? HttpResponse.json(issueDispositions()) : fail(404, "not_found", "No such project."))),
+  http.get<PathParams, never, ProjectSettings | ApiErrorBody>(`${project}/settings`, ({ params }) => (known(params) ? HttpResponse.json(projectSettings(settingsScope(params))) : fail(404, "not_found", "No such project."))),
+  http.put(`${project}/settings`, async ({ params, request }) => {
+    if (!known(params)) return fail(404, "not_found", "No such project.")
+    let body: unknown
+    try { body = await request.json() } catch { return fail(400, "invalid_request", "Expected JSON settings.") }
+    const saved = updateSettings(settingsScope(params), body)
+    return typeof saved === "string" ? fail(saved === "revision_conflict" ? 409 : 400, saved, saved === "revision_conflict" ? "The allowed sites changed; reload before saving." : "Invalid thresholds or revision.") : HttpResponse.json(saved)
+  }),
+  http.put(`${project}/settings/allowed-origins`, async ({ params, request }) => {
+    if (!known(params)) return fail(404, "not_found", "No such project.")
+    let body: unknown
+    try { body = await request.json() } catch { return fail(400, "invalid_request", "Expected JSON allowed origins.") }
+    const saved = updateAllowedOrigins(settingsScope(params), body)
+    return typeof saved === "string" ? fail(saved === "revision_conflict" ? 409 : 400, saved, saved === "revision_conflict" ? "Settings changed; reload before saving." : "An origin is https://host[:port], or http://localhost[:port], with no path.") : HttpResponse.json(saved)
+  }),
+  // The mock signs nothing: its token only fills the snippet. web mints real ones (decision 0034).
+  http.post(`${project}/embed-tokens`, async ({ params, request }) => {
+    if (!known(params)) return fail(404, "not_found", "No such project.")
+    const body = (await request.json().catch(() => null)) as { widgets?: string[]; origin?: unknown; expiresInSeconds?: number; transcriptsAndAudio?: boolean } | null
+    const origin = normaliseOrigin(body?.origin)
+    if (!body || !Array.isArray(body.widgets) || !body.widgets.length || !origin) return fail(400, "invalid_request", "Name widgets and an origin.")
+    if (!(projectSettings(settingsScope(params)).allowedOrigins ?? []).includes(origin)) return fail(400, "origin_not_allowed", "This origin is not in the project's allowed origins.")
+    const expiresAt = new Date(Date.now() + (body.expiresInSeconds ?? 3600) * 1000).toISOString()
+    return HttpResponse.json({ token: "vge_mock-preview-token", expiresAt, widgets: [...new Set(body.widgets)], origin, transcriptsAndAudio: body.transcriptsAndAudio === true }, { status: 201 })
+  }),
+  // First-call setup. The mock receives no ingest, so every source is still waiting and no first
+  // call exists: a mock or a fixture never counts as the project's first stored call. The URLs use
+  // this page's origin, as web builds them from VOICEGATEWAY_PUBLIC_URL. A browser check can replace
+  // any top-level field through localStorage "vg.mock-connection" (a refusal, null URLs).
+  http.get<PathParams, never, ProjectConnection | ApiErrorBody>(`${project}/connection`, ({ params, request }) => {
+    if (!known(params)) return fail(404, "not_found", "No such project.")
+    const base = `${new URL(request.url).origin}/ingest/${encodeURIComponent(String(params.orgId))}/${encodeURIComponent(String(params.projectId))}`
+    const waiting = { lastAcceptedAt: null, lastRejectedAt: null, reason: null, usedKey: null, expectedKey: null }
+    return HttpResponse.json<ProjectConnection>({ livekit: livekitOf(params), urls: { observability: base, webhook: `${base}/livekit/webhook` }, webhook: waiting, agent: waiting, sdk: waiting, firstCall: null, ...connectionOverride() })
+  }),
+  // A new LiveKit key and secret, with web's checks. The mock reaches no LiveKit, so it accepts every
+  // pair except a key that starts with APIinvalid, which it refuses as LiveKit would refuse a pair
+  // that does not verify (the 422 a test exercises). Nothing but the key is kept.
+  http.put<PathParams, Partial<LiveKitCredentialsUpdate>, ApiErrorBody>(`${project}/livekit-credentials`, async ({ params, request }) => {
+    if (!known(params)) return fail(404, "not_found", "No such project.")
+    const body = await request.json().catch(() => null)
+    const key = typeof body?.livekitApiKey === "string" ? body.livekitApiKey : ""
+    const secret = typeof body?.livekitApiSecret === "string" ? body.livekitApiSecret : ""
+    if (key.trim() === "" || secret.trim() === "" || /[\s\p{Cc}]/u.test(key)) return fail(400, "invalid_request", "livekitApiKey and livekitApiSecret are required, and the key has no spaces or control characters")
+    if (key.startsWith("APIinvalid")) return fail(422, "livekit_secret_invalid", "the LiveKit API secret did not verify for this key")
+    livekitKeys.set(settingsScope(params), key)
+    return new HttpResponse(null, { status: 204 })
+  }),
+  http.get<PathParams, never, OrganisationEntitlement | ApiErrorBody>("*/api/v1/org/:orgId/entitlement", ({ params }) => {
+    if (!knownOrg(params.orgId) || !mockHosted()) return fail(404, "not_found", "no entitlement API")
+    const now = new Date()
+    const from = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).toISOString()
+    const to = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1)).toISOString()
+    return HttpResponse.json<OrganisationEntitlement>({ from, to, limitMinutes: 2000, active: true, revision: 1, callSeconds: 0, unmeasuredCalls: 0, openCalls: 0, warningPercent: 0, ingestAllowed: true })
+  }),
   http.get<PathParams, never, AlertSetup | ApiErrorBody>(`${project}/alert-setup`, ({ params }) => (known(params) ? HttpResponse.json(alertSetup()) : fail(404, "not_found", "No such project."))),
   http.get<PathParams, never, Workspaces>("*/api/v1/workspaces", () => HttpResponse.json(workspaces())),
 
@@ -128,6 +267,49 @@ export const handlers = [
   http.delete<PathParams, never, ApiErrorBody>(`${project}/keys/:keyId`, ({ params }) => {
     if (!known(params)) return fail(404, "not_found", "No such project.")
     return revokeKey(String(params.projectId), String(params.keyId)) ? new HttpResponse(null, { status: 204 }) : fail(404, "not_found", "No such key in this project.")
+  }),
+
+  // Projects added in the console (phase 06f), kept in this browser (workspaces.ts), with web's checks.
+  http.post<PathParams, Partial<ProjectCreate>, ProjectCreated | ApiErrorBody>("*/api/v1/org/:orgId/projects", async ({ params, request }) => {
+    if (!knownOrg(params.orgId)) return fail(404, "not_found", "organisation not found")
+    const body = await request.json().catch(() => null)
+    const text = (v: unknown) => (typeof v === "string" ? v.trim() : "")
+    const missing = (["name", "livekitUrl", "livekitApiKey", "livekitApiSecret"] as const).filter((f) => text(body?.[f]) === "")
+    if (missing.length) return fail(400, "invalid_request", `missing ${missing.join(", ")}`)
+    const name = text(body?.name)
+    if (name.length > 64 || !/[a-z0-9]/i.test(name)) return fail(400, "invalid_request", "name must be 1 to 64 characters, with no control characters and at least one letter or digit")
+    let url: URL | null = null
+    try {
+      url = new URL(text(body?.livekitUrl))
+    } catch {
+      url = null
+    }
+    if (!url || !["ws:", "wss:", "http:", "https:"].includes(url.protocol) || !url.hostname) return fail(400, "invalid_request", "livekitUrl must be a ws, wss, http or https URL with a host")
+    // web proves the secret with one LiveKit read before storing anything. The mock reaches no
+    // LiveKit, so it accepts every secret, and answers a host under the reserved .invalid domain,
+    // which resolves nowhere, as web does: no LiveKit answer.
+    if (url.hostname.endsWith(".invalid")) return fail(422, "livekit_unreachable", "could not reach this LiveKit URL")
+    // A bucket the project brings is proven the same way, with no S3 behind the mock: every one is
+    // accepted except an endpoint under .invalid.
+    const own = body?.recordingBucket
+    if (own) {
+      const gone = (["endpoint", "bucket", "accessKeyId", "secretAccessKey"] as const).filter((f) => text(own[f]) === "")
+      if (gone.length) return fail(400, "invalid_request", `missing ${gone.map((f) => `recordingBucket.${f}`).join(", ")}`)
+      let endpoint: URL | null = null
+      try {
+        endpoint = new URL(text(own.endpoint))
+      } catch {
+        endpoint = null
+      }
+      if (!endpoint || !["http:", "https:"].includes(endpoint.protocol) || !endpoint.hostname || endpoint.pathname.replace(/\//g, "") !== "") return fail(400, "invalid_request", "recordingBucket.endpoint must be an http or https URL with a host and no path, such as https://s3.us-east-1.amazonaws.com")
+      if (endpoint.hostname.endsWith(".invalid")) return fail(422, "recording_bucket_unreachable", "could not reach this S3 endpoint")
+    }
+    const out = await addProject(String(params.orgId), name, text(body?.livekitApiKey))
+    if (out === "project_exists") return fail(409, "project_exists", "this organisation already has a project with that id; choose another name")
+    livekitKeys.set(`${params.orgId}/${out.id}`, text(body?.livekitApiKey))
+    // liveRooms: the mock reaches no LiveKit, so it counts the rooms in the captured media server
+    // snapshot, which is what a verify read of that LiveKit project would have listed.
+    return HttpResponse.json<ProjectCreated>({ ...out, liveRooms: mediaServer().rooms.length }, { status: 201, headers: { "Cache-Control": "no-store" } })
   }),
 
   // Invitations and reset links, in memory (settings.ts), as web without SMTP answers them.

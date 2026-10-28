@@ -1,3 +1,4 @@
+import { ResourceMetrics } from "@/components/resource-metrics"
 import { useMemo, useState } from "react"
 import { CaretRight, CircleHalf, Cloud, HardDrives, Info, Robot, ShieldWarning, Timer, WarningCircle } from "@phosphor-icons/react"
 import type { Icon } from "@phosphor-icons/react"
@@ -10,8 +11,10 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { cn } from "@/lib/utils"
 import { useQuery } from "@tanstack/react-query"
+import { WorkerMetrics } from "./worker-metrics"
+import { SourceStatus } from "@/components/source-status"
 import { QueryState } from "@/components/page-state"
-import { capacityQuery, cloudAgentsQuery, mediaServerQuery } from "@/lib/api"
+import { accessDenied, capacityQuery, cloudAgentsQuery, mediaServerQuery } from "@/lib/api"
 import type { CloudAgents } from "@/lib/api-types"
 import { type MediaServerData, type Room, RoomDrawer, fromContract, regionCity } from "../media-server/room-drawer"
 import { AgentDrawer, type AgentReads } from "./agent-drawer"
@@ -22,7 +25,7 @@ import { useUrlPick, useUrlState } from "@/lib/url-state"
 // Agent workers as the project's three keys see them (decision 0016): every agent that is deployed to
 // LiveKit Cloud or that took a job in a room we watched, its state and resources where LiveKit reports
 // them, the jobs it took, and what is wrong. Self-hosted workers have no listing API, so they appear
-// only through their jobs; their load needs their own metrics endpoint (Phase 2).
+// through their jobs; the separate Worker metrics section reads configured Prometheus endpoints.
 
 const tone = { high: "bg-destructive", medium: "bg-amber-500", low: "bg-muted-foreground/40" }
 const statusTone = (s: string | null) =>
@@ -178,16 +181,24 @@ const agentFields: Field<Agent>[] = [
 ]
 
 export function AgentsPage() {
+  return <div className="space-y-8"><AgentFleet /><WorkerMetrics /><ResourceMetrics kind="worker" /></div>
+}
+
+function AgentFleet() {
   const cloud = useQuery(cloudAgentsQuery())
   const media = useQuery(mediaServerQuery())
   // The capacity run is optional: when it cannot be read the drawer says so.
   const run = useQuery(capacityQuery())
   const ms = useMemo(() => (media.data ? fromContract(media.data) : null), [media.data])
-  if (!cloud.data) return <QueryState icon={Robot} what="the agents" query={cloud} />
-  if (!ms) return <QueryState icon={Robot} what="the agents' rooms" query={media} />
+  if (!cloud.data || accessDenied(cloud.error)) return <QueryState icon={Robot} what="the agents" query={cloud} />
+  if (!ms || accessDenied(media.error)) return <QueryState icon={Robot} what="the agents' rooms" query={media} />
   // Only a read that answered can say "not measured"; while loading or after a failure the drawer says which.
   const runNote = run.isError ? "The capacity run could not be loaded." : "Loading the capacity run."
-  return <AgentsView cloud={cloud.data} ms={ms} run={run.isSuccess ? run.data : undefined} runNote={runNote} />
+  return <div className="space-y-4">
+    <SourceStatus name="Cloud agents" source={cloud.data.sourceStatus} interval={60000} query={cloud} />
+    <SourceStatus name="LiveKit SFU" source={media.data?.sourceStatus} interval={10000} query={media} />
+    <AgentsView cloud={cloud.data} ms={ms} run={run.isSuccess ? run.data : undefined} runNote={runNote} />
+  </div>
 }
 
 function AgentsView({ cloud, ms, run, runNote }: { cloud: CloudAgents; ms: MediaServerData; run: AgentReads["run"]; runNote: string }) {
@@ -198,8 +209,8 @@ function AgentsView({ cloud, ms, run, runNote }: { cloud: CloudAgents; ms: Media
   const [openRoom, setOpenRoom] = useState<Room | null>(null)
   // The open agent is in the URL (?agent=<key>), which is also how the command palette opens one.
   const [openAgent, setOpenAgent] = useUrlPick<Agent>("agent", list, (a) => a.key)
-  const [testing, setTesting] = useState<Agent | null>(null)
-  const columns = useMemo(() => agentColumns(setTesting), [])
+  const [testing, setTesting] = useUrlPick<Agent>("capacityAgent", list, (a) => a.key)
+  const columns = useMemo(() => agentColumns(setTesting), [setTesting])
   const jobs = list.flatMap((a) => a.jobs)
   const timed = jobs.filter((j) => Number.isFinite(j.dispatchedMs) && j.joinedMs !== null)
   const untimed = jobs.length - timed.length

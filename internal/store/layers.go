@@ -10,6 +10,7 @@ const (
 	LayerIngress     = "ingress"
 	LayerCloudAgents = "cloud_agents"
 	LayerWorkers     = "workers"
+	LayerResources   = "resources"
 )
 
 // Error classes a failed layer read is recorded with. They name the cause the console shows; the
@@ -25,11 +26,14 @@ const (
 // LayerRead is one attempt to read a layer of a project. A failed read carries its error class and
 // no samples; it is never stored as an empty result.
 type LayerRead struct {
-	OrganisationID string
-	ProjectID      string
-	Layer          string
-	ReadAt         time.Time
-	OK             bool
+	// JobFailuresSupported is the known media-server capability, not an observed job outcome.
+	// Self-hosted LiveKit does not reliably expose failed jobs through ListDispatch (alerts V1).
+	JobFailuresSupported bool
+	OrganisationID       string
+	ProjectID            string
+	Layer                string
+	ReadAt               time.Time
+	OK                   bool
 	// ErrorClass is empty when OK.
 	ErrorClass string
 	// Every is the interval the layer is read at, so a reader can tell a gap from a pause.
@@ -99,13 +103,16 @@ type Dispatch struct {
 
 // Job is the projection of livekit.Job and its JobState.
 type Job struct {
-	ID        string     `json:"id"`
-	Status    string     `json:"status"`
-	Statuses  []StatusAt `json:"statuses"`
-	StartedAt *time.Time `json:"startedAt"`
-	WorkerID  *string    `json:"workerId"`
-	AgentID   *string    `json:"agentId"`
-	Recording *bool      `json:"recording"`
+	// ParticipantIdentity is used only while persisting exact job/participant correlation.
+	// It must never appear in the stored media JSON or browser API.
+	ParticipantIdentity string     `json:"-"`
+	ID                  string     `json:"id"`
+	Status              string     `json:"status"`
+	Statuses            []StatusAt `json:"statuses"`
+	StartedAt           *time.Time `json:"startedAt"`
+	WorkerID            *string    `json:"workerId"`
+	AgentID             *string    `json:"agentId"`
+	Recording           *bool      `json:"recording"`
 }
 
 // StatusAt is a status and when it was first reported. At is nil when no time was reported.

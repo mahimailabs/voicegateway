@@ -92,8 +92,13 @@ func (quietLayers) WorkerEndpointStatus(context.Context, string, string) (map[st
 
 // membersAPI is the API behind the sign-in gate, with every read it serves wired.
 func (f *fixture) membersAPI(s *auth.Service) http.Handler {
+	return f.membersAPIWith(s, acceptLiveKit{})
+}
+
+// membersAPIWith is membersAPI with v proving each new project's LiveKit secret.
+func (f *fixture) membersAPIWith(s *auth.Service, v api.LiveKitVerifier) http.Handler {
 	return (&api.API{
-		Projects: f.pg, Calls: f.pg, Traces: emptyTraces{}, Layers: quietLayers{}, Endpoints: f.pg, Accounts: f.pg, Keys: f.pg, NewKey: auth.NewKey,
+		Projects: f.pg, Settings: f.pg, Metadata: f.pg, Issues: f.pg, NewProjects: f.sealed(), VerifyLiveKit: v, Calls: f.pg, Traces: emptyTraces{}, Layers: quietLayers{}, Endpoints: f.pg, Accounts: f.pg, Keys: f.pg, NewKey: auth.NewKey,
 		Log: slog.New(slog.NewJSONHandler(f.logs, nil)), Now: time.Now, Gate: s.Gate,
 	}).Routes()
 }
@@ -136,7 +141,7 @@ func (f *fixture) addProjectCall(org string) string {
 }
 
 // call sends one API request as a session or a project key, checks the response against the
-// contract when the operation is one 06b, 06c or 06d added, and returns the status and body.
+// contract when the operation is one 06b, 06c, 06d, 06e or 06f added, and returns the status and body.
 type call struct {
 	method, path, body string
 	cookie             *http.Cookie
@@ -164,8 +169,11 @@ func (f *fixture) send(h http.Handler, c call) (int, []byte) {
 	h.ServeHTTP(rec, req)
 	res := rec.Result()
 	body := rec.Body.Bytes()
+	f.mu.Lock()
+	f.header = res.Header
+	f.mu.Unlock()
 	// A cross-site request is refused by CrossOriginProtection before the API, in plain text.
-	if (strings.Contains(c.path, "/members") || strings.Contains(c.path, "/keys") || strings.Contains(c.path, "/invitations")) && c.headers["Origin"] == "" {
+	if (strings.Contains(c.path, "/members") || strings.Contains(c.path, "/keys") || strings.Contains(c.path, "/invitations") || strings.HasPrefix(c.path, "/api/v1/instance/") || strings.HasSuffix(c.path, "/projects") || strings.HasSuffix(c.path, "/metadata")) && c.headers["Origin"] == "" {
 		res.Body = io.NopCloser(bytes.NewReader(body))
 		vreq := httptest.NewRequest(c.method, "http://voicegateway.example"+c.path, strings.NewReader(c.body))
 		if c.body != "" {
@@ -209,6 +217,7 @@ func TestRolesGateEveryRoute(t *testing.T) {
 	reads := []string{
 		"/api/v1/workspaces",
 		"/api/v1/org/org-a/project/p/calls",
+		"/api/v1/org/org-a/project/p/settings",
 		"/api/v1/org/org-a/project/p/calls/" + callID,
 		"/api/v1/org/org-a/project/p/media-server",
 		"/api/v1/org/org-a/project/p/sip",
@@ -247,7 +256,10 @@ func TestRolesGateEveryRoute(t *testing.T) {
 
 	// A project key (phase 06c, which retired the interim token) reads its project, nothing else.
 	token := f.projectKey("org-a", "p")
-	for _, path := range reads[1:9] {
+	for _, path := range reads {
+		if !strings.HasPrefix(path, "/api/v1/org/org-a/project/p/") {
+			continue
+		}
 		if status, _ := f.send(web, call{method: http.MethodGet, path: path, token: token}); status != http.StatusOK {
 			t.Errorf("key GET %s = %d, want 200", path, status)
 		}
@@ -533,4 +545,37 @@ func (f *fixture) legacySession(email string) *http.Cookie {
 		f.t.Fatal("no legacy session cookie")
 	}
 	return cookie
+}
+
+// Settings writes use actual signed-in sessions and the same role gate as other
+// project actions. A member can save; viewer and unrelated organisation cannot.
+func TestProjectSettingsSessionWrites(t *testing.T) {
+	f := newFixture(t)
+	f.addProjectCall("org-a")
+	f.addUser("member@example.com", "org-a", "member")
+	f.addUser("viewer@example.com", "org-a", "viewer")
+	f.addUser("outside@example.com", "org-b", "admin")
+	s := f.service()
+	web := f.membersAPI(s)
+	path := "/api/v1/org/org-a/project/p/settings"
+	body := `{"thresholds":{"answerMs":2500,"joinMs":3000,"ttsStartMs":1200},"revision":0}`
+	for _, tc := range []struct {
+		email string
+		want  int
+	}{
+		{"viewer@example.com", http.StatusForbidden},
+		{"outside@example.com", http.StatusForbidden},
+		{"member@example.com", http.StatusOK},
+		{"member@example.com", http.StatusConflict},
+	} {
+		cookie := f.signedIn(s, tc.email)
+		status, response := f.send(web, call{method: http.MethodPut, path: path, body: body, cookie: cookie})
+		if status != tc.want {
+			t.Fatalf("settings as %s: %d %s, want %d", tc.email, status, response, tc.want)
+		}
+	}
+	settings, err := f.pg.ProjectSettings(context.Background(), "org-a", "p")
+	if err != nil || settings.Revision != 1 || settings.Thresholds.AnswerMs != 2500 {
+		t.Fatalf("stored settings %+v %v", settings, err)
+	}
 }

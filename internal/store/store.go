@@ -15,14 +15,53 @@ type Project struct {
 	LiveKitURL     string
 	LiveKitAPIKey  string
 	CreatedAt      time.Time
+	// Recordings is whether the project keeps the audio its agents upload (phase 07a); off by
+	// default.
+	Recordings bool
 }
 
-// ErrLiveKitKeyInUse means another project already uses the LiveKit API key, which ingest relies on
-// to find the project an event belongs to.
-var ErrLiveKitKeyInUse = errors.New("LiveKit API key is already used by another project")
+// NewProject is what creating a project needs: voicegateway project add and createProject give the
+// same fields. The secret is sealed before it is written.
+type NewProject struct {
+	OrganisationID   string
+	ID               string
+	Name             string
+	LiveKitURL       string
+	LiveKitAPIKey    string
+	LiveKitAPISecret string
+	// Bucket is the S3 bucket the project keeps its recordings in, when it brings its own; nil uses
+	// the instance's bucket. It is written with the project and never changes.
+	Bucket *ProjectBucket
+}
+
+// ProjectBucket is an S3 bucket a project brought for its recordings, chosen when the project was
+// created. Endpoint is a host with an optional port; SecretKey is sealed before it is written.
+type ProjectBucket struct {
+	OrganisationID, ProjectID string
+	Endpoint                  string
+	UseSSL                    bool
+	Bucket, Region            string
+	AccessKey, SecretKey      string
+}
+
+// ErrBucketRefused means the S3 endpoint answered but refused the access key or secret, or has no
+// bucket of that name.
+var ErrBucketRefused = errors.New("the S3 bucket refused this access key, secret or bucket name")
+
+// ErrBucketUnreachable means a write to the S3 endpoint got no S3 answer: the endpoint is down, the
+// name does not resolve, or the address guard refused it.
+var ErrBucketUnreachable = errors.New("could not reach this S3 endpoint")
 
 // ErrProjectExists means the organisation already has a project with that id.
 var ErrProjectExists = errors.New("a project with this id already exists")
+
+// ErrLiveKitSecretInvalid means LiveKit refused a read signed with the project's key and secret, so
+// the caller has not shown it holds that key's secret.
+var ErrLiveKitSecretInvalid = errors.New("the LiveKit API secret did not verify for this key")
+
+// ErrLiveKitUnreachable means a read of the project's LiveKit URL got no LiveKit answer: the
+// address was refused by the address guard, did not answer, or is not a LiveKit server.
+var ErrLiveKitUnreachable = errors.New("could not reach this LiveKit URL")
 
 // ErrBadRow means storage refused a row for what it holds, not because it is unreachable or busy:
 // retrying the same row cannot succeed.
@@ -148,6 +187,7 @@ type MetricPoint struct {
 
 // Call is a stored call as the API reads it. A nil time or empty string was not reported.
 type Call struct {
+	Metadata CallMetadata
 	ID       string
 	RoomName string
 	RoomSID  string
@@ -164,6 +204,12 @@ type Call struct {
 	// Summarized is true once the summary sweep has built the call's summary, and with it healed
 	// any room or start missing from a call stored before phase 04d.
 	Summarized bool
+	// Recording is the call's latest stored recording, its id and start only; nil when none is
+	// stored.
+	Recording *Recording
+	// Fields are the custom fields an SDK attached to the call, at most MaxCallFields; empty when
+	// none did.
+	Fields map[string]string
 }
 
 // ListSnapshot is a listCalls snapshot kept server-side: the scope and filters it was taken for,
@@ -182,12 +228,18 @@ type StaleCall struct {
 
 // CallSummary is the per-call figures listCalls reads. A nil value is unknown.
 type CallSummary struct {
-	TurnCount      *int
-	AnswerMs       []float64
-	AnswerMsMedian *float64
-	Models         []string
-	Pipeline       string
-	AgentKey       *string
+	// Findings is nil when no source was evaluated; an empty slice is an evaluated empty result.
+	Findings []Finding
+	// EvaluatedFindingIDs limits which absent findings may be cleared. Empty preserves all absent evidence; nil means all rules were evaluated.
+	EvaluatedFindingIDs     []string
+	FindingSettingsRevision int64
+	FindingSourceAvailable  bool
+	TurnCount               *int
+	AnswerMs                []float64
+	AnswerMsMedian          *float64
+	Models                  []string
+	Pipeline                string
+	AgentKey                *string
 	// RoomName and FirstSeenAt are what the spans report, to fill a call stored before 04d.
 	RoomName    string
 	FirstSeenAt *time.Time
@@ -195,6 +247,11 @@ type CallSummary struct {
 
 // CallFilter is a listCalls request as storage reads it. A nil bound is no bound.
 type CallFilter struct {
+	Tags []string
+	// Fields keeps only calls whose SDK fields hold every key with its value; nil keeps all.
+	Fields                    map[string]string
+	Archived                  *bool
+	MetadataRevision          *int64
 	OrganisationID, ProjectID string
 	// SnapshotAt leaves out calls written after it.
 	SnapshotAt                                     time.Time
@@ -204,8 +261,11 @@ type CallFilter struct {
 	AnswerMin, AnswerMax, DurationMin, DurationMax *float64
 	TurnsMin, TurnsMax                             *int
 	UnknownAnswer, UnknownDuration, UnknownTurns   bool
-	// MatchNone is set when a filter no stored value can satisfy (issues, tags, archived=true,
-	// recorded=true), so the list is empty rather than the filter ignored.
+	// Recorded keeps only calls with a stored recording (true) or only calls without one (false);
+	// nil keeps both.
+	Recorded *bool
+	// MatchNone is set when a filter no stored value can satisfy (issues), so the list is empty
+	// rather than the filter ignored.
 	MatchNone bool
 	// SortBy is startedAt, durationSeconds, turnCount, answerMs or issues; issues has no stored
 	// value, so it orders by id.
@@ -224,6 +284,7 @@ type CallCursor struct {
 
 // CallListRow is one listCalls row. A nil value is unknown.
 type CallListRow struct {
+	Metadata              CallMetadata
 	ID, RoomName, RoomSID string
 	// StartAt is the started-at the API shows: the reported room start, else the first seen time.
 	StartAt            time.Time
@@ -238,6 +299,7 @@ type CallListRow struct {
 	Models             []string
 	Pipeline           string
 	AgentKey           *string
+	Recorded           bool
 	Cursor             CallCursor
 }
 
@@ -245,6 +307,7 @@ type CallListRow struct {
 type CallTotals struct {
 	CallCount, Phone, Web, Unknown int64
 	AnswerTurns, OverBudget        int64
+	Recorded                       int64
 	P50Ms                          *float64
 	ValuesMs                       []float64
 	// ValuesTruncated is true when more answers matched than ValuesMs holds.
@@ -263,6 +326,12 @@ type Principal struct {
 	PasswordVersion int
 	// Key is set for a project API key, which names no user: it reads its one project.
 	Key *KeyScope
+	// Instance is true for the instance token (phase 06e), which names no user and no
+	// organisation: it calls the instance API only.
+	Instance bool
+	// Embed is set for an embed token (decision 0034), which names no user: it reads its widgets'
+	// routes of its one project.
+	Embed *EmbedScope
 }
 
 type principalKey struct{}
@@ -348,6 +417,18 @@ type KeyScope struct {
 	KeyID, OrganisationID, ProjectID string
 }
 
+// EmbedScope is what an embed token grants: one project's widgets, framed by one origin. KeyID or
+// UserID names who minted it, a project key or a member; it holds while they still may.
+type EmbedScope struct {
+	OrganisationID, ProjectID string
+	Widgets                   []string
+	Origin                    string
+	KeyID, UserID             string
+	// Content shares call transcripts, span attributes and recording audio. Off unless the minter
+	// opts in (decision 0034): without it the one-call view shows timings only.
+	Content bool
+}
+
 // ErrIdempotencyConflict means an invitation with that idempotency key exists already.
 var ErrIdempotencyConflict = errors.New("the idempotency key is in use")
 
@@ -381,6 +462,18 @@ type PendingLink struct {
 // ErrUserExists means an account with that email already exists.
 var ErrUserExists = errors.New("a user with that email exists")
 
+// ErrEmailMismatch means a provider proved emails, none of them the one an invitation is for.
+var ErrEmailMismatch = errors.New("the verified email is not the invited one")
+
+// Identity is a provider linked to an account (decision 0035): google or github, and when.
+type Identity struct {
+	Provider string
+	LinkedAt time.Time
+}
+
+// ErrIdentityLinked means a provider identity is linked to another account (decision 0035).
+var ErrIdentityLinked = errors.New("the provider identity is linked to another account")
+
 // Invitation is an invitation or a password reset link as an admin lists it: never its token.
 // Role is nil for a reset; InvitedBy is the inviter's email, nil when unknown or the instance API.
 type Invitation struct {
@@ -392,6 +485,11 @@ type Invitation struct {
 	EmailedAt       *time.Time
 	AcceptedAt      *time.Time
 	RevokedAt       *time.Time
+	// EmailStartedAt is set when SMTP was set as the link was made, before its send; then
+	// EmailedAt or EmailFailedAt records the outcome. Only EmailStartedAt means the send is in
+	// flight, or its outcome was lost.
+	EmailStartedAt *time.Time
+	EmailFailedAt  *time.Time
 }
 
 // State is an invitation's derived state at now: accepted, revoked, expired or pending.
@@ -415,6 +513,24 @@ type NewInvitation struct {
 	IdempotencyKey              *string
 	TokenSHA256                 []byte
 	ExpiresAt                   time.Time
+	EmailStartedAt              *time.Time // set when the link will be emailed
+}
+
+// Organisation is an organisation as the instance API reads it (phase 06e): its members, admins
+// and pending invitations counted at the read.
+type Organisation struct {
+	ID, Name                            string
+	CreatedAt                           time.Time
+	Members, Admins, PendingInvitations int64
+}
+
+// Usage is an organisation's profiled call time in a period (phase 06e, decision 0029): the calls
+// whose end, or last activity when inferred, fell in it, with known starts and an end not before
+// the start, their exact durations summed and then floored to whole seconds; and apart from them
+// the calls that started in it and are still open or closed with no measurable end, whose time is
+// unknown and never summed.
+type Usage struct {
+	CallSeconds, Calls, InferredCalls, InferredCallSeconds, UnendedCalls, UnmeasuredCalls int64
 }
 
 // OpenInvitation is an open, unexpired link as the accept screen reads it.
@@ -422,3 +538,32 @@ type OpenInvitation struct {
 	ID, Kind, OrganisationID, OrganisationName, Email string
 	Role, UserID                                      *string
 }
+
+// RecordingKeep is how long a recording is kept: 90 days, the raw call data retention of ClickHouse
+// migration 00010.
+const RecordingKeep = 90 * 24 * time.Hour
+
+// Recording is a call's audio as stored in the S3 bucket (phase 07a): the object and what the
+// upload reported. The audio itself is never read into the store.
+type Recording struct {
+	ID        string
+	ObjectKey string
+	SizeBytes int64
+	// StartedAt is the recording's wall-clock start, from the agent's host clock; nil when the
+	// upload reported none.
+	StartedAt *time.Time
+	StoredAt  time.Time
+}
+
+// RecordingLink is a stored recording the worker links to its call.
+type RecordingLink struct {
+	CallID    string
+	ObjectKey string
+	SizeBytes int64
+	StartedAt *time.Time
+	StoredAt  time.Time
+}
+
+// MaxCallFields is the most custom fields one call holds across all its SDK batches (Postgres
+// MergeCallFields); new keys past it are dropped.
+const MaxCallFields = 64

@@ -15,7 +15,7 @@ npm --prefix dashboard run build
 make help
 ```
 
-The current tests cover threshold helpers. Calls-list, call-detail and unknown-value UI tests remain [#324](https://github.com/mahimailabs/voicegateway/issues/324). The API contract is `docs/api/openapi.yaml` (#321, done); generated types and contract-backed mocks remain #322 and #323. Do not treat captured console data as an operational backend.
+The contract is `docs/api/openapi.yaml` and `make api-check` validates it. Do not treat captured console data as an operational backend.
 
 The [Connect execution plan](docs/specs/v1-connect-plan.md) explains dependencies, proposed PR slices, repository ownership and the legacy retirement boundary. The Go core and Python SDK paths described there are targets; create them as working code arrives.
 
@@ -32,11 +32,11 @@ LIVEKIT_URL=wss://… LIVEKIT_API_KEY=… LIVEKIT_API_SECRET=… make project-ad
 make down
 ```
 
-`make test` and `make lint` run the Go and dashboard checks together. `make up` also applies database migrations. The current phase is [phase03-first-call](docs/specs/phase03-first-call.md).
+`make test` and `make lint` run the Go and dashboard checks together. `make up` also applies database migrations. See [docs/progress.md](docs/progress.md) for the current phase.
 
 ## Choose and submit work
 
-Pick an [open issue](https://github.com/mahimailabs/voicegateway/issues), agree the scope, and use `.take` where the issue invites it. Branches use `feat/` or `fix/`. Open a focused PR against `main`, describing the observable change and validation. Keep generated files reproducible, preserve unknown values and include meaningful behaviour/failure tests.
+Pick an [open issue](https://github.com/mahimailabs/voicegateway/issues), agree the scope, and use `.take` where the issue invites it. Branches use `feat/`, `fix/` or `chore/`. Open a focused PR against `main`, describing the observable change and validation. Keep generated files reproducible, preserve unknown values and include meaningful behaviour/failure tests.
 
 Follow [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md). Report vulnerabilities privately through [SECURITY.md](SECURITY.md). Do not commit credentials, real customer data or unredacted captures.
 
@@ -44,13 +44,6 @@ Contributions outside `ee/` follow [LICENSE](LICENSE); Enterprise code follows [
 
 ## Sites and project tools
 
-- `site/landing/`: the Cloudflare Pages frontend; run `make landing-check`.
 - `site/docs/`: the Fumadocs application and its own build commands.
-- `site/web/`: the existing D1/API Worker, privately reached by the landing. Do not remove its database or restore its old apex-domain claim.
-- `.mcp.json`: the shared V1 project tooling. The [legacy MCP example](docs/contributing/mcp-legacy.example.json) is optional reference for the published Python CLI; merge any needed entries rather than overwriting the V1 tool configuration.
-
-## Published Python release
-
-The Python runtime in `src/` and its original frontend remain supported while V1 is built. Changes to that release must use the [legacy development guide](docs/contributing/development-setup.md), [testing guide](docs/contributing/testing.md) and [code style guide](docs/contributing/code-style.md). Provider and pricing work is documented in the [guide index](docs/contributing/index.md).
-
-Keep root packaging, Alembic, Compose, public installer paths and their CI intact until a deliberate replacement release retires them. Moving or deleting them as cosmetic cleanup can break existing installations and package builds.
+- voicegateway.dev and its waitlist API live in the private `voicegateway-web` repository (decision 0030).
+- `.mcp.json`: the shared V1 project tooling.

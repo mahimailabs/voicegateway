@@ -43,10 +43,75 @@ func (q *Queries) AddMembershipIfAbsent(ctx context.Context, arg AddMembershipIf
 	return err
 }
 
+const advanceIssueEvidence = `-- name: AdvanceIssueEvidence :exec
+UPDATE issues SET evidence_revision = evidence_revision + 1
+WHERE organisation_id = $1 AND project_id = $2 AND id = $3
+`
+
+type AdvanceIssueEvidenceParams struct {
+	OrganisationID string
+	ProjectID      string
+	ID             string
+}
+
+func (q *Queries) AdvanceIssueEvidence(ctx context.Context, arg AdvanceIssueEvidenceParams) error {
+	_, err := q.db.Exec(ctx, advanceIssueEvidence, arg.OrganisationID, arg.ProjectID, arg.ID)
+	return err
+}
+
+const advanceIssueRevision = `-- name: AdvanceIssueRevision :exec
+UPDATE projects SET issue_revision = issue_revision + 1 WHERE organisation_id = $1 AND id = $2
+`
+
+type AdvanceIssueRevisionParams struct {
+	OrganisationID string
+	ProjectID      string
+}
+
+func (q *Queries) AdvanceIssueRevision(ctx context.Context, arg AdvanceIssueRevisionParams) error {
+	_, err := q.db.Exec(ctx, advanceIssueRevision, arg.OrganisationID, arg.ProjectID)
+	return err
+}
+
+const advanceMediaBackfill = `-- name: AdvanceMediaBackfill :execrows
+UPDATE issue_media_backfills SET cursor_ns= $1, cursor_key= $2,
+ done= $3, revision=revision+1, failures=0, retry_at=now()
+WHERE organisation_id= $4 AND project_id= $5 AND revision= $6
+`
+
+type AdvanceMediaBackfillParams struct {
+	CursorNs         int64
+	CursorKey        string
+	Done             bool
+	OrganisationID   string
+	ProjectID        string
+	ExpectedRevision int64
+}
+
+func (q *Queries) AdvanceMediaBackfill(ctx context.Context, arg AdvanceMediaBackfillParams) (int64, error) {
+	result, err := q.db.Exec(ctx, advanceMediaBackfill,
+		arg.CursorNs,
+		arg.CursorKey,
+		arg.Done,
+		arg.OrganisationID,
+		arg.ProjectID,
+		arg.ExpectedRevision,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const callByID = `-- name: CallByID :one
 SELECT l.id, l.room_name, l.room_sid, l.job_id, l.started_at, l.ended_at, l.end_state, l.first_seen_at,
-       l.participants, l.servable, l.summarized::boolean AS summarized
-FROM call_list l
+       l.participants, l.servable, l.summarized::boolean AS summarized, c.tags, c.archived, c.metadata_revision, c.fields,
+       r.id AS recording_id, r.started_at AS recording_started_at
+FROM call_list l JOIN calls c ON c.id = l.id
+LEFT JOIN LATERAL (
+    SELECT id, started_at FROM call_recordings
+    WHERE call_id = l.id ORDER BY stored_at DESC, id LIMIT 1
+) r ON true
 WHERE l.organisation_id = $1 AND l.project_id = $2 AND l.id = $3
 `
 
@@ -57,20 +122,28 @@ type CallByIDParams struct {
 }
 
 type CallByIDRow struct {
-	ID           pgtype.UUID
-	RoomName     pgtype.Text
-	RoomSid      pgtype.Text
-	JobID        pgtype.Text
-	StartedAt    pgtype.Timestamptz
-	EndedAt      pgtype.Timestamptz
-	EndState     string
-	FirstSeenAt  pgtype.Timestamptz
-	Participants int64
-	Servable     pgtype.Bool
-	Summarized   bool
+	ID                 pgtype.UUID
+	RoomName           pgtype.Text
+	RoomSid            pgtype.Text
+	JobID              pgtype.Text
+	StartedAt          pgtype.Timestamptz
+	EndedAt            pgtype.Timestamptz
+	EndState           string
+	FirstSeenAt        pgtype.Timestamptz
+	Participants       int64
+	Servable           pgtype.Bool
+	Summarized         bool
+	Tags               []string
+	Archived           bool
+	MetadataRevision   int64
+	Fields             []byte
+	RecordingID        pgtype.UUID
+	RecordingStartedAt pgtype.Timestamptz
 }
 
 // One call of a project as the API reads it, with the servable rule listCalls shares.
+// With its latest recording: an agent that uploads twice for one call, from two jobs, leaves two,
+// and the call view plays the latest.
 func (q *Queries) CallByID(ctx context.Context, arg CallByIDParams) (CallByIDRow, error) {
 	row := q.db.QueryRow(ctx, callByID, arg.OrganisationID, arg.ProjectID, arg.ID)
 	var i CallByIDRow
@@ -86,6 +159,12 @@ func (q *Queries) CallByID(ctx context.Context, arg CallByIDParams) (CallByIDRow
 		&i.Participants,
 		&i.Servable,
 		&i.Summarized,
+		&i.Tags,
+		&i.Archived,
+		&i.MetadataRevision,
+		&i.Fields,
+		&i.RecordingID,
+		&i.RecordingStartedAt,
 	)
 	return i, err
 }
@@ -138,10 +217,58 @@ func (q *Queries) CallByRoomSID(ctx context.Context, arg CallByRoomSIDParams) (C
 	return i, err
 }
 
+const callMetadataRevision = `-- name: CallMetadataRevision :one
+SELECT call_metadata_revision FROM projects WHERE organisation_id = $1 AND id = $2
+`
+
+type CallMetadataRevisionParams struct {
+	OrganisationID string
+	ProjectID      string
+}
+
+func (q *Queries) CallMetadataRevision(ctx context.Context, arg CallMetadataRevisionParams) (int64, error) {
+	row := q.db.QueryRow(ctx, callMetadataRevision, arg.OrganisationID, arg.ProjectID)
+	var call_metadata_revision int64
+	err := row.Scan(&call_metadata_revision)
+	return call_metadata_revision, err
+}
+
+const callTags = `-- name: CallTags :many
+SELECT DISTINCT unnest(c.tags)::text AS tag
+FROM calls c JOIN call_list l ON l.id = c.id
+WHERE c.organisation_id = $1 AND c.project_id = $2 AND l.servable
+ORDER BY tag
+`
+
+type CallTagsParams struct {
+	OrganisationID string
+	ProjectID      string
+}
+
+func (q *Queries) CallTags(ctx context.Context, arg CallTagsParams) ([]string, error) {
+	rows, err := q.db.Query(ctx, callTags, arg.OrganisationID, arg.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var tag string
+		if err := rows.Scan(&tag); err != nil {
+			return nil, err
+		}
+		items = append(items, tag)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const callTotals = `-- name: CallTotals :one
 WITH f AS (
-    SELECT l.organisation_id, l.project_id, l.id, l.room_name, l.room_sid, l.job_id, l.started_at, l.ended_at, l.end_state, l.created_at, l.first_seen_at, l.servable, l.summarized, l.start_at, l.duration_seconds, l.participants, l.channel, l.turn_count, l.answer_ms, l.answer_ms_median, l.models, l.pipeline, l.agent_key
-    FROM call_list l
+    SELECT l.organisation_id, l.project_id, l.id, l.room_name, l.room_sid, l.job_id, l.started_at, l.ended_at, l.end_state, l.created_at, l.first_seen_at, l.servable, l.summarized, l.start_at, l.duration_seconds, l.participants, l.channel, l.turn_count, l.answer_ms, l.answer_ms_median, l.models, l.pipeline, l.agent_key, l.recorded, l.fields
+    FROM call_list l JOIN calls c ON c.id = l.id
     WHERE l.organisation_id = $3 AND l.project_id = $4 AND l.created_at <= $5 AND l.servable
       AND ($6::timestamptz IS NULL OR l.start_at >= $6::timestamptz)
       AND ($7::timestamptz IS NULL OR l.start_at < $7::timestamptz)
@@ -156,7 +283,11 @@ WITH f AS (
       AND (NOT $16::bool OR l.answer_ms_median IS NULL)
       AND (NOT $17::bool OR l.duration_seconds IS NULL)
       AND (NOT $18::bool OR l.turn_count IS NULL)
-      AND NOT $19::bool
+      AND (cardinality($19::text[]) = 0 OR c.tags && $19::text[])
+      AND c.fields @> $20::jsonb
+      AND ($21::boolean IS NULL OR c.archived = $21::boolean)
+      AND ($22::bool IS NULL OR l.recorded = $22::bool)
+      AND NOT $23::bool
 ), a AS (
     SELECT u.v, f.start_at, f.id, u.ord
     FROM f, unnest(f.answer_ms) WITH ORDINALITY AS u(v, ord)
@@ -166,6 +297,7 @@ SELECT
     (SELECT count(*) FROM f WHERE channel = 'phone') AS phone,
     (SELECT count(*) FROM f WHERE channel = 'web') AS web,
     (SELECT count(*) FROM f WHERE channel = 'unknown') AS unknown_channel,
+    (SELECT count(*) FROM f WHERE recorded) AS recorded,
     (SELECT count(*) FROM a) AS answer_turns,
     (SELECT count(*) FROM a WHERE a.v > $1::float8) AS over_budget,
     -- Null when no turn measured an answer.
@@ -192,6 +324,10 @@ type CallTotalsParams struct {
 	UnknownAnswer   bool
 	UnknownDuration bool
 	UnknownTurns    bool
+	Tags            []string
+	Fields          []byte
+	Archived        pgtype.Bool
+	Recorded        pgtype.Bool
 	MatchNone       bool
 }
 
@@ -200,6 +336,7 @@ type CallTotalsRow struct {
 	Phone          int64
 	Web            int64
 	UnknownChannel int64
+	Recorded       int64
 	AnswerTurns    int64
 	OverBudget     int64
 	P50Ms          interface{}
@@ -229,6 +366,10 @@ func (q *Queries) CallTotals(ctx context.Context, arg CallTotalsParams) (CallTot
 		arg.UnknownAnswer,
 		arg.UnknownDuration,
 		arg.UnknownTurns,
+		arg.Tags,
+		arg.Fields,
+		arg.Archived,
+		arg.Recorded,
 		arg.MatchNone,
 	)
 	var i CallTotalsRow
@@ -237,12 +378,122 @@ func (q *Queries) CallTotals(ctx context.Context, arg CallTotalsParams) (CallTot
 		&i.Phone,
 		&i.Web,
 		&i.UnknownChannel,
+		&i.Recorded,
 		&i.AnswerTurns,
 		&i.OverBudget,
 		&i.P50Ms,
 		&i.ValuesMs,
 	)
 	return i, err
+}
+
+const claimBackfillFindings = `-- name: ClaimBackfillFindings :execrows
+UPDATE calls SET issue_evaluated_at = $1, issue_settings_revision = $2,
+ issue_source_available = $3, issue_retry_at = NULL, issue_failures = 0, issue_evaluation_revision = issue_evaluation_revision + 1
+WHERE id = $4 AND organisation_id = $5 AND project_id = $6
+ AND summary_stale_at IS NULL AND issue_evaluation_revision = $7
+`
+
+type ClaimBackfillFindingsParams struct {
+	EvaluatedAt      pgtype.Timestamptz
+	SettingsRevision int64
+	SourceAvailable  bool
+	ID               pgtype.UUID
+	OrganisationID   string
+	ProjectID        string
+	ExpectedRevision int64
+}
+
+func (q *Queries) ClaimBackfillFindings(ctx context.Context, arg ClaimBackfillFindingsParams) (int64, error) {
+	result, err := q.db.Exec(ctx, claimBackfillFindings,
+		arg.EvaluatedAt,
+		arg.SettingsRevision,
+		arg.SourceAvailable,
+		arg.ID,
+		arg.OrganisationID,
+		arg.ProjectID,
+		arg.ExpectedRevision,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const claimIssueSource = `-- name: ClaimIssueSource :execrows
+INSERT INTO issue_sources (organisation_id, project_id, layer, read_at, good_at, fresh_until, ok, error_class, evaluation_complete)
+VALUES ($1, $2, $3, $4, CASE WHEN $5::boolean THEN $4::timestamptz ELSE NULL END, $6, $5, $7, $8)
+ON CONFLICT (organisation_id, project_id, layer) DO UPDATE
+SET read_at = EXCLUDED.read_at, good_at = CASE WHEN EXCLUDED.ok THEN EXCLUDED.read_at ELSE issue_sources.good_at END,
+    fresh_until = EXCLUDED.fresh_until, ok = EXCLUDED.ok, error_class = EXCLUDED.error_class, evaluation_complete = EXCLUDED.evaluation_complete
+WHERE issue_sources.read_at < EXCLUDED.read_at
+`
+
+type ClaimIssueSourceParams struct {
+	OrganisationID     string
+	ProjectID          string
+	Layer              string
+	ReadAt             pgtype.Timestamptz
+	Ok                 bool
+	FreshUntil         pgtype.Timestamptz
+	ErrorClass         string
+	EvaluationComplete bool
+}
+
+func (q *Queries) ClaimIssueSource(ctx context.Context, arg ClaimIssueSourceParams) (int64, error) {
+	result, err := q.db.Exec(ctx, claimIssueSource,
+		arg.OrganisationID,
+		arg.ProjectID,
+		arg.Layer,
+		arg.ReadAt,
+		arg.Ok,
+		arg.FreshUntil,
+		arg.ErrorClass,
+		arg.EvaluationComplete,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const claimJobFindings = `-- name: ClaimJobFindings :execrows
+UPDATE issue_job_observations j SET
+ evaluated_observation_revision = $1,
+ evaluated_settings_revision = $2,
+ evaluated_call_id = $3, evaluated_joined_at = $4,
+ evaluation_revision = evaluation_revision + 1
+WHERE j.organisation_id = $5 AND j.project_id = $6 AND j.job_id = $7
+ AND j.observation_revision = $1 AND evaluation_revision = $8
+ AND $2::bigint = COALESCE((SELECT s.revision FROM project_settings s WHERE s.organisation_id=j.organisation_id AND s.project_id=j.project_id),0)
+`
+
+type ClaimJobFindingsParams struct {
+	ObservationRevision int64
+	SettingsRevision    int64
+	CallID              pgtype.UUID
+	JoinedAt            pgtype.Timestamptz
+	OrganisationID      string
+	ProjectID           string
+	JobID               string
+	ExpectedRevision    int64
+}
+
+func (q *Queries) ClaimJobFindings(ctx context.Context, arg ClaimJobFindingsParams) (int64, error) {
+	result, err := q.db.Exec(ctx, claimJobFindings,
+		arg.ObservationRevision,
+		arg.SettingsRevision,
+		arg.CallID,
+		arg.JoinedAt,
+		arg.OrganisationID,
+		arg.ProjectID,
+		arg.JobID,
+		arg.ExpectedRevision,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const clearStale = `-- name: ClearStale :exec
@@ -278,6 +529,31 @@ func (q *Queries) CloseIdleCalls(ctx context.Context, idleSince pgtype.Timestamp
 	return result.RowsAffected(), nil
 }
 
+const confirmStandingFindings = `-- name: ConfirmStandingFindings :exec
+UPDATE issue_occurrences o SET observed_at = $1
+WHERE o.organisation_id = $2 AND o.project_id = $3 AND o.source_layer = $4
+AND $5::jsonb @> jsonb_build_array(jsonb_build_object('issueId', o.issue_id, 'sourceId', o.source_id))
+`
+
+type ConfirmStandingFindingsParams struct {
+	ReadAt         pgtype.Timestamptz
+	OrganisationID string
+	ProjectID      string
+	SourceLayer    string
+	Present        []byte
+}
+
+func (q *Queries) ConfirmStandingFindings(ctx context.Context, arg ConfirmStandingFindingsParams) error {
+	_, err := q.db.Exec(ctx, confirmStandingFindings,
+		arg.ReadAt,
+		arg.OrganisationID,
+		arg.ProjectID,
+		arg.SourceLayer,
+		arg.Present,
+	)
+	return err
+}
+
 const countAdmins = `-- name: CountAdmins :one
 SELECT count(*) FROM memberships WHERE organisation_id = $1 AND role = 'admin'
 `
@@ -303,7 +579,7 @@ func (q *Queries) CountUsers(ctx context.Context) (int64, error) {
 const createProject = `-- name: CreateProject :one
 INSERT INTO projects (organisation_id, id, name, livekit_url, livekit_api_key, livekit_api_secret_sealed)
 VALUES ($1, $2, $3, $4, $5, $6)
-RETURNING organisation_id, id, name, livekit_url, livekit_api_key, created_at
+RETURNING organisation_id, id, name, livekit_url, livekit_api_key, created_at, recordings
 `
 
 type CreateProjectParams struct {
@@ -322,6 +598,7 @@ type CreateProjectRow struct {
 	LivekitUrl     string
 	LivekitApiKey  string
 	CreatedAt      pgtype.Timestamptz
+	Recordings     bool
 }
 
 func (q *Queries) CreateProject(ctx context.Context, arg CreateProjectParams) (CreateProjectRow, error) {
@@ -341,6 +618,7 @@ func (q *Queries) CreateProject(ctx context.Context, arg CreateProjectParams) (C
 		&i.LivekitUrl,
 		&i.LivekitApiKey,
 		&i.CreatedAt,
+		&i.Recordings,
 	)
 	return i, err
 }
@@ -374,13 +652,57 @@ func (q *Queries) CreateProjectKey(ctx context.Context, arg CreateProjectKeyPara
 	return created_at, err
 }
 
+const createResourceEndpoint = `-- name: CreateResourceEndpoint :one
+INSERT INTO project_resource_endpoints
+(organisation_id, project_id, id, host, url_sealed, kind, target, container_id)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+RETURNING organisation_id, project_id, id, host, url_sealed, kind, target, container_id, created_at
+`
+
+type CreateResourceEndpointParams struct {
+	OrganisationID string
+	ProjectID      string
+	ID             string
+	Host           string
+	UrlSealed      []byte
+	Kind           string
+	Target         string
+	ContainerID    string
+}
+
+func (q *Queries) CreateResourceEndpoint(ctx context.Context, arg CreateResourceEndpointParams) (ProjectResourceEndpoint, error) {
+	row := q.db.QueryRow(ctx, createResourceEndpoint,
+		arg.OrganisationID,
+		arg.ProjectID,
+		arg.ID,
+		arg.Host,
+		arg.UrlSealed,
+		arg.Kind,
+		arg.Target,
+		arg.ContainerID,
+	)
+	var i ProjectResourceEndpoint
+	err := row.Scan(
+		&i.OrganisationID,
+		&i.ProjectID,
+		&i.ID,
+		&i.Host,
+		&i.UrlSealed,
+		&i.Kind,
+		&i.Target,
+		&i.ContainerID,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const createUser = `-- name: CreateUser :one
 INSERT INTO users (email, password_hash) VALUES ($1, $2) RETURNING id
 `
 
 type CreateUserParams struct {
 	Email        string
-	PasswordHash string
+	PasswordHash pgtype.Text
 }
 
 func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (pgtype.UUID, error) {
@@ -398,7 +720,7 @@ RETURNING id
 
 type CreateUserIfAbsentParams struct {
 	Email        string
-	PasswordHash string
+	PasswordHash pgtype.Text
 }
 
 // A new account from an invite. A parallel accept that created the same email first wins: this
@@ -451,6 +773,129 @@ func (q *Queries) CreateWorkerEndpoint(ctx context.Context, arg CreateWorkerEndp
 	return i, err
 }
 
+const deactivateCallFindings = `-- name: DeactivateCallFindings :execrows
+UPDATE issue_occurrences SET active = false
+WHERE organisation_id = $1 AND project_id = $2 AND call_id = $3
+AND source_layer = 'calls' AND active AND NOT (issue_id = ANY($4::text[]))
+AND ($5::text[] IS NULL OR issue_id = ANY($5::text[]))
+`
+
+type DeactivateCallFindingsParams struct {
+	OrganisationID string
+	ProjectID      string
+	CallID         pgtype.UUID
+	IssueIds       []string
+	EvaluatedIds   []string
+}
+
+func (q *Queries) DeactivateCallFindings(ctx context.Context, arg DeactivateCallFindingsParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deactivateCallFindings,
+		arg.OrganisationID,
+		arg.ProjectID,
+		arg.CallID,
+		arg.IssueIds,
+		arg.EvaluatedIds,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const deactivateJobFindings = `-- name: DeactivateJobFindings :execrows
+UPDATE issue_occurrences SET active=false
+WHERE organisation_id = $1 AND project_id = $2 AND source_layer='jobs' AND source_id = $3
+ AND active AND issue_id=ANY($4::text[]) AND NOT(issue_id=ANY($5::text[]))
+`
+
+type DeactivateJobFindingsParams struct {
+	OrganisationID string
+	ProjectID      string
+	SourceID       string
+	Covered        []string
+	Present        []string
+}
+
+func (q *Queries) DeactivateJobFindings(ctx context.Context, arg DeactivateJobFindingsParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deactivateJobFindings,
+		arg.OrganisationID,
+		arg.ProjectID,
+		arg.SourceID,
+		arg.Covered,
+		arg.Present,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const deactivateStandingFindings = `-- name: DeactivateStandingFindings :execrows
+UPDATE issue_occurrences o SET active = false
+WHERE o.organisation_id = $1 AND o.project_id = $2 AND o.source_layer = $3 AND o.active
+AND (NOT (o.source_id = ANY($4::text[])) OR (
+    $5::jsonb @> jsonb_build_array(jsonb_build_object('issueId', o.issue_id, 'sourceId', o.source_id))
+    AND NOT ($6::jsonb @> jsonb_build_array(jsonb_build_object('issueId', o.issue_id, 'sourceId', o.source_id)))
+))
+`
+
+type DeactivateStandingFindingsParams struct {
+	OrganisationID string
+	ProjectID      string
+	SourceLayer    string
+	Subjects       []string
+	Covered        []byte
+	Present        []byte
+}
+
+func (q *Queries) DeactivateStandingFindings(ctx context.Context, arg DeactivateStandingFindingsParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deactivateStandingFindings,
+		arg.OrganisationID,
+		arg.ProjectID,
+		arg.SourceLayer,
+		arg.Subjects,
+		arg.Covered,
+		arg.Present,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const deferCallFindings = `-- name: DeferCallFindings :exec
+UPDATE calls SET issue_failures = LEAST(issue_failures + 1, 10),
+ issue_retry_at = now() + LEAST(interval '10 seconds' * power(2, LEAST(issue_failures, 9)), interval '1 hour')
+WHERE id = $1 AND issue_evaluation_revision = $2
+`
+
+type DeferCallFindingsParams struct {
+	ID               pgtype.UUID
+	ExpectedRevision int64
+}
+
+func (q *Queries) DeferCallFindings(ctx context.Context, arg DeferCallFindingsParams) error {
+	_, err := q.db.Exec(ctx, deferCallFindings, arg.ID, arg.ExpectedRevision)
+	return err
+}
+
+const deferMediaBackfill = `-- name: DeferMediaBackfill :exec
+UPDATE issue_media_backfills SET failures=least(failures+1,12), revision=revision+1,
+ retry_at=now() + least(3600, 10 * power(2,least(failures,9))) * interval '1 second'
+WHERE organisation_id= $1 AND project_id= $2 AND revision= $3
+`
+
+type DeferMediaBackfillParams struct {
+	OrganisationID   string
+	ProjectID        string
+	ExpectedRevision int64
+}
+
+func (q *Queries) DeferMediaBackfill(ctx context.Context, arg DeferMediaBackfillParams) error {
+	_, err := q.db.Exec(ctx, deferMediaBackfill, arg.OrganisationID, arg.ProjectID, arg.ExpectedRevision)
+	return err
+}
+
 const deferStale = `-- name: DeferStale :exec
 UPDATE calls SET
     summary_failures = summary_failures + 1,
@@ -464,6 +909,38 @@ WHERE id = $1 AND summary_stale_at IS NOT NULL
 func (q *Queries) DeferStale(ctx context.Context, id pgtype.UUID) error {
 	_, err := q.db.Exec(ctx, deferStale, id)
 	return err
+}
+
+const deleteExpiredRecordings = `-- name: DeleteExpiredRecordings :execrows
+DELETE FROM call_recordings WHERE stored_at < $1
+`
+
+// Forgets recordings stored before the cutoff; the worker removes their objects by day.
+func (q *Queries) DeleteExpiredRecordings(ctx context.Context, cutoff pgtype.Timestamptz) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteExpiredRecordings, cutoff)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const deleteResourceEndpoint = `-- name: DeleteResourceEndpoint :execrows
+DELETE FROM project_resource_endpoints
+WHERE organisation_id = $1 AND project_id = $2 AND id = $3
+`
+
+type DeleteResourceEndpointParams struct {
+	OrganisationID string
+	ProjectID      string
+	ID             string
+}
+
+func (q *Queries) DeleteResourceEndpoint(ctx context.Context, arg DeleteResourceEndpointParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteResourceEndpoint, arg.OrganisationID, arg.ProjectID, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const deleteWorkerEndpoint = `-- name: DeleteWorkerEndpoint :execrows
@@ -483,6 +960,167 @@ func (q *Queries) DeleteWorkerEndpoint(ctx context.Context, arg DeleteWorkerEndp
 		return 0, err
 	}
 	return result.RowsAffected(), nil
+}
+
+const embedGrantActive = `-- name: EmbedGrantActive :one
+SELECT (
+    EXISTS (
+        SELECT 1 FROM project_settings s
+        WHERE s.organisation_id = $1 AND s.project_id = $2 AND $3::text = ANY (s.allowed_origins)
+    )
+    AND (
+        EXISTS (
+            SELECT 1 FROM project_keys k
+            WHERE k.key_id = $4::text AND k.organisation_id = $1 AND k.project_id = $2 AND k.revoked_at IS NULL
+        )
+        OR EXISTS (
+            SELECT 1 FROM memberships m
+            WHERE m.user_id = NULLIF($5::text, '')::uuid AND m.organisation_id = $1
+              AND (NOT $6::boolean OR m.role = 'admin')
+        )
+    )
+)::boolean AS active
+`
+
+type EmbedGrantActiveParams struct {
+	OrganisationID string
+	ProjectID      string
+	Origin         string
+	KeyID          string
+	UserID         string
+	Content        bool
+}
+
+// Whether an embed token still holds, in one round trip: the project still allows its origin, and
+// the key that minted it is unrevoked, or the user who minted it is still a member, and still an
+// Admin when the token shares transcripts and audio.
+func (q *Queries) EmbedGrantActive(ctx context.Context, arg EmbedGrantActiveParams) (bool, error) {
+	row := q.db.QueryRow(ctx, embedGrantActive,
+		arg.OrganisationID,
+		arg.ProjectID,
+		arg.Origin,
+		arg.KeyID,
+		arg.UserID,
+		arg.Content,
+	)
+	var active bool
+	err := row.Scan(&active)
+	return active, err
+}
+
+const ensureCallIssue = `-- name: EnsureCallIssue :exec
+INSERT INTO issues (organisation_id, project_id, id, title, kind, source, severity)
+VALUES ($1, $2, $3, $4, 'event', 'calls', $5)
+ON CONFLICT (organisation_id, project_id, id) DO UPDATE SET title = EXCLUDED.title, severity = EXCLUDED.severity
+`
+
+type EnsureCallIssueParams struct {
+	OrganisationID string
+	ProjectID      string
+	ID             string
+	Title          string
+	Severity       string
+}
+
+func (q *Queries) EnsureCallIssue(ctx context.Context, arg EnsureCallIssueParams) error {
+	_, err := q.db.Exec(ctx, ensureCallIssue,
+		arg.OrganisationID,
+		arg.ProjectID,
+		arg.ID,
+		arg.Title,
+		arg.Severity,
+	)
+	return err
+}
+
+const ensureJobIssue = `-- name: EnsureJobIssue :exec
+INSERT INTO issues (organisation_id, project_id, id, title, kind, source, severity)
+VALUES ($1, $2, $3, $4, 'event', 'agent_workers', $5)
+ON CONFLICT (organisation_id, project_id, id) DO UPDATE SET title=EXCLUDED.title, severity=EXCLUDED.severity
+`
+
+type EnsureJobIssueParams struct {
+	OrganisationID string
+	ProjectID      string
+	ID             string
+	Title          string
+	Severity       string
+}
+
+func (q *Queries) EnsureJobIssue(ctx context.Context, arg EnsureJobIssueParams) error {
+	_, err := q.db.Exec(ctx, ensureJobIssue,
+		arg.OrganisationID,
+		arg.ProjectID,
+		arg.ID,
+		arg.Title,
+		arg.Severity,
+	)
+	return err
+}
+
+const ensureMediaIssue = `-- name: EnsureMediaIssue :exec
+INSERT INTO issues (organisation_id, project_id, id, title, kind, source, severity)
+VALUES ($1, $2, $3, $4, 'event', 'delivery', 'high')
+ON CONFLICT (organisation_id, project_id, id) DO UPDATE SET title=EXCLUDED.title
+`
+
+type EnsureMediaIssueParams struct {
+	OrganisationID string
+	ProjectID      string
+	ID             string
+	Title          string
+}
+
+func (q *Queries) EnsureMediaIssue(ctx context.Context, arg EnsureMediaIssueParams) error {
+	_, err := q.db.Exec(ctx, ensureMediaIssue,
+		arg.OrganisationID,
+		arg.ProjectID,
+		arg.ID,
+		arg.Title,
+	)
+	return err
+}
+
+const ensureProjectSettings = `-- name: EnsureProjectSettings :exec
+INSERT INTO project_settings(organisation_id, project_id) VALUES ($1, $2)
+ON CONFLICT (organisation_id, project_id) DO NOTHING
+`
+
+type EnsureProjectSettingsParams struct {
+	OrganisationID string
+	ProjectID      string
+}
+
+func (q *Queries) EnsureProjectSettings(ctx context.Context, arg EnsureProjectSettingsParams) error {
+	_, err := q.db.Exec(ctx, ensureProjectSettings, arg.OrganisationID, arg.ProjectID)
+	return err
+}
+
+const ensureStandingIssue = `-- name: EnsureStandingIssue :exec
+INSERT INTO issues (organisation_id, project_id, id, title, kind, source, severity)
+VALUES ($1, $2, $3, $4, 'standing', $5, $6)
+ON CONFLICT (organisation_id, project_id, id) DO UPDATE SET title = EXCLUDED.title, severity = EXCLUDED.severity
+`
+
+type EnsureStandingIssueParams struct {
+	OrganisationID string
+	ProjectID      string
+	ID             string
+	Title          string
+	Source         string
+	Severity       string
+}
+
+func (q *Queries) EnsureStandingIssue(ctx context.Context, arg EnsureStandingIssueParams) error {
+	_, err := q.db.Exec(ctx, ensureStandingIssue,
+		arg.OrganisationID,
+		arg.ProjectID,
+		arg.ID,
+		arg.Title,
+		arg.Source,
+		arg.Severity,
+	)
+	return err
 }
 
 const failedSignIns = `-- name: FailedSignIns :one
@@ -527,6 +1165,33 @@ type FinishCallParams struct {
 func (q *Queries) FinishCall(ctx context.Context, arg FinishCallParams) error {
 	_, err := q.db.Exec(ctx, finishCall, arg.EndedAt, arg.ID)
 	return err
+}
+
+const firstCall = `-- name: FirstCall :one
+SELECT id, start_at::timestamptz AS started_at
+FROM call_list
+WHERE organisation_id = $1 AND project_id = $2 AND servable
+ORDER BY start_at, id
+LIMIT 1
+`
+
+type FirstCallParams struct {
+	OrganisationID string
+	ProjectID      string
+}
+
+type FirstCallRow struct {
+	ID        pgtype.UUID
+	StartedAt pgtype.Timestamptz
+}
+
+// The earliest call the worker joined that the console can open: the same servable rule as
+// ListCalls and CallByID. calls_start_at serves the order.
+func (q *Queries) FirstCall(ctx context.Context, arg FirstCallParams) (FirstCallRow, error) {
+	row := q.db.QueryRow(ctx, firstCall, arg.OrganisationID, arg.ProjectID)
+	var i FirstCallRow
+	err := row.Scan(&i.ID, &i.StartedAt)
+	return i, err
 }
 
 const forgetListSnapshots = `-- name: ForgetListSnapshots :exec
@@ -578,9 +1243,86 @@ func (q *Queries) HealCall(ctx context.Context, arg HealCallParams) error {
 	return err
 }
 
+const identityOwner = `-- name: IdentityOwner :one
+SELECT user_id FROM identities WHERE provider = $1 AND subject = $2
+`
+
+type IdentityOwnerParams struct {
+	Provider string
+	Subject  string
+}
+
+func (q *Queries) IdentityOwner(ctx context.Context, arg IdentityOwnerParams) (pgtype.UUID, error) {
+	row := q.db.QueryRow(ctx, identityOwner, arg.Provider, arg.Subject)
+	var user_id pgtype.UUID
+	err := row.Scan(&user_id)
+	return user_id, err
+}
+
+const initMediaBackfills = `-- name: InitMediaBackfills :exec
+INSERT INTO issue_media_backfills (organisation_id, project_id)
+SELECT organisation_id, id FROM projects
+ON CONFLICT DO NOTHING
+`
+
+func (q *Queries) InitMediaBackfills(ctx context.Context) error {
+	_, err := q.db.Exec(ctx, initMediaBackfills)
+	return err
+}
+
+const insertCallRecording = `-- name: InsertCallRecording :exec
+INSERT INTO call_recordings (call_id, object_key, size_bytes, started_at, stored_at)
+VALUES ($1, $2, $3, $4, $5)
+ON CONFLICT (object_key) DO NOTHING
+`
+
+type InsertCallRecordingParams struct {
+	CallID    pgtype.UUID
+	ObjectKey string
+	SizeBytes int64
+	StartedAt pgtype.Timestamptz
+	StoredAt  pgtype.Timestamptz
+}
+
+// Links a stored recording to its call. A redelivered session report names the same object, and
+// adds nothing.
+func (q *Queries) InsertCallRecording(ctx context.Context, arg InsertCallRecordingParams) error {
+	_, err := q.db.Exec(ctx, insertCallRecording,
+		arg.CallID,
+		arg.ObjectKey,
+		arg.SizeBytes,
+		arg.StartedAt,
+		arg.StoredAt,
+	)
+	return err
+}
+
+const insertIdentity = `-- name: InsertIdentity :exec
+INSERT INTO identities (provider, subject, user_id, email) VALUES ($1, $2, $3, $4)
+ON CONFLICT (provider, subject) DO NOTHING
+`
+
+type InsertIdentityParams struct {
+	Provider string
+	Subject  string
+	UserID   pgtype.UUID
+	Email    string
+}
+
+// Links a provider subject to an account; a subject already linked keeps its account.
+func (q *Queries) InsertIdentity(ctx context.Context, arg InsertIdentityParams) error {
+	_, err := q.db.Exec(ctx, insertIdentity,
+		arg.Provider,
+		arg.Subject,
+		arg.UserID,
+		arg.Email,
+	)
+	return err
+}
+
 const insertInvitation = `-- name: InsertInvitation :one
-INSERT INTO invitations (kind, organisation_id, email, role, user_id, token_sha256, invited_by, idempotency_key, expires_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+INSERT INTO invitations (kind, organisation_id, email, role, user_id, token_sha256, invited_by, idempotency_key, expires_at, email_started_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 RETURNING id, created_at
 `
 
@@ -594,6 +1336,7 @@ type InsertInvitationParams struct {
 	InvitedBy      pgtype.UUID
 	IdempotencyKey pgtype.Text
 	ExpiresAt      pgtype.Timestamptz
+	EmailStartedAt pgtype.Timestamptz
 }
 
 type InsertInvitationRow struct {
@@ -612,14 +1355,46 @@ func (q *Queries) InsertInvitation(ctx context.Context, arg InsertInvitationPara
 		arg.InvitedBy,
 		arg.IdempotencyKey,
 		arg.ExpiresAt,
+		arg.EmailStartedAt,
 	)
 	var i InsertInvitationRow
 	err := row.Scan(&i.ID, &i.CreatedAt)
 	return i, err
 }
 
+const insertProjectBucket = `-- name: InsertProjectBucket :exec
+INSERT INTO project_buckets (organisation_id, project_id, endpoint, use_ssl, bucket, region, access_key, secret_key_sealed)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+`
+
+type InsertProjectBucketParams struct {
+	OrganisationID  string
+	ProjectID       string
+	Endpoint        string
+	UseSsl          bool
+	Bucket          string
+	Region          string
+	AccessKey       string
+	SecretKeySealed []byte
+}
+
+// The bucket a project brought for its recordings, written with the project and never updated.
+func (q *Queries) InsertProjectBucket(ctx context.Context, arg InsertProjectBucketParams) error {
+	_, err := q.db.Exec(ctx, insertProjectBucket,
+		arg.OrganisationID,
+		arg.ProjectID,
+		arg.Endpoint,
+		arg.UseSsl,
+		arg.Bucket,
+		arg.Region,
+		arg.AccessKey,
+		arg.SecretKeySealed,
+	)
+	return err
+}
+
 const invitationByIdempotencyKey = `-- name: InvitationByIdempotencyKey :one
-SELECT i.id, i.kind, i.email, i.role, i.created_at, i.expires_at, i.emailed_at, i.accepted_at, i.revoked_at, u.email AS invited_by_email
+SELECT i.id, i.kind, i.email, i.role, i.created_at, i.expires_at, i.emailed_at, i.accepted_at, i.revoked_at, u.email AS invited_by_email, i.email_started_at, i.email_failed_at
 FROM invitations i LEFT JOIN users u ON u.id = i.invited_by
 WHERE i.organisation_id = $1 AND i.idempotency_key = $2
 `
@@ -640,6 +1415,8 @@ type InvitationByIdempotencyKeyRow struct {
 	AcceptedAt     pgtype.Timestamptz
 	RevokedAt      pgtype.Timestamptz
 	InvitedByEmail pgtype.Text
+	EmailStartedAt pgtype.Timestamptz
+	EmailFailedAt  pgtype.Timestamptz
 }
 
 func (q *Queries) InvitationByIdempotencyKey(ctx context.Context, arg InvitationByIdempotencyKeyParams) (InvitationByIdempotencyKeyRow, error) {
@@ -656,6 +1433,8 @@ func (q *Queries) InvitationByIdempotencyKey(ctx context.Context, arg Invitation
 		&i.AcceptedAt,
 		&i.RevokedAt,
 		&i.InvitedByEmail,
+		&i.EmailStartedAt,
+		&i.EmailFailedAt,
 	)
 	return i, err
 }
@@ -693,6 +1472,102 @@ func (q *Queries) IsMemberByEmail(ctx context.Context, arg IsMemberByEmailParams
 	var exists bool
 	err := row.Scan(&exists)
 	return exists, err
+}
+
+const issueEvaluationCoverage = `-- name: IssueEvaluationCoverage :one
+SELECT
+ (SELECT count(*) FROM calls c JOIN call_list l ON l.id=c.id
+  LEFT JOIN project_settings s ON s.organisation_id=c.organisation_id AND s.project_id=c.project_id
+  WHERE c.organisation_id = $1 AND c.project_id = $2 AND l.servable
+   AND l.start_at >= $3 AND l.start_at < $4
+   AND (c.summary_stale_at IS NOT NULL OR c.issue_evaluated_at IS NULL OR c.issue_settings_revision <> COALESCE(s.revision,0)))::bigint AS pending_calls,
+ (SELECT count(*) FROM calls c JOIN call_list l ON l.id=c.id
+  LEFT JOIN project_settings s ON s.organisation_id=c.organisation_id AND s.project_id=c.project_id
+  WHERE c.organisation_id = $1 AND c.project_id = $2 AND l.servable
+   AND l.start_at >= $3 AND l.start_at < $4
+   AND c.summary_stale_at IS NULL AND c.issue_evaluated_at IS NOT NULL
+   AND c.issue_settings_revision = COALESCE(s.revision,0) AND NOT c.issue_source_available)::bigint AS unavailable_calls,
+ (SELECT count(*) FROM issue_job_observations j
+  LEFT JOIN calls c ON c.organisation_id=j.organisation_id AND c.project_id=j.project_id AND c.room_sid=j.room_sid
+  LEFT JOIN LATERAL (SELECT min(cp.joined_at)::timestamptz AS joined_at FROM call_participants cp
+   WHERE cp.call_id=c.id AND cp.kind='agent' AND cp.identity=j.participant_identity AND j.participant_identity<>'') p ON true
+  LEFT JOIN project_settings s ON s.organisation_id=j.organisation_id AND s.project_id=j.project_id
+  WHERE j.organisation_id = $1 AND j.project_id = $2
+   AND (j.evaluated_observation_revision <> j.observation_revision OR j.evaluated_settings_revision <> COALESCE(s.revision,0)
+    OR j.evaluated_call_id IS DISTINCT FROM c.id OR j.evaluated_joined_at IS DISTINCT FROM p.joined_at))::bigint AS pending_jobs
+`
+
+type IssueEvaluationCoverageParams struct {
+	OrganisationID string
+	ProjectID      string
+	FromAt         pgtype.Timestamptz
+	ToAt           pgtype.Timestamptz
+}
+
+type IssueEvaluationCoverageRow struct {
+	PendingCalls     int64
+	UnavailableCalls int64
+	PendingJobs      int64
+}
+
+func (q *Queries) IssueEvaluationCoverage(ctx context.Context, arg IssueEvaluationCoverageParams) (IssueEvaluationCoverageRow, error) {
+	row := q.db.QueryRow(ctx, issueEvaluationCoverage,
+		arg.OrganisationID,
+		arg.ProjectID,
+		arg.FromAt,
+		arg.ToAt,
+	)
+	var i IssueEvaluationCoverageRow
+	err := row.Scan(&i.PendingCalls, &i.UnavailableCalls, &i.PendingJobs)
+	return i, err
+}
+
+const issueSourceCoverage = `-- name: IssueSourceCoverage :many
+SELECT layer, read_at, good_at,
+ CASE WHEN NOT ok THEN 'unavailable' WHEN fresh_until < now() THEN 'stale' WHEN NOT evaluation_complete THEN 'partial'
+ WHEN layer IN ('egress','ingress') AND NOT EXISTS (
+ SELECT 1 FROM issue_media_backfills b WHERE b.organisation_id=issue_sources.organisation_id
+ AND b.project_id=issue_sources.project_id AND b.done) THEN 'partial'
+ ELSE 'current' END::text AS state
+FROM issue_sources WHERE issue_sources.organisation_id = $1 AND issue_sources.project_id = $2
+ORDER BY layer
+`
+
+type IssueSourceCoverageParams struct {
+	OrganisationID string
+	ProjectID      string
+}
+
+type IssueSourceCoverageRow struct {
+	Layer  string
+	ReadAt pgtype.Timestamptz
+	GoodAt pgtype.Timestamptz
+	State  string
+}
+
+func (q *Queries) IssueSourceCoverage(ctx context.Context, arg IssueSourceCoverageParams) ([]IssueSourceCoverageRow, error) {
+	rows, err := q.db.Query(ctx, issueSourceCoverage, arg.OrganisationID, arg.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []IssueSourceCoverageRow
+	for rows.Next() {
+		var i IssueSourceCoverageRow
+		if err := rows.Scan(
+			&i.Layer,
+			&i.ReadAt,
+			&i.GoodAt,
+			&i.State,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const keyWorkspace = `-- name: KeyWorkspace :one
@@ -751,14 +1626,14 @@ func (q *Queries) LimitingSignInAttempt(ctx context.Context, arg LimitingSignInA
 
 const listCalls = `-- name: ListCalls :many
 WITH f AS (
-    SELECT l.organisation_id, l.project_id, l.id, l.room_name, l.room_sid, l.job_id, l.started_at, l.ended_at, l.end_state, l.created_at, l.first_seen_at, l.servable, l.summarized, l.start_at, l.duration_seconds, l.participants, l.channel, l.turn_count, l.answer_ms, l.answer_ms_median, l.models, l.pipeline, l.agent_key,
+    SELECT l.organisation_id, l.project_id, l.id, l.room_name, l.room_sid, l.job_id, l.started_at, l.ended_at, l.end_state, l.created_at, l.first_seen_at, l.servable, l.summarized, l.start_at, l.duration_seconds, l.participants, l.channel, l.turn_count, l.answer_ms, l.answer_ms_median, l.models, l.pipeline, l.agent_key, l.recorded, l.fields, c.tags, c.archived, c.metadata_revision,
         CASE $6::text
             WHEN 'startedAt'       THEN EXTRACT(EPOCH FROM l.start_at)::double precision
             WHEN 'durationSeconds' THEN l.duration_seconds
             WHEN 'turnCount'       THEN l.turn_count::double precision
             WHEN 'answerMs'        THEN l.answer_ms_median
         END * CASE WHEN $7::bool THEN -1 ELSE 1 END AS sort_key
-    FROM call_list l
+    FROM call_list l JOIN calls c ON c.id = l.id
     WHERE l.organisation_id = $8 AND l.project_id = $9 AND l.created_at <= $10 AND l.servable
       AND ($11::timestamptz IS NULL OR l.start_at >= $11::timestamptz)
       AND ($12::timestamptz IS NULL OR l.start_at < $12::timestamptz)
@@ -773,11 +1648,15 @@ WITH f AS (
       AND (NOT $21::bool OR l.answer_ms_median IS NULL)
       AND (NOT $22::bool OR l.duration_seconds IS NULL)
       AND (NOT $23::bool OR l.turn_count IS NULL)
-      AND NOT $24::bool
+      AND (cardinality($24::text[]) = 0 OR c.tags && $24::text[])
+      AND c.fields @> $25::jsonb
+      AND ($26::boolean IS NULL OR c.archived = $26::boolean)
+      AND ($27::bool IS NULL OR l.recorded = $27::bool)
+      AND NOT $28::bool
 )
 SELECT f.id, f.room_name, f.room_sid, f.start_at, f.started_at, f.ended_at, f.end_state, f.duration_seconds,
-       f.participants, f.channel, f.turn_count, f.answer_ms, f.answer_ms_median, f.models, f.pipeline, f.agent_key,
-       (f.sort_key IS NULL) AS key_unknown, COALESCE(f.sort_key, 0)::double precision AS sort_value
+       f.participants, f.channel, f.turn_count, f.answer_ms, f.answer_ms_median, f.models, f.pipeline, f.agent_key, f.tags, f.archived, f.metadata_revision,
+       f.recorded, (f.sort_key IS NULL) AS key_unknown, COALESCE(f.sort_key, 0)::double precision AS sort_value
 FROM f
 WHERE NOT $1::bool
    OR ((f.sort_key IS NULL), COALESCE(f.sort_key, 0), f.id) > ($2::bool, $3::float8, $4::uuid)
@@ -809,28 +1688,36 @@ type ListCallsParams struct {
 	UnknownAnswer   bool
 	UnknownDuration bool
 	UnknownTurns    bool
+	Tags            []string
+	Fields          []byte
+	Archived        pgtype.Bool
+	Recorded        pgtype.Bool
 	MatchNone       bool
 }
 
 type ListCallsRow struct {
-	ID              pgtype.UUID
-	RoomName        pgtype.Text
-	RoomSid         pgtype.Text
-	StartAt         pgtype.Timestamptz
-	StartedAt       pgtype.Timestamptz
-	EndedAt         pgtype.Timestamptz
-	EndState        string
-	DurationSeconds interface{}
-	Participants    int64
-	Channel         string
-	TurnCount       pgtype.Int4
-	AnswerMs        []float64
-	AnswerMsMedian  pgtype.Float8
-	Models          []string
-	Pipeline        string
-	AgentKey        pgtype.Text
-	KeyUnknown      interface{}
-	SortValue       float64
+	ID               pgtype.UUID
+	RoomName         pgtype.Text
+	RoomSid          pgtype.Text
+	StartAt          pgtype.Timestamptz
+	StartedAt        pgtype.Timestamptz
+	EndedAt          pgtype.Timestamptz
+	EndState         string
+	DurationSeconds  interface{}
+	Participants     int64
+	Channel          string
+	TurnCount        pgtype.Int4
+	AnswerMs         []float64
+	AnswerMsMedian   pgtype.Float8
+	Models           []string
+	Pipeline         string
+	AgentKey         pgtype.Text
+	Tags             []string
+	Archived         bool
+	MetadataRevision int64
+	Recorded         bool
+	KeyUnknown       interface{}
+	SortValue        float64
 }
 
 // One page of a project's calls as of a snapshot. The sort key is one number, negated for
@@ -861,6 +1748,10 @@ func (q *Queries) ListCalls(ctx context.Context, arg ListCallsParams) ([]ListCal
 		arg.UnknownAnswer,
 		arg.UnknownDuration,
 		arg.UnknownTurns,
+		arg.Tags,
+		arg.Fields,
+		arg.Archived,
+		arg.Recorded,
 		arg.MatchNone,
 	)
 	if err != nil {
@@ -887,6 +1778,10 @@ func (q *Queries) ListCalls(ctx context.Context, arg ListCallsParams) ([]ListCal
 			&i.Models,
 			&i.Pipeline,
 			&i.AgentKey,
+			&i.Tags,
+			&i.Archived,
+			&i.MetadataRevision,
+			&i.Recorded,
 			&i.KeyUnknown,
 			&i.SortValue,
 		); err != nil {
@@ -901,7 +1796,7 @@ func (q *Queries) ListCalls(ctx context.Context, arg ListCallsParams) ([]ListCal
 }
 
 const listInvitations = `-- name: ListInvitations :many
-SELECT i.id, i.kind, i.email, i.role, i.created_at, i.expires_at, i.emailed_at, i.accepted_at, i.revoked_at, u.email AS invited_by_email
+SELECT i.id, i.kind, i.email, i.role, i.created_at, i.expires_at, i.emailed_at, i.accepted_at, i.revoked_at, u.email AS invited_by_email, i.email_started_at, i.email_failed_at
 FROM invitations i LEFT JOIN users u ON u.id = i.invited_by
 WHERE i.organisation_id = $1
 ORDER BY i.created_at DESC, i.id
@@ -919,6 +1814,8 @@ type ListInvitationsRow struct {
 	AcceptedAt     pgtype.Timestamptz
 	RevokedAt      pgtype.Timestamptz
 	InvitedByEmail pgtype.Text
+	EmailStartedAt pgtype.Timestamptz
+	EmailFailedAt  pgtype.Timestamptz
 }
 
 func (q *Queries) ListInvitations(ctx context.Context, organisationID string) ([]ListInvitationsRow, error) {
@@ -941,6 +1838,160 @@ func (q *Queries) ListInvitations(ctx context.Context, organisationID string) ([
 			&i.AcceptedAt,
 			&i.RevokedAt,
 			&i.InvitedByEmail,
+			&i.EmailStartedAt,
+			&i.EmailFailedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listIssueOccurrences = `-- name: ListIssueOccurrences :many
+SELECT i.id, i.title, i.kind, i.source, i.severity,
+       i.state, i.decided_at, i.evidence_revision, i.reviewed_evidence_revision,
+       i.metadata_revision, i.tags, i.archived,
+       o.occurred_at, o.detail, o.call_id,
+       (CASE WHEN i.kind = 'standing' THEN o.observed_at ELSE NULL END)::timestamptz AS observed_at,
+       CASE WHEN i.kind = 'event' THEN 'recorded'
+            WHEN src.read_at IS NULL THEN 'unknown'
+            WHEN NOT src.ok THEN 'unavailable'
+            WHEN src.fresh_until < now() THEN 'stale'
+            WHEN o.observed_at < src.good_at THEN 'unknown'
+            ELSE 'current' END::text AS evidence_state
+FROM issues i
+JOIN issue_occurrences o ON o.organisation_id = i.organisation_id
+    AND o.project_id = i.project_id AND o.issue_id = i.id
+LEFT JOIN call_list c ON c.id = o.call_id AND c.organisation_id = i.organisation_id AND c.project_id = i.project_id
+LEFT JOIN issue_sources src ON src.organisation_id = o.organisation_id AND src.project_id = o.project_id AND src.layer = o.source_layer
+WHERE i.organisation_id = $1 AND i.project_id = $2
+  AND o.active AND (o.call_id IS NULL OR c.servable)
+  AND NOT (o.source_layer = 'calls' AND o.call_id IS NULL)
+  AND (i.kind = 'standing' OR (o.occurred_at >= $3 AND o.occurred_at < $4))
+  AND ($5::boolean IS NULL OR i.archived = $5)
+  AND (cardinality($6::text[]) = 0 OR i.tags && $6::text[])
+  AND ($7::text = '' OR strpos(lower(i.title), lower($7)) > 0
+       OR strpos(lower(o.detail->>'where'), lower($7)) > 0
+       OR strpos(lower(o.detail->>'detail'), lower($7)) > 0)
+ORDER BY CASE i.severity WHEN 'high' THEN 0 WHEN 'medium' THEN 1 WHEN 'low' THEN 2 ELSE 3 END,
+         i.id, o.occurred_at DESC NULLS LAST, o.source_id
+`
+
+type ListIssueOccurrencesParams struct {
+	OrganisationID string
+	ProjectID      string
+	FromAt         pgtype.Timestamptz
+	ToAt           pgtype.Timestamptz
+	Archived       pgtype.Bool
+	Tags           []string
+	Search         string
+}
+
+type ListIssueOccurrencesRow struct {
+	ID                       string
+	Title                    string
+	Kind                     string
+	Source                   string
+	Severity                 string
+	State                    string
+	DecidedAt                pgtype.Timestamptz
+	EvidenceRevision         int64
+	ReviewedEvidenceRevision int64
+	MetadataRevision         int64
+	Tags                     []string
+	Archived                 bool
+	OccurredAt               pgtype.Timestamptz
+	Detail                   []byte
+	CallID                   pgtype.UUID
+	ObservedAt               pgtype.Timestamptz
+	EvidenceState            string
+}
+
+func (q *Queries) ListIssueOccurrences(ctx context.Context, arg ListIssueOccurrencesParams) ([]ListIssueOccurrencesRow, error) {
+	rows, err := q.db.Query(ctx, listIssueOccurrences,
+		arg.OrganisationID,
+		arg.ProjectID,
+		arg.FromAt,
+		arg.ToAt,
+		arg.Archived,
+		arg.Tags,
+		arg.Search,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListIssueOccurrencesRow
+	for rows.Next() {
+		var i ListIssueOccurrencesRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Title,
+			&i.Kind,
+			&i.Source,
+			&i.Severity,
+			&i.State,
+			&i.DecidedAt,
+			&i.EvidenceRevision,
+			&i.ReviewedEvidenceRevision,
+			&i.MetadataRevision,
+			&i.Tags,
+			&i.Archived,
+			&i.OccurredAt,
+			&i.Detail,
+			&i.CallID,
+			&i.ObservedAt,
+			&i.EvidenceState,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listProjectBuckets = `-- name: ListProjectBuckets :many
+SELECT organisation_id, project_id, endpoint, use_ssl, bucket, region, access_key, secret_key_sealed
+FROM project_buckets
+ORDER BY organisation_id, project_id
+`
+
+type ListProjectBucketsRow struct {
+	OrganisationID  string
+	ProjectID       string
+	Endpoint        string
+	UseSsl          bool
+	Bucket          string
+	Region          string
+	AccessKey       string
+	SecretKeySealed []byte
+}
+
+func (q *Queries) ListProjectBuckets(ctx context.Context) ([]ListProjectBucketsRow, error) {
+	rows, err := q.db.Query(ctx, listProjectBuckets)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListProjectBucketsRow
+	for rows.Next() {
+		var i ListProjectBucketsRow
+		if err := rows.Scan(
+			&i.OrganisationID,
+			&i.ProjectID,
+			&i.Endpoint,
+			&i.UseSsl,
+			&i.Bucket,
+			&i.Region,
+			&i.AccessKey,
+			&i.SecretKeySealed,
 		); err != nil {
 			return nil, err
 		}
@@ -1001,7 +2052,7 @@ func (q *Queries) ListProjectKeys(ctx context.Context, arg ListProjectKeysParams
 }
 
 const listProjects = `-- name: ListProjects :many
-SELECT organisation_id, id, name, livekit_url, livekit_api_key, created_at
+SELECT organisation_id, id, name, livekit_url, livekit_api_key, created_at, recordings
 FROM projects
 ORDER BY organisation_id, id
 `
@@ -1013,6 +2064,7 @@ type ListProjectsRow struct {
 	LivekitUrl     string
 	LivekitApiKey  string
 	CreatedAt      pgtype.Timestamptz
+	Recordings     bool
 }
 
 func (q *Queries) ListProjects(ctx context.Context) ([]ListProjectsRow, error) {
@@ -1031,6 +2083,7 @@ func (q *Queries) ListProjects(ctx context.Context) ([]ListProjectsRow, error) {
 			&i.LivekitUrl,
 			&i.LivekitApiKey,
 			&i.CreatedAt,
+			&i.Recordings,
 		); err != nil {
 			return nil, err
 		}
@@ -1082,6 +2135,22 @@ func (q *Queries) LockOrganisation(ctx context.Context, id string) (string, erro
 	return id_2, err
 }
 
+const lockSettingsProject = `-- name: LockSettingsProject :one
+SELECT id FROM projects WHERE organisation_id= $1 AND id= $2 FOR KEY SHARE
+`
+
+type LockSettingsProjectParams struct {
+	OrganisationID string
+	ProjectID      string
+}
+
+func (q *Queries) LockSettingsProject(ctx context.Context, arg LockSettingsProjectParams) (string, error) {
+	row := q.db.QueryRow(ctx, lockSettingsProject, arg.OrganisationID, arg.ProjectID)
+	var id string
+	err := row.Scan(&id)
+	return id, err
+}
+
 const lockSignInKey = `-- name: LockSignInKey :exec
 SELECT pg_advisory_xact_lock(hashtext(concat($1::text, '/', $2::text)))
 `
@@ -1115,6 +2184,16 @@ UPDATE invitations SET emailed_at = now() WHERE id = $1
 
 func (q *Queries) MarkInvitationEmailed(ctx context.Context, id pgtype.UUID) error {
 	_, err := q.db.Exec(ctx, markInvitationEmailed, id)
+	return err
+}
+
+const markInvitationNotEmailed = `-- name: MarkInvitationNotEmailed :exec
+UPDATE invitations SET email_failed_at = now() WHERE id = $1 AND emailed_at IS NULL
+`
+
+// The send failed. A recorded success is never overwritten.
+func (q *Queries) MarkInvitationNotEmailed(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, markInvitationNotEmailed, id)
 	return err
 }
 
@@ -1167,6 +2246,36 @@ func (q *Queries) Membership(ctx context.Context, arg MembershipParams) (string,
 	var role string
 	err := row.Scan(&role)
 	return role, err
+}
+
+const mergeCallFields = `-- name: MergeCallFields :one
+UPDATE calls SET fields = calls.fields || (
+    SELECT COALESCE(jsonb_object_agg(f.key, f.value), '{}'::jsonb)
+    FROM (
+        SELECT key, value FROM jsonb_each($1::jsonb) WHERE calls.fields ? key
+        UNION ALL
+        (SELECT key, value FROM jsonb_each($1::jsonb) WHERE NOT calls.fields ? key
+         ORDER BY key
+         LIMIT GREATEST(0, 64 - (SELECT count(*) FROM jsonb_object_keys(calls.fields))))
+    ) f
+), updated_at = now()
+WHERE id = $2
+RETURNING fields
+`
+
+type MergeCallFieldsParams struct {
+	Fields []byte
+	ID     pgtype.UUID
+}
+
+// An SDK's custom fields onto its call (Postgres 00020); a key already there takes the new value. A
+// call holds at most 64 keys: new keys past that are dropped, in key order, and the caller counts
+// them from the fields returned.
+func (q *Queries) MergeCallFields(ctx context.Context, arg MergeCallFieldsParams) ([]byte, error) {
+	row := q.db.QueryRow(ctx, mergeCallFields, arg.Fields, arg.ID)
+	var fields []byte
+	err := row.Scan(&fields)
+	return fields, err
 }
 
 const openCallInRoom = `-- name: OpenCallInRoom :one
@@ -1317,6 +2426,256 @@ func (q *Queries) OrganisationRoles(ctx context.Context, userID pgtype.UUID) ([]
 	return items, nil
 }
 
+const organisationSummary = `-- name: OrganisationSummary :one
+SELECT o.id, o.name, o.created_at,
+    (SELECT count(*) FROM memberships m WHERE m.organisation_id = o.id) AS members,
+    (SELECT count(*) FROM memberships m WHERE m.organisation_id = o.id AND m.role = 'admin') AS admins,
+    (SELECT count(*) FROM invitations i
+        WHERE i.organisation_id = o.id AND i.kind = 'invite' AND i.accepted_at IS NULL AND i.revoked_at IS NULL AND i.expires_at > now()) AS pending_invitations
+FROM organisations o WHERE o.id = $1
+`
+
+type OrganisationSummaryRow struct {
+	ID                 string
+	Name               string
+	CreatedAt          pgtype.Timestamptz
+	Members            int64
+	Admins             int64
+	PendingInvitations int64
+}
+
+// An organisation's members, admins and open invitations, counted at this read (phase 06e).
+func (q *Queries) OrganisationSummary(ctx context.Context, id string) (OrganisationSummaryRow, error) {
+	row := q.db.QueryRow(ctx, organisationSummary, id)
+	var i OrganisationSummaryRow
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.CreatedAt,
+		&i.Members,
+		&i.Admins,
+		&i.PendingInvitations,
+	)
+	return i, err
+}
+
+const organisationUsage = `-- name: OrganisationUsage :one
+WITH period_calls AS (
+    SELECT started_at, end_state,
+        CASE end_state WHEN 'observed' THEN ended_at WHEN 'inferred' THEN last_activity_at END AS effective_end
+    FROM calls WHERE organisation_id = $1
+), classified AS (
+    SELECT started_at, end_state, effective_end,
+        started_at IS NOT NULL AND effective_end >= started_at
+            AND effective_end >= $2::timestamptz AND effective_end < $3::timestamptz AS measured,
+        started_at >= $2::timestamptz AND started_at < $3::timestamptz AS started_in_period
+    FROM period_calls
+)
+SELECT
+    COALESCE(floor(sum(extract(epoch FROM effective_end - started_at)) FILTER (WHERE measured)), 0)::bigint AS call_seconds,
+    count(*) FILTER (WHERE measured) AS calls,
+    count(*) FILTER (WHERE measured AND end_state = 'inferred') AS inferred_calls,
+    COALESCE(floor(sum(extract(epoch FROM effective_end - started_at)) FILTER (WHERE measured AND end_state = 'inferred')), 0)::bigint AS inferred_call_seconds,
+    count(*) FILTER (WHERE end_state = 'open' AND started_in_period) AS unended_calls,
+    count(*) FILTER (WHERE end_state IN ('observed', 'inferred') AND started_in_period
+        AND (effective_end IS NULL OR effective_end < started_at)) AS unmeasured_calls
+FROM classified
+`
+
+type OrganisationUsageParams struct {
+	OrganisationID string
+	FromAt         pgtype.Timestamptz
+	ToAt           pgtype.Timestamptz
+}
+
+type OrganisationUsageRow struct {
+	CallSeconds         int64
+	Calls               int64
+	InferredCalls       int64
+	InferredCallSeconds int64
+	UnendedCalls        int64
+	UnmeasuredCalls     int64
+}
+
+// An organisation's profiled call time in [from, to) (phase 06e, decision 0029). An observed call
+// ends at ended_at; an inferred one at its last activity, a lower bound. A call is measured when
+// its start and end are known and the end is not before the start, and counts in the period that
+// holds its end. Exact durations are summed first and the sum is rounded down to whole seconds
+// once, never per call. Open calls, and closed calls with no end or an end before their start,
+// are counted apart by their start and never summed.
+func (q *Queries) OrganisationUsage(ctx context.Context, arg OrganisationUsageParams) (OrganisationUsageRow, error) {
+	row := q.db.QueryRow(ctx, organisationUsage, arg.OrganisationID, arg.FromAt, arg.ToAt)
+	var i OrganisationUsageRow
+	err := row.Scan(
+		&i.CallSeconds,
+		&i.Calls,
+		&i.InferredCalls,
+		&i.InferredCallSeconds,
+		&i.UnendedCalls,
+		&i.UnmeasuredCalls,
+	)
+	return i, err
+}
+
+const pendingCallFindings = `-- name: PendingCallFindings :many
+SELECT c.organisation_id, c.project_id, c.id, c.issue_evaluation_revision
+FROM calls c
+JOIN call_list l ON l.id = c.id
+LEFT JOIN project_settings s ON s.organisation_id = c.organisation_id AND s.project_id = c.project_id
+WHERE l.servable AND c.summary_stale_at IS NULL
+  AND (c.issue_evaluated_at IS NULL OR c.issue_settings_revision <> COALESCE(s.revision, 0))
+  AND (c.issue_retry_at IS NULL OR c.issue_retry_at <= now())
+ORDER BY c.issue_retry_at NULLS FIRST, c.id
+LIMIT $1
+`
+
+type PendingCallFindingsRow struct {
+	OrganisationID          string
+	ProjectID               string
+	ID                      pgtype.UUID
+	IssueEvaluationRevision int64
+}
+
+func (q *Queries) PendingCallFindings(ctx context.Context, maxCalls int32) ([]PendingCallFindingsRow, error) {
+	rows, err := q.db.Query(ctx, pendingCallFindings, maxCalls)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []PendingCallFindingsRow
+	for rows.Next() {
+		var i PendingCallFindingsRow
+		if err := rows.Scan(
+			&i.OrganisationID,
+			&i.ProjectID,
+			&i.ID,
+			&i.IssueEvaluationRevision,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const pendingJobFindings = `-- name: PendingJobFindings :many
+SELECT j.organisation_id, j.project_id, j.job_id, j.room_sid, j.dispatch_id, j.agent_name, j.participant_identity, j.dispatched_at, j.status, j.reported_failed_at, j.failure_observed_at, j.observed_at, j.observation_revision, j.evaluated_observation_revision, j.evaluation_revision, j.evaluated_settings_revision, j.evaluated_call_id, j.evaluated_joined_at, c.id AS call_id, p.joined_at
+FROM issue_job_observations j
+LEFT JOIN calls c ON c.organisation_id = j.organisation_id AND c.project_id = j.project_id AND c.room_sid = j.room_sid
+LEFT JOIN LATERAL (
+ SELECT min(cp.joined_at)::timestamptz AS joined_at FROM call_participants cp
+ WHERE cp.call_id = c.id AND cp.kind = 'agent' AND cp.identity = j.participant_identity AND j.participant_identity <> ''
+) p ON true
+LEFT JOIN project_settings settings ON settings.organisation_id = j.organisation_id AND settings.project_id = j.project_id
+WHERE j.evaluated_observation_revision <> j.observation_revision
+ OR j.evaluated_settings_revision <> COALESCE(settings.revision, 0)
+ OR j.evaluated_call_id IS DISTINCT FROM c.id OR j.evaluated_joined_at IS DISTINCT FROM p.joined_at
+ORDER BY j.observed_at, j.organisation_id, j.project_id, j.job_id
+LIMIT $1
+`
+
+type PendingJobFindingsRow struct {
+	OrganisationID               string
+	ProjectID                    string
+	JobID                        string
+	RoomSid                      string
+	DispatchID                   string
+	AgentName                    pgtype.Text
+	ParticipantIdentity          pgtype.Text
+	DispatchedAt                 pgtype.Timestamptz
+	Status                       string
+	ReportedFailedAt             pgtype.Timestamptz
+	FailureObservedAt            pgtype.Timestamptz
+	ObservedAt                   pgtype.Timestamptz
+	ObservationRevision          int64
+	EvaluatedObservationRevision int64
+	EvaluationRevision           int64
+	EvaluatedSettingsRevision    int64
+	EvaluatedCallID              pgtype.UUID
+	EvaluatedJoinedAt            pgtype.Timestamptz
+	CallID                       pgtype.UUID
+	JoinedAt                     pgtype.Timestamptz
+}
+
+func (q *Queries) PendingJobFindings(ctx context.Context, maxJobs int32) ([]PendingJobFindingsRow, error) {
+	rows, err := q.db.Query(ctx, pendingJobFindings, maxJobs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []PendingJobFindingsRow
+	for rows.Next() {
+		var i PendingJobFindingsRow
+		if err := rows.Scan(
+			&i.OrganisationID,
+			&i.ProjectID,
+			&i.JobID,
+			&i.RoomSid,
+			&i.DispatchID,
+			&i.AgentName,
+			&i.ParticipantIdentity,
+			&i.DispatchedAt,
+			&i.Status,
+			&i.ReportedFailedAt,
+			&i.FailureObservedAt,
+			&i.ObservedAt,
+			&i.ObservationRevision,
+			&i.EvaluatedObservationRevision,
+			&i.EvaluationRevision,
+			&i.EvaluatedSettingsRevision,
+			&i.EvaluatedCallID,
+			&i.EvaluatedJoinedAt,
+			&i.CallID,
+			&i.JoinedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const pendingMediaBackfills = `-- name: PendingMediaBackfills :many
+SELECT organisation_id, project_id, cursor_ns, cursor_key, revision, done, retry_at, failures FROM issue_media_backfills
+WHERE NOT done AND retry_at <= now()
+ORDER BY retry_at, organisation_id, project_id LIMIT 10
+`
+
+func (q *Queries) PendingMediaBackfills(ctx context.Context) ([]IssueMediaBackfill, error) {
+	rows, err := q.db.Query(ctx, pendingMediaBackfills)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []IssueMediaBackfill
+	for rows.Next() {
+		var i IssueMediaBackfill
+		if err := rows.Scan(
+			&i.OrganisationID,
+			&i.ProjectID,
+			&i.CursorNs,
+			&i.CursorKey,
+			&i.Revision,
+			&i.Done,
+			&i.RetryAt,
+			&i.Failures,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const principalRows = `-- name: PrincipalRows :many
 SELECT u.id, u.email, u.password_version, m.organisation_id, m.role
 FROM users u LEFT JOIN memberships m ON m.user_id = u.id
@@ -1360,8 +2719,46 @@ func (q *Queries) PrincipalRows(ctx context.Context, id pgtype.UUID) ([]Principa
 	return items, nil
 }
 
+const projectBucket = `-- name: ProjectBucket :one
+SELECT organisation_id, project_id, endpoint, use_ssl, bucket, region, access_key, secret_key_sealed
+FROM project_buckets
+WHERE organisation_id = $1 AND project_id = $2
+`
+
+type ProjectBucketParams struct {
+	OrganisationID string
+	ProjectID      string
+}
+
+type ProjectBucketRow struct {
+	OrganisationID  string
+	ProjectID       string
+	Endpoint        string
+	UseSsl          bool
+	Bucket          string
+	Region          string
+	AccessKey       string
+	SecretKeySealed []byte
+}
+
+func (q *Queries) ProjectBucket(ctx context.Context, arg ProjectBucketParams) (ProjectBucketRow, error) {
+	row := q.db.QueryRow(ctx, projectBucket, arg.OrganisationID, arg.ProjectID)
+	var i ProjectBucketRow
+	err := row.Scan(
+		&i.OrganisationID,
+		&i.ProjectID,
+		&i.Endpoint,
+		&i.UseSsl,
+		&i.Bucket,
+		&i.Region,
+		&i.AccessKey,
+		&i.SecretKeySealed,
+	)
+	return i, err
+}
+
 const projectByID = `-- name: ProjectByID :one
-SELECT organisation_id, id, name, livekit_url, livekit_api_key, created_at
+SELECT organisation_id, id, name, livekit_url, livekit_api_key, created_at, recordings
 FROM projects
 WHERE organisation_id = $1 AND id = $2
 `
@@ -1378,6 +2775,7 @@ type ProjectByIDRow struct {
 	LivekitUrl     string
 	LivekitApiKey  string
 	CreatedAt      pgtype.Timestamptz
+	Recordings     bool
 }
 
 func (q *Queries) ProjectByID(ctx context.Context, arg ProjectByIDParams) (ProjectByIDRow, error) {
@@ -1390,35 +2788,7 @@ func (q *Queries) ProjectByID(ctx context.Context, arg ProjectByIDParams) (Proje
 		&i.LivekitUrl,
 		&i.LivekitApiKey,
 		&i.CreatedAt,
-	)
-	return i, err
-}
-
-const projectByLiveKitKey = `-- name: ProjectByLiveKitKey :one
-SELECT organisation_id, id, name, livekit_url, livekit_api_key, created_at
-FROM projects
-WHERE livekit_api_key = $1
-`
-
-type ProjectByLiveKitKeyRow struct {
-	OrganisationID string
-	ID             string
-	Name           string
-	LivekitUrl     string
-	LivekitApiKey  string
-	CreatedAt      pgtype.Timestamptz
-}
-
-func (q *Queries) ProjectByLiveKitKey(ctx context.Context, livekitApiKey string) (ProjectByLiveKitKeyRow, error) {
-	row := q.db.QueryRow(ctx, projectByLiveKitKey, livekitApiKey)
-	var i ProjectByLiveKitKeyRow
-	err := row.Scan(
-		&i.OrganisationID,
-		&i.ID,
-		&i.Name,
-		&i.LivekitUrl,
-		&i.LivekitApiKey,
-		&i.CreatedAt,
+		&i.Recordings,
 	)
 	return i, err
 }
@@ -1444,6 +2814,51 @@ func (q *Queries) ProjectConnected(ctx context.Context, arg ProjectConnectedPara
 	var i ProjectConnectedRow
 	err := row.Scan(&i.CreatedAt, &i.Now)
 	return i, err
+}
+
+const projectConnections = `-- name: ProjectConnections :many
+SELECT source, last_accepted_at, last_rejected_at, reason, used_key
+FROM project_connections
+WHERE organisation_id = $1 AND project_id = $2
+`
+
+type ProjectConnectionsParams struct {
+	OrganisationID string
+	ProjectID      string
+}
+
+type ProjectConnectionsRow struct {
+	Source         string
+	LastAcceptedAt pgtype.Timestamptz
+	LastRejectedAt pgtype.Timestamptz
+	Reason         pgtype.Text
+	UsedKey        pgtype.Text
+}
+
+func (q *Queries) ProjectConnections(ctx context.Context, arg ProjectConnectionsParams) ([]ProjectConnectionsRow, error) {
+	rows, err := q.db.Query(ctx, projectConnections, arg.OrganisationID, arg.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ProjectConnectionsRow
+	for rows.Next() {
+		var i ProjectConnectionsRow
+		if err := rows.Scan(
+			&i.Source,
+			&i.LastAcceptedAt,
+			&i.LastRejectedAt,
+			&i.Reason,
+			&i.UsedKey,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const projectKey = `-- name: ProjectKey :one
@@ -1500,6 +2915,38 @@ func (q *Queries) PutListSnapshot(ctx context.Context, arg PutListSnapshotParams
 	return err
 }
 
+const putOrganisation = `-- name: PutOrganisation :one
+INSERT INTO organisations (id, name) VALUES ($1, $2)
+ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name
+RETURNING id, name, created_at, (xmax = 0)::boolean AS created
+`
+
+type PutOrganisationParams struct {
+	ID   string
+	Name string
+}
+
+type PutOrganisationRow struct {
+	ID        string
+	Name      string
+	CreatedAt pgtype.Timestamptz
+	Created   bool
+}
+
+// Creates an organisation with a caller-chosen id, or renames it (phase 06e). Parallel puts for one
+// id meet the primary key: exactly one inserts, and created is true for that one alone.
+func (q *Queries) PutOrganisation(ctx context.Context, arg PutOrganisationParams) (PutOrganisationRow, error) {
+	row := q.db.QueryRow(ctx, putOrganisation, arg.ID, arg.Name)
+	var i PutOrganisationRow
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.CreatedAt,
+		&i.Created,
+	)
+	return i, err
+}
+
 const putSummary = `-- name: PutSummary :exec
 INSERT INTO call_summaries (call_id, turn_count, answer_ms, answer_ms_median, models, pipeline, agent_key, computed_at)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
@@ -1539,6 +2986,211 @@ func (q *Queries) PutSummary(ctx context.Context, arg PutSummaryParams) error {
 	return err
 }
 
+const readAccountProfile = `-- name: ReadAccountProfile :one
+SELECT display_name, profile_revision FROM users WHERE id = $1
+`
+
+type ReadAccountProfileRow struct {
+	DisplayName     pgtype.Text
+	ProfileRevision int64
+}
+
+func (q *Queries) ReadAccountProfile(ctx context.Context, userID pgtype.UUID) (ReadAccountProfileRow, error) {
+	row := q.db.QueryRow(ctx, readAccountProfile, userID)
+	var i ReadAccountProfileRow
+	err := row.Scan(&i.DisplayName, &i.ProfileRevision)
+	return i, err
+}
+
+const readCallFindingIdentity = `-- name: ReadCallFindingIdentity :one
+SELECT room_name, COALESCE(started_at, first_seen_at) AS occurred_at
+FROM calls WHERE organisation_id = $1 AND project_id = $2 AND id = $3
+FOR UPDATE
+`
+
+type ReadCallFindingIdentityParams struct {
+	OrganisationID string
+	ProjectID      string
+	ID             pgtype.UUID
+}
+
+type ReadCallFindingIdentityRow struct {
+	RoomName   pgtype.Text
+	OccurredAt pgtype.Timestamptz
+}
+
+func (q *Queries) ReadCallFindingIdentity(ctx context.Context, arg ReadCallFindingIdentityParams) (ReadCallFindingIdentityRow, error) {
+	row := q.db.QueryRow(ctx, readCallFindingIdentity, arg.OrganisationID, arg.ProjectID, arg.ID)
+	var i ReadCallFindingIdentityRow
+	err := row.Scan(&i.RoomName, &i.OccurredAt)
+	return i, err
+}
+
+const readCallMetadata = `-- name: ReadCallMetadata :one
+SELECT tags, archived, metadata_revision FROM calls
+WHERE organisation_id = $1 AND project_id = $2 AND id = $3
+`
+
+type ReadCallMetadataParams struct {
+	OrganisationID string
+	ProjectID      string
+	CallID         pgtype.UUID
+}
+
+type ReadCallMetadataRow struct {
+	Tags             []string
+	Archived         bool
+	MetadataRevision int64
+}
+
+func (q *Queries) ReadCallMetadata(ctx context.Context, arg ReadCallMetadataParams) (ReadCallMetadataRow, error) {
+	row := q.db.QueryRow(ctx, readCallMetadata, arg.OrganisationID, arg.ProjectID, arg.CallID)
+	var i ReadCallMetadataRow
+	err := row.Scan(&i.Tags, &i.Archived, &i.MetadataRevision)
+	return i, err
+}
+
+const readIssueMetadata = `-- name: ReadIssueMetadata :one
+SELECT id, state, decided_at, evidence_revision, reviewed_evidence_revision, metadata_revision, tags, archived
+FROM issues WHERE organisation_id = $1 AND project_id = $2 AND id = $3
+`
+
+type ReadIssueMetadataParams struct {
+	OrganisationID string
+	ProjectID      string
+	ID             string
+}
+
+type ReadIssueMetadataRow struct {
+	ID                       string
+	State                    string
+	DecidedAt                pgtype.Timestamptz
+	EvidenceRevision         int64
+	ReviewedEvidenceRevision int64
+	MetadataRevision         int64
+	Tags                     []string
+	Archived                 bool
+}
+
+func (q *Queries) ReadIssueMetadata(ctx context.Context, arg ReadIssueMetadataParams) (ReadIssueMetadataRow, error) {
+	row := q.db.QueryRow(ctx, readIssueMetadata, arg.OrganisationID, arg.ProjectID, arg.ID)
+	var i ReadIssueMetadataRow
+	err := row.Scan(
+		&i.ID,
+		&i.State,
+		&i.DecidedAt,
+		&i.EvidenceRevision,
+		&i.ReviewedEvidenceRevision,
+		&i.MetadataRevision,
+		&i.Tags,
+		&i.Archived,
+	)
+	return i, err
+}
+
+const readProjectSettings = `-- name: ReadProjectSettings :one
+SELECT COALESCE(s.answer_ms, 1500::double precision) AS answer_ms,
+       COALESCE(s.join_ms, 2000::double precision) AS join_ms,
+       COALESCE(s.tts_start_ms, 1000::double precision) AS tts_start_ms,
+       COALESCE(s.revision, 0::bigint) AS revision,
+       s.allowed_origins,
+       COALESCE(s.allowed_origins_revision, 0::bigint) AS allowed_origins_revision
+FROM projects p LEFT JOIN project_settings s ON s.organisation_id = p.organisation_id AND s.project_id = p.id
+WHERE p.organisation_id= $1 AND p.id= $2
+`
+
+type ReadProjectSettingsParams struct {
+	OrganisationID string
+	ProjectID      string
+}
+
+type ReadProjectSettingsRow struct {
+	AnswerMs               float64
+	JoinMs                 float64
+	TtsStartMs             float64
+	Revision               int64
+	AllowedOrigins         []string
+	AllowedOriginsRevision int64
+}
+
+func (q *Queries) ReadProjectSettings(ctx context.Context, arg ReadProjectSettingsParams) (ReadProjectSettingsRow, error) {
+	row := q.db.QueryRow(ctx, readProjectSettings, arg.OrganisationID, arg.ProjectID)
+	var i ReadProjectSettingsRow
+	err := row.Scan(
+		&i.AnswerMs,
+		&i.JoinMs,
+		&i.TtsStartMs,
+		&i.Revision,
+		&i.AllowedOrigins,
+		&i.AllowedOriginsRevision,
+	)
+	return i, err
+}
+
+const recordConnectionAccepted = `-- name: RecordConnectionAccepted :execrows
+INSERT INTO project_connections (organisation_id, project_id, source, last_accepted_at)
+SELECT p.organisation_id, p.id, $1, $2
+FROM projects p WHERE p.organisation_id = $3 AND p.id = $4
+ON CONFLICT (organisation_id, project_id, source) DO UPDATE SET
+    last_accepted_at = GREATEST(project_connections.last_accepted_at, EXCLUDED.last_accepted_at)
+`
+
+type RecordConnectionAcceptedParams struct {
+	Source         string
+	At             pgtype.Timestamptz
+	OrganisationID string
+	ProjectID      string
+}
+
+// Selecting the project inserts nothing for a project that does not exist, so a request addressed
+// to an unknown project records nothing.
+func (q *Queries) RecordConnectionAccepted(ctx context.Context, arg RecordConnectionAcceptedParams) (int64, error) {
+	result, err := q.db.Exec(ctx, recordConnectionAccepted,
+		arg.Source,
+		arg.At,
+		arg.OrganisationID,
+		arg.ProjectID,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const recordConnectionRejected = `-- name: RecordConnectionRejected :execrows
+INSERT INTO project_connections (organisation_id, project_id, source, last_rejected_at, reason, used_key)
+SELECT p.organisation_id, p.id, $1, $2, $3, $4
+FROM projects p WHERE p.organisation_id = $5 AND p.id = $6
+ON CONFLICT (organisation_id, project_id, source) DO UPDATE SET
+    last_rejected_at = EXCLUDED.last_rejected_at,
+    reason           = EXCLUDED.reason,
+    used_key         = EXCLUDED.used_key
+`
+
+type RecordConnectionRejectedParams struct {
+	Source         string
+	At             pgtype.Timestamptz
+	Reason         pgtype.Text
+	UsedKey        pgtype.Text
+	OrganisationID string
+	ProjectID      string
+}
+
+func (q *Queries) RecordConnectionRejected(ctx context.Context, arg RecordConnectionRejectedParams) (int64, error) {
+	result, err := q.db.Exec(ctx, recordConnectionRejected,
+		arg.Source,
+		arg.At,
+		arg.Reason,
+		arg.UsedKey,
+		arg.OrganisationID,
+		arg.ProjectID,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const recordSignInAttempt = `-- name: RecordSignInAttempt :one
 INSERT INTO sign_in_attempts (kind, key) VALUES ($1, $2) RETURNING id
 `
@@ -1553,6 +3205,64 @@ func (q *Queries) RecordSignInAttempt(ctx context.Context, arg RecordSignInAttem
 	var id int64
 	err := row.Scan(&id)
 	return id, err
+}
+
+const recordSummaryFindings = `-- name: RecordSummaryFindings :exec
+UPDATE calls SET issue_evaluated_at = $1, issue_settings_revision = $2,
+ issue_source_available = $3, issue_retry_at = NULL, issue_failures = 0, issue_evaluation_revision = issue_evaluation_revision + 1
+WHERE id = $4
+`
+
+type RecordSummaryFindingsParams struct {
+	EvaluatedAt      pgtype.Timestamptz
+	SettingsRevision int64
+	SourceAvailable  bool
+	ID               pgtype.UUID
+}
+
+func (q *Queries) RecordSummaryFindings(ctx context.Context, arg RecordSummaryFindingsParams) error {
+	_, err := q.db.Exec(ctx, recordSummaryFindings,
+		arg.EvaluatedAt,
+		arg.SettingsRevision,
+		arg.SourceAvailable,
+		arg.ID,
+	)
+	return err
+}
+
+const recordingByID = `-- name: RecordingByID :one
+SELECT r.id, r.object_key, r.size_bytes, r.started_at, r.stored_at
+FROM call_recordings r JOIN calls c ON c.id = r.call_id
+WHERE r.id = $1 AND c.organisation_id = $2 AND c.project_id = $3
+`
+
+type RecordingByIDParams struct {
+	ID             pgtype.UUID
+	OrganisationID string
+	ProjectID      string
+}
+
+type RecordingByIDRow struct {
+	ID        pgtype.UUID
+	ObjectKey string
+	SizeBytes int64
+	StartedAt pgtype.Timestamptz
+	StoredAt  pgtype.Timestamptz
+}
+
+// One recording, only within the project that owns its call, so an id from another project is not
+// found.
+func (q *Queries) RecordingByID(ctx context.Context, arg RecordingByIDParams) (RecordingByIDRow, error) {
+	row := q.db.QueryRow(ctx, recordingByID, arg.ID, arg.OrganisationID, arg.ProjectID)
+	var i RecordingByIDRow
+	err := row.Scan(
+		&i.ID,
+		&i.ObjectKey,
+		&i.SizeBytes,
+		&i.StartedAt,
+		&i.StoredAt,
+	)
+	return i, err
 }
 
 const removeMembership = `-- name: RemoveMembership :execrows
@@ -1570,6 +3280,47 @@ func (q *Queries) RemoveMembership(ctx context.Context, arg RemoveMembershipPara
 		return 0, err
 	}
 	return result.RowsAffected(), nil
+}
+
+const resourceEndpoints = `-- name: ResourceEndpoints :many
+SELECT organisation_id, project_id, id, host, url_sealed, kind, target, container_id, created_at FROM project_resource_endpoints
+WHERE organisation_id = $1 AND project_id = $2
+ORDER BY created_at, id
+`
+
+type ResourceEndpointsParams struct {
+	OrganisationID string
+	ProjectID      string
+}
+
+func (q *Queries) ResourceEndpoints(ctx context.Context, arg ResourceEndpointsParams) ([]ProjectResourceEndpoint, error) {
+	rows, err := q.db.Query(ctx, resourceEndpoints, arg.OrganisationID, arg.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ProjectResourceEndpoint
+	for rows.Next() {
+		var i ProjectResourceEndpoint
+		if err := rows.Scan(
+			&i.OrganisationID,
+			&i.ProjectID,
+			&i.ID,
+			&i.Host,
+			&i.UrlSealed,
+			&i.Kind,
+			&i.Target,
+			&i.ContainerID,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const revokeInvitation = `-- name: RevokeInvitation :execrows
@@ -1690,7 +3441,7 @@ UPDATE users SET password_hash = $1, password_version = password_version + 1 WHE
 `
 
 type SetPasswordParams struct {
-	PasswordHash string
+	PasswordHash pgtype.Text
 	Email        string
 }
 
@@ -1708,7 +3459,7 @@ UPDATE users SET password_hash = $1, password_version = password_version + 1 WHE
 `
 
 type SetPasswordByIDParams struct {
-	PasswordHash string
+	PasswordHash pgtype.Text
 	ID           pgtype.UUID
 }
 
@@ -1716,6 +3467,25 @@ type SetPasswordByIDParams struct {
 func (q *Queries) SetPasswordByID(ctx context.Context, arg SetPasswordByIDParams) error {
 	_, err := q.db.Exec(ctx, setPasswordByID, arg.PasswordHash, arg.ID)
 	return err
+}
+
+const setProjectRecordings = `-- name: SetProjectRecordings :execrows
+UPDATE projects SET recordings = $1 WHERE organisation_id = $2 AND id = $3
+`
+
+type SetProjectRecordingsParams struct {
+	Recordings     bool
+	OrganisationID string
+	ID             string
+}
+
+// Turns a project's recordings on or off (phase 07a). Off keeps what is stored until it expires.
+func (q *Queries) SetProjectRecordings(ctx context.Context, arg SetProjectRecordingsParams) (int64, error) {
+	result, err := q.db.Exec(ctx, setProjectRecordings, arg.Recordings, arg.OrganisationID, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const signInAttemptsSince = `-- name: SignInAttemptsSince :one
@@ -1733,6 +3503,41 @@ func (q *Queries) SignInAttemptsSince(ctx context.Context, arg SignInAttemptsSin
 	var count int64
 	err := row.Scan(&count)
 	return count, err
+}
+
+const signInMethods = `-- name: SignInMethods :many
+SELECT (u.password_hash IS NOT NULL)::boolean AS has_password, i.provider, i.created_at
+FROM users u LEFT JOIN identities i ON i.user_id = u.id
+WHERE u.id = $1
+ORDER BY i.provider, i.created_at
+`
+
+type SignInMethodsRow struct {
+	HasPassword bool
+	Provider    pgtype.Text
+	CreatedAt   pgtype.Timestamptz
+}
+
+// Whether an account has a password, and its linked providers, for Settings: one row with NULL
+// provider when none is linked, no row for an unknown account.
+func (q *Queries) SignInMethods(ctx context.Context, userID pgtype.UUID) ([]SignInMethodsRow, error) {
+	rows, err := q.db.Query(ctx, signInMethods, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []SignInMethodsRow
+	for rows.Next() {
+		var i SignInMethodsRow
+		if err := rows.Scan(&i.HasPassword, &i.Provider, &i.CreatedAt); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const staleCalls = `-- name: StaleCalls :many
@@ -1866,6 +3671,20 @@ func (q *Queries) TouchCall(ctx context.Context, arg TouchCallParams) error {
 	return err
 }
 
+const touchIdentity = `-- name: TouchIdentity :exec
+UPDATE identities SET last_used_at = now() WHERE provider = $1 AND subject = $2
+`
+
+type TouchIdentityParams struct {
+	Provider string
+	Subject  string
+}
+
+func (q *Queries) TouchIdentity(ctx context.Context, arg TouchIdentityParams) error {
+	_, err := q.db.Exec(ctx, touchIdentity, arg.Provider, arg.Subject)
+	return err
+}
+
 const touchProjectKey = `-- name: TouchProjectKey :exec
 UPDATE project_keys SET last_used_at = now()
 WHERE key_id = $1 AND (last_used_at IS NULL OR last_used_at < now() - interval '1 minute')
@@ -1889,14 +3708,201 @@ func (q *Queries) TransactionTime(ctx context.Context) (pgtype.Timestamptz, erro
 	return at, err
 }
 
+const updateAccountProfile = `-- name: UpdateAccountProfile :one
+UPDATE users SET display_name = $1, profile_revision = profile_revision + 1
+WHERE id = $2 AND profile_revision = $3
+RETURNING display_name, profile_revision
+`
+
+type UpdateAccountProfileParams struct {
+	DisplayName      pgtype.Text
+	UserID           pgtype.UUID
+	ExpectedRevision int64
+}
+
+type UpdateAccountProfileRow struct {
+	DisplayName     pgtype.Text
+	ProfileRevision int64
+}
+
+func (q *Queries) UpdateAccountProfile(ctx context.Context, arg UpdateAccountProfileParams) (UpdateAccountProfileRow, error) {
+	row := q.db.QueryRow(ctx, updateAccountProfile, arg.DisplayName, arg.UserID, arg.ExpectedRevision)
+	var i UpdateAccountProfileRow
+	err := row.Scan(&i.DisplayName, &i.ProfileRevision)
+	return i, err
+}
+
+const updateAllowedOrigins = `-- name: UpdateAllowedOrigins :one
+UPDATE project_settings SET allowed_origins = $1::text[], allowed_origins_revision = allowed_origins_revision + 1
+WHERE organisation_id= $2 AND project_id= $3 AND allowed_origins_revision= $4
+RETURNING answer_ms, join_ms, tts_start_ms, revision, allowed_origins, allowed_origins_revision
+`
+
+type UpdateAllowedOriginsParams struct {
+	AllowedOrigins   []string
+	OrganisationID   string
+	ProjectID        string
+	ExpectedRevision int64
+}
+
+type UpdateAllowedOriginsRow struct {
+	AnswerMs               float64
+	JoinMs                 float64
+	TtsStartMs             float64
+	Revision               int64
+	AllowedOrigins         []string
+	AllowedOriginsRevision int64
+}
+
+// NULL clears the list, which allows no origin. It moves only the list's own revision, never the
+// thresholds revision the issue engine compares against.
+func (q *Queries) UpdateAllowedOrigins(ctx context.Context, arg UpdateAllowedOriginsParams) (UpdateAllowedOriginsRow, error) {
+	row := q.db.QueryRow(ctx, updateAllowedOrigins,
+		arg.AllowedOrigins,
+		arg.OrganisationID,
+		arg.ProjectID,
+		arg.ExpectedRevision,
+	)
+	var i UpdateAllowedOriginsRow
+	err := row.Scan(
+		&i.AnswerMs,
+		&i.JoinMs,
+		&i.TtsStartMs,
+		&i.Revision,
+		&i.AllowedOrigins,
+		&i.AllowedOriginsRevision,
+	)
+	return i, err
+}
+
+const updateCallMetadata = `-- name: UpdateCallMetadata :one
+UPDATE calls SET tags = $1, archived = $2, metadata_revision = metadata_revision + 1
+WHERE organisation_id = $3 AND project_id = $4 AND id = $5
+AND metadata_revision = $6
+RETURNING tags, archived, metadata_revision
+`
+
+type UpdateCallMetadataParams struct {
+	Tags             []string
+	Archived         bool
+	OrganisationID   string
+	ProjectID        string
+	CallID           pgtype.UUID
+	ExpectedRevision int64
+}
+
+type UpdateCallMetadataRow struct {
+	Tags             []string
+	Archived         bool
+	MetadataRevision int64
+}
+
+func (q *Queries) UpdateCallMetadata(ctx context.Context, arg UpdateCallMetadataParams) (UpdateCallMetadataRow, error) {
+	row := q.db.QueryRow(ctx, updateCallMetadata,
+		arg.Tags,
+		arg.Archived,
+		arg.OrganisationID,
+		arg.ProjectID,
+		arg.CallID,
+		arg.ExpectedRevision,
+	)
+	var i UpdateCallMetadataRow
+	err := row.Scan(&i.Tags, &i.Archived, &i.MetadataRevision)
+	return i, err
+}
+
+const updateIssueMetadata = `-- name: UpdateIssueMetadata :one
+UPDATE issues SET state = COALESCE($1::text, state),
+    decided_at = CASE WHEN $1::text IS NULL THEN decided_at ELSE now() END,
+    reviewed_evidence_revision = CASE WHEN $1::text IS NULL THEN reviewed_evidence_revision ELSE $2 END,
+    tags = $3, archived = $4, metadata_revision = metadata_revision + 1
+WHERE organisation_id = $5 AND project_id = $6 AND id = $7
+AND metadata_revision = $8
+AND ($1::text IS NULL OR evidence_revision = $2)
+RETURNING id, state, decided_at, evidence_revision, reviewed_evidence_revision, metadata_revision, tags, archived
+`
+
+type UpdateIssueMetadataParams struct {
+	NewState             pgtype.Text
+	SeenEvidenceRevision int64
+	Tags                 []string
+	Archived             bool
+	OrganisationID       string
+	ProjectID            string
+	ID                   string
+	ExpectedRevision     int64
+}
+
+type UpdateIssueMetadataRow struct {
+	ID                       string
+	State                    string
+	DecidedAt                pgtype.Timestamptz
+	EvidenceRevision         int64
+	ReviewedEvidenceRevision int64
+	MetadataRevision         int64
+	Tags                     []string
+	Archived                 bool
+}
+
+func (q *Queries) UpdateIssueMetadata(ctx context.Context, arg UpdateIssueMetadataParams) (UpdateIssueMetadataRow, error) {
+	row := q.db.QueryRow(ctx, updateIssueMetadata,
+		arg.NewState,
+		arg.SeenEvidenceRevision,
+		arg.Tags,
+		arg.Archived,
+		arg.OrganisationID,
+		arg.ProjectID,
+		arg.ID,
+		arg.ExpectedRevision,
+	)
+	var i UpdateIssueMetadataRow
+	err := row.Scan(
+		&i.ID,
+		&i.State,
+		&i.DecidedAt,
+		&i.EvidenceRevision,
+		&i.ReviewedEvidenceRevision,
+		&i.MetadataRevision,
+		&i.Tags,
+		&i.Archived,
+	)
+	return i, err
+}
+
+const updateLiveKitCredentials = `-- name: UpdateLiveKitCredentials :execrows
+UPDATE projects SET livekit_api_key = $1, livekit_api_secret_sealed = $2
+WHERE organisation_id = $3 AND id = $4
+`
+
+type UpdateLiveKitCredentialsParams struct {
+	LivekitApiKey          string
+	LivekitApiSecretSealed []byte
+	OrganisationID         string
+	ID                     string
+}
+
+// A project's new LiveKit key and sealed secret; its URL never changes.
+func (q *Queries) UpdateLiveKitCredentials(ctx context.Context, arg UpdateLiveKitCredentialsParams) (int64, error) {
+	result, err := q.db.Exec(ctx, updateLiveKitCredentials,
+		arg.LivekitApiKey,
+		arg.LivekitApiSecretSealed,
+		arg.OrganisationID,
+		arg.ID,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const updatePasswordHash = `-- name: UpdatePasswordHash :execrows
 UPDATE users SET password_hash = $1 WHERE id = $2 AND password_hash = $3
 `
 
 type UpdatePasswordHashParams struct {
-	PasswordHash string
+	PasswordHash pgtype.Text
 	ID           pgtype.UUID
-	VerifiedHash string
+	VerifiedHash pgtype.Text
 }
 
 // The same password hashed again with current parameters: not a new password, so password_version
@@ -1908,6 +3914,51 @@ func (q *Queries) UpdatePasswordHash(ctx context.Context, arg UpdatePasswordHash
 		return 0, err
 	}
 	return result.RowsAffected(), nil
+}
+
+const updateProjectSettings = `-- name: UpdateProjectSettings :one
+UPDATE project_settings SET answer_ms= $1, join_ms= $2, tts_start_ms= $3, revision = revision + 1
+WHERE organisation_id= $4 AND project_id= $5 AND revision= $6
+RETURNING answer_ms, join_ms, tts_start_ms, revision, allowed_origins, allowed_origins_revision
+`
+
+type UpdateProjectSettingsParams struct {
+	AnswerMs         float64
+	JoinMs           float64
+	TtsStartMs       float64
+	OrganisationID   string
+	ProjectID        string
+	ExpectedRevision int64
+}
+
+type UpdateProjectSettingsRow struct {
+	AnswerMs               float64
+	JoinMs                 float64
+	TtsStartMs             float64
+	Revision               int64
+	AllowedOrigins         []string
+	AllowedOriginsRevision int64
+}
+
+func (q *Queries) UpdateProjectSettings(ctx context.Context, arg UpdateProjectSettingsParams) (UpdateProjectSettingsRow, error) {
+	row := q.db.QueryRow(ctx, updateProjectSettings,
+		arg.AnswerMs,
+		arg.JoinMs,
+		arg.TtsStartMs,
+		arg.OrganisationID,
+		arg.ProjectID,
+		arg.ExpectedRevision,
+	)
+	var i UpdateProjectSettingsRow
+	err := row.Scan(
+		&i.AnswerMs,
+		&i.JoinMs,
+		&i.TtsStartMs,
+		&i.Revision,
+		&i.AllowedOrigins,
+		&i.AllowedOriginsRevision,
+	)
+	return i, err
 }
 
 const upsertCallByJobID = `-- name: UpsertCallByJobID :one
@@ -1984,6 +4035,213 @@ func (q *Queries) UpsertCallByRoomSID(ctx context.Context, arg UpsertCallByRoomS
 	return id, err
 }
 
+const upsertIssueOccurrence = `-- name: UpsertIssueOccurrence :one
+WITH prior AS (
+    SELECT p.active FROM issue_occurrences p
+    WHERE p.organisation_id = $1 AND p.project_id = $2 AND p.issue_id = $3 AND p.source_id = $4
+), up AS (
+INSERT INTO issue_occurrences (organisation_id, project_id, issue_id, source_id, call_id, occurred_at, detail, observed_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7, now())
+ON CONFLICT (organisation_id, project_id, issue_id, source_id) DO UPDATE
+SET detail = EXCLUDED.detail, occurred_at = EXCLUDED.occurred_at, active = true, observed_at = now()
+WHERE NOT issue_occurrences.active OR issue_occurrences.detail IS DISTINCT FROM EXCLUDED.detail
+   OR issue_occurrences.occurred_at IS DISTINCT FROM EXCLUDED.occurred_at
+RETURNING 1
+)
+SELECT EXISTS (SELECT 1 FROM up) AS changed,
+       (EXISTS (SELECT 1 FROM up) AND NOT COALESCE((SELECT active FROM prior), false)) AS fresh
+`
+
+type UpsertIssueOccurrenceParams struct {
+	OrganisationID string
+	ProjectID      string
+	IssueID        string
+	SourceID       string
+	CallID         pgtype.UUID
+	OccurredAt     pgtype.Timestamptz
+	Detail         []byte
+}
+
+type UpsertIssueOccurrenceRow struct {
+	Changed bool
+	Fresh   pgtype.Bool
+}
+
+// changed reports any write; fresh only a new or reactivated occurrence, the one thing that is new evidence.
+func (q *Queries) UpsertIssueOccurrence(ctx context.Context, arg UpsertIssueOccurrenceParams) (UpsertIssueOccurrenceRow, error) {
+	row := q.db.QueryRow(ctx, upsertIssueOccurrence,
+		arg.OrganisationID,
+		arg.ProjectID,
+		arg.IssueID,
+		arg.SourceID,
+		arg.CallID,
+		arg.OccurredAt,
+		arg.Detail,
+	)
+	var i UpsertIssueOccurrenceRow
+	err := row.Scan(&i.Changed, &i.Fresh)
+	return i, err
+}
+
+const upsertJobObservation = `-- name: UpsertJobObservation :execrows
+INSERT INTO issue_job_observations (organisation_id, project_id, job_id, room_sid, dispatch_id, agent_name,
+ participant_identity, dispatched_at, status, reported_failed_at, failure_observed_at, observed_at)
+VALUES ($1, $2, $3, $4, $5, $6,
+ $7, $8, $9, $10, $11, $12)
+ON CONFLICT (organisation_id, project_id, job_id) DO UPDATE
+SET agent_name = COALESCE(EXCLUDED.agent_name, issue_job_observations.agent_name),
+ participant_identity = COALESCE(EXCLUDED.participant_identity, issue_job_observations.participant_identity),
+ dispatched_at = COALESCE(EXCLUDED.dispatched_at, issue_job_observations.dispatched_at),
+ status = EXCLUDED.status,
+ reported_failed_at = COALESCE(issue_job_observations.reported_failed_at, EXCLUDED.reported_failed_at),
+ failure_observed_at = COALESCE(issue_job_observations.failure_observed_at, EXCLUDED.failure_observed_at),
+ observed_at = EXCLUDED.observed_at,
+ observation_revision = issue_job_observations.observation_revision + CASE WHEN
+  issue_job_observations.agent_name IS DISTINCT FROM COALESCE(EXCLUDED.agent_name, issue_job_observations.agent_name)
+  OR issue_job_observations.participant_identity IS DISTINCT FROM COALESCE(EXCLUDED.participant_identity, issue_job_observations.participant_identity)
+  OR issue_job_observations.dispatched_at IS DISTINCT FROM COALESCE(EXCLUDED.dispatched_at, issue_job_observations.dispatched_at)
+  OR issue_job_observations.status IS DISTINCT FROM EXCLUDED.status
+  OR (issue_job_observations.reported_failed_at IS NULL AND EXCLUDED.reported_failed_at IS NOT NULL)
+  OR (issue_job_observations.failure_observed_at IS NULL AND EXCLUDED.failure_observed_at IS NOT NULL)
+ THEN 1 ELSE 0 END
+WHERE issue_job_observations.observed_at < EXCLUDED.observed_at
+ AND issue_job_observations.room_sid = EXCLUDED.room_sid AND issue_job_observations.dispatch_id = EXCLUDED.dispatch_id
+`
+
+type UpsertJobObservationParams struct {
+	OrganisationID      string
+	ProjectID           string
+	JobID               string
+	RoomSid             string
+	DispatchID          string
+	AgentName           pgtype.Text
+	ParticipantIdentity pgtype.Text
+	DispatchedAt        pgtype.Timestamptz
+	Status              string
+	ReportedFailedAt    pgtype.Timestamptz
+	FailureObservedAt   pgtype.Timestamptz
+	ObservedAt          pgtype.Timestamptz
+}
+
+func (q *Queries) UpsertJobObservation(ctx context.Context, arg UpsertJobObservationParams) (int64, error) {
+	result, err := q.db.Exec(ctx, upsertJobObservation,
+		arg.OrganisationID,
+		arg.ProjectID,
+		arg.JobID,
+		arg.RoomSid,
+		arg.DispatchID,
+		arg.AgentName,
+		arg.ParticipantIdentity,
+		arg.DispatchedAt,
+		arg.Status,
+		arg.ReportedFailedAt,
+		arg.FailureObservedAt,
+		arg.ObservedAt,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const upsertJobOccurrence = `-- name: UpsertJobOccurrence :one
+WITH prior AS (
+    SELECT p.active FROM issue_occurrences p
+    WHERE p.organisation_id = $1 AND p.project_id = $2 AND p.issue_id = $3 AND p.source_id = $4
+), up AS (
+INSERT INTO issue_occurrences (organisation_id, project_id, issue_id, source_id, source_layer, call_id, occurred_at, detail)
+VALUES ($1, $2, $3, $4, 'jobs', $5, $6, $7)
+ON CONFLICT (organisation_id, project_id, issue_id, source_id) DO UPDATE
+SET detail=EXCLUDED.detail, call_id=EXCLUDED.call_id, occurred_at=EXCLUDED.occurred_at, active=true, observed_at=now()
+WHERE NOT issue_occurrences.active OR issue_occurrences.detail IS DISTINCT FROM EXCLUDED.detail
+ OR issue_occurrences.call_id IS DISTINCT FROM EXCLUDED.call_id OR issue_occurrences.occurred_at IS DISTINCT FROM EXCLUDED.occurred_at
+RETURNING 1
+)
+SELECT EXISTS (SELECT 1 FROM up) AS changed,
+       (EXISTS (SELECT 1 FROM up) AND NOT COALESCE((SELECT active FROM prior), false)) AS fresh
+`
+
+type UpsertJobOccurrenceParams struct {
+	OrganisationID string
+	ProjectID      string
+	IssueID        string
+	SourceID       string
+	CallID         pgtype.UUID
+	OccurredAt     pgtype.Timestamptz
+	Detail         []byte
+}
+
+type UpsertJobOccurrenceRow struct {
+	Changed bool
+	Fresh   pgtype.Bool
+}
+
+// changed reports any write; fresh only a new or reactivated occurrence, the one thing that is new evidence.
+func (q *Queries) UpsertJobOccurrence(ctx context.Context, arg UpsertJobOccurrenceParams) (UpsertJobOccurrenceRow, error) {
+	row := q.db.QueryRow(ctx, upsertJobOccurrence,
+		arg.OrganisationID,
+		arg.ProjectID,
+		arg.IssueID,
+		arg.SourceID,
+		arg.CallID,
+		arg.OccurredAt,
+		arg.Detail,
+	)
+	var i UpsertJobOccurrenceRow
+	err := row.Scan(&i.Changed, &i.Fresh)
+	return i, err
+}
+
+const upsertMediaOccurrence = `-- name: UpsertMediaOccurrence :one
+WITH prior AS (
+    SELECT p.active FROM issue_occurrences p
+    WHERE p.organisation_id = $1 AND p.project_id = $2 AND p.issue_id = $3 AND p.source_id = $4
+), up AS (
+INSERT INTO issue_occurrences (organisation_id, project_id, issue_id, source_id, source_layer, call_id, occurred_at, detail)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+ON CONFLICT (organisation_id, project_id, issue_id, source_id) DO UPDATE
+SET call_id=EXCLUDED.call_id
+WHERE issue_occurrences.call_id IS NULL AND EXCLUDED.call_id IS NOT NULL
+ AND issue_occurrences.detail = EXCLUDED.detail AND issue_occurrences.occurred_at IS NOT DISTINCT FROM EXCLUDED.occurred_at
+RETURNING 1
+)
+SELECT EXISTS (SELECT 1 FROM up) AS changed,
+       (EXISTS (SELECT 1 FROM up) AND NOT COALESCE((SELECT active FROM prior), false)) AS fresh
+`
+
+type UpsertMediaOccurrenceParams struct {
+	OrganisationID string
+	ProjectID      string
+	IssueID        string
+	SourceID       string
+	SourceLayer    string
+	CallID         pgtype.UUID
+	OccurredAt     pgtype.Timestamptz
+	Detail         []byte
+}
+
+type UpsertMediaOccurrenceRow struct {
+	Changed bool
+	Fresh   pgtype.Bool
+}
+
+// changed reports any write; fresh only a new or reactivated occurrence, the one thing that is new evidence.
+func (q *Queries) UpsertMediaOccurrence(ctx context.Context, arg UpsertMediaOccurrenceParams) (UpsertMediaOccurrenceRow, error) {
+	row := q.db.QueryRow(ctx, upsertMediaOccurrence,
+		arg.OrganisationID,
+		arg.ProjectID,
+		arg.IssueID,
+		arg.SourceID,
+		arg.SourceLayer,
+		arg.CallID,
+		arg.OccurredAt,
+		arg.Detail,
+	)
+	var i UpsertMediaOccurrenceRow
+	err := row.Scan(&i.Changed, &i.Fresh)
+	return i, err
+}
+
 const upsertParticipant = `-- name: UpsertParticipant :exec
 INSERT INTO call_participants (call_id, participant_sid, identity, kind, joined_at, left_at)
 VALUES ($1, $2, $3, $4, $5, $6)
@@ -2013,6 +4271,51 @@ func (q *Queries) UpsertParticipant(ctx context.Context, arg UpsertParticipantPa
 		arg.LeftAt,
 	)
 	return err
+}
+
+const upsertStandingOccurrence = `-- name: UpsertStandingOccurrence :one
+WITH prior AS (
+    SELECT p.active FROM issue_occurrences p
+    WHERE p.organisation_id = $1 AND p.project_id = $2 AND p.issue_id = $3 AND p.source_id = $4
+), up AS (
+INSERT INTO issue_occurrences (organisation_id, project_id, issue_id, source_id, source_layer, detail)
+VALUES ($1, $2, $3, $4, $5, $6)
+ON CONFLICT (organisation_id, project_id, issue_id, source_id) DO UPDATE
+SET detail = EXCLUDED.detail, active = true, observed_at = now()
+WHERE NOT issue_occurrences.active OR issue_occurrences.detail IS DISTINCT FROM EXCLUDED.detail
+RETURNING 1
+)
+SELECT EXISTS (SELECT 1 FROM up) AS changed,
+       (EXISTS (SELECT 1 FROM up) AND NOT COALESCE((SELECT active FROM prior), false)) AS fresh
+`
+
+type UpsertStandingOccurrenceParams struct {
+	OrganisationID string
+	ProjectID      string
+	IssueID        string
+	SourceID       string
+	SourceLayer    string
+	Detail         []byte
+}
+
+type UpsertStandingOccurrenceRow struct {
+	Changed bool
+	Fresh   pgtype.Bool
+}
+
+// changed reports any write; fresh only a new or reactivated occurrence, the one thing that is new evidence.
+func (q *Queries) UpsertStandingOccurrence(ctx context.Context, arg UpsertStandingOccurrenceParams) (UpsertStandingOccurrenceRow, error) {
+	row := q.db.QueryRow(ctx, upsertStandingOccurrence,
+		arg.OrganisationID,
+		arg.ProjectID,
+		arg.IssueID,
+		arg.SourceID,
+		arg.SourceLayer,
+		arg.Detail,
+	)
+	var i UpsertStandingOccurrenceRow
+	err := row.Scan(&i.Changed, &i.Fresh)
+	return i, err
 }
 
 const useInvitation = `-- name: UseInvitation :one
@@ -2054,13 +4357,44 @@ SELECT id, email, password_hash, password_version FROM users WHERE email = $1
 type UserByEmailRow struct {
 	ID              pgtype.UUID
 	Email           string
-	PasswordHash    string
+	PasswordHash    pgtype.Text
 	PasswordVersion int32
 }
 
 func (q *Queries) UserByEmail(ctx context.Context, email string) (UserByEmailRow, error) {
 	row := q.db.QueryRow(ctx, userByEmail, email)
 	var i UserByEmailRow
+	err := row.Scan(
+		&i.ID,
+		&i.Email,
+		&i.PasswordHash,
+		&i.PasswordVersion,
+	)
+	return i, err
+}
+
+const userByIdentity = `-- name: UserByIdentity :one
+SELECT u.id, u.email, u.password_hash, u.password_version
+FROM identities i JOIN users u ON u.id = i.user_id
+WHERE i.provider = $1 AND i.subject = $2
+`
+
+type UserByIdentityParams struct {
+	Provider string
+	Subject  string
+}
+
+type UserByIdentityRow struct {
+	ID              pgtype.UUID
+	Email           string
+	PasswordHash    pgtype.Text
+	PasswordVersion int32
+}
+
+// The account a provider subject is linked to (decision 0035).
+func (q *Queries) UserByIdentity(ctx context.Context, arg UserByIdentityParams) (UserByIdentityRow, error) {
+	row := q.db.QueryRow(ctx, userByIdentity, arg.Provider, arg.Subject)
+	var i UserByIdentityRow
 	err := row.Scan(
 		&i.ID,
 		&i.Email,

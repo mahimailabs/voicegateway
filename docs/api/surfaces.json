@@ -9,6 +9,7 @@
       "getEgress",
       "getIngress",
       "getProviderProbes",
+      "getProjectConnection",
       "getProjectSettings",
       "getCallStats",
       "listIssues"
@@ -22,6 +23,7 @@
       "getEgress",
       "getIngress",
       "getProviderProbes",
+      "getProjectConnection",
       "getProjectSettings",
       "getCallStats",
       "listIssues"
@@ -35,11 +37,11 @@
       "getEgress",
       "getIngress",
       "getProviderProbes",
+      "getProjectConnection",
       "getProjectSettings",
       "getInvitations",
       "getWorkspaces",
       "getAlertSetup",
-      "getIssueDispositions",
       "getCall",
       "getCallStats",
       "listIssues"
@@ -90,7 +92,6 @@
       "getCloudAgents",
       "getSip",
       "getProjectSettings",
-      "getIssueDispositions",
       "listIssues"
     ],
     "/alerts": [
@@ -98,7 +99,6 @@
       "getCloudAgents",
       "getSip",
       "getProjectSettings",
-      "getIssueDispositions",
       "getEgress",
       "getIngress",
       "getAlertSetup",
@@ -115,7 +115,6 @@
       "getCloudAgents",
       "getEgress",
       "getIngress",
-      "getIssueDispositions",
       "getMediaServer",
       "getProjectSettings",
       "getProviderProbes",
@@ -136,7 +135,6 @@
       "getEgress",
       "getIngress",
       "getInvitations",
-      "getIssueDispositions",
       "getMediaServer",
       "getMembers",
       "getProjectSettings",
@@ -153,6 +151,14 @@
       "removeMember",
       "revokeProjectKey",
       "updateMember"
+    ],
+    "/setup": [
+      "getWorkspaces",
+      "createProject",
+      "getProjectConnection",
+      "listCalls",
+      "getCall",
+      "getMyOrganisationEntitlement"
     ]
   },
   "shell": [
@@ -165,33 +171,36 @@
     "getProjectSettings",
     "getInvitations",
     "getAlertSetup",
-    "getIssueDispositions",
     "getCallStats",
     "listIssues"
   ],
   "widgets": [
     "answer-time",
-    "turn-anatomy",
     "calls",
-    "call",
-    "issues"
+    "issues",
+    "recent-calls",
+    "time-per-turn",
+    "call"
   ],
   "embedReads": {
     "answer-time": [
       "getCallStats"
     ],
-    "turn-anatomy": [
+    "calls": [
       "getCallStats"
     ],
-    "calls": [
+    "issues": [
+      "listIssues"
+    ],
+    "recent-calls": [
       "listCalls"
+    ],
+    "time-per-turn": [
+      "getCallStats"
     ],
     "call": [
       "getCall",
       "getRecordingMedia"
-    ],
-    "issues": [
-      "listIssues"
     ]
   }
 }

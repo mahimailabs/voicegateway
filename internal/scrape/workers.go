@@ -35,6 +35,10 @@ const (
 // larger answer is a failed read, never a truncated one stored as good.
 const maxMetricsBody = 4 << 20
 
+// cAdvisor exports all containers on its host before we select the mapped ID.
+// Keep its larger response bounded independently from individual worker metrics.
+const maxResourceMetricsBody = 32 << 20
+
 // maxEndpointWorkers bounds the workers (nodename series) one endpoint may report. LiveKit Agents
 // reports one per process; more is a failed read.
 const maxEndpointWorkers = 256
@@ -46,6 +50,8 @@ const endpointReads = 8
 // workers on a timer and stores what each worker reported. An endpoint that does not answer is
 // recorded as an unreachable read, never as a worker with no load or no jobs.
 type WorkerScraper struct {
+	// Changed runs only after the read is durably stored, including failed source reads.
+	Changed   func(context.Context, string, string)
 	Projects  Projects
 	Endpoints WorkerEndpoints
 	Samples   WorkerSamples
@@ -234,6 +240,9 @@ func (s *WorkerScraper) Workers(ctx context.Context, p store.Project) error {
 	defer cancel()
 	if err := s.Samples.StoreWorkerRead(sctx, read, reads, samples); err != nil {
 		return fmt.Errorf("store worker read: %w", err)
+	}
+	if s.Changed != nil {
+		s.Changed(ctx, read.OrganisationID, read.ProjectID)
 	}
 	return nil
 }

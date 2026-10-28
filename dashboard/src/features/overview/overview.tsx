@@ -1,5 +1,8 @@
 import { useMemo, useState } from "react"
-import { Link, useNavigate } from "@tanstack/react-router"
+import { Link, Navigate, useNavigate, useRouterState } from "@tanstack/react-router"
+import { roleIn, useSession } from "@/lib/session"
+import { useHosted } from "@/lib/hosted"
+import { choseLater } from "@/features/setup/setup-later"
 import { type UseQueryResult, useQuery } from "@tanstack/react-query"
 import { Brain, CaretRight, Cloud, DownloadSimple, Gauge, HardDrives, Microphone, Phone, PhoneCall, Robot, SpeakerHigh, UploadSimple, Users, WarningCircle } from "@phosphor-icons/react"
 import type { Icon } from "@phosphor-icons/react"
@@ -7,7 +10,7 @@ import { ProviderLogo, providerOfModel } from "@/components/provider-logo"
 import { QueryState, errorText } from "@/components/page-state"
 import { presetRange } from "@/components/time-range-picker"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
-import { ApiError, callStatsQuery, cloudAgentsQuery, egressQuery, ingressQuery, latestCallQuery, mediaServerQuery, providerProbesQuery, sipQuery, workersQuery } from "@/lib/api"
+import { ApiError, callStatsQuery, cloudAgentsQuery, connectionQuery, egressQuery, ingressQuery, latestCallQuery, mediaServerQuery, providerProbesQuery, sipQuery, workersQuery } from "@/lib/api"
 import type { CallStats, CloudAgents, Egress, Ingress, MediaServer, ProviderProbes, Sip, Workers } from "@/lib/api-types"
 import { BUDGET_MS } from "@/lib/thresholds"
 import { cn } from "@/lib/utils"
@@ -23,7 +26,10 @@ import { LiveWire } from "./live-wire"
 import { wireData } from "./wire-data"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
-import { useUrlState } from "@/lib/url-state"
+import { currentScope, useUrlState } from "@/lib/url-state"
+import { useIsPhone } from "@/hooks/use-mobile"
+import { ConnectAgentPanel } from "@/features/connection/connect-agent"
+import { anyError } from "@/features/connection/connection-model"
 
 // The whole stack at a glance: four numbers with their shape, the path a call takes with each part's
 // state, where a turn's time goes, and where the models are. Every figure comes from the same data and
@@ -136,15 +142,43 @@ export function OverviewPage() {
   const ingress = useQuery(ingressQuery())
   const workers = useQuery(workersQuery())
   const probes = useQuery(providerProbesQuery())
+  // First-call setup shows under the page header while the project has no calls yet, or while a
+  // source is in Error (a rotated key or a used-up allowance), judged as of the last read.
+  const latest = useQuery(latestCallQuery())
+  const connection = useQuery(connectionQuery())
+  const empty = latest.isSuccess && latest.data === null
+  // On Cloud an Admin's project with no stored call is in the setup journey, unless they chose to set
+  // up later or asked for Settings (?settings= or /settings), which opens over the console instead.
+  // Members and Viewers, and self-hosted installs, keep the console with the Connect panel below.
+  const install = useHosted()
+  const admin = roleIn(currentScope().org, useSession()) === "Admin"
+  const settingsAsked = useSettingsOpen()
+  if (install === "hosted" && admin && !settingsAsked && connection.data && !connection.data.firstCall && !choseLater(currentScope().org, currentScope().project)) return <Navigate to="/setup" />
+  const setup = empty || (connection.data !== undefined && anyError(connection.data, connection.dataUpdatedAt)) ? <ConnectAgentPanel /> : null
   // The call figures carry the page; without them the page says why, as before.
-  if (!stats.data) return <QueryState icon={Gauge} what="the overview" query={stats} />
-  return <OverviewView stats={stats.data as CallStats} cloud={cloud} media={media} sip={sip} egress={egress} ingress={ingress} workers={workers} probes={probes} />
+  if (stats.data) return <OverviewView stats={stats.data as CallStats} cloud={cloud} media={media} sip={sip} egress={egress} ingress={ingress} workers={workers} probes={probes} setup={setup} />
+  const state = <QueryState icon={Gauge} what="the overview" query={stats} />
+  if (!setup) return state
+  return (
+    <div className="space-y-6">
+      {state}
+      {setup}
+    </div>
+  )
 }
 
 type Reads = { cloud: UseQueryResult<CloudAgents>; media: UseQueryResult<MediaServer>; sip: UseQueryResult<Sip>; egress: UseQueryResult<Egress>; ingress: UseQueryResult<Ingress>; workers: UseQueryResult<Workers>; probes: UseQueryResult<ProviderProbes> }
 
-function OverviewView({ stats, cloud: cloudRead, media, sip: sipQ, egress: egressQ, ingress: ingressQ, workers: workersQ, probes: probesQ }: { stats: CallStats } & Reads) {
+// Settings is open over the page: ?settings= on any page, or the /settings route.
+const useSettingsOpen = () => useRouterState({ select: (s) => s.location.pathname === "/settings" || (s.location.search as Record<string, unknown>).settings !== undefined })
+
+function OverviewView({ stats, cloud: cloudRead, media, sip: sipQ, egress: egressQ, ingress: ingressQ, workers: workersQ, probes: probesQ, setup }: { stats: CallStats; setup: React.ReactNode } & Reads) {
   const navigate = useNavigate()
+  // Phones have no room for the globe. A hidden globe still draws every frame, so it is not mounted.
+  const phone = useIsPhone()
+  // The globe's WebGL setup holds the main thread for seconds where rendering is in software (no
+  // GPU), so it is not built under the Settings modal, which covers it; it appears when Settings closes.
+  const settingsOpen = useSettingsOpen()
   const [pick, setPick] = useUrlState("agent", "all")
   const [open, setOpen] = useState(false)
   const rooms = useMemo<MediaServerData | null>(() => (media.data ? fromContract(media.data) : null), [media.data])
@@ -213,6 +247,7 @@ function OverviewView({ stats, cloud: cloudRead, media, sip: sipQ, egress: egres
           {`${rooms ? `${plural(rooms.rooms.length, "room")} watched · ` : ""}${stats.callCount === null ? "calls unknown" : `${plural(stats.callCount, "call")} captured`} in the last 7 days`}
         </span>
       </header>
+      {setup}
 
       <div className="grid gap-6 lg:grid-cols-[300px_minmax(0,1fr)]">
         <section className="flex flex-col items-center justify-center rounded-2xl border bg-background px-5 pt-4 pb-5">
@@ -394,9 +429,11 @@ function OverviewView({ stats, cloud: cloudRead, media, sip: sipQ, egress: egres
             <Unavailable query={probesQ} />
           ) : (
           <div className="flex items-center gap-4">
-            <div className="hidden shrink-0 overflow-hidden rounded-xl bg-muted/40 sm:block">
-              <ProviderGlobe probes={probe} size={210} />
-            </div>
+            {!phone && (
+              <div className="size-[210px] shrink-0 overflow-hidden rounded-xl bg-muted/40">
+                {!settingsOpen && <ProviderGlobe probes={probe} size={210} />}
+              </div>
+            )}
             <ul className="min-w-0 flex-1 space-y-3">
               {probe.endpoints.map((e) => {
                 const I = roleIcon[e.role] ?? HardDrives

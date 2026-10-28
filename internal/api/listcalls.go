@@ -88,7 +88,7 @@ type channelCount struct {
 type answerTotals struct {
 	Turns           *int64    `json:"turns"`
 	OverBudget      *int64    `json:"overBudget"`
-	BudgetMs        int       `json:"budgetMs"`
+	BudgetMs        float64   `json:"budgetMs"`
 	P50Ms           *float64  `json:"p50Ms"`
 	ValuesMs        []float64 `json:"valuesMs"`
 	ValuesTruncated bool      `json:"valuesTruncated"`
@@ -129,15 +129,37 @@ func (a *API) listCalls(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	q := r.URL.Query()
+	// SDK fields are the agent's own data, so an embed token without the content opt-in cannot
+	// probe them through the filter (decision 0034).
+	if p, _ := store.PrincipalFrom(ctx); p.Embed != nil && !p.Embed.Content && q.Has("field") {
+		writeError(w, r, http.StatusForbidden, codeForbidden, "this embed token does not share transcripts, audio or call fields")
+		return
+	}
 	f, limit, err := a.parseList(org, project, q)
 	if err != nil {
 		writeError(w, r, http.StatusBadRequest, codeInvalidRequest, err.Error())
 		return
 	}
 
+	settings, ok := a.readSettings(w, r)
+	if !ok {
+		return
+	}
+	f.BudgetMs = settings.Thresholds.AnswerMs
+	if a.Metadata == nil {
+		writeError(w, r, http.StatusServiceUnavailable, codeSourceUnavailable, "call metadata unavailable")
+		return
+	}
+	metadataRevision, err := a.Metadata.CallMetadataRevision(ctx, org, project)
+	if err != nil {
+		a.fail(w, r, err, "project not found")
+		return
+	}
+	f.MetadataRevision = &metadataRevision
+
 	// The snapshot is kept server-side under a short id, so the token the console carries in its
 	// URL stays small; it is bound to the scope and filters it was taken for.
-	filters := fingerprint(org, project, q, "")
+	filters := fingerprint(org, project, q, "", settings.Revision, metadataRevision)
 	var (
 		snap   store.ListSnapshot
 		totals callTotals
@@ -165,7 +187,7 @@ func (a *API) listCalls(w http.ResponseWriter, r *http.Request) {
 	}
 	if cursorToken != "" {
 		var c cursor
-		if err := decode(cursorToken, &c); err != nil || c.Bound != fingerprint(org, project, q, token) {
+		if err := decode(cursorToken, &c); err != nil || c.Bound != fingerprint(org, project, q, token, settings.Revision, metadataRevision) {
 			writeError(w, r, http.StatusBadRequest, codeInvalidRequest, "cursor was issued for other filters, sort, order or snapshot")
 			return
 		}
@@ -174,6 +196,10 @@ func (a *API) listCalls(w http.ResponseWriter, r *http.Request) {
 
 	first := token == ""
 	rows, pageTotals, at, err := a.Calls.ListCalls(ctx, f, after, limit+1, first, maxValues)
+	if errors.Is(err, store.ErrMetadataSnapshot) {
+		writeError(w, r, http.StatusBadRequest, codeInvalidRequest, "call metadata changed; restart pagination")
+		return
+	}
 	if err != nil {
 		a.fail(w, r, err, "")
 		return
@@ -192,7 +218,7 @@ func (a *API) listCalls(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	bound := fingerprint(org, project, q, token)
+	bound := fingerprint(org, project, q, token, settings.Revision, metadataRevision)
 
 	out := callPage{Items: make([]callSummary, 0, min(len(rows), limit)), Page: page{Snapshot: token}, Totals: totals}
 	for i, row := range rows {
@@ -213,7 +239,7 @@ func (a *API) listCalls(w http.ResponseWriter, r *http.Request) {
 // parseList reads the operation's query parameters into a filter. Any value outside its schema
 // is errBadRequest.
 func (a *API) parseList(org, project string, q url.Values) (store.CallFilter, int, error) {
-	f := store.CallFilter{OrganisationID: org, ProjectID: project, SortBy: "startedAt", Descending: true, BudgetMs: float64(a.budget())}
+	f := store.CallFilter{OrganisationID: org, ProjectID: project, SortBy: "startedAt", Descending: true}
 	bad := func(format string, args ...any) (store.CallFilter, int, error) {
 		return store.CallFilter{}, 0, fmt.Errorf("%w: "+format, append([]any{errBadRequest}, args...)...)
 	}
@@ -293,9 +319,32 @@ func (a *API) parseList(org, project string, q url.Values) (store.CallFilter, in
 	if err != nil {
 		return bad("%v", err)
 	}
-	// No stored value can satisfy these yet: every call's issues are unknown, and the server holds
-	// no tags, archive or recordings. archived=false and recorded=false match every call.
-	f.MatchNone = len(issueFilter) > 0 || len(tags) > 0 || (archived != nil && *archived) || (recorded != nil && *recorded)
+	// Issue filters still have no stored value; recording and metadata filters are persisted.
+	f.Tags, err = store.NormalizeTags(tags)
+	if err != nil {
+		return bad("invalid tag filter")
+	}
+	f.Archived = archived
+	f.Recorded = recorded
+	f.MatchNone = len(issueFilter) > 0
+	// field=key:value keeps calls whose SDK fields hold every pair; one key asked for with two values
+	// matches nothing.
+	if raw := q["field"]; len(raw) > 0 {
+		if len(raw) > maxFieldFilters {
+			return bad("at most %d field filters", maxFieldFilters)
+		}
+		f.Fields = make(map[string]string, len(raw))
+		for _, kv := range raw {
+			k, v, ok := strings.Cut(kv, ":")
+			if !ok || !fieldKey.MatchString(k) || len(v) > 256 {
+				return bad("field must be key:value, the key 1 to 64 of a-z, 0-9, _, . and -")
+			}
+			if old, seen := f.Fields[k]; seen && old != v {
+				f.MatchNone = true
+			}
+			f.Fields[k] = v
+		}
+	}
 
 	if v := q.Get("sort"); v != "" {
 		if !slices.Contains(sorts, v) {
@@ -312,16 +361,6 @@ func (a *API) parseList(org, project string, q url.Values) (store.CallFilter, in
 	}
 	return f, limit, nil
 }
-
-func (a *API) budget() int {
-	if a.AnswerBudgetMs > 0 {
-		return a.AnswerBudgetMs
-	}
-	return defaultAnswerBudgetMs
-}
-
-// defaultAnswerBudgetMs is the console's own default answer budget (dashboard/src/lib/thresholds.ts).
-const defaultAnswerBudgetMs = 1500
 
 func enums(q url.Values, name string, allowed []string) ([]string, error) {
 	vs := q[name]
@@ -347,7 +386,7 @@ func optionalBool(q url.Values, name string) (*bool, error) {
 
 // fingerprint binds a snapshot to the scope and filters it was taken for, and a cursor to those
 // plus its snapshot id: every query parameter except the paging ones, in a canonical order.
-func fingerprint(org, project string, q url.Values, snapshotID string) string {
+func fingerprint(org, project string, q url.Values, snapshotID string, settingsRevision int64, metadataRevisions ...int64) string {
 	keys := make([]string, 0, len(q))
 	for k := range q {
 		if k != "cursor" && k != "snapshot" && k != "limit" {
@@ -362,7 +401,10 @@ func fingerprint(org, project string, q url.Values, snapshotID string) string {
 		slices.Sort(vs)
 		_, _ = fmt.Fprintf(h, "%s=%s\n", k, strings.Join(vs, "\x00"))
 	}
-	_, _ = fmt.Fprintf(h, "snapshot=%s\n", snapshotID)
+	_, _ = fmt.Fprintf(h, "snapshot=%s\nsettingsRevision=%d\n", snapshotID, settingsRevision)
+	for _, revision := range metadataRevisions {
+		_, _ = fmt.Fprintf(h, "metadataRevision=%d\n", revision)
+	}
 	return hex.EncodeToString(h.Sum(nil))[:24]
 }
 
@@ -399,7 +441,7 @@ func toSummary(r store.CallListRow) callSummary {
 		ID: r.ID, Room: r.RoomName, RoomSID: text(r.RoomSID), StartedAt: r.StartAt, EndedAt: r.EndedAt,
 		DurationSeconds: r.DurationSeconds, EndState: r.EndState, Channel: r.Channel, Pipeline: r.Pipeline,
 		Models: r.Models, AgentKey: r.AgentKey, TurnCount: r.TurnCount, AnswerMs: r.AnswerMs, AnswerMsMedian: r.AnswerMsMedian,
-		Issues: issueCount{Titles: []string{}}, Tags: []string{},
+		Issues: issueCount{Titles: []string{}}, Tags: append([]string{}, r.Metadata.Tags...), Archived: r.Metadata.Archived, Recorded: r.Recorded,
 	}
 	if s.Models == nil {
 		s.Models = []string{}
@@ -415,11 +457,12 @@ func toTotals(t *store.CallTotals, budget float64) callTotals {
 	n := func(v int64) *int64 { return &v }
 	out := callTotals{
 		CallCount: n(t.CallCount),
+		Recorded:  n(t.Recorded),
 		// Console and local are null, not 0: no stored source tells those channels apart yet, the
 		// same rule getCallStats follows.
 		ByChannel: channelCount{Phone: n(t.Phone), Web: n(t.Web), Unknown: n(t.Unknown)},
 		Answers: answerTotals{
-			Turns: n(t.AnswerTurns), OverBudget: n(t.OverBudget), BudgetMs: int(budget), P50Ms: t.P50Ms,
+			Turns: n(t.AnswerTurns), OverBudget: n(t.OverBudget), BudgetMs: budget, P50Ms: t.P50Ms,
 			ValuesMs: t.ValuesMs, ValuesTruncated: t.ValuesTruncated,
 		},
 	}
@@ -428,3 +471,9 @@ func toTotals(t *store.CallTotals, budget float64) callTotals {
 	}
 	return out
 }
+
+// fieldKey is an SDK call field's key (sdk/contract/v1.schema.json).
+var fieldKey = regexp.MustCompile(`^[a-z0-9_.-]{1,64}$`)
+
+// maxFieldFilters bounds the field filters of one listCalls request.
+const maxFieldFilters = 16

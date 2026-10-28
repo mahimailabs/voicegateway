@@ -1,9 +1,0 @@
-.page { max-width: 824px; margin: auto; padding: 80px 32px 96px; }
-.page h1 { font-size: clamp(38px, 5vw, 58px); font-weight: 600; letter-spacing: -.035em; line-height: 1.07; margin: 0; }
-.page h1 span { color: var(--color-muted); }
-.lead { font-size: 19px; line-height: 1.65; color: var(--color-muted); margin: 28px 0 56px; }
-.page section { border-top: 1px solid var(--color-border); padding: 28px 0; }
-.page h2 { font-size: 23px; font-weight: 600; letter-spacing: -.02em; margin: 0 0 14px; }
-.page section p { font-size: 16px; color: var(--color-muted); line-height: 1.7; max-width: 70ch; }
-.page > a { margin-top: 16px; }
-@media (max-width: 600px) { .page { padding: 56px 20px 64px; } .lead { font-size: 17px; margin-bottom: 40px; } }

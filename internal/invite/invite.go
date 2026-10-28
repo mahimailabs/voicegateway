@@ -37,6 +37,8 @@ var (
 	ErrOtherOrganisations = store.ErrOtherOrganisations
 	// ErrWrongPassword means an existing account's password did not match.
 	ErrWrongPassword = store.ErrWrongPassword
+	// ErrEmailMismatch means a provider proved emails, none of them the invited one.
+	ErrEmailMismatch = store.ErrEmailMismatch
 )
 
 // TooManyAttempts is sign-in's limit, reached through accept: try again after Wait.
@@ -47,6 +49,7 @@ type Store interface {
 	CreateInvitation(ctx context.Context, in store.NewInvitation) (store.Invitation, error)
 	InvitationByIdempotencyKey(ctx context.Context, organisationID, key string) (store.Invitation, error)
 	MarkInvitationEmailed(ctx context.Context, id string) error
+	MarkInvitationNotEmailed(ctx context.Context, id string) error
 	OpenInvitation(ctx context.Context, tokenSHA256 []byte) (store.OpenInvitation, error)
 	AcceptInvitation(ctx context.Context, tokenSHA256 []byte, passwordHash, existingUserID string) (string, error)
 	OrganisationName(ctx context.Context, id string) (string, error)
@@ -99,7 +102,21 @@ type Created struct {
 	Invitation store.Invitation
 	Link       string // <BaseURL>/invite#<token> only without a Mailer; empty with one, and on an idempotent repeat
 	Emailed    bool   // true when the send succeeded; false without SMTP, or when it failed
+	// EmailUnknown means SMTP acceptance is uncertain or a prior outcome was never recorded.
+	// The email may have been sent. Emailed is then false and means nothing.
+	EmailUnknown bool
+	Repeat       bool // true when an idempotency key made this invitation on an earlier call
 }
+
+// Delivery timings. A send runs apart from the request that asked for it, so a caller that hangs
+// up never leaves its outcome half known. A repeat that finds the first call's send in flight
+// waits for its outcome until sendLease has passed since the send began.
+const (
+	sendTimeout   = 30 * time.Second
+	recordTimeout = 10 * time.Second
+	sendLease     = sendTimeout + recordTimeout + 5*time.Second
+	repeatPoll    = 100 * time.Millisecond
+)
 
 // Pending is what the accept screen shows of a link: its kind ("invite" or "reset"), the
 // organisation's name, the role (nil for a reset) and the email.
@@ -116,8 +133,9 @@ var roles = map[string]bool{"admin": true, "member": true, "viewer": true}
 //
 // With in.IdempotencyKey set, a repeat call with the same key returns the invitation the first
 // call made, with Emailed as it was and Link empty (only the token's hash is kept), and revokes
-// nothing, so a retry never kills a link already emailed. The same key with another email or
-// role is ErrInvalid.
+// nothing, so a retry never kills a link already emailed. A repeat during the first call's send
+// waits for its outcome; one whose outcome was never recorded has EmailUnknown set. The same key
+// with another email or role is ErrInvalid.
 //
 // Errors: ErrInvalid (email, role, empty BaseURL, or a reused key), ErrAlreadyMember, and
 // store.ErrNotFound for an unknown organisation.
@@ -151,6 +169,11 @@ func (s *Service) Create(ctx context.Context, in Invite) (Created, error) {
 		key := in.IdempotencyKey
 		n.IdempotencyKey = &key
 	}
+	if s.Mailer != nil {
+		// Stored with the row, so a repeat that arrives during the send knows to wait for it.
+		at := s.now()
+		n.EmailStartedAt = &at
+	}
 	inv, err := s.Store.CreateInvitation(ctx, n)
 	if errors.Is(err, store.ErrIdempotencyConflict) {
 		// A parallel call with the same key stored first: answer as its repeat.
@@ -168,12 +191,13 @@ func (s *Service) Create(ctx context.Context, in Invite) (Created, error) {
 	}
 	link := linkOf(in.BaseURL, token)
 	body := fmt.Sprintf("You are invited to join %s on VoiceGateway as %s.\n\nOpen this link to accept:\n%s\n\nIt expires on %s.\n",
-		org, role, link, inv.ExpiresAt.UTC().Format("2 January 2006 at 15:04 UTC"))
+		org, strings.ToUpper(role[:1])+role[1:], link, inv.ExpiresAt.UTC().Format("2 January 2006 at 15:04 UTC"))
 	return s.deliver(ctx, inv, message{to: email, subject: "Join " + org + " on VoiceGateway", body: body}, link)
 }
 
 // repeat answers a call whose idempotency key made an invitation already. done is false when the
-// key is new.
+// key is new. When the first call's send is still in flight, it waits for the outcome, so a repeat
+// never reports a send as failed while it may still succeed.
 func (s *Service) repeat(ctx context.Context, in Invite, email string) (Created, bool, error) {
 	inv, err := s.Store.InvitationByIdempotencyKey(ctx, in.OrganisationID, in.IdempotencyKey)
 	if errors.Is(err, store.ErrNotFound) {
@@ -185,7 +209,24 @@ func (s *Service) repeat(ctx context.Context, in Invite, email string) (Created,
 	if inv.Kind != "invite" || inv.Email != email || inv.Role == nil || *inv.Role != in.Role {
 		return Created{}, true, ErrInvalid
 	}
-	return Created{Invitation: inv, Emailed: inv.EmailedAt != nil}, true, nil
+	tick := time.NewTicker(repeatPoll)
+	defer tick.Stop()
+	for sending(inv) && s.now().Before(inv.EmailStartedAt.Add(sendLease)) {
+		select {
+		case <-ctx.Done():
+			return Created{}, true, ctx.Err()
+		case <-tick.C:
+		}
+		if inv, err = s.Store.InvitationByIdempotencyKey(ctx, in.OrganisationID, in.IdempotencyKey); err != nil {
+			return Created{}, true, err
+		}
+	}
+	return Created{Invitation: inv, Emailed: inv.EmailedAt != nil, EmailUnknown: sending(inv), Repeat: true}, true, nil
+}
+
+// sending reports a send that began and has no recorded outcome.
+func sending(inv store.Invitation) bool {
+	return inv.EmailStartedAt != nil && inv.EmailedAt == nil && inv.EmailFailedAt == nil
 }
 
 // ResetLink makes a password reset link for userID, replacing any open one for them. Like Create,
@@ -227,10 +268,15 @@ func (s *Service) ResetLink(ctx context.Context, organisationID, userID string, 
 		return Created{}, err
 	}
 	uid := m.UserID
-	inv, err := s.Store.CreateInvitation(ctx, store.NewInvitation{
+	n := store.NewInvitation{
 		Kind: "reset", OrganisationID: organisationID, Email: m.Email, UserID: &uid, InvitedBy: by,
 		TokenSHA256: sum, ExpiresAt: s.now().Add(ResetLifetime),
-	})
+	}
+	if s.Mailer != nil {
+		at := s.now()
+		n.EmailStartedAt = &at
+	}
+	inv, err := s.Store.CreateInvitation(ctx, n)
 	if err != nil {
 		return Created{}, err
 	}
@@ -241,16 +287,34 @@ func (s *Service) ResetLink(ctx context.Context, organisationID, userID string, 
 }
 
 // deliver emails a new link when a Mailer is set, and otherwise returns it. A failed send logs its
-// class and the invitation id only; the invitation stands.
+// class and the invitation id only; the invitation stands. The send and the record of its outcome
+// run apart from ctx's cancellation, each under its own timeout: a caller that hangs up mid-send
+// must not leave an email sent but recorded as unsent, which a repeat would report as not sent.
+// When the record cannot be written, the row keeps only its start, and a repeat reports the
+// outcome as unknown rather than as a failure.
 func (s *Service) deliver(ctx context.Context, inv store.Invitation, m message, link string) (Created, error) {
 	if s.Mailer == nil {
 		return Created{Invitation: inv, Link: link}, nil
 	}
-	if err := s.Mailer.Send(ctx, m.to, m.subject, m.body); err != nil {
-		s.Log.Warn("invite: could not send the email", "invitation_id", inv.ID, "class", classOf(err))
+	detached := context.WithoutCancel(ctx)
+	sendCtx, cancel := context.WithTimeout(detached, sendTimeout)
+	sendErr := s.Mailer.Send(sendCtx, m.to, m.subject, m.body)
+	cancel()
+	recordCtx, cancel := context.WithTimeout(detached, recordTimeout)
+	defer cancel()
+	if sendErr != nil {
+		var uncertain interface{ DeliveryUnknown() bool }
+		if errors.As(sendErr, &uncertain) && uncertain.DeliveryUnknown() {
+			s.Log.Warn("invite: email outcome unknown", "invitation_id", inv.ID)
+			return Created{Invitation: inv, EmailUnknown: true}, nil
+		}
+		s.Log.Warn("invite: could not send the email", "invitation_id", inv.ID, "class", classOf(sendErr))
+		if err := s.Store.MarkInvitationNotEmailed(recordCtx, inv.ID); err != nil {
+			s.Log.Warn("invite: could not record the failed email", "invitation_id", inv.ID, "err", err)
+		}
 		return Created{Invitation: inv}, nil
 	}
-	if err := s.Store.MarkInvitationEmailed(ctx, inv.ID); err != nil {
+	if err := s.Store.MarkInvitationEmailed(recordCtx, inv.ID); err != nil {
 		s.Log.Warn("invite: could not record the sent email", "invitation_id", inv.ID, "err", err)
 	} else {
 		at := s.now()
@@ -330,6 +394,42 @@ func (s *Service) Accept(ctx context.Context, token, password string, limit Sign
 	return p, nil
 }
 
+// AcceptVerified uses an invite link for someone a provider proved owns email (phase 06h): it must
+// be the invited email. It joins the account with that email, or creates one with no password,
+// which only a provider or a later reset link signs in. tokenSHA256 is the link's token hashed, as
+// sign-in kept it across the provider's redirect. A reset link is ErrInvalidLink: it sets a
+// password, which a provider cannot. Errors: ErrInvalidLink, and ErrEmailMismatch.
+func (s *Service) AcceptVerified(ctx context.Context, tokenSHA256 []byte, email string) (store.Principal, error) {
+	link, err := s.Store.OpenInvitation(ctx, tokenSHA256)
+	if errors.Is(err, store.ErrNotFound) {
+		return store.Principal{}, ErrInvalidLink
+	}
+	if err != nil {
+		return store.Principal{}, err
+	}
+	if link.Kind != "invite" {
+		return store.Principal{}, ErrInvalidLink
+	}
+	if !strings.EqualFold(email, link.Email) {
+		return store.Principal{}, ErrEmailMismatch
+	}
+	// Two tries at most: a parallel accept may create the account between the read and the insert.
+	for range 2 {
+		u, err := s.Store.UserByEmail(ctx, link.Email)
+		switch {
+		case err == nil:
+			return s.use(ctx, link, tokenSHA256, "", u.ID)
+		case !errors.Is(err, store.ErrNotFound):
+			return store.Principal{}, err
+		}
+		p, err := s.use(ctx, link, tokenSHA256, "", "")
+		if !errors.Is(err, store.ErrUserExists) {
+			return p, err
+		}
+	}
+	return store.Principal{}, ErrInvalidLink
+}
+
 // forget clears the reserved tries. The link is already decided, so a failure only logs.
 func (s *Service) forget(ctx context.Context, success func(context.Context) error, id string) {
 	if err := success(ctx); err != nil {
@@ -343,6 +443,10 @@ func (s *Service) forget(ctx context.Context, success func(context.Context) erro
 func (s *Service) acceptInvite(ctx context.Context, link store.OpenInvitation, sum []byte, password string, retry bool) (store.Principal, error) {
 	u, err := s.Store.UserByEmail(ctx, link.Email)
 	switch {
+	case err == nil && u.PasswordHash == "":
+		// An account made through Google or GitHub (decision 0035) has no password to prove; it
+		// joins with its provider instead.
+		return store.Principal{}, ErrWrongPassword
 	case err == nil:
 		ok, err := s.Verify(ctx, password, u.PasswordHash)
 		if err != nil {

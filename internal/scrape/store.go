@@ -80,7 +80,9 @@ type LiveKit interface {
 // Dial returns a LiveKit client for one project.
 type Dial func(url, apiKey, apiSecret string) LiveKit
 
-// DialSDK reads LiveKit through its Go server SDK's own clients.
+// DialSDK reads LiveKit through its Go server SDK's own clients, which dial with the SDK's HTTP
+// client over http.DefaultTransport and fail over between LiveKit Cloud regions. No address guard
+// applies; NewDial(true) gives the guarded client instead.
 func DialSDK(url, apiKey, apiSecret string) LiveKit {
 	return sdkClient{
 		rooms:      lksdk.NewRoomServiceClient(url, apiKey, apiSecret),
@@ -93,16 +95,44 @@ func DialSDK(url, apiKey, apiSecret string) LiveKit {
 	}
 }
 
+// The LiveKit API calls a read makes, as the SDK's clients and the guarded ones in livekit.go both
+// offer them.
+type (
+	roomCalls interface {
+		ListRooms(ctx context.Context, req *livekit.ListRoomsRequest) (*livekit.ListRoomsResponse, error)
+		ListParticipants(ctx context.Context, req *livekit.ListParticipantsRequest) (*livekit.ListParticipantsResponse, error)
+	}
+	dispatchCalls interface {
+		ListDispatch(ctx context.Context, req *livekit.ListAgentDispatchRequest) (*livekit.ListAgentDispatchResponse, error)
+	}
+	sipCalls interface {
+		ListSIPInboundTrunk(ctx context.Context, req *livekit.ListSIPInboundTrunkRequest) (*livekit.ListSIPInboundTrunkResponse, error)
+		ListSIPOutboundTrunk(ctx context.Context, req *livekit.ListSIPOutboundTrunkRequest) (*livekit.ListSIPOutboundTrunkResponse, error)
+		ListSIPDispatchRule(ctx context.Context, req *livekit.ListSIPDispatchRuleRequest) (*livekit.ListSIPDispatchRuleResponse, error)
+	}
+	numberCalls interface {
+		ListPhoneNumbers(ctx context.Context, req *livekit.ListPhoneNumbersRequest) (*livekit.ListPhoneNumbersResponse, error)
+	}
+	egressCalls interface {
+		ListEgress(ctx context.Context, req *livekit.ListEgressRequest) (*livekit.ListEgressResponse, error)
+	}
+	ingressCalls interface {
+		ListIngress(ctx context.Context, req *livekit.ListIngressRequest) (*livekit.ListIngressResponse, error)
+	}
+)
+
 type sdkClient struct {
-	rooms      *lksdk.RoomServiceClient
-	dispatches *lksdk.AgentDispatchClient
-	sip        *lksdk.SIPClient
-	numbers    *lksdk.PhoneNumberClient
-	egress     *lksdk.EgressClient
-	ingress    *lksdk.IngressClient
+	rooms      roomCalls
+	dispatches dispatchCalls
+	sip        sipCalls
+	numbers    numberCalls
+	egress     egressCalls
+	ingress    ingressCalls
 	// The Cloud agents client is made only when a Cloud agents read runs, so a read of any other
-	// layer never resolves the Cloud agents endpoint.
+	// layer never resolves the Cloud agents endpoint. agentOptions is empty for the SDK's own HTTP
+	// client, or names the guarded one.
 	url, apiKey, apiSecret string
+	agentOptions           []lksdk.AgentClientOption
 }
 
 func (c sdkClient) ListRooms(ctx context.Context) ([]*livekit.Room, error) {
@@ -201,7 +231,7 @@ func (c sdkClient) ListIngress(ctx context.Context) ([]*livekit.IngressInfo, err
 // ListAgents lists the project's LiveKit Cloud agents. NewAgentClient never fails in server-sdk-go
 // v2.19.0; its error is still returned in case a later version does.
 func (c sdkClient) ListAgents(ctx context.Context) ([]*livekit.AgentInfo, error) {
-	agents, err := lksdk.NewAgentClient(c.url, c.apiKey, c.apiSecret)
+	agents, err := lksdk.NewAgentClient(c.url, c.apiKey, c.apiSecret, c.agentOptions...)
 	if err != nil {
 		return nil, fmt.Errorf("cloud agents client: %w", err)
 	}
@@ -211,7 +241,7 @@ func (c sdkClient) ListAgents(ctx context.Context) ([]*livekit.AgentInfo, error)
 
 // ListAgentVersions lists one Cloud agent's versions.
 func (c sdkClient) ListAgentVersions(ctx context.Context, agentID string) ([]*livekit.AgentVersion, error) {
-	agents, err := lksdk.NewAgentClient(c.url, c.apiKey, c.apiSecret)
+	agents, err := lksdk.NewAgentClient(c.url, c.apiKey, c.apiSecret, c.agentOptions...)
 	if err != nil {
 		return nil, fmt.Errorf("cloud agents client: %w", err)
 	}

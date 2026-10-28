@@ -16,18 +16,48 @@ import (
 
 // API serves the console's /api/v1 reads and its member writes.
 type API struct {
-	Projects Projects
-	Calls    Calls
-	Traces   Traces
-	Layers   Layers
+	Issues   IssueMetadataStore
+	Metadata CallMetadataStore
+	Settings ProjectSettingsStore
+	// Origins stores the allowed embed origins and Embeds signs embed tokens (decision 0034); without
+	// them those routes answer 503.
+	Origins           EmbedOrigins
+	Embeds            EmbedMinter
+	StorageBucket     string
+	ResourceEndpoints ResourceEndpoints
+	ResourceSamples   ResourceSamples
+	Live              LiveChanges
+	Projects          Projects
+	Calls             Calls
+	Traces            Traces
+	Layers            Layers
 	// Endpoints lists each project's worker metrics endpoints, from Postgres.
 	Endpoints WorkerEndpoints
 	Accounts  Accounts
 	Stats     Stats
 	Keys      Keys
+	// Recordings and Media serve a call's stored recording (phase 07a).
+	Recordings Recordings
+	Media      Media
+	// Connections reads each project's ingestion outcomes and first call; PublicURL,
+	// VOICEGATEWAY_PUBLIC_URL, is the base of the ingestion URLs it shows (empty: unknown).
+	Connections Connections
+	PublicURL   string
 	// Invitations lists and revokes invitations; Inviter makes them and reset links.
 	Invitations Invitations
 	Inviter     Inviter
+	// NewProjects creates projects, their LiveKit secrets sealed: the store voicegateway project add
+	// writes through.
+	NewProjects ProjectCreator
+	// Credentials replaces an existing project's LiveKit key and secret, after VerifyLiveKit proves
+	// them; without it updateProjectLiveKitCredentials is off.
+	Credentials LiveKitCredentials
+	// VerifyLiveKit proves a new project's LiveKit secret before NewProjects stores it; without it
+	// createProject is off.
+	VerifyLiveKit LiveKitVerifier
+	// VerifyBucket proves a bucket a new project brings for its recordings takes writes and deletes
+	// before NewProjects stores it. Without it, createProject refuses a project that brings one.
+	VerifyBucket BucketVerifier
 	// LinkBase is an invitation link's base for a request: VOICEGATEWAY_PUBLIC_URL, or the
 	// request's scheme and Host (auth.Service.LinkBase).
 	LinkBase func(r *http.Request) string
@@ -35,10 +65,10 @@ type API struct {
 	// (auth.NewKey).
 	NewKey func() (keyID string, secretSHA256 []byte, full string, err error)
 	Log    *slog.Logger
-	// AnswerBudgetMs is the answer budget listCalls' totals count against; 0 is the console's
-	// default, 1500 ms. Interim, until thresholds are stored per project.
-	AnswerBudgetMs int
-	Now            func() time.Time
+	Now    func() time.Time
+	// Instance serves the instance API (phase 06e), from ee/instance; with no handler set it is
+	// off, and every /api/v1/instance path answers 404 as if it did not exist.
+	Instance InstanceHandlers
 	// Gate runs before every /api/v1 route: auth.Service.Gate, which identifies a signed-in user or
 	// the interim token (decision 0027).
 	// Nil denies every request, so a router wired without a gate never serves openly.
@@ -56,6 +86,7 @@ func (a *API) Routes() http.Handler {
 	if a.Gate != nil {
 		r.Use(a.Gate)
 	}
+	r.Use(a.Instance.guard)
 	r.Use(requirePrincipal)
 	r.NotFound(func(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, http.StatusNotFound, codeNotFound, "no such API path")
@@ -66,8 +97,18 @@ func (a *API) Routes() http.Handler {
 	// Every route goes through handle, which puts it behind its minimum role in routeAccess.
 	const project = "/api/v1/org/{orgId}/project/{projectId}"
 	handle(r, http.MethodGet, "/api/v1/workspaces", a.getWorkspaces)
+	handle(r, http.MethodGet, project+"/settings", a.getProjectSettings)
+	handle(r, http.MethodPut, project+"/settings", a.updateProjectSettings)
+	handle(r, http.MethodPut, project+"/settings/allowed-origins", a.updateAllowedOrigins)
+	handle(r, http.MethodPost, project+"/embed-tokens", a.createEmbedToken)
 	handle(r, http.MethodGet, project+"/calls", a.listCalls)
+	handle(r, http.MethodGet, project+"/call-tags", a.getCallTags)
+	handle(r, http.MethodGet, project+"/issues", a.listIssues)
+	handle(r, http.MethodGet, project+"/issues/{issueId}/metadata", a.getIssueMetadata)
+	handle(r, http.MethodPut, project+"/issues/{issueId}/metadata", a.updateIssueMetadata)
 	handle(r, http.MethodGet, project+"/calls/{callId}", a.getCall)
+	handle(r, http.MethodGet, project+"/calls/{callId}/metadata", a.getCallMetadata)
+	handle(r, http.MethodPut, project+"/calls/{callId}/metadata", a.updateCallMetadata)
 	handle(r, http.MethodGet, project+"/call-stats", a.getCallStats)
 	handle(r, http.MethodGet, project+"/media-server", a.mediaServer)
 	handle(r, http.MethodGet, project+"/sip", a.sip)
@@ -75,9 +116,15 @@ func (a *API) Routes() http.Handler {
 	handle(r, http.MethodGet, project+"/ingress", a.ingress)
 	handle(r, http.MethodGet, project+"/agents", a.cloudAgents)
 	handle(r, http.MethodGet, project+"/workers", a.workers)
+	handle(r, http.MethodGet, project+"/resources", a.resources)
+	handle(r, http.MethodGet, project+"/live-events", a.liveEvents)
+	handle(r, http.MethodGet, project+"/connection", a.getConnection)
+	handle(r, http.MethodGet, project+"/recordings/{recordingId}", a.getRecordingMedia)
 	handle(r, http.MethodGet, project+"/keys", a.listProjectKeys)
 	handle(r, http.MethodPost, project+"/keys", a.createProjectKey)
 	handle(r, http.MethodDelete, project+"/keys/{keyId}", a.revokeProjectKey)
+	handle(r, http.MethodPost, "/api/v1/org/{orgId}/projects", a.createProject)
+	handle(r, http.MethodPut, project+"/livekit-credentials", a.updateLiveKitCredentials)
 	handle(r, http.MethodGet, "/api/v1/org/{orgId}/members", a.getMembers)
 	handle(r, http.MethodPatch, "/api/v1/org/{orgId}/members/{userId}", a.updateMember)
 	handle(r, http.MethodDelete, "/api/v1/org/{orgId}/members/{userId}", a.removeMember)
@@ -85,6 +132,14 @@ func (a *API) Routes() http.Handler {
 	handle(r, http.MethodGet, "/api/v1/org/{orgId}/invitations", a.getInvitations)
 	handle(r, http.MethodPost, "/api/v1/org/{orgId}/invitations", a.createInvitation)
 	handle(r, http.MethodDelete, "/api/v1/org/{orgId}/invitations/{invitationId}", a.revokeInvitation)
+	handle(r, http.MethodGet, "/api/v1/org/{orgId}/entitlement", optionalEntitlement(a.Instance.GetEntitlement))
+	const instance = "/api/v1/instance/organisations/{orgId}"
+	handle(r, http.MethodPut, instance, a.Instance.PutOrganisation)
+	handle(r, http.MethodGet, instance, a.Instance.GetOrganisation)
+	handle(r, http.MethodPost, instance+"/invitations", a.Instance.CreateOrganisationInvitation)
+	handle(r, http.MethodGet, instance+"/usage", a.Instance.GetOrganisationUsage)
+	handle(r, http.MethodGet, instance+"/entitlement", optionalEntitlement(a.Instance.GetEntitlement))
+	handle(r, http.MethodPut, instance+"/entitlement", optionalEntitlement(a.Instance.PutEntitlement))
 	return r
 }
 

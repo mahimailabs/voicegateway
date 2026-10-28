@@ -1,1 +1,1 @@
-{"title": "Team and keys", "description": "People, roles, API keys and the command line.", "icon": "UsersThree", "root": true, "pages": ["people", "api-keys", "cli"]}
+{"title": "Team and keys", "description": "People, roles, API keys, coding agents, embeds and the command line.", "icon": "UsersThree", "root": true, "pages": ["people", "api-keys", "mcp", "embeds", "cli"]}

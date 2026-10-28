@@ -7,7 +7,33 @@ A fresh session reads this to know where the project stands.
 
 ## Current Phase
 
-Phase 1: the console, UI first. Spec: docs/specs/phase01-console.md.
+Google and GitHub sign-in (2026-10-23, phase 06h, decision 0035): off unless an operator sets a provider's client id and secret. Postgres 00022 adds `identities` and makes `users.password_hash` nullable; `internal/oauth` runs the PKCE code flow through `golang.org/x/oauth2`, with Google's ID token verified by `coreos/go-oidc/v3` and GitHub's primary verified email from its API. A provider signs in only an account linked to its subject, an account with its verified email, or the account an open invitation names; nothing else is created. The sign-in and invite pages show the buttons, Settings shows the password and linked accounts. Checks 1 to 9 pass in a cloud copy against Postgres 16.15; check 10 is a Go end-to-end test through a test Google issuer, since `make dashboard-e2e` runs on the mock API. Decision 0036 adds Auth0 beside them (`VOICEGATEWAY_AUTH0_DOMAIN`, client id and secret), verified with go-oidc like Google and stored as `auth0` by Auth0's user id; check 11 passes. Cloud uses Auth0 and still needs its tenant, the tenant's Google and GitHub connections, and the secrets on the host.
+
+Live operations (2026-10-20): sampled refresh and permission-loss handling merged in #429,
+project-scoped pushed notifications in #430, and real container resource collection in #431
+(81d978ef97ce6051f5753b92e4be1a67243f30ac). Native source, stale/disconnect/recovery,
+HTTP permission and browser checks passed before merge. This roadmap task is complete.
+
+Issue workflows (2026-10-20): call tags/archive merged in #435
+(82c15b084831fb2b66ca253a7789c5416c20939c). The current branch adds persisted call findings,
+scoped issue decisions/tags/archive, revision-safe Undo, snapshot-consistent reads and historical
+backfill without summary rewrites. Targeted native race checks and Go lint pass; 232 frontend and
+88 browser checks passed before the backfill addition, and a clean full final run is still required. The backfill test now explicitly covers a backlog
+larger than one sweep after the full run exposed its original first-batch assumption. Standing
+component evaluation and webhook delivery are unfinished. Complete remains 2/14; do not count
+these partial issue/settings changes as completed tasks.
+
+Call diagnosis (2026-10-19): turn-level latency comparison, trace-clock response breakdown, source-linked speech/tools and reported usage are implemented. Turn navigation stays in the fixed header and bounds comparison to six turns. Realtime calls show speech intervals, derived response gaps and interruptions without inventing STT/TTS stages. SIP termination remains separate evidence. The generic per-call architecture flow and topology were removed.
+
+Capacity UI (2026-10-19): an explicit setup/start/results preview includes generated load, SFU and worker impact, component metrics and a zoomable topology with unknown regions kept separate. Data is synthetic and the preview places no calls. Real runners, attempt/concurrency instrumentation, cancellation and cleanup remain unfinished. See docs/specs/capacity-telemetry-audit.md.
+
+First-call setup (2026-10-21, docs/specs/first-call-setup.md, decision 0033): LiveKit's own uploader is the default agent connection; an optional Python attach() SDK follows for what it cannot do (Mahimai, 2026-10-21; docs/specs/python-sdk.md). examples/livekit-agent is the documented agent (livekit-agents 1.8.8, LiveKit Inference, so its LiveKit values must be a LiveKit Cloud project) with an lk CLI caller, run by `make example-call`. Web records each project's last accepted and refused request per source in Postgres 00019 project_connections, with a reason code (token_missing, key_mismatch, signature_invalid, grant_missing, body_changed, plan_inactive, plan_cap, too_large), throttled to one write per outcome every 30 s through a bounded LRU. getProjectConnection returns the scoped URLs from VOICEGATEWAY_PUBLIC_URL, both sources and the first call from the call index; the console shows a "Connect your agent" panel on an empty project's Overview and in Settings > Connection, polling every 5 s until the first call. Pair's review (2026-10-21) is addressed: a refusal after a recent accept shows as a warning, not Error; a refused token's key is kept only in a LiveKit key's shape; long keys wrap; the plan refusals reuse "Request more capacity"; the docs name VOICEGATEWAY_PUBLIC_URL and `record={"audio": False}`. Checks 3 to 8 and 10 pass (TestConnectionReasons, TestConnectionOtherTenant, TestConnectionRevoked and TestFirstCallIgnoresFixtures on Postgres 16.15; TestConnectionThrottle under synctest; 263 dashboard tests; Playwright and axe on the panel at 375 and 1280 px). Check 1 passed on 2026-10-21: `make example-call` against a fresh self-hosted stack built from this branch (LiveKit Cloud project for the agent) stored call ac1fcfd5-b7b5-4e84-ab99-9ed752879c1a (room example-call-1792549303) with traces, logs, metrics and the session report; its turn (user text, gemma-4-31b-it first token 429 ms, TTS 467 ms) reads back after reload, the panel showed Agent upload Connected and First call stored with its link, Webhook Waiting (no webhook configured), and an upload signed with a wrong secret showed signature_invalid with its fix. The first attempt stored nothing: the agent refused the job at 0.89 CPU load (LiveKit's start-mode default threshold is 0.7), so the example now sets load_threshold 0.95 and the caller waits for the job. Check 2 (a Cloud project) waits for this PR's deploy to cloud-1. Check 9 is the Pair thread's.
+
+Python SDK (2026-10-21, docs/specs/python-sdk.md, decision 0033): an optional `voicegateway.attach(session)` add-on beside LiveKit's uploader, for data without `LIVEKIT_OBSERVABILITY_URL`, custom call fields and live state. The wire contract is `sdk/contract/v1.schema.json` with shared valid and invalid example batches that the engine and every SDK test against. web takes batches at `/ingest/<org>/<project>/sdk/v1/events` (connection source `sdk`); the worker joins them by room SID or job id and merges fields onto `calls.fields` (Postgres 00020); a call with no spans gets turns from SDK messages and per-message metrics. Real calls: SDK only, call 6e0a1369-421b-43e2-8b6d-73c7df8e879a, one answered turn (TTFT 208 ms, TTS 548 ms), field on the call, live states read during the call; SDK plus uploader, call 4ce0f3c7-7f0e-4a81-9568-006ec2275612, spans and recording from the upload, fields from the SDK, one turn. Not published to PyPI.
+
+Cloud onboarding (2026-10-21): a full-screen /setup journey for Cloud (Welcome, Connect, Agent, Call, First look), shown while an org has no project or a project has no first call, its step derived from real state. Connect takes the LiveKit Cloud environment-variable block in one paste and shows real checks, including the live room count from the verify read (createProject's liveRooms, null when not counted). First look shows the first call's answer time, slowest stage, turns and plan minutes, unknown staying unknown, no cost. Nothing self-hosted shows on Cloud; self-hosted keeps the simple form. Admins can change a project's LiveKit key and secret in Settings > Connection (updateProjectLiveKitCredentials; the old key is refused at once).
+
+Phases 01 to 06f are on main (06f, adding a project from the console, merged in #419). The next phase has no spec yet.
 
 ## Done
 
@@ -18,12 +44,16 @@ Phase 1: the console, UI first. Spec: docs/specs/phase01-console.md.
 | Data model tune-ups | none | Checked against ClickHouse/agent-skills clickhouse-best-practices (356a8c1) and supabase/agent-skills supabase-postgres-best-practices (c9be0e9). CountUnlinkedTraces and chatHistory read spans and events without FINAL (same answers; TestCountUnlinkedTracesIgnoresDuplicateSpans), and the unmatched check reads only the lookback window. ClickHouse 00009 sets ttl_only_drop_parts on the nine 30-day read tables (whole-day parts drop, so a row may live up to a day past 30) and makes spans.name LowCardinality. Layer poller inserts are async with wait_for_async_insert (TestStoreReadIsReadableOnReturn). Postgres 00008 adds calls_start_at (StatsCalls on 200k calls: 72.7 ms bitmap scan plus sort before, 6.8 ms index scan with no sort after), memberships_organisation and project_keys_created_by, built CONCURRENTLY. Raw telemetry retention is done: 90 days, ClickHouse 00010 (#401). Not done: a participant-count column on calls | 2026-10-18 |
 | API reference | none | The console serves the API reference at /docs (sidebar and command palette): Scalar (@scalar/api-reference-react 0.9.79, MIT) renders docs/api/openapi.yaml with schemas and a request runner on the signed-in session, in its own lazy chunk, with Scalar's fonts, telemetry, proxy, AI chat and MCP offer off; no request leaves the origin (checked in Chromium). surfaces.json lists /docs with every operation, since its runner can send any | 2026-10-18 |
 | Console in the image | #394 and this PR | The web image builds dashboard/ in a pinned node:24.22.0 stage and web serves it from VOICEGATEWAY_CONSOLE_DIR (decision 0011), so `make up` gives a working console at :8080 with no Node step. Deep links get index.html (no-cache), hashed assets are cached as immutable, a missing asset or unknown /api/ path is a 404; files are gzipped by klauspost/compress gzhttp (router chunk 4.2 MB to 1.26 MB); GET on the webhook and upload paths is a 405 with Allow: POST, never the console. Pair review passed with an 85 MB image and a real LiveKit call at 7 sizes | 2026-10-18 |
+| MCP server | none (plan task dev-mcp) | web serves MCP at /mcp over Streamable HTTP, stateless, with the official MCP Go SDK (github.com/modelcontextprotocol/go-sdk v1.8.0). Its 16 read-only tools are generated from docs/api/openapi.yaml (embedded through docs/api/contract.go): every GET a project key may call that the router serves and that answers JSON, so live-events (SSE) and recording audio are left out. A tool runs its operation through the /api/v1 router in process, behind the same role table; /mcp runs the same gate (auth.Service.Gate) and admits a project key only, so a console session cookie never reaches it. Organisation and project come from the key, never from the agent. TestMCPToolsReadTheKeysProject runs each tool's happy path on real Postgres and ClickHouse, checked against the contract, plus a refusal or failure per tool and a revoked key stopping every tool | 2026-10-21 |
+| Embed tokens and compact widgets | docs/specs/embed-tokens.md (plan task dev-embeds) | Decision 0034. createEmbedToken (a project key or a member) returns vge_ plus an HS256 JWT from golang-jwt v5, key derived from VOICEGATEWAY_SECRET_KEY with HKDF, naming one project, its widgets, one allowed origin, the minter and an expiry of 1 minute to 1 day. The gate checks it on every request and, in one query, that the minting key or member is still active and the origin still allowed; Admins set allowed origins (updateAllowedOrigins, PG 00021). Widget pages send frame-ancestors with the token's origin only for a valid token for that project and widget, every other console page frame-ancestors 'self', and widget pages no Referer. An embed token reads its widgets' routes only (embedAccess, compared with x-embed-access). The widgets are five compact tiles in iPhone sizes (answer time, calls, issues, recent calls, time per turn) plus the one-call view, chosen by the maintainer on 2026-10-21; Settings, Embeds previews each size and makes a test token. TestEmbedTokensFrameOneProjectForOneOrigin covers the doneWhen on real Postgres | 2026-10-21 |
 | Go spike | none | Four gates passed: ingest (0 lost in 12 runs), LiveKit webhooks in Go, Agents spans joined to calls, ocb collector build. Results in decision 0009 | 2026-10-11 |
 | 05c egress and ingress | docs/specs/phase05-livekit-layers.md | The worker lists egress and ingress per project every 15 s and stores redacted projections (ClickHouse 00006); getEgress and getIngress serve them with sourceStatus and histories joined with stored webhooks; Egress gains streams and outcome (#345, LIMIT_REACHED reads as cut_short). Checks 8 (TestEgressLive) and 9 (TestIngressLive) pass against livekit-server --dev 1.13.3, with LiveKit's own IOInfo client playing the egress and ingress services | 2026-10-18 |
 | 05d agent workers and Cloud agents | docs/specs/phase05-livekit-layers.md | `voicegateway project workers` add, remove and list keep each project's worker metrics URLs in Postgres `project_worker_endpoints` (00006), sealed under VOICEGATEWAY_SECRET_KEY with only scheme and host in the clear. The worker reads them every 15 s (lk_agents_worker_load, lk_agents_active_job_count per nodename, prometheus/common expfmt) and LiveKit Cloud agents every 60 s (AgentClient.ListAgents, ListAgentVersions), storing worker_samples, worker_endpoint_reads and cloud_agent_reads (ClickHouse 00007). getWorkers and getCloudAgents serve them with sourceStatus; Workers gains endpoints and per-worker endpointId and sourceStatus; a self-hosted server answers Cloud agents as not applying with no Cloud call. Checks 10 (TestWorkersFromMetrics, synctest), 11 (TestCloudAgentsSelfHosted) and 12 (TestReadsMatchContract, all six reads) pass. Not additive: CloudAgents versions[].createdAt and deployedAt were widened to nullable, against the spec's "changes stay additive", following its "a zero or absent source time is null" and CLAUDE.md's unknown-never-zero; the dashboard already handles null. A worker's id is now endpointId/nodename (Prometheus has no LiveKit worker id). Before any API or dashboard form can add endpoints, the worker needs an SSRF guard that rejects link-local and metadata addresses at dial time; today only the CLI adds them | 2026-10-18 |
 | Webhook secrets | #386 | The sink stores egress_* and ingress_* webhooks without stream keys, URL credentials, storage credentials, signing keys, participant names or metadata, and masks phone numbers; unknown status names newer than protocol v1.52.1 are kept. Webhooks stored before this fix keep their secrets until the 90-day events TTL (00010) removes them, so reset dev and loop stacks | 2026-10-18 |
 
 ## In progress (Phase 1)
+
+- Invitation delivery: persist send-start and confirmed failure, detach bounded sending and outcome recording from request cancellation, and preserve unknown SMTP acceptance as null for instance invitations. Concurrent idempotent repeats wait for the first outcome. Uses go-mail v0.8.1 delivery state rather than treating cleanup errors as rejection. Local Go race/lint pass; container-backed acceptance checks require CI. Deploy the Cloud nullable-outcome consumer before this engine change.
 
 - Public presentation (2026-10-15): README now leads with the current wordmark, an 18-second console teaser, and a hand-drawn call-path diagram. The teaser uses the supplied console screenshot with editorial callouts, explicitly labelled as a preview. Only the finished SVG, GIF and still image are published; media authoring workspaces stay local and gitignored. The companion `voicegateway-web` landing adopts the Clean Room theme, interactive React previews with captured data, and the OSS/Cloud V1 split with automated Stripe activation. Console build/lint and landing build/typecheck/changed-source lint pass; this does not mark Phase 1 or Cloud complete.
 - Console identity: selected Mergepoint concept 02 and Inter Semibold lettering form a single outlined wordmark, with light/dark SVGs in the existing ink and logo-only Gateway Teal. Typography was tuned to the system UI at 16px/600 after reviewing the earlier heavier geometric treatment. A brief electric sweep runs on entry and hover, with a static reduced-motion version. The tab icon and title match; the collapsed rail keeps its toggle. Artwork renders are checked at actual size; live browser verification is pending because localhost access is blocked by a saved browser permission.
@@ -53,7 +83,7 @@ Phase 1: the console, UI first. Spec: docs/specs/phase01-console.md.
 Plan agreed 2026-10-15: a team builds V1 with Cloud (decision 0024) over 30 days, release target 5 Nov.
 
 1. Freeze the contract: finish Phase 1's OpenAPI spec with x-source, generated types and the mock API, so the lanes build against one interface.
-2. Build V1 on its own branch; main keeps the current release until V1 replaces it. Phase 0 (removing the old Python core) lands with that switch.
+2. Build V1 on its own branch; main keeps the current release until V1 replaces it. Phase 0 (removing the old Python core) is done (2026-10-18).
 3. Lanes in parallel: ingest and calls, projects and auth, LiveKit surfaces, actions (alerts, recordings, MCP, capacity test, embed tokens), Cloud control plane with Stripe self-serve, release hardening.
 4. One pinned tracking issue on GitHub, split into owned issues with acceptance checks.
 
@@ -68,11 +98,16 @@ Plan agreed 2026-10-15: a team builds V1 with Cloud (decision 0024) over 30 days
 - Phase 2 candidate: inferred call labels (triage, disposition) from a self-hosted decision model such as Jev or Kev, opt-in and marked as inferred. Evaluate once V1 traces exist.
 - The docs and landing site in site/ still use the old purple theme; when do they move to The Clean Room?
 
+- The worker's LiveKit reads (media server, SIP, egress, ingress, dispatch) dial each project's LiveKit URL with no address guard: server-sdk-go v2.19.0 builds its own `http.Client` over `http.DefaultTransport` for those clients, so `code.dny.dev/ssrf` and `VOICEGATEWAY_WORKER_ENDPOINTS_PUBLIC_ONLY` cover worker metrics endpoints only. Now that an Admin can add a project from the console (06f), a shared Cloud instance needs a guard on these dials before the form is open to customers.
+
 ## Known Issues
 
-- The old Python code in src/ no longer matches the docs. It stays until Phase 0.
 - Docker Desktop on the dev Mac stopped starting new containers during the spike; it needs a restart.
 - Project MCP servers (shadcn, magicui) need a one-time approval in Claude Code. The gopls MCP server was removed on 2026-10-17: its fsnotify watcher opened one file handle per file in the tree (about 61,000) and exhausted the system file table.
+
+### 2026-10-18: marketing site moved to a private repository
+
+`site/landing` and `site/web` moved to the private `voicegateway-web` repository, which the Pages project `voicegateway-web` builds for voicegateway.dev. This repository keeps `site/docs`, `site/theme.css`, `install.sh` and `collector.sh`; the private site downloads the two scripts from main on every build. The Site workflow now checks only the docs. See decision 0030, which supersedes 0025.
 
 ### 2026-10-15: landing consolidated into the product repository
 
@@ -353,9 +388,13 @@ Manual check: the pair reviewer reports it passed on Compose behind HTTPS ([#387
 
 Next: 06d, invitation links.
 
-### 2026-10-18: phase 06d, invitations and password reset links (in review, #407)
+### 2026-10-18: phase 06d, invitations and password reset links (done, #407 merged as cfcbefba)
 
-An admin invites by email with a role, and makes password reset links for members (spec `docs/specs/phase06d-invitations.md`, decision 0027). Not done until the pair review and the manual check pass.
+An admin invites by email with a role, and makes password reset links for members (spec `docs/specs/phase06d-invitations.md`, decision 0027). The pair review passed at 5b7b2d24, and so did the manual check on 2026-10-18: the Compose stack behind Caddy with `tls internal` (`VOICEGATEWAY_PUBLIC_URL` on a non-localhost https name, so the HTTPS rule applied), mailpit 1.31.4 over implicit TLS, driven with Playwright.
+- Step 1: the invite was emailed with no link on the page; the Member set a password in a second browser and saw the seeded call.
+- Step 2: the reset was emailed; using it signed the first browser out, and the link then answered "no longer valid".
+- Step 3: with SMTP unset, the console showed the link once and copied it exactly, and mailpit received nothing.
+- No token, link or password appeared in the web or proxy logs. The check found two setup gaps, fixed after: ClickHouse's healthcheck pinged 8123 before 9000 took queries, so `migrate` could fail on a fresh start (it now runs `clickhouse-client` as migrate's own user), and a mail server signed by a private CA needs `SSL_CERT_FILE`, now in docs/self-hosting.md.
 
 What changed:
 - **Postgres 00009 `invitations`:** kind invite or reset, the token's SHA-256 only, state derived from its times. One open link per organisation, email and kind (a partial unique index); a create revokes the open one in the same transaction, after taking the organisation's row lock, so parallel creates leave exactly one.
@@ -366,6 +405,16 @@ What changed:
 - **From my own review:** a reset link runs its cross-organisation guard again when used, and is revoked if the member joined an organisation its admin does not run, or the admin lost the role. A new reset replaces every open one for the member. SMTP needs `VOICEGATEWAY_PUBLIC_URL`, so an emailed link never takes its base from a request's Host. A lost race reads as 404, never 401, and a loser's try is not counted as a failed sign-in.
 - **From the pair review and CodeRabbit:** the reset guard fails closed (no requester, or an admin since deleted, allows a member of the link's organisation alone), and at use the member must still belong to that organisation. A reset locks the member's row, so resets from two organisations at once leave one open link. The invitations list is three columns that wrap, so Revoke is in view at pane widths 343, 632 and 820 px, and a member's Password reset and Remove share one row menu.
 - **Console:** `/invite#<token>` renders before the session gate, drops the fragment, and asks for one password. People's Invite form calls `createInvitation` (link once without SMTP; "Emailed to", or Resend after a failed send), the invitations list is a DataTable with its state filter and sort in the URL (`urlPrefix`), and members have a Password reset action. `vg.invites` is gone; the mock serves the new operations in memory.
+
+### 2026-10-18: phase 06e, the instance API (in review)
+
+An operator's program, holding `VOICEGATEWAY_INSTANCE_TOKEN`, creates an organisation, invites its first admin, reads whether they joined and reads the organisation's call time (spec `docs/specs/phase06e-instance-api.md`, decisions 0028 and 0029). Not done until the pair review, CI's SMTP container checks and the manual check pass.
+
+What changed:
+- **`ee/instance`:** `putOrganisation`, `getOrganisation`, `createOrganisationInvitation` (06d's `invite.Create` with no inviting user and the required `Idempotency-Key`) and `getOrganisationUsage`. Each call logs its operation, organisation and outcome only.
+- **Gate:** the token is kept as its SHA-256 and compared in constant time. A new `instance` scope in `routeAccess`: the token calls those four routes and nothing else, and a session or project key on them is 403. With the token unset every instance path is 404; a Bearer that matches nothing stays 401 with the challenge. Setting the token needs `VOICEGATEWAY_PUBLIC_URL`.
+- **Usage:** an observed call ends at `ended_at`, an inferred one at `last_activity_at` (decision 0029 with #412). A call counts in the period that holds its end, when its start is known. Exact durations are summed, then rounded down to whole seconds once. Open calls are counted apart and never summed. No migration: the query reads `calls` by organisation.
+- **Validation:** the implementation owner reports checks 1 to 4 and 7 passed against Postgres 16 in its cloud copy. Local lint, contract and test checks are repeated for the PR; Docker-dependent tests skip on this Mac because Docker is stopped. CI must run all container checks, including the Mailpit checks 5 and 6, before merge.
 
 ### 2026-10-18: worker endpoint dial guard
 
@@ -388,4 +437,176 @@ The pair's audit of 06a, 06b and the gate, items 1 to 4; items 5 and 6 had alrea
 
 Added Testing Library tests around the real Calls page and drawer with the existing MSW handlers: every captured list row across pagination, room/date/duration values, archive and restore, date and shared room filters, call-id navigation, loading/empty/error/retry/not-found states, captured transcript and turn response times, and LLM token usage including the distinction between missing usage and reported zero. All 146 dashboard tests pass locally in about 8 seconds; dashboard lint, application TypeScript, an additional type check of the new tests, and the production build pass. Existing Dashboard CI already runs the suite; its test step passed in 28 seconds on run 39165147240. Review follow-up covers both latest-call lookup and active-list error recovery. No product source or dependencies changed. Phase01's older participant-count list assertion and TTS-usage assertion remain specification/UI gaps: participant count is shown in the drawer, and TTS timing is shown but a TTS usage field is not. These are not claimed complete by this test PR.
 
-2026-10-18 (#325, PR #411): added exact-pinned Playwright/axe checks for 14 deep URLs in both themes, six keyboard tab checks, an isolated captured-data Vite preview target and Dashboard CI failure artifacts. Fixed application labels, tab/panel relationships, list and chart roles, scrolling focus and contrast without axe exclusions. Two pinned Scalar production patches apply during installation. Clean installation, all 68 desktop/phone browser tests (zero serious/critical axe findings and browser errors), all 153 unit tests, API contract checks, lint, TypeScript and build pass locally. The phone sweep also covers the focusable Turn anatomy scroll region. Coordinated the affected UI files with Claude and incorporated the merged invitations settings changes. This covers the console shell, not backend/auth integration; completion awaits PR review and merge.
+2026-10-18 (#325, PR #411): added exact-pinned Playwright/axe checks for 14 deep URLs in both themes, six keyboard tab checks, an isolated captured-data Vite preview target and Dashboard CI failure artifacts. Fixed application labels, tab/panel relationships, list and chart roles, scrolling focus and contrast without axe exclusions. Two pinned Scalar production patches apply during installation. Clean installation, all 68 desktop/phone browser tests (zero serious/critical axe findings and browser errors), all 153 unit tests, API contract checks, lint, TypeScript and build pass locally. The phone sweep also covers the focusable Turn anatomy scroll region. Coordinated the affected UI files with Claude and incorporated the merged invitations settings changes. This covers the console shell, not backend/auth integration; pair review passed and PR #411 merged at 0bccaa65.
+
+2026-10-18: added the Connect alert rule-to-delivery worked example using capture-cloud.json (2304.3 ms), with explicit hypothetical retry, failure and recovery outcomes. No evaluator or delivery implementation is claimed; pair review passed; PR #414 is awaiting merge.
+
+### 2026-10-18: instance API review corrections (#417)
+
+Closed calls with missing or reversed timestamps are excluded from measured usage and counted separately by start period. Inferred seconds are exposed separately, and fractional-duration fixtures reject per-call rounding. The image build now copies the Enterprise source tree required by the instance API; the first Compose CI run caught that missing build input. Container acceptance remains a merge gate.
+
+### 2026-10-19: phase 06f, add a project from the console (built, not yet reviewed)
+
+An Admin of an organisation with no project adds one from the console's empty state, or from the "Add a LiveKit project" dialog in Settings, Organisation and the project switcher (spec `docs/specs/phase06f-console-add-project.md`, decisions 0016 and 0028). A hosted admin has no shell for `voicegateway project add`.
+- **One rule:** `api.CheckProject` checks a new project for both `createProject` and `voicegateway project add` (name with a letter or digit, slug id, ws/wss/http/https URL with a host, key without spaces), and `api.Slug` moved from `internal/app`. Each names fields its own way: flags on the command line, JSON names in the API.
+- **API:** `createProject` `POST /api/v1/org/{orgId}/projects`, Admin at organisation scope, through the same `pgstore.Store.CreateProject` and sealer as the CLI. 201 is the existing `WorkspaceProject` with `Cache-Control: no-store`; 409 `project_exists` and `livekit_key_in_use` (the latter names no project). `store.NewProject` replaces `pgstore.NewProject`, kept as an alias.
+- **Console:** the form (shadcn Field, Input, Button) clears the secret after every submit, shows the API's message inline and opens the new project with a full page load. Members read that an admin must add one. The dialog's disabled placeholder and its unbacked "Observe live rooms" switch are gone. The mock serves `createProject`.
+- Foundation reported checks 1 to 8 passing with container tests in its cloud environment. The Mac integration run passes dashboard tests, lint, TypeScript, API validation/source checks and generated-type comparison. Local Docker is unavailable, so container-backed auth checks skip here and remain a CI gate. The manual Compose check has not been run.
+- Integration review added an instance-token refusal assertion and reproduced/fixed acceptance of trailing JSON, garbage and oversized trailing whitespace. The endpoint now checks the entire body with MaxBytesReader and requires EOF after one JSON object.
+
+
+### 2026-10-19: worker LiveKit connection guard
+
+With VOICEGATEWAY_WORKER_ENDPOINTS_PUBLIC_ONLY enabled, all eleven worker LiveKit reads use the existing dial-time address guard. The pinned server-sdk-go v2.19.0 accepts a custom HTTP client only for AgentClient; the other reads use livekit/protocol generated Twirp clients and the native access-token grants used by the SDK. Regression tests cover listening and closed internal addresses, metadata and private networks; refused addresses remain unreachable. A container-backed test compares responses and authentication failures against the native SDK.
+
+Local make go-test go-lint passed; Docker-dependent tests require CI. The Cloud owner accepted the initial deployment's region-failover/proxy tradeoffs; the temporary Cloud project-creation gate is removed alongside the guard. No hosted onboarding completion is claimed.
+
+### 2026-10-18: Phase 0, old Python release retired
+
+The Python runtime (src/), its Alembic migrations, packaging, examples, benchmarks, Railway and Codecov config, the root docker-compose.yml, the legacy contributor guides, four specs for the old console and the six workflows that built, tested and published it are removed, as are the vg-* Claude commands that drove that code. The Go binary, deploy/, the Makefile and the Go, Dashboard, Site and Docker workflows read none of them. The public installers stay at the root (install.sh, collector.sh, docker-compose.collector.yml, docker-compose.autoupdate.yml) because voicegateway.dev serves the scripts; their shell tests moved to tools/tests/. Open: the installers still install the old Python collector.
+
+## Organisation minute limits (in review)
+
+Added opt-in hosted entitlements, durable closed-call usage, ingestion refusals and console usage
+warnings. See phase06g-cloud-limits.md. The private control plane owns verified subscription sync;
+production activation and end-to-end billing proof remain pending. Self-hosted is unchanged.
+
+Quota review follow-up: reduced renewal/replay lock scope, avoided open-call ledger writes,
+and rendered billing timestamps in UTC with an explicit exclusive end. At exhaustion, known
+indexed calls may finish and send their final reports while the current entitlement is active;
+every OTLP record must identify a known call in the authenticated project. A real-Postgres
+regression verifies a refused new room, accepted room_finished, observed closure and complete
+usage, mixed-call refusal, project isolation and revocation. Full Cloud integration remains open.
+
+### 2026-10-19: a shared instance fails closed without the address guard
+
+`config.Load` now refuses `VOICEGATEWAY_INSTANCE_TOKEN` without `VOICEGATEWAY_WORKER_ENDPOINTS_PUBLIC_ONLY=true`, naming both variables, so web, worker, migrate and every CLI command on a misconfigured shared instance exit with a configuration error instead of reading hosted projects unguarded (the #420 follow-up: removing the Cloud project-creation gate left nothing tying web's acceptance of projects to the worker's guard).
+- **Signal:** the instance token. It is the only setting that marks a shared instance (decision 0028: hosted workspaces are organisations created through the instance API), and `deploy/compose.yaml` passes it, like the guard flag, through the shared `x-voicegateway-env` block, so every role sees both. There is no Cloud overlay in this repository; a Cloud deployment that gives the token to web only still fails closed on web, and must set both on the worker for the instance API's organisations to be read at all.
+- A self-hosted install without the token starts with either value, as before. An unparseable flag is reported once, as itself.
+- Test: `TestSharedInstanceNeedsPublicOnly` (shared with the flag unset or false is refused; shared with true, and self-hosted with any value, start).
+
+### 2026-10-19: installers install the Go stack
+
+`install.sh` (served at voicegateway.dev/install.sh) now does step 1 of docs/self-hosting.md: it checks for Docker with Compose v2, git and make, checks out v1.0.0-preview.3 into ./voicegateway, starts the stack from ghcr.io/mahimailabs/voicegateway:1.0.0-preview.3 and runs `make preflight`. `VOICEGATEWAY_VERSION` and `VOICEGATEWAY_DIR` override the release and folder; re-running updates the checkout. `collector.sh` stays at its URL but installs nothing: it says the collector is retired and points at install.sh. docker-compose.collector.yml and docker-compose.autoupdate.yml are removed; existing collectors keep running from their own copies. The Installers workflow replaces the collector and pipx/uv container matrices: stubbed host tests, plus a real install on a runner that waits for `/healthz`, nightly as well.
+
+Integration review pins preview.3 after its image publication succeeded. Re-runs refuse an unrelated origin or a dirty working tree before fetch, checkout or make. Local make installer-test passes; the workflow boot test and the maintainer's independent fresh-environment rehearsal remain required. No clean-install acceptance is claimed by these stub tests.
+
+### 2026-10-19: project-scoped LiveKit ingestion
+
+Project-scoped ingestion is in progress (decision 0032). Every active ingestion route selects an organisation and project before native LiveKit signature verification. The global key lookup and uniqueness constraint are removed in migration 00011. ListRooms remains an endpoint connectivity check, not ownership proof: a caller-controlled server can accept any token.
+
+The full Docker-backed Go race suite passed. Scoped routing, webhook body-hash verification, independent Postgres secrets and the fake-endpoint regression pass; Go lint, formatting, module and sqlc checks pass. All 165 dashboard tests pass with one Vitest worker; two default-parallel runs timed out in existing Calls tests. Dashboard lint, TypeScript, OpenAPI validation and all 691 source-attribution checks pass. Quota integration uses migration 00012; the later recordings integration must use 00013. No hosted onboarding completion is claimed.
+
+### 2026-10-19: published-image startup rehearsal
+
+The preview.4 installer pin aligns the published image with project-scoped ingestion. A fresh, isolated Docker installation exposed another ClickHouse readiness race: its temporary initialization server accepts localhost native queries, then shuts down before the externally reachable server starts. The healthcheck now queries the container network address using the migration user's database and credentials.
+
+With this Compose correction and the published preview.4 image, empty Postgres, ClickHouse, Redis and object-storage volumes start successfully and all four preflight checks pass. A separate 30-second SQL initialization fixture confirms localhost queries succeed while health stays `starting`, then health becomes `healthy` after initialization. ShellCheck and all ten installer behavior checks pass. This Compose correction still needs a published release and installer pin; a complete real-call rehearsal remains outstanding.
+
+
+### 2026-10-19: scoped fresh-install call and restart proof
+
+An isolated Compose project with empty volumes, the published preview.4 image and the corrected ClickHouse readiness check completed a real synthetic call through LiveKit server and LiveKit Agents 1.8.7. The documented admin and project commands succeeded. Native signed webhooks and observability uploads used `/ingest/default/fresh-local-proof`; no captured fixture was submitted.
+
+The authenticated API and rendered console show call `c4f15d11-1ec9-4c20-bf7b-64a89edba93c`: 44.488 seconds, two participants, three turns, observed start/end and response times of 981 ms and 1.40 s. The console displays both caller questions and agent replies. After stopping and starting the entire stack with volumes retained, the same call ID, three turns and observed end remained readable. The caller exited after closing its room with an ignored LiveKit RTC FFI cleanup assertion; this was outside the VoiceGateway process. Recording storage was not tested.
+
+Preview.5 carries the startup correction and optional Cloud quotas. Its image publication and a final installation using the unmodified release checkout remain the release gate; the previous proof does not substitute for that final check.
+
+
+Final release check: the unmodified `v1.0.0-preview.5` checkout and published image installed into a second empty Compose project successfully. All four preflight checks passed, then the documented admin and verified-project commands succeeded. Native LiveKit captured call `af95e734-b01c-43cc-82ab-7f60ab06d5f1`: 44.953 seconds, two participants, three turns, observed completion and measured response times of 1.23 s and 1.04 s. Authenticated reads returned the completed call. No Cloud entitlement was configured: self-hosted ingestion remained available. Both architecture image builds and publication passed. This is an automated fresh-environment rehearsal performed at the maintainer's request, not a claim of an independent teammate run.
+
+### 2026-10-20: observed SFU and worker updates (in review)
+
+The console now refreshes the existing project-scoped SFU, worker metrics and Cloud deployment
+reads at their source cadence (10, 15 and 60 seconds). Requests bind their scope, abort on
+unmount, time out and refetch on reconnect/focus. The API and client disable HTTP caching for
+these snapshots. The Live page no longer shifts and repeats historical rooms on today's clock:
+each room SID uses original timestamps, and its bar stops at its last observed sample.
+
+Source age, API disconnects and failed scrapes are visible independently. Three missed sampling
+intervals mark samples stale. Only a newer successful observation establishes that a room or
+worker is no longer listed; it does not establish a termination reason. Worker metrics show real
+per-endpoint load and active-job gauges, including missing values, failed endpoints and last
+sample times. Load is not labelled CPU utilization. A denied API read hides retained telemetry.
+
+See docs/specs/live-operations.md for acceptance and remaining scope. This is sampled monitoring,
+not the worker-pushed event feed tracked by #320. That checklist item, full self-hosted CPU/memory
+telemetry and capacity-runner execution remain open. The capacity/topology preview is unchanged.
+
+Validation: the full Docker-backed Go race suite and all 192 dashboard tests passed. Go/dashboard
+lint, TypeScript and API contract/source/type checks passed. All 72 browser/accessibility checks
+passed on the full rerun after two initial call-detail startup timeouts. The final native SFU/worker
+success, disappearance and failure tests passed with the no-store assertions. Pre-commit hooks
+passed. No hosted-onboarding or SES approval completion is claimed.
+
+PR #429 review follow-up: a shared QueryCache error handler clears denied SFU, worker and Cloud
+agent data for every observer, including the overview and command palette. It retains the error
+and refresh lifecycle so restored permission recovers without a reload. Regression tests cover
+401/403/404 across all three sources, another project's cache isolation, and restored access.
+
+### 2026-10-20: worker-pushed live invalidation feed (in review)
+
+Sampled monitoring PR #429 merged as e114d064 after all hosted checks passed. Its review fix
+339d1742 clears denied data for every query observer and preserves permission recovery.
+
+The next change publishes project-scoped Redis hints after durable call storage, rebuilt summaries
+and SFU/worker/Cloud-agent samples. The authenticated SSE endpoint renews every 15 seconds and
+sends no telemetry payloads. The generated SDK client refetches authoritative snapshots, closes
+old subscriptions on project changes/hidden tabs and exposes connection state separately from
+source freshness. Denial cancels in-flight reads before clearing retained data, preventing late
+answers from restoring denied telemetry. Polling continues as the fallback for dropped hints.
+
+Native Redis tests, a LiveKit/ClickHouse/Redis/SSE integration proof, the full Docker-backed Go race
+suite, all 202 dashboard tests, lint/TypeScript, API checks and 72 browser/accessibility checks pass.
+See live-event-feed.md for numbered acceptance evidence and the initial UI-only timeout qualification.
+Resource CPU/memory instrumentation, settings persistence, issue workflows and webhook delivery
+remain open; this change does not mark the broader live-operations outcome complete.
+
+### 2026-10-20: operational project thresholds (verification in progress)
+
+Project thresholds now persist in Postgres with revision-checked writes, Member write access and Viewer/project-key reads. Call lists and statistics read the saved answer budget, and old snapshots are rejected after a settings revision changes. The approved settings form uses API saves, explicit failure/conflict states and revision-safe Undo. Reads refresh across clients without discarding unsaved drafts; permission loss clears retained settings. Storage and raw trace retention are read-only deployment facts, while unavailable policies remain null.
+
+Native persistence and HTTP regressions, fractional-budget effects, frontend failure/permission tests and the original 72 browser checks have passed. After incorporating merged resource telemetry (#431), the full Go race suite and expanded Save/Undo browser checks are running. This is not a completed roadmap task: final checks and review are pending; channels belong to the following alert-delivery work, and disabled embed controls remain outside this slice.
+
+
+Settings review follow-ups (2026-10-20): denied saves cancel outstanding settings reads before clearing cached data. The settings project picker now navigates by project ID instead of changing only its label; a document navigation resets prior-project drafts and observers. The full serial Docker-backed Go race run and 207 dashboard tests passed. All 80 browser/accessibility checks pass, including cross-project saves in desktop/mobile light/dark. An earlier concurrent run had one ClickHouse startup timeout; the serial rerun passed unchanged assertions. PR #432 still requires final hosted verification and review; the wider settings roadmap item remains incomplete.
+
+### 2026-10-20: project thresholds merged; connection display correction
+
+PR #432 merged as 12f5f75d after all hosted checks passed on 30aacaa4 and both review findings were
+fixed. Threshold conversions retain fractional milliseconds without enabling Save on an unchanged
+value. Project-key permission coverage includes both settings and worker routes.
+
+The remaining settings audit found that Organisation rendered the selected project's media-server
+URL for every project row. The correction binds each row's request and cache key to its own project
+ID and labels only the selected row Current project. Rendered regressions cover two distinct server
+URLs and a denied second project without fallback to another project's data. All 210 dashboard
+tests and frontend lint/types pass; browser verification and PR review are in progress.
+
+Account profile PR #433 is separately in review. The broader settings task remains open through
+its remaining dependencies; neither these fixes nor metadata storage alone completes issue workflows.
+
+### 2026-10-20: account profile persistence (verification in progress)
+
+Account Name now uses the signed-in user's Postgres profile with bounded Unicode validation and
+revision-checked writes. Viewer, Member and Admin can edit only themselves; project keys and
+cross-origin requests cannot. Session renewal retains the profile. Failed/conflicting saves preserve
+the draft, and permission loss cancels pending reads before clearing retained data.
+
+Native persistence/auth tests and 210 dashboard tests pass. The full Go race suite, all 80 preview browser/accessibility checks and lint/types passed;
+authenticated browser verification also passed for save/reload, fresh sign-in, a second project,
+mobile clearing and theme persistence. PR review remains pending. This follows threshold PR #432 and does not complete the broader settings task.
+
+Account profile PR #433 merged as cbf8aadf after all hosted checks passed on 39920a12. Manual review verified ownership, validation and conflict handling; CodeRabbit was rate-limited and supplied no approval. Project connection PR #434 is being revalidated against that merged account form. The broader settings task remains incomplete.
+
+### 2026-10-19: recordings stored and played (phase 07a)
+
+Web discarded the audio of every agent session upload; the bucket was only checked by preflight. Now a project with recordings on (`make project-recordings PROJECT=<id> SET=on`, off by default, Postgres 00018) streams `recording.ogg` to the S3 bucket under `recordings/YYYY/MM/DD/<org>/<project>/<job>.ogg`, the worker links it to its call in `call_recordings`, getCall returns `recording` with its own clock, `getRecordingMedia` serves it with byte ranges, and listCalls' `recorded` filter and counts read real links. Every worker deletes links and then bucket days older than 90 days, once an hour. Duration, waveform peaks and segments stay null until extracted from the audio; a console recordings switch waits for the settings write API. Checks 1 to 7 of `docs/specs/phase07a-recordings.md` passed in a cloud copy against SeaweedFS 4.48, Postgres 16.15 and ClickHouse 26.1.12.23 run as local binaries (no Docker there; Redis 7.0 locally, so the join run used XACK plus XDEL in place of Redis 8.2's XACKDEL, in the test copy only). CI must run the container versions before merge.
+
+### 2026-10-19: a project may bring its own recording bucket at create (decision 0031)
+
+Mahimai decided Cloud keeps recordings in VoiceGateway's bucket by default, and a project may bring its own S3 bucket only when it is created, so recordings never move. Decision 0031 amends 0008.
+- **Store:** `project_buckets` in Postgres 00018 (endpoint, scheme, bucket, region, access key, secret sealed under `project-bucket:<org>/<project>`), written in the same transaction as the project; a trigger refuses every update.
+- **Check:** `api.CheckProject` checks `recordingBucket` (an http or https endpoint with no path, an S3 bucket name by minio-go's `s3utils`); `bucket.Verifier` writes and deletes `recordings/voicegateway-check` through the worker's address guard before anything is stored: 422 `recording_bucket_refused` or `recording_bucket_unreachable`, never the cause. `voicegateway project add --recording-bucket-*` with `RECORDING_BUCKET_SECRET_KEY` (and `make project-add RECORDING_BUCKET_*`) does the same check; `--skip-verify` skips only LiveKit's.
+- **Use:** `bucket.Buckets` stores and serves each project's recordings in its own bucket or the instance's, remembering the choice since it never changes; retention expires the instance's bucket and every brought one. Contract: `RecordingBucketCreate` on `ProjectCreate`, the 422 renamed `ProjectNotVerified`; api types regenerated. Console: a switch on Add project, off by default.
+- Tests: `TestVerifyBucket`, `TestBucketsRouteByProject` (SeaweedFS), `TestProjectBucketFixedAtCreate` (Postgres), `TestCheckProjectBucket`, `TestCreateProjectAnswersTheBucketVerifier`, and the console's form and mock cases.

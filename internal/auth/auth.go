@@ -23,6 +23,8 @@ import (
 
 // Users is the account store sign-in reads and writes.
 type Users interface {
+	AccountProfile(context.Context, string) (store.AccountProfile, error)
+	UpdateAccountProfile(context.Context, string, int64, string) (store.AccountProfile, error)
 	CountUsers(ctx context.Context) (int64, error)
 	UserByEmail(ctx context.Context, email string) (store.User, error)
 	Principal(ctx context.Context, userID string) (store.Principal, error)
@@ -31,6 +33,9 @@ type Users interface {
 	ForgetSignIns(ctx context.Context) error
 	ProjectKey(ctx context.Context, keyID string) (store.StoredKey, error)
 	TouchProjectKey(ctx context.Context, keyID string) error
+	// EmbedGrantActive reports whether an embed token's grant still holds: its minting key is
+	// unrevoked (or its minting user still a member) and the project still allows its origin.
+	EmbedGrantActive(ctx context.Context, g store.EmbedScope) (bool, error)
 	UpdatePasswordHash(ctx context.Context, userID, verifiedHash, passwordHash string) (bool, error)
 }
 
@@ -68,8 +73,17 @@ type Service struct {
 	// Compare compares two SHA-256 hashes in constant time and reports 1 when they are equal; nil
 	// is subtle.ConstantTimeCompare. Tests count the comparisons through it.
 	Compare func(x, y []byte) int
-	Log     *slog.Logger
-	Now     func() time.Time
+	// InstanceTokenSHA256 is the SHA-256 of VOICEGATEWAY_INSTANCE_TOKEN (phase 06e); nil when it is
+	// unset. A Bearer equal to the token is the instance principal, which names no user.
+	InstanceTokenSHA256 []byte
+	// Providers are the configured Google and GitHub sign-ins by name (phase 06h); a missing name
+	// is off. Identities stores their links, set whenever Providers is.
+	Providers  map[string]Provider
+	Identities Identities
+	// Embeds mints and checks embed tokens (decision 0034); nil refuses every embed token.
+	Embeds *EmbedTokens
+	Log    *slog.Logger
+	Now    func() time.Time
 
 	proxyWarning sync.Once
 }
@@ -145,6 +159,11 @@ func (s *Service) Routes() http.Handler {
 	mux.HandleFunc("POST /auth/sign-in", s.signIn)
 	mux.HandleFunc("POST /auth/sign-out", s.signOut)
 	mux.HandleFunc("GET /auth/session", s.session)
+	mux.HandleFunc("GET /auth/profile", s.profile)
+	mux.HandleFunc("PUT /auth/profile", s.updateProfile)
+	mux.HandleFunc("GET /auth/providers", s.providers)
+	mux.HandleFunc("GET /auth/oauth/{provider}/start", s.oauthStart)
+	mux.HandleFunc("GET /auth/oauth/{provider}/callback", s.oauthCallback)
 	if s.Links != nil {
 		mux.Handle("GET /auth/invitation", LinkHeaders(http.HandlerFunc(s.invitation)))
 		mux.Handle("POST /auth/invitation/accept", LinkHeaders(http.HandlerFunc(s.acceptInvitation)))
@@ -205,7 +224,9 @@ func (s *Service) signIn(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	hash := u.PasswordHash
-	if !known {
+	// An account with no password (phase 06h) is compared against the dummy hash, so it takes as
+	// long as a wrong password and answers the same.
+	if !known || hash == "" {
 		if hash, err = dummyHash(); err != nil {
 			s.fail(w, err)
 			return
@@ -216,7 +237,7 @@ func (s *Service) signIn(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, err)
 		return
 	}
-	if !known || !ok {
+	if !known || u.PasswordHash == "" || !ok {
 		// The reserved attempt stays counted.
 		writeError(w, http.StatusUnauthorized, "unauthenticated", "email or password is wrong")
 		return
@@ -271,8 +292,9 @@ func (s *Service) signOut(w http.ResponseWriter, r *http.Request) {
 }
 
 type sessionBody struct {
-	Email         string        `json:"email"`
-	Organisations []orgRoleBody `json:"organisations"`
+	Profile       store.AccountProfile `json:"profile"`
+	Email         string               `json:"email"`
+	Organisations []orgRoleBody        `json:"organisations"`
 }
 
 type orgRoleBody struct {
@@ -296,7 +318,12 @@ func (s *Service) session(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusUnauthorized, map[string]any{"code": "unauthenticated", "message": "not signed in", "needsAdmin": n == 0})
 		return
 	}
-	body := sessionBody{Email: p.Email, Organisations: []orgRoleBody{}}
+	profile, err := s.Users.AccountProfile(r.Context(), p.UserID)
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	body := sessionBody{Email: p.Email, Organisations: []orgRoleBody{}, Profile: profile}
 	for org, role := range p.Roles {
 		body.Organisations = append(body.Organisations, orgRoleBody{ID: org, Role: role})
 	}
@@ -328,7 +355,7 @@ func (s *Service) userPrincipal(r *http.Request) (store.Principal, bool, error) 
 }
 
 // Gate identifies a /api/v1 request's caller, with its session loaded: a signed-in user, or a
-// project API key sent as a Bearer token. It puts the principal on the context and refuses nothing
+// project API key, the instance token or an embed token sent as a Bearer token. It puts the principal on the context and refuses nothing
 // itself: the API router answers any request without a principal 401, and checks access per route.
 func (s *Service) Gate(next http.Handler) http.Handler {
 	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -338,7 +365,14 @@ func (s *Service) Gate(next http.Handler) http.Handler {
 			return
 		}
 		if v, isBearer := bearer(r.Header.Get("Authorization")); !ok && isBearer {
-			if p, ok, err = s.keyPrincipal(r.Context(), v); err != nil {
+			if s.isInstanceToken(v) {
+				p, ok = store.Principal{Instance: true}, true
+			} else if IsEmbedToken(v) {
+				if p, ok, err = s.embedPrincipal(r.Context(), v); err != nil {
+					s.fail(w, err)
+					return
+				}
+			} else if p, ok, err = s.keyPrincipal(r.Context(), v); err != nil {
 				s.fail(w, err)
 				return
 			}
@@ -359,6 +393,16 @@ func (s *Service) now() time.Time {
 		return s.Now()
 	}
 	return time.Now()
+}
+
+// isInstanceToken reports whether a Bearer value is the instance token, comparing SHA-256 hashes
+// in constant time; always false when the token is unset.
+func (s *Service) isInstanceToken(v string) bool {
+	if s.InstanceTokenSHA256 == nil {
+		return false
+	}
+	sum := sha256.Sum256([]byte(v))
+	return subtle.ConstantTimeCompare(sum[:], s.InstanceTokenSHA256) == 1
 }
 
 // dummyKeyHash stands in for the stored hash when a presented key is malformed, unknown or revoked,

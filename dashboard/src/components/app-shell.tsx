@@ -1,8 +1,12 @@
-import { CopyCommand } from "@/components/copy-command"
+import { LiveUpdatesProvider } from "@/components/live-updates"
+import { NoProjectYet } from "@/components/no-project-yet"
 import { workspacesRead } from "@/lib/workspaces"
 import { Button } from "@/components/ui/button"
 import { useMemo, useState } from "react"
-import { Link, Outlet, useNavigate, useRouterState } from "@tanstack/react-router"
+import { Link, Navigate, Outlet, useNavigate, useRouterState } from "@tanstack/react-router"
+import { useHosted } from "@/lib/hosted"
+import { roleIn, useSession } from "@/lib/session"
+import { choseLater } from "@/features/setup/setup-later"
 import {
   Bell,
   MagnifyingGlass,
@@ -135,7 +139,7 @@ export function AppShell() {
   }
 
   return (
-    <SidebarProvider>
+    <LiveUpdatesProvider><SidebarProvider>
       <Sidebar collapsible="icon">
         <SidebarHeader className="px-3 pt-3.5 pb-2">
           <div className="flex h-8 min-w-0 items-center gap-2.5">
@@ -220,35 +224,28 @@ export function AppShell() {
       <CommandPalette open={palette} onOpenChange={setPalette} pages={pages} onSettings={() => openSettings()} onShortcuts={() => setShortcuts(true)} />
       <ShortcutsDialog open={shortcuts} onOpenChange={setShortcuts} pages={pages} />
       <Toaster position="bottom-right" duration={8000} />
-    </SidebarProvider>
+    </SidebarProvider></LiveUpdatesProvider>
   )
 }
 
-// The command that adds a LiveKit project to a running install (README, make project-add).
-const PROJECT_ADD_COMMAND =
-  'docker compose exec -e LIVEKIT_API_SECRET web voicegateway project add --name "Production" --livekit-url "$LIVEKIT_URL" --livekit-api-key "$LIVEKIT_API_KEY"'
+// On Cloud an Admin of an organisation with no project goes to the setup journey, unless they chose
+// to set up later; everyone else, and every self-hosted install, gets the simple form or message.
+function NoProjectYetOrSetup({ org }: { org: { id: string; name: string } }) {
+  const install = useHosted()
+  const admin = roleIn(org.id, useSession()) === "Admin"
+  if (install === "hosted" && admin && !choseLater(org.id, null)) return <Navigate to="/setup" />
+  return <NoProjectYet org={org} />
+}
 
 // The URL names an organisation or project this person cannot read. Say so, and link to the first
-// project they can, as a full page load so that project's settings are read. When they can read no
-// project at all, as in a fresh install, say how to add one instead.
+// project they can, as a full page load so that project's settings are read. When the organisation
+// it names has no project yet, as a new hosted workspace or a fresh install, say how to add one
+// instead: an Admin gets the form (phase 06f).
 function NoSuchProject() {
   const first = firstProjectPath()
-  if (!first && workspacesRead()) {
-    return (
-      <Empty className="mx-auto max-w-[1200px]">
-        <EmptyHeader>
-          <EmptyMedia variant="icon">
-            <TreeStructure />
-          </EmptyMedia>
-          <EmptyTitle>No project yet</EmptyTitle>
-          <EmptyDescription>A project is one LiveKit project. Add yours on the server, with its API secret in LIVEKIT_API_SECRET, then reload.</EmptyDescription>
-        </EmptyHeader>
-        <EmptyContent className="w-full max-w-xl">
-          <CopyCommand text={PROJECT_ADD_COMMAND} label="Project add command" />
-        </EmptyContent>
-      </Empty>
-    )
-  }
+  const org = currentOrg()
+  if (org && !org.projects.length) return <NoProjectYetOrSetup org={org} />
+  if (!first && workspacesRead()) return <NoProjectYet org={null} />
   return (
     <Empty className="mx-auto max-w-[1200px]">
       <EmptyHeader>

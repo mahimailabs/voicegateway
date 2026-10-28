@@ -2,6 +2,7 @@ package pgstore
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
@@ -185,11 +186,17 @@ func (s *Store) Call(ctx context.Context, organisationID, projectID, callID stri
 	if err != nil {
 		return store.Call{}, fmt.Errorf("call %s: %w", callID, err)
 	}
-	return store.Call{
-		ID: row.ID.String(), RoomName: row.RoomName.String, RoomSID: row.RoomSid.String, JobID: row.JobID.String,
+	c := store.Call{
+		Metadata: store.CallMetadata{Tags: row.Tags, Archived: row.Archived, Revision: row.MetadataRevision},
+		Fields:   callFields(row.Fields),
+		ID:       row.ID.String(), RoomName: row.RoomName.String, RoomSID: row.RoomSid.String, JobID: row.JobID.String,
 		StartedAt: timeOf(row.StartedAt), EndedAt: timeOf(row.EndedAt), FirstSeenAt: timeOf(row.FirstSeenAt),
 		EndState: row.EndState, Participants: row.Participants, Servable: row.Servable.Bool, Summarized: row.Summarized,
-	}, nil
+	}
+	if row.RecordingID.Valid {
+		c.Recording = &store.Recording{ID: row.RecordingID.String(), StartedAt: timeOf(row.RecordingStartedAt)}
+	}
+	return c, nil
 }
 
 func timeOf(t pgtype.Timestamptz) *time.Time {
@@ -220,6 +227,12 @@ func (s *Store) PutSummary(ctx context.Context, c store.StaleCall, sum store.Cal
 	if err != nil {
 		return err
 	}
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	q := s.q.WithTx(tx)
 	var turns pgtype.Int4
 	if sum.TurnCount != nil {
 		turns = pgtype.Int4{Int32: int32(min(*sum.TurnCount, math.MaxInt32)), Valid: true} //nolint:gosec // bounded above
@@ -228,20 +241,26 @@ func (s *Store) PutSummary(ctx context.Context, c store.StaleCall, sum store.Cal
 	if sum.AnswerMsMedian != nil {
 		median = pgtype.Float8{Float64: *sum.AnswerMsMedian, Valid: true}
 	}
-	err = s.q.PutSummary(ctx, PutSummaryParams{
+	err = q.PutSummary(ctx, PutSummaryParams{
 		CallID: id, TurnCount: turns, AnswerMs: sum.AnswerMs, AnswerMsMedian: median,
 		Models: noNUL(sum.Models), Pipeline: sum.Pipeline, AgentKey: text(stripNUL(deref(sum.AgentKey))), ComputedAt: timestamp(&computedAt),
 	})
 	if err != nil {
 		return fmt.Errorf("put summary: %w", badRow(err))
 	}
-	if err := s.q.HealCall(ctx, HealCallParams{ID: id, RoomName: text(stripNUL(sum.RoomName)), FirstSeenAt: timestamp(sum.FirstSeenAt)}); err != nil {
+	if err := q.HealCall(ctx, HealCallParams{ID: id, RoomName: text(stripNUL(sum.RoomName)), FirstSeenAt: timestamp(sum.FirstSeenAt)}); err != nil {
 		return fmt.Errorf("heal call: %w", badRow(err))
 	}
-	if err := s.q.ClearStale(ctx, ClearStaleParams{ID: id, Seen: timestamp(&c.StaleAt)}); err != nil {
+	if err := q.ClearStale(ctx, ClearStaleParams{ID: id, Seen: timestamp(&c.StaleAt)}); err != nil {
 		return fmt.Errorf("clear stale: %w", err)
 	}
-	return nil
+	if err := applyCallFindings(ctx, q, c.OrganisationID, c.ProjectID, c.ID, sum.Findings, sum.EvaluatedFindingIDs); err != nil {
+		return fmt.Errorf("put call findings: %w", err)
+	}
+	if err := q.RecordSummaryFindings(ctx, RecordSummaryFindingsParams{ID: id, EvaluatedAt: timestamp(&computedAt), SettingsRevision: sum.FindingSettingsRevision, SourceAvailable: sum.FindingSourceAvailable}); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
 }
 
 func deref(s *string) string {
@@ -292,4 +311,49 @@ func noNUL(ss []string) []string {
 		out = append(out, stripNUL(s))
 	}
 	return out
+}
+
+// MergeCallFields adds an SDK's custom fields to a call; a key it already has takes the new value.
+// A call holds at most store.MaxCallFields keys; it returns how many new keys were dropped for that.
+func (s *Store) MergeCallFields(ctx context.Context, callID string, fields map[string]string) (int, error) {
+	id, err := uuid(callID)
+	if err != nil {
+		return 0, err
+	}
+	in := noNULMap(fields)
+	b, err := json.Marshal(in)
+	if err != nil {
+		return 0, err
+	}
+	out, err := s.q.MergeCallFields(ctx, MergeCallFieldsParams{ID: id, Fields: b})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return 0, store.ErrNotFound
+	}
+	if err != nil {
+		return 0, fmt.Errorf("merge call fields: %w", badRow(err))
+	}
+	kept := callFields(out)
+	dropped := 0
+	for k := range in {
+		if _, ok := kept[k]; !ok {
+			dropped++
+		}
+	}
+	return dropped, nil
+}
+
+// noNULMap strips NUL from keys and values, which Postgres text and jsonb refuse.
+func noNULMap(m map[string]string) map[string]string {
+	out := make(map[string]string, len(m))
+	for k, v := range m {
+		out[stripNUL(k)] = stripNUL(v)
+	}
+	return out
+}
+
+// callFields decodes a call's SDK fields; a value that is not a string object reads as none.
+func callFields(b []byte) map[string]string {
+	m := map[string]string{}
+	_ = json.Unmarshal(b, &m)
+	return m
 }

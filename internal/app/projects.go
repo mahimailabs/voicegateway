@@ -5,14 +5,15 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"regexp"
 	"strings"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/mahimailabs/voicegateway/internal/api"
 	"github.com/mahimailabs/voicegateway/internal/auth"
+	"github.com/mahimailabs/voicegateway/internal/bucket"
 	"github.com/mahimailabs/voicegateway/internal/config"
+	"github.com/mahimailabs/voicegateway/internal/scrape"
 	"github.com/mahimailabs/voicegateway/internal/seal"
 	"github.com/mahimailabs/voicegateway/internal/store"
 	"github.com/mahimailabs/voicegateway/internal/store/chstore"
@@ -48,35 +49,58 @@ type ProjectInput struct {
 	LiveKitURL       string
 	LiveKitAPIKey    string
 	LiveKitAPISecret string
+	// SkipVerify stores the project without first proving its secret against LiveKit, for an
+	// install that cannot reach its LiveKit server yet (--skip-verify).
+	SkipVerify bool
+	// The S3 bucket the project keeps its recordings in, when it brings its own; an empty
+	// BucketEndpoint uses the instance's bucket. It is always verified, since it never changes.
+	BucketEndpoint, BucketName, BucketRegion, BucketAccessKey, BucketSecretKey string
 }
 
-var nonSlug = regexp.MustCompile(`[^a-z0-9]+`)
-
-// Slug turns a project name into its URL id, the same way the console does: "Default project"
-// becomes "default-project".
-func Slug(name string) string {
-	return strings.Trim(nonSlug.ReplaceAllString(strings.ToLower(name), "-"), "-")
+// projectFlags names each field of a new project as voicegateway project add asks for it.
+var projectFlags = map[string]string{
+	api.FieldName: "--name", api.FieldID: "--id", api.FieldLiveKitURL: "--livekit-url",
+	api.FieldLiveKitAPIKey: "--livekit-api-key", api.FieldLiveKitAPISecret: "LIVEKIT_API_SECRET",
+	api.FieldBucketEndpoint: "--recording-bucket-endpoint", api.FieldBucketName: "--recording-bucket",
+	api.FieldBucketRegion: "--recording-bucket-region", api.FieldBucketAccessKey: "--recording-bucket-access-key",
+	api.FieldBucketSecretKey: "RECORDING_BUCKET_SECRET_KEY",
 }
 
-// AddProject creates a project with its LiveKit secret sealed under the configured key.
+// AddProject creates a project with its LiveKit secret sealed under the configured key. The fields
+// are checked by api.CheckProject, the rule createProject applies too, and the id defaults to the
+// name's api.Slug. Unless in.SkipVerify, one signed LiveKit read checks endpoint connectivity, as
+// createProject does. A bucket the project brings is always proven with a write and a delete, as
+// createProject does, since it can never be changed afterwards.
 func AddProject(ctx context.Context, c config.Config, in ProjectInput) (store.Project, error) {
-	var missing []string
-	// In a fixed order, so the message reads the same on every run.
-	for _, f := range []struct{ name, value string }{
-		{"--name", in.Name}, {"--livekit-url", in.LiveKitURL}, {"--livekit-api-key", in.LiveKitAPIKey}, {"LIVEKIT_API_SECRET", in.LiveKitAPISecret},
-	} {
-		if strings.TrimSpace(f.value) == "" {
-			missing = append(missing, f.name)
+	np := store.NewProject{
+		OrganisationID: orgOrDefault(in.OrganisationID), ID: in.ID, Name: in.Name,
+		LiveKitURL: in.LiveKitURL, LiveKitAPIKey: in.LiveKitAPIKey, LiveKitAPISecret: in.LiveKitAPISecret,
+	}
+	if in.BucketEndpoint != "" || in.BucketName != "" || in.BucketAccessKey != "" || in.BucketRegion != "" {
+		np.Bucket = &store.ProjectBucket{
+			Endpoint: in.BucketEndpoint, Bucket: in.BucketName, Region: in.BucketRegion, AccessKey: in.BucketAccessKey, SecretKey: in.BucketSecretKey,
 		}
 	}
-	if len(missing) > 0 {
-		return store.Project{}, fmt.Errorf("missing %s", strings.Join(missing, ", "))
+	p, err := api.CheckProject(np)
+	var invalid *api.ProjectInputError
+	if errors.As(err, &invalid) {
+		return store.Project{}, errors.New(invalid.Describe(projectFlags))
 	}
-	if in.ID == "" {
-		in.ID = Slug(in.Name)
+	if err != nil {
+		return store.Project{}, err
 	}
-	if in.OrganisationID == "" {
-		in.OrganisationID = "default"
+	// The same connectivity check createProject asks for, through the same address guard; the operator sees the
+	// cause, which never holds the secret.
+	if !in.SkipVerify {
+		if err := scrape.NewVerifier(c.WorkerEndpointsPublicOnly).VerifyLiveKit(ctx, p.LiveKitURL, p.LiveKitAPIKey, p.LiveKitAPISecret); err != nil {
+			return store.Project{}, fmt.Errorf("%w (--skip-verify adds it without this check)", err)
+		}
+	}
+	if p.Bucket != nil {
+		transport := scrape.NewWorkerClient(c.WorkerEndpointsPublicOnly).Transport
+		if err := bucket.NewVerifier(transport).VerifyBucket(ctx, *p.Bucket); err != nil {
+			return store.Project{}, fmt.Errorf("recording bucket: %w", err)
+		}
 	}
 
 	sealer, err := seal.New(c.SecretKey)
@@ -88,14 +112,7 @@ func AddProject(ctx context.Context, c config.Config, in ProjectInput) (store.Pr
 		return store.Project{}, fmt.Errorf("postgres: %w", redactErr(err, c.PostgresURL))
 	}
 	defer pool.Close()
-	return pgstore.NewStore(pool, sealer).CreateProject(ctx, pgstore.NewProject{
-		OrganisationID:   in.OrganisationID,
-		ID:               in.ID,
-		Name:             strings.TrimSpace(in.Name),
-		LiveKitURL:       strings.TrimSpace(in.LiveKitURL),
-		LiveKitAPIKey:    strings.TrimSpace(in.LiveKitAPIKey),
-		LiveKitAPISecret: in.LiveKitAPISecret,
-	})
+	return pgstore.NewStore(pool, sealer).CreateProject(ctx, p)
 }
 
 // AddUser gives an email a role in one organisation: admin for the first admin of an install
@@ -255,6 +272,17 @@ func RemoveWorkerEndpoint(ctx context.Context, c config.Config, in WorkerEndpoin
 	return s.RemoveWorkerEndpoint(ctx, orgOrDefault(in.OrganisationID), in.ProjectID, strings.TrimSpace(id))
 }
 
+// SetRecordings turns a project's recordings on or off (phase 07a). Off keeps what is stored until
+// it expires.
+func SetRecordings(ctx context.Context, c config.Config, in WorkerEndpointCommand, on bool) error {
+	s, done, err := workerEndpoints(ctx, c, in)
+	if err != nil {
+		return err
+	}
+	defer done()
+	return s.SetProjectRecordings(ctx, orgOrDefault(in.OrganisationID), in.ProjectID, on)
+}
+
 // ListWorkerEndpoints lists a project's endpoints by id and host, never their URLs.
 func ListWorkerEndpoints(ctx context.Context, c config.Config, in WorkerEndpointCommand) ([]store.WorkerEndpoint, error) {
 	s, done, err := workerEndpoints(ctx, c, in)
@@ -267,6 +295,44 @@ func ListWorkerEndpoints(ctx context.Context, c config.Config, in WorkerEndpoint
 		return nil, err
 	}
 	return s.WorkerEndpoints(ctx, org, in.ProjectID)
+}
+
+// AddResourceEndpoint lists a self-hosted container's Prometheus metrics URL for a project. The URL is
+// sealed under the configured key; only its scheme and host are stored in the clear.
+func AddResourceEndpoint(ctx context.Context, c config.Config, in WorkerEndpointCommand, rawURL, kind, target, containerID string) (store.ResourceEndpoint, error) {
+	if strings.TrimSpace(rawURL) == "" {
+		return store.ResourceEndpoint{}, errors.New("missing the resource metrics URL")
+	}
+	s, done, err := workerEndpoints(ctx, c, in)
+	if err != nil {
+		return store.ResourceEndpoint{}, err
+	}
+	defer done()
+	return s.AddResourceEndpoint(ctx, orgOrDefault(in.OrganisationID), in.ProjectID, rawURL, kind, target, containerID)
+}
+
+// RemoveResourceEndpoint drops one of a project's listed endpoints by id.
+func RemoveResourceEndpoint(ctx context.Context, c config.Config, in WorkerEndpointCommand, id string) error {
+	s, done, err := workerEndpoints(ctx, c, in)
+	if err != nil {
+		return err
+	}
+	defer done()
+	return s.RemoveResourceEndpoint(ctx, orgOrDefault(in.OrganisationID), in.ProjectID, strings.TrimSpace(id))
+}
+
+// ListResourceEndpoints lists a project's endpoints by id and host, never their URLs.
+func ListResourceEndpoints(ctx context.Context, c config.Config, in WorkerEndpointCommand) ([]store.ResourceEndpoint, error) {
+	s, done, err := workerEndpoints(ctx, c, in)
+	if err != nil {
+		return nil, err
+	}
+	defer done()
+	org := orgOrDefault(in.OrganisationID)
+	if _, err := s.Project(ctx, org, in.ProjectID); err != nil {
+		return nil, err
+	}
+	return s.ResourceEndpoints(ctx, org, in.ProjectID)
 }
 
 func orgOrDefault(org string) string {
