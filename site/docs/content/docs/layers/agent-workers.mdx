@@ -5,13 +5,24 @@ description: How busy each of your agent workers is.
 
 <Picture src="/diagrams/layers-workers" alt="The layers of a call with Agent workers highlighted." />
 
+<Picture src="/screens/agents" ext="jpg" alt="The Agent workers page: agents, failed jobs, dispatch-to-join time and checks to fix, then one row per agent with where it runs, its status, CPU, memory, jobs, failures and join time." />
+
 | You see | It comes from |
 | --- | --- |
 | Load and active jobs per worker | The worker's own metrics page |
 | Agents and versions on LiveKit Cloud | LiveKit Cloud |
+| CPU and memory of a self-hosted worker | cAdvisor, for a container you map |
 
 Add a self-hosted worker's metrics address:
 
 ```bash
 voicegateway project workers add http://agent-host:8081/metrics --project production
 ```
+
+Map a worker's container to read its CPU and memory:
+
+```bash
+voicegateway project resources add --org default --project production --kind worker --target worker-a --container /docker/<container-id>
+```
+
+[Container CPU and memory](https://github.com/mahimailabs/voicegateway/blob/main/docs/container-resources.md) has the cAdvisor setup. A source that has not answered shows as awaiting samples or stale, never as idle.

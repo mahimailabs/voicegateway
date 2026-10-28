@@ -3,11 +3,19 @@ title: Calls
 description: Every call, and everything inside one call.
 ---
 
-<Picture src="/screens/call" ext="jpg" alt="A call open in the drawer: transcript on the left, the selected turn's timings on the right." />
+<Picture src="/screens/calls" ext="jpg" alt="The Calls list: calls, median answer time, calls with issues and recorded calls at the top, then one row per call with its channel, length, turns, answer time and issues." />
 
-The list shows every call with its answer time and issues. Filter it like a spreadsheet.
+The list shows every call with its answer time and issues. Filter it like a spreadsheet, and share the link: filters live in the URL.
 
-Open a call to see its transcript, every turn, the events from LiveKit and the agent's spans.
+## One call
+
+<Picture src="/screens/call" ext="jpg" alt="A call open in the drawer: the transcript on the left with each answer time, reported usage on the right, and the recording's waveform below." />
+
+**Conversation** shows the transcript with each answer time, the call's usage, the call path, LiveKit's events and the agent's trace.
+
+<Picture src="/screens/call-diagnosis" ext="jpg" alt="A call's Diagnosis: one card per turn with its answer time, then the slowest turn's breakdown into end-of-turn delay, model first token and voice first audio." />
+
+**Diagnosis** opens on the slowest turn. It splits the answer into speech to text, turn detection, model first token, tools and voice first audio, on the turn's own clock. Stages can overlap, so they are not added up.
 
 | You see | It comes from |
 | --- | --- |
@@ -15,3 +23,11 @@ Open a call to see its transcript, every turn, the events from LiveKit and the a
 | Turn timings | The agent's spans |
 | Room and participants | LiveKit webhooks |
 | Tokens, audio seconds, characters | The agent's usage metrics |
+| Recording | The agent's upload, when recordings are on |
+| Custom fields | The [Python SDK](/get-started/python-sdk) |
+
+## Tags, archive and recordings
+
+Add tags to a call, or archive it to hide it from the list. A Member or an Admin can change both.
+
+Recordings are off for every new project. Turn them on with `make project-recordings PROJECT=production SET=on`; the agent's `record=True` sends the audio, and the call plays it under the transcript. Recordings are deleted after 90 days.
