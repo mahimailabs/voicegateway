@@ -35,4 +35,14 @@ Sign in at [localhost:8080](http://localhost:8080). On a server, forward the por
 </Step>
 </Steps>
 
+## How long it takes
+
+Timed on clean machines, from nothing installed to the console answering:
+
+| Machine | Install |
+| --- | --- |
+| Ubuntu 24.04, GitHub Actions runner, 4 cores | 22 s (median of five nightly runs, 19 to 29 s) |
+
+Most of it is pulling the images, so a slower network takes longer.
+
 `make down` stops it and keeps your data. The [full self-hosting guide](https://github.com/mahimailabs/voicegateway/blob/main/docs/self-hosting.md) covers ports, HTTPS and upgrades.

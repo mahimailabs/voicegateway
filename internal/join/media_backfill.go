@@ -2,7 +2,6 @@ package join
 
 import (
 	"context"
-	"errors"
 	"time"
 
 	"github.com/mahimailabs/voicegateway/internal/store"
@@ -41,14 +40,7 @@ func (j *Joiner) backfillMediaPage(ctx context.Context, b store.MediaBackfill) e
 		return err
 	}
 	for _, row := range rows {
-		err := j.mediaFindings(ctx, []store.Event{row})
-		// Retention can remove a linked call while retaining the component event.
-		// Preserve the event without recreating the deleted call or linking another scope.
-		if errors.Is(err, store.ErrNotFound) && row.CallID != "" {
-			row.CallID = ""
-			err = j.mediaFindings(ctx, []store.Event{row})
-		}
-		if err != nil {
+		if err := j.mediaFindings(ctx, []store.Event{row}); err != nil {
 			return err
 		}
 	}

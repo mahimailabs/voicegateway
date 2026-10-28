@@ -113,3 +113,29 @@ func TestMediaBackfillRetainedEventAfterCallDeletion(t *testing.T) {
 		t.Fatalf("backfill recreated calls: %+v", calls)
 	}
 }
+
+// A call deleted while live must not hold up the stream: the finding is kept without the call,
+// and Stored succeeds, so the worker acknowledges the entry instead of retrying it forever.
+func TestStoredKeepsFindingAfterCallDeletedWhileLive(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	call, err := f.stack.calls.UpsertCall(ctx, store.CallUpsert{OrganisationID: "default", ProjectID: f.project, RoomSID: "RM_live_deleted", StartedAt: &base})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ev := &livekit.WebhookEvent{Event: "egress_ended", Id: "EV_live_deleted", CreatedAt: at(base), EgressInfo: &livekit.EgressInfo{EgressId: "EG_live_deleted", RoomId: "RM_live_deleted", Status: livekit.EgressStatus_EGRESS_FAILED}}
+	row := store.Event{OrganisationID: "default", ProjectID: f.project, Kind: string(event.KindLiveKitWebhook), EventID: ev.Id, DedupeKey: ev.Id, StreamID: ev.Id, ReceivedAt: time.Now(), Payload: f.webhook(ev), CallID: call}
+	if _, err := f.pool.Exec(ctx, "DELETE FROM calls WHERE id=$1", call); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.joiner.Stored(ctx, []store.Event{row}); err != nil {
+		t.Fatalf("stored failed, so the entry would retry forever: %v", err)
+	}
+	var linked *string
+	if err := f.pool.QueryRow(ctx, "SELECT call_id::text FROM issue_occurrences WHERE project_id=$1 AND source_id='webhook:EV_live_deleted'", f.project).Scan(&linked); err != nil || linked != nil {
+		t.Fatalf("kept evidence: %v %v", linked, err)
+	}
+	if calls := f.calls(); len(calls) != 0 {
+		t.Fatalf("stored recreated calls: %+v", calls)
+	}
+}

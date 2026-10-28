@@ -102,9 +102,10 @@
     --sidebar-accent-foreground: #0071e3;
     --sidebar-border: #d2d2d7;
     --sidebar-ring: #0071e3;
-    /* Text on a destructive tint (the destructive Badge): the Failed red in light; a lighter red in dark,
-       since #ff6259 on its 20% tint over the popover grey measures 3.57:1. */
-    --destructive-foreground: var(--destructive);
+    /* Text on a destructive tint (the destructive Badge and Button): a darker red in light and a lighter
+       red in dark, since the Failed red on its own 20% hover tint over the muted grey measures 3.44:1
+       in light and 3.05:1 over the dark popover. Red 800 and red 300 keep 5.3:1 and 4.7:1 there. */
+    --destructive-foreground: var(--color-red-800);
     --success: var(--color-emerald-500);
     --success-foreground: var(--color-emerald-900);
     --info: var(--color-violet-500);

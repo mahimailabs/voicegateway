@@ -1,0 +1,18 @@
+---
+title: Project
+description: Everything your LiveKit keys can reach, on one page.
+---
+
+<Picture src="/screens/project" ext="jpg" alt="The Project page: the LiveKit Cloud project at the top, then its media server with one live room, the phone bridge with its trunks and dispatch rule, and the agents in rooms, named by rules or observed." />
+
+Press <kbd>G</kbd> then <kbd>J</kbd>, or find **Project** with <kbd>Ctrl</kbd> <kbd>K</kbd>. It reads your LiveKit project with only its URL, API key and secret, and draws what it finds as a tree.
+
+| Branch | What it shows |
+| --- | --- |
+| Media server | Live rooms, who is in them and where callers connect from |
+| Phone bridge (SIP) | Inbound and outbound trunks, masked numbers and dispatch rules |
+| Agents | Agents in a live room, agents a dispatch rule sends, and the agent VoiceGateway observed |
+| Models | The models and options the observed agent reported |
+| Egress and Ingress | How many are running |
+
+An agent that is not in a room shows only its name until a call comes in. Anything LiveKit did not report shows as unknown, never as zero.
