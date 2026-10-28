@@ -67,6 +67,30 @@ repos:
         entry: uv run --locked --project examples/livekit-agent mypy --config-file examples/livekit-agent/pyproject.toml
         language: system
         files: ^examples/livekit-agent/.*\.py$
+# The demo agent (examples/demo-calls), the same four checks from its own uv.lock.
+-   repo: local
+    hooks:
+    -   id: demo-uv-lock
+        name: demo agent uv.lock is current
+        entry: uv lock --check --project examples/demo-calls
+        language: system
+        files: ^examples/demo-calls/(pyproject\.toml|uv\.lock)$
+        pass_filenames: false
+    -   id: demo-ruff
+        name: demo agent ruff
+        entry: uv run --locked --project examples/demo-calls ruff check
+        language: system
+        files: ^examples/demo-calls/.*\.py$
+    -   id: demo-ruff-format
+        name: demo agent ruff format
+        entry: uv run --locked --project examples/demo-calls ruff format --check
+        language: system
+        files: ^examples/demo-calls/.*\.py$
+    -   id: demo-mypy
+        name: demo agent mypy
+        entry: uv run --locked --project examples/demo-calls mypy --config-file examples/demo-calls/pyproject.toml
+        language: system
+        files: ^examples/demo-calls/.*\.py$
 # The Python SDK. Same pinned tools from its own uv.lock; mypy runs on the whole
 # package from sdk/python so its strict config and the tests' imports resolve.
 -   repo: local

@@ -1,0 +1,35 @@
+[project]
+name = "voicegateway-demo-calls"
+version = "0.1.0"
+description = "A LiveKit Agents demo agent with several call shapes (slow model, interruption, tool call, phone), connected to VoiceGateway."
+requires-python = "==3.13.*"
+dependencies = [
+    "livekit-agents==1.8.8",
+    "python-dotenv==1.2.4",
+    "voicegateway",
+]
+
+[dependency-groups]
+dev = [
+    "mypy==2.4.0",
+    "ruff==0.17.1",
+]
+
+[tool.uv]
+package = false
+
+# The SDK from this repository, for the scenario field.
+[tool.uv.sources]
+voicegateway = { path = "../../sdk/python", editable = true }
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "W"]
+
+[tool.mypy]
+python_version = "3.13"
+strict = true
+files = ["agent.py"]

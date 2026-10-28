@@ -1,6 +1,6 @@
 name: Python SDK
 
-# sdk/python (the optional attach() SDK, decision 0033) and the example agent that installs it:
+# sdk/python (the optional attach() SDK, decision 0033) and the example agents that install it:
 # the lock, ruff, ruff format, mypy and pytest, on every change to them or to the wire contract they
 # send (sdk/contract). The publish workflow runs the same checks again on the tagged source.
 
@@ -10,6 +10,7 @@ on:
       - 'sdk/python/**'
       - 'sdk/contract/**'
       - 'examples/livekit-agent/**'
+      - 'examples/demo-calls/**'
       - '.github/workflows/sdk-python.yml'
   push:
     branches: [main]
@@ -17,6 +18,7 @@ on:
       - 'sdk/python/**'
       - 'sdk/contract/**'
       - 'examples/livekit-agent/**'
+      - 'examples/demo-calls/**'
 
 permissions:
   contents: read
@@ -42,9 +44,12 @@ jobs:
 
   example:
     runs-on: ubuntu-24.04
+    strategy:
+      matrix:
+        example: [livekit-agent, demo-calls]
     defaults:
       run:
-        working-directory: examples/livekit-agent
+        working-directory: examples/${{ matrix.example }}
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
