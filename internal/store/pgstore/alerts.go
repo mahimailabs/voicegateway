@@ -363,8 +363,13 @@ func (s *Store) FinishAlertAttempt(ctx context.Context, d store.AlertDelivery, a
 	if err := q.RecordAlertAttempt(ctx, RecordAlertAttemptParams{DeliveryID: id, Attempt: attempts, At: ts(a.At), Status: a.Status, Error: textOf(a.Error)}); err != nil {
 		return fmt.Errorf("alert attempt: %w", err)
 	}
-	if err := q.FinishAlertAttempt(ctx, FinishAlertAttemptParams{ID: id, State: a.State, Attempts: attempts, NextAttemptAt: ts(a.NextAttemptAt), LastStatus: text(a.Status), LastError: textOf(a.Error), At: ts(a.At)}); err != nil {
+	n, err := q.FinishAlertAttempt(ctx, FinishAlertAttemptParams{ID: id, State: a.State, Attempts: attempts, NextAttemptAt: ts(a.NextAttemptAt), LastStatus: text(a.Status), LastError: textOf(a.Error), At: ts(a.At)})
+	if err != nil {
 		return fmt.Errorf("finish alert delivery: %w", err)
+	}
+	if n == 0 {
+		// Cancelled while it was sent: the attempt is kept, the channel and Issues page untouched.
+		return tx.Commit(ctx)
 	}
 	if a.State == "delivered" || a.Broken {
 		if err := q.SetAlertChannelBroken(ctx, SetAlertChannelBrokenParams{OrganisationID: d.OrganisationID, ProjectID: d.ProjectID, Kind: d.Channel, Broken: a.Broken}); err != nil {
@@ -477,16 +482,26 @@ func (s *Store) PutAlertChannel(ctx context.Context, organisationID, projectID, 
 	return nil
 }
 
-// DeleteAlertChannel removes a channel; one not configured is store.ErrNotFound.
+// DeleteAlertChannel removes a channel and cancels its queued deliveries; one not configured is
+// store.ErrNotFound.
 func (s *Store) DeleteAlertChannel(ctx context.Context, organisationID, projectID, kind string) error {
-	n, err := s.q.DeleteAlertChannel(ctx, DeleteAlertChannelParams{OrganisationID: organisationID, ProjectID: projectID, Kind: kind})
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	q := s.q.WithTx(tx)
+	n, err := q.DeleteAlertChannel(ctx, DeleteAlertChannelParams{OrganisationID: organisationID, ProjectID: projectID, Kind: kind})
 	if err != nil {
 		return fmt.Errorf("delete alert channel: %w", err)
 	}
 	if n == 0 {
 		return store.ErrNotFound
 	}
-	return nil
+	if err := q.CancelAlertDeliveries(ctx, CancelAlertDeliveriesParams{OrganisationID: organisationID, ProjectID: projectID, Channel: kind}); err != nil {
+		return fmt.Errorf("cancel alert deliveries: %w", err)
+	}
+	return tx.Commit(ctx)
 }
 
 // QueueAlertTest queues a test delivery to a configured channel, or store.ErrAlertChannelMissing.

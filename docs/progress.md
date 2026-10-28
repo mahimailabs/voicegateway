@@ -623,3 +623,10 @@ Mahimai decided Cloud keeps recordings in VoiceGateway's bucket by default, and 
 - **Roadmap #320:** checklists only, 32 of 39 done. Open: alert channels in settings, alert evaluation, alert channels, capacity runner, docs per console page, install timing report, 1,000-call load test.
 - **Installer:** `install.sh` and `docs/self-hosting.md` install `1.0.0-preview.8`, the image cloud-1 runs, pinned to digest `sha256:4e03820efd7e6d376cfbe782b87abed84d51487bb26ca8c7df94c414c16ac3d1` (ghcr.io's manifest for that tag). A `VOICEGATEWAY_VERSION` override still pulls by tag.
 - **Install timing:** not measured. A Linux cloud container could not pull the image from ghcr.io (its blob host is outside that network policy) and Docker Hub rate-limited it.
+
+### 2026-10-28: alert channels: Slack, Teams, Discord, PagerDuty, Opsgenie
+
+- **Channels:** five new kinds on #454's deliverer (`docs/specs/alert-channels.md`, Postgres 00024). Slack, Teams (Workflows, Adaptive Card) and Discord post to the provider's incoming webhook URL, checked against the provider's host; PagerDuty (Events API v2, dedup per incident, change event for a test) and Opsgenie (alias per incident, close on resolve) take a key and a region. Payloads come from slack-go, go-teams-notify, discordgo, go-pagerduty and the Opsgenie SDK; call text goes as plain text, Discord mentions nobody. URLs and keys are sealed and never returned.
+- **#454 follow-ups:** email recipients are answered to Admins only; Cloud refuses plain http webhook URLs in web and the worker; removing a channel cancels its queued deliveries (new `cancelled` state) instead of failing them onto the Issues page.
+- **Console:** Settings, Integrations sets up every channel; each rule card's channel picks are all live.
+- **Checks:** 1 to 8 of the spec pass (testcontainers Postgres and local provider stand-ins); 9, one real test alert per provider, needs the accounts.

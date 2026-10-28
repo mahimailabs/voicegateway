@@ -570,7 +570,7 @@ export const getAlertSetup = <ThrowOnError extends boolean = false>(options: Opt
 /**
  * Turn an alert rule on or off and choose where it sends
  *
- * A rule that is off still opens incidents, so its history stays, but sends nothing (docs/specs/alerts-behaviour.md). to names channel kinds only; email and webhook deliver today, and any other kind is invalid_request. A kind with no configured channel is kept and sends once an Admin configures it.
+ * A rule that is off still opens incidents, so its history stays, but sends nothing (docs/specs/alerts-behaviour.md). to names channel kinds only; any other kind is invalid_request. A kind with no configured channel is kept and sends once an Admin configures it.
  */
 export const updateAlertRule = <ThrowOnError extends boolean = false>(options: Options<UpdateAlertRuleData, ThrowOnError>): RequestResult<UpdateAlertRuleResponses, UpdateAlertRuleErrors, ThrowOnError> => (options.client ?? client).put<UpdateAlertRuleResponses, UpdateAlertRuleErrors, ThrowOnError>({
     security: [{
@@ -589,7 +589,7 @@ export const updateAlertRule = <ThrowOnError extends boolean = false>(options: O
 /**
  * Remove an alert channel
  *
- * Admins only. Rules keep the kind among their choices; nothing is sent to it until it is configured again. A delivery still waiting fails as channel_removed. A channel not configured is not_found.
+ * Admins only. Rules keep the kind among their choices; nothing is sent to it until it is configured again. A delivery still waiting is cancelled, with status channel_removed; it adds nothing to the Issues page. A channel not configured is not_found.
  */
 export const deleteAlertChannel = <ThrowOnError extends boolean = false>(options: Options<DeleteAlertChannelData, ThrowOnError>): RequestResult<DeleteAlertChannelResponses, DeleteAlertChannelErrors, ThrowOnError> => (options.client ?? client).delete<DeleteAlertChannelResponses, DeleteAlertChannelErrors, ThrowOnError>({
     security: [{
@@ -604,7 +604,7 @@ export const deleteAlertChannel = <ThrowOnError extends boolean = false>(options
 /**
  * Set where an alert channel sends
  *
- * Admins only. Email takes 1 to 20 recipient addresses and needs the server's VOICEGATEWAY_SMTP_URL. A webhook takes an http or https URL; the URL is sealed on the server and never returned, and only its host is shown. A new webhook gets a Standard Webhooks signing secret, returned in this answer only; saving again keeps it unless rotateSecret is true. Saving clears a broken channel.
+ * Admins only. Email takes 1 to 20 recipient addresses and needs the server's VOICEGATEWAY_SMTP_URL. A webhook takes an http or https URL (https only on Cloud); the URL is sealed on the server and never returned, and only its host is shown. A new webhook gets a Standard Webhooks signing secret, returned in this answer only; saving again keeps it unless rotateSecret is true. Slack, Teams and Discord take the provider's incoming webhook URL; PagerDuty and Opsgenie take a key and a region. URLs and keys are sealed and never returned. Saving clears a broken channel.
  */
 export const updateAlertChannel = <ThrowOnError extends boolean = false>(options: Options<UpdateAlertChannelData, ThrowOnError>): RequestResult<UpdateAlertChannelResponses, UpdateAlertChannelErrors, ThrowOnError> => (options.client ?? client).put<UpdateAlertChannelResponses, UpdateAlertChannelErrors, ThrowOnError>({
     security: [{

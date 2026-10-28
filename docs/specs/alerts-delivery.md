@@ -2,7 +2,7 @@
 
 ## Goal
 
-Send the seven alert rules for real: the worker opens incidents from what each rule matches and delivers every change to email or a webhook, durably, with the behaviour `alerts-behaviour.md` fixed on 2026-10-16. Slack, Microsoft Teams, Discord, PagerDuty and Opsgenie stay listed as coming soon.
+Send the seven alert rules for real: the worker opens incidents from what each rule matches and delivers every change to email or a webhook, durably, with the behaviour `alerts-behaviour.md` fixed on 2026-10-16. Slack, Microsoft Teams, Discord, PagerDuty and Opsgenie followed in `alert-channels.md`.
 
 ## What is built
 

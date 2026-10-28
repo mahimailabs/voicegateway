@@ -647,6 +647,25 @@ func (q *Queries) CallTotals(ctx context.Context, arg CallTotalsParams) (CallTot
 	return i, err
 }
 
+const cancelAlertDeliveries = `-- name: CancelAlertDeliveries :exec
+UPDATE alert_deliveries SET state = 'cancelled', lease_until = NULL, last_status = 'channel_removed',
+    last_error = 'the channel was removed before delivery'
+WHERE organisation_id = $1 AND project_id = $2 AND channel = $3
+  AND state IN ('pending', 'retrying')
+`
+
+type CancelAlertDeliveriesParams struct {
+	OrganisationID string
+	ProjectID      string
+	Channel        string
+}
+
+// Deliveries still queued for a removed channel: nothing will send them, and nothing is wrong.
+func (q *Queries) CancelAlertDeliveries(ctx context.Context, arg CancelAlertDeliveriesParams) error {
+	_, err := q.db.Exec(ctx, cancelAlertDeliveries, arg.OrganisationID, arg.ProjectID, arg.Channel)
+	return err
+}
+
 const claimAlertDeliveries = `-- name: ClaimAlertDeliveries :many
 UPDATE alert_deliveries d SET lease_until = $1
 WHERE d.id IN (
@@ -1601,11 +1620,11 @@ func (q *Queries) FailedSignIns(ctx context.Context, arg FailedSignInsParams) (F
 	return i, err
 }
 
-const finishAlertAttempt = `-- name: FinishAlertAttempt :exec
+const finishAlertAttempt = `-- name: FinishAlertAttempt :execrows
 UPDATE alert_deliveries SET state = $1, attempts = $2, next_attempt_at = $3, lease_until = NULL,
     last_status = $4, last_error = $5,
     delivered_at = CASE WHEN $1 = 'delivered' THEN $6::timestamptz ELSE delivered_at END
-WHERE id = $7
+WHERE id = $7 AND state IN ('pending', 'retrying')
 `
 
 type FinishAlertAttemptParams struct {
@@ -1618,8 +1637,9 @@ type FinishAlertAttemptParams struct {
 	ID            pgtype.UUID
 }
 
-func (q *Queries) FinishAlertAttempt(ctx context.Context, arg FinishAlertAttemptParams) error {
-	_, err := q.db.Exec(ctx, finishAlertAttempt,
+// A delivery cancelled while it was being sent (its channel removed) stays cancelled.
+func (q *Queries) FinishAlertAttempt(ctx context.Context, arg FinishAlertAttemptParams) (int64, error) {
+	result, err := q.db.Exec(ctx, finishAlertAttempt,
 		arg.State,
 		arg.Attempts,
 		arg.NextAttemptAt,
@@ -1628,7 +1648,10 @@ func (q *Queries) FinishAlertAttempt(ctx context.Context, arg FinishAlertAttempt
 		arg.At,
 		arg.ID,
 	)
-	return err
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const finishCall = `-- name: FinishCall :exec

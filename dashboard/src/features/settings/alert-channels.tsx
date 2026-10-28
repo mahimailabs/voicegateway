@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { EnvelopeSimple, LinkSimple, PaperPlaneTilt, Trash, WebhooksLogo } from "@phosphor-icons/react"
-import type { Icon } from "@phosphor-icons/react"
+import { EnvelopeSimple, Key, LinkSimple, PaperPlaneTilt, Trash, WebhooksLogo } from "@phosphor-icons/react"
 import { toast } from "sonner"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -11,6 +10,7 @@ import { Field, FieldDescription, FieldLabel } from "@/components/ui/field"
 import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/input-group"
 import { Item, ItemContent, ItemDescription, ItemGroup, ItemSeparator, ItemTitle } from "@/components/ui/item"
 import { Textarea } from "@/components/ui/textarea"
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import { ProviderLogo } from "@/components/provider-logo"
 import { CopyCommand } from "@/components/copy-command"
 import { errorText } from "@/components/page-state"
@@ -18,9 +18,9 @@ import { fmtHourMinute } from "@/lib/format"
 import { alertSetupQuery, removeAlertChannel, saveAlertChannel, testAlertChannel } from "@/lib/api"
 import type { AlertChannel, AlertChannelKind, AlertChannelUpdate, AlertDelivery } from "@/lib/api-types"
 
-// Where this project's alerts go (alerts-behaviour.md, Delivery). Email and webhook deliver today;
-// an Admin sets them here and the server seals the webhook URL and signing secret, so the browser
-// sees only the host, and the secret once, in the answer that made it.
+// Where this project's alerts go (alerts-behaviour.md, Delivery; alert-channels.md). An Admin sets
+// each channel here and the server seals its URL, key or signing secret, so the browser sees only
+// the host it posts to, and a webhook's secret once, in the answer that made it.
 
 const ago = (iso: string) => {
   const s = Math.max(0, (Date.now() - Date.parse(iso)) / 1000)
@@ -39,6 +39,7 @@ function deliveryBadge(c: AlertChannel | undefined): { text: string; tone: "ok" 
   if (d.state === "delivered") return { text: `Delivered ${d.deliveredAt ? ago(d.deliveredAt) : ""}`.trim(), tone: "ok" }
   if (d.state === "failed") return { text: "Not delivered", tone: "bad" }
   if (d.state === "retrying") return { text: "Retrying", tone: "warn" }
+  if (d.state === "cancelled") return { text: "Nothing sent yet", tone: "none" }
   return { text: "Sending", tone: "warn" }
 }
 const toneClass = { ok: "text-emerald-700 dark:text-emerald-400", warn: "text-amber-700 dark:text-amber-400", bad: "border-destructive/40 text-destructive", none: "text-muted-foreground" }
@@ -51,13 +52,30 @@ function lastDeliveryText(d: AlertDelivery) {
   return parts.join(" · ")
 }
 
-const coming = [
-  { logo: "slack", name: "Slack" },
-  { logo: "teams", name: "Microsoft Teams" },
-  { logo: "discord", name: "Discord" },
-  { logo: "pagerduty", name: "PagerDuty" },
-  { logo: "opsgenie", name: "Opsgenie" },
-]
+// The chat channels take the incoming webhook URL their app hands out; the server checks the host.
+const chats = [
+  { kind: "slack", name: "Slack", description: "Post each alert to a Slack channel.", placeholder: "https://hooks.slack.com/services/...", how: "In Slack, add an app with Incoming Webhooks to the channel and paste its webhook URL." },
+  { kind: "teams", name: "Microsoft Teams", description: "Post each alert to a Teams channel as an Adaptive Card.", placeholder: "https://....logic.azure.com/workflows/...", how: "In Teams, add the Workflows template \"Post to a channel when a webhook request is received\" and paste its URL." },
+  { kind: "discord", name: "Discord", description: "Post each alert to a Discord channel. Nobody is mentioned.", placeholder: "https://discord.com/api/webhooks/...", how: "In Discord, open the channel's settings, Integrations, Webhooks, and copy the webhook URL." },
+] as const
+
+// The paging channels take an integration key and the account's region.
+const pagers = [
+  { kind: "pagerduty", name: "PagerDuty", description: "Open a PagerDuty incident on firing and resolve it when the alert resolves.", label: "Integration key", how: "Add an Events API v2 integration to a PagerDuty service and paste its integration key. Send test records a change event, which pages nobody." },
+  { kind: "opsgenie", name: "Opsgenie", description: "Open an Opsgenie alert on firing and close it when the alert resolves.", label: "API key", how: "Add an API integration in Opsgenie and paste its key. Send test creates a P5 alert you can close." },
+] as const
+
+const removeText: Record<AlertChannelKind, string> = {
+  webhook: "The URL and signing secret are deleted and cannot be shown again. Adding the webhook again makes a new secret, so every receiver needs it.",
+  email: "The recipients are deleted.",
+  slack: "The webhook URL is deleted.",
+  teams: "The webhook URL is deleted.",
+  discord: "The webhook URL is deleted.",
+  pagerduty: "The integration key is deleted.",
+  opsgenie: "The API key is deleted.",
+}
+
+const logo = (provider: string) => <ProviderLogo provider={provider} size={20} />
 
 export function AlertChannels({ isAdmin, selfHosted }: { isAdmin: boolean; selfHosted: boolean }) {
   const read = useQuery(alertSetupQuery())
@@ -65,39 +83,38 @@ export function AlertChannels({ isAdmin, selfHosted }: { isAdmin: boolean; selfH
   const find = (k: AlertChannelKind) => channels.find((c) => c.kind === k)
   return (
     <ItemGroup className="gap-0 has-data-[size=sm]:gap-0">
-      <ChannelItem kind="webhook" icon={WebhooksLogo} name="Webhook" description="POST each alert as JSON, signed with Standard Webhooks." channel={find("webhook")} isAdmin={isAdmin} loaded={read.isSuccess}>
+      <ChannelItem kind="webhook" mark={<WebhooksLogo size={20} />} name="Webhook" description="POST each alert as JSON, signed with Standard Webhooks." channel={find("webhook")} isAdmin={isAdmin} loaded={read.isSuccess}>
         <WebhookForm configured={Boolean(find("webhook"))} />
       </ChannelItem>
       <ItemSeparator className="my-0" />
-      <ChannelItem kind="email" icon={EnvelopeSimple} name="Email" description="Send each alert to a list of addresses." channel={find("email")} isAdmin={isAdmin} loaded={read.isSuccess}>
+      <ChannelItem kind="email" mark={<EnvelopeSimple size={20} />} name="Email" description="Send each alert to a list of addresses." channel={find("email")} isAdmin={isAdmin} loaded={read.isSuccess}>
         {read.data?.emailAvailable ? (
           <EmailForm recipients={find("email")?.recipients ?? []} />
         ) : (
           <p className="text-[13px] text-muted-foreground">{selfHosted ? "This server sends no email. Set VOICEGATEWAY_SMTP_URL on the server, then add recipients here." : "Email is not available on this workspace yet."}</p>
         )}
       </ChannelItem>
-      {coming.map((x) => (
-        <span key={x.name} className="contents">
+      {chats.map((x) => (
+        <span key={x.kind} className="contents">
           <ItemSeparator className="my-0" />
-          <Item role="listitem" size="sm" className="rounded-none border-0 px-0 py-4">
-            <span className="flex size-10 shrink-0 items-center justify-center rounded-lg border bg-background opacity-60 grayscale">
-              <ProviderLogo provider={x.logo} size={20} />
-            </span>
-            <ItemContent className="min-w-0 gap-0.5">
-              <ItemTitle className="text-[14px] font-medium">{x.name}</ItemTitle>
-              <ItemDescription className="text-[13px]">Coming soon. A webhook reaches it today through its incoming webhook URL.</ItemDescription>
-            </ItemContent>
-            <Badge variant="outline" className="shrink-0 font-normal text-muted-foreground">
-              Coming soon
-            </Badge>
-          </Item>
+          <ChannelItem kind={x.kind} mark={logo(x.kind)} name={x.name} description={x.description} channel={find(x.kind)} isAdmin={isAdmin} loaded={read.isSuccess}>
+            <UrlForm kind={x.kind} name={x.name} placeholder={x.placeholder} how={x.how} configured={Boolean(find(x.kind))} />
+          </ChannelItem>
+        </span>
+      ))}
+      {pagers.map((x) => (
+        <span key={x.kind} className="contents">
+          <ItemSeparator className="my-0" />
+          <ChannelItem kind={x.kind} mark={logo(x.kind)} name={x.name} description={x.description} channel={find(x.kind)} isAdmin={isAdmin} loaded={read.isSuccess}>
+            <KeyForm kind={x.kind} name={x.name} label={x.label} how={x.how} configured={Boolean(find(x.kind))} />
+          </ChannelItem>
         </span>
       ))}
     </ItemGroup>
   )
 }
 
-function ChannelItem({ kind, icon: I, name, description, channel, isAdmin, loaded, children }: { kind: AlertChannelKind; icon: Icon; name: string; description: string; channel?: AlertChannel; isAdmin: boolean; loaded: boolean; children: React.ReactNode }) {
+function ChannelItem({ kind, mark, name, description, channel, isAdmin, loaded, children }: { kind: AlertChannelKind; mark: React.ReactNode; name: string; description: string; channel?: AlertChannel; isAdmin: boolean; loaded: boolean; children: React.ReactNode }) {
   const qc = useQueryClient()
   const refresh = () => qc.invalidateQueries({ queryKey: alertSetupQuery().queryKey })
   const test = useMutation({ mutationFn: () => testAlertChannel(kind), onSuccess: () => (toast.success(`Test alert queued for ${name}`), refresh()), onError: (e: Error) => toast.error(errorText(e)) })
@@ -108,7 +125,7 @@ function ChannelItem({ kind, icon: I, name, description, channel, isAdmin, loade
     <Item role="listitem" size="sm" className="flex-col items-stretch gap-3 rounded-none border-0 px-0 py-4">
       <div className="flex items-center gap-4">
         <span className="flex size-10 shrink-0 items-center justify-center rounded-lg border bg-background">
-          <I size={20} />
+          {mark}
         </span>
         <ItemContent className="min-w-0 gap-0.5">
           <ItemTitle className="text-[14px] font-medium">{name}</ItemTitle>
@@ -138,11 +155,7 @@ function ChannelItem({ kind, icon: I, name, description, channel, isAdmin, loade
           <DialogContent className="sm:max-w-md">
             <DialogHeader>
               <DialogTitle>{`Remove ${name}?`}</DialogTitle>
-              <DialogDescription>
-                {kind === "webhook"
-                  ? "The URL and signing secret are deleted and cannot be shown again. Adding the webhook again makes a new secret, so every receiver needs it. Rules stop sending here."
-                  : "The recipients are deleted. Rules stop sending email until it is set up again."}
-              </DialogDescription>
+              <DialogDescription>{`${removeText[kind]} Rules stop sending here until it is set up again, and alerts still waiting to go here are cancelled.`}</DialogDescription>
             </DialogHeader>
             <DialogFooter>
               <Button variant="outline" onClick={() => setConfirming(false)}>
@@ -267,6 +280,90 @@ function EmailForm({ recipients }: { recipients: string[] }) {
       </Field>
       <Button type="submit" size="sm" disabled={!valid || (text === null && recipients.length > 0)}>
         {recipients.length ? "Save" : "Add email"}
+      </Button>
+      {save.isError && (
+        <p role="alert" className="text-[13px] text-destructive">
+          {errorText(save.error)}
+        </p>
+      )}
+    </form>
+  )
+}
+
+// A chat channel's incoming webhook URL, entered on every save: the saved one is sealed and never
+// comes back.
+function UrlForm({ kind, name, placeholder, how, configured }: { kind: AlertChannelKind; name: string; placeholder: string; how: string; configured: boolean }) {
+  const [url, setUrl] = useState("")
+  const save = useSave(kind, () => setUrl(""))
+  const valid = /^https:\/\/[^\s/]+\/\S+$/.test(url.trim()) && !save.isPending
+  const id = `alert-${kind}-url`
+  return (
+    <form
+      className="space-y-3"
+      aria-label={name}
+      onSubmit={(e) => {
+        e.preventDefault()
+        if (valid) save.mutate({ url: url.trim() })
+      }}
+    >
+      <Field>
+        <FieldLabel htmlFor={id}>{configured ? "Replace the webhook URL" : "Webhook URL"}</FieldLabel>
+        <InputGroup>
+          <InputGroupAddon>
+            <LinkSimple />
+          </InputGroupAddon>
+          <InputGroupInput id={id} type="url" inputMode="url" autoComplete="off" placeholder={placeholder} value={url} onChange={(e) => setUrl(e.target.value)} />
+        </InputGroup>
+        <FieldDescription>{configured ? "The saved URL is never shown again. Enter it, or a new one, to save." : how}</FieldDescription>
+      </Field>
+      <Button type="submit" size="sm" disabled={!valid}>
+        {configured ? "Save" : `Add ${name}`}
+      </Button>
+      {save.isError && (
+        <p role="alert" className="text-[13px] text-destructive">
+          {errorText(save.error)}
+        </p>
+      )}
+    </form>
+  )
+}
+
+// A paging channel's key and region. The key is entered on every save: the saved one is sealed and
+// never comes back.
+function KeyForm({ kind, name, label, how, configured }: { kind: AlertChannelKind; name: string; label: string; how: string; configured: boolean }) {
+  const [key, setKey] = useState("")
+  const [region, setRegion] = useState<"us" | "eu">("us")
+  const save = useSave(kind, () => setKey(""))
+  const valid = key.trim().length >= 8 && !save.isPending
+  const id = `alert-${kind}-key`
+  return (
+    <form
+      className="space-y-3"
+      aria-label={name}
+      onSubmit={(e) => {
+        e.preventDefault()
+        if (valid) save.mutate({ key: key.trim(), region })
+      }}
+    >
+      <Field>
+        <FieldLabel htmlFor={id}>{configured ? `Replace the ${label.toLowerCase()}` : label}</FieldLabel>
+        <InputGroup>
+          <InputGroupAddon>
+            <Key />
+          </InputGroupAddon>
+          <InputGroupInput id={id} type="password" autoComplete="off" spellCheck={false} value={key} onChange={(e) => setKey(e.target.value)} />
+        </InputGroup>
+        <FieldDescription>{configured ? "The saved key is never shown again. Enter it, or a new one, to save." : how}</FieldDescription>
+      </Field>
+      <Field>
+        <FieldLabel id={`${id}-region`}>Region</FieldLabel>
+        <ToggleGroup type="single" variant="outline" size="sm" value={region} onValueChange={(v) => v && setRegion(v as "us" | "eu")} aria-labelledby={`${id}-region`} className="w-fit">
+          <ToggleGroupItem value="us">US</ToggleGroupItem>
+          <ToggleGroupItem value="eu">EU</ToggleGroupItem>
+        </ToggleGroup>
+      </Field>
+      <Button type="submit" size="sm" disabled={!valid}>
+        {configured ? "Save" : `Add ${name}`}
       </Button>
       {save.isError && (
         <p role="alert" className="text-[13px] text-destructive">

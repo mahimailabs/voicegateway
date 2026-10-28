@@ -141,7 +141,7 @@ func Web(ctx context.Context, c config.Config, log *slog.Logger) error {
 	mountIngestion(mux, projects, producer, quota, recordings, connections, log, time.Now)
 	mux.Handle("/auth/", accounts.Routes())
 	v1 := &api.API{
-		Alerts: projects, AlertEmail: c.SMTPURL != "", AlertTest: alert.Composer{PublicURL: c.PublicURL, Now: time.Now}.Test,
+		Alerts: projects, AlertEmail: c.SMTPURL != "", AlertHTTPSOnly: c.WorkerEndpointsPublicOnly, AlertTest: alert.Composer{PublicURL: c.PublicURL, Now: time.Now}.Test,
 		Settings: projects, Origins: projects, Embeds: embeds, Metadata: projects, Issues: projects, StorageBucket: c.S3.Bucket,
 		Live:              live,
 		ResourceEndpoints: projects, ResourceSamples: events, Projects: projects, NewProjects: projects, Credentials: projects, VerifyLiveKit: scrape.NewVerifier(c.WorkerEndpointsPublicOnly), VerifyBucket: bucket.NewVerifier(bucketTransport), Calls: projects, Traces: events, Layers: events, Endpoints: projects, Accounts: projects, Stats: projects, Keys: projects, NewKey: auth.NewKey, Log: log, Now: time.Now, Gate: accounts.Gate,
@@ -393,7 +393,7 @@ func Worker(ctx context.Context, c config.Config, log *slog.Logger) error {
 		return nil
 	})
 	g.Go(func() error {
-		deliverer := &alert.Deliverer{Store: alerts, HTTP: scrape.NewWorkerClient(c.WorkerEndpointsPublicOnly), Refused: scrape.Refused, Mailer: mail, Log: log, Now: time.Now}
+		deliverer := &alert.Deliverer{Store: alerts, HTTP: scrape.NewWorkerClient(c.WorkerEndpointsPublicOnly), Refused: scrape.Refused, HTTPSOnly: c.WorkerEndpointsPublicOnly, Mailer: mail, Log: log, Now: time.Now}
 		everyWithin(gctx, deliverEvery, alert.TickBudget, "alert delivery", deliverer.Tick, log)
 		return nil
 	})
