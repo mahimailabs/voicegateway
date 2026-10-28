@@ -103,6 +103,266 @@ func (q *Queries) AdvanceMediaBackfill(ctx context.Context, arg AdvanceMediaBack
 	return result.RowsAffected(), nil
 }
 
+const alertCallWindow = `-- name: AlertCallWindow :one
+SELECT count(*) FILTER (WHERE COALESCE(c.ended_at, c.last_activity_at) >= $1)::bigint AS calls,
+       count(*) FILTER (WHERE COALESCE(c.ended_at, c.last_activity_at) >= $1 AND EXISTS (
+           SELECT 1 FROM issue_occurrences o
+           WHERE o.organisation_id = c.organisation_id AND o.project_id = c.project_id AND o.call_id = c.id
+             AND o.issue_id = $2 AND o.active))::bigint AS matched,
+       max(COALESCE(c.ended_at, c.last_activity_at))::timestamptz AS last_call_at
+FROM calls c
+JOIN call_summaries s ON s.call_id = c.id
+WHERE c.organisation_id = $3 AND c.project_id = $4 AND COALESCE(s.agent_key, '') = $5
+  AND c.end_state <> 'open' AND c.issue_evaluated_at IS NOT NULL AND c.issue_source_available
+`
+
+type AlertCallWindowParams struct {
+	Since          pgtype.Timestamptz
+	IssueID        string
+	OrganisationID string
+	ProjectID      string
+	AgentKey       pgtype.Text
+}
+
+type AlertCallWindowRow struct {
+	Calls      int64
+	Matched    int64
+	LastCallAt pgtype.Timestamptz
+}
+
+// Calls of one agent the issue engine evaluated with turn data, ended since a time, and how many of
+// them matched the rule; last_call_at is the latest such call ever, for "source silent".
+func (q *Queries) AlertCallWindow(ctx context.Context, arg AlertCallWindowParams) (AlertCallWindowRow, error) {
+	row := q.db.QueryRow(ctx, alertCallWindow,
+		arg.Since,
+		arg.IssueID,
+		arg.OrganisationID,
+		arg.ProjectID,
+		arg.AgentKey,
+	)
+	var i AlertCallWindowRow
+	err := row.Scan(&i.Calls, &i.Matched, &i.LastCallAt)
+	return i, err
+}
+
+const alertEventOccurrences = `-- name: AlertEventOccurrences :many
+SELECT (CASE o.issue_id WHEN 'slow' THEN 'slow-answer' WHEN 'cut' THEN 'cut-off' WHEN 'sip:plain-phone' THEN 'plain-phone' ELSE o.issue_id END)::text AS rule_id,
+       o.occurred_at, o.call_id,
+       COALESCE(o.detail->>'where', o.source_id)::text AS location, COALESCE(o.detail->>'detail', '')::text AS detail
+FROM issue_occurrences o
+LEFT JOIN call_list c ON c.id = o.call_id AND c.organisation_id = o.organisation_id AND c.project_id = o.project_id
+WHERE o.organisation_id = $1 AND o.project_id = $2 AND o.active
+  AND o.issue_id IN ('slow', 'cut', 'job-failed', 'slow-join', 'recording-lost', 'ingress-error')
+  AND (o.call_id IS NULL OR c.servable)
+  AND o.occurred_at >= $3 AND o.occurred_at < $4
+ORDER BY o.occurred_at DESC
+LIMIT $5
+`
+
+type AlertEventOccurrencesParams struct {
+	OrganisationID string
+	ProjectID      string
+	FromAt         pgtype.Timestamptz
+	ToAt           pgtype.Timestamptz
+	MaxRows        int32
+}
+
+type AlertEventOccurrencesRow struct {
+	RuleID     string
+	OccurredAt pgtype.Timestamptz
+	CallID     pgtype.UUID
+	Location   string
+	Detail     string
+}
+
+// What each rule matched in a range, as the Issues page stores it: the evaluation the Alerts page
+// charts, not delivery history.
+func (q *Queries) AlertEventOccurrences(ctx context.Context, arg AlertEventOccurrencesParams) ([]AlertEventOccurrencesRow, error) {
+	rows, err := q.db.Query(ctx, alertEventOccurrences,
+		arg.OrganisationID,
+		arg.ProjectID,
+		arg.FromAt,
+		arg.ToAt,
+		arg.MaxRows,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []AlertEventOccurrencesRow
+	for rows.Next() {
+		var i AlertEventOccurrencesRow
+		if err := rows.Scan(
+			&i.RuleID,
+			&i.OccurredAt,
+			&i.CallID,
+			&i.Location,
+			&i.Detail,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const alertIncidentForUpdate = `-- name: AlertIncidentForUpdate :one
+SELECT id, organisation_id, project_id, rule_id, subject, subject_label, state, opened_at, resolved_at, resolved_by, occurrences, notified_occurrences, notified_at, changes, last_occurrence_at, last_detail, hold_reason, silent_since FROM alert_incidents WHERE id = $1 FOR UPDATE
+`
+
+func (q *Queries) AlertIncidentForUpdate(ctx context.Context, id pgtype.UUID) (AlertIncident, error) {
+	row := q.db.QueryRow(ctx, alertIncidentForUpdate, id)
+	var i AlertIncident
+	err := row.Scan(
+		&i.ID,
+		&i.OrganisationID,
+		&i.ProjectID,
+		&i.RuleID,
+		&i.Subject,
+		&i.SubjectLabel,
+		&i.State,
+		&i.OpenedAt,
+		&i.ResolvedAt,
+		&i.ResolvedBy,
+		&i.Occurrences,
+		&i.NotifiedOccurrences,
+		&i.NotifiedAt,
+		&i.Changes,
+		&i.LastOccurrenceAt,
+		&i.LastDetail,
+		&i.HoldReason,
+		&i.SilentSince,
+	)
+	return i, err
+}
+
+const alertIncidentInProject = `-- name: AlertIncidentInProject :one
+SELECT id, organisation_id, project_id, rule_id, subject, subject_label, state, opened_at, resolved_at, resolved_by, occurrences, notified_occurrences, notified_at, changes, last_occurrence_at, last_detail, hold_reason, silent_since FROM alert_incidents WHERE organisation_id = $1 AND project_id = $2 AND id = $3
+FOR UPDATE
+`
+
+type AlertIncidentInProjectParams struct {
+	OrganisationID string
+	ProjectID      string
+	ID             pgtype.UUID
+}
+
+func (q *Queries) AlertIncidentInProject(ctx context.Context, arg AlertIncidentInProjectParams) (AlertIncident, error) {
+	row := q.db.QueryRow(ctx, alertIncidentInProject, arg.OrganisationID, arg.ProjectID, arg.ID)
+	var i AlertIncident
+	err := row.Scan(
+		&i.ID,
+		&i.OrganisationID,
+		&i.ProjectID,
+		&i.RuleID,
+		&i.Subject,
+		&i.SubjectLabel,
+		&i.State,
+		&i.OpenedAt,
+		&i.ResolvedAt,
+		&i.ResolvedBy,
+		&i.Occurrences,
+		&i.NotifiedOccurrences,
+		&i.NotifiedAt,
+		&i.Changes,
+		&i.LastOccurrenceAt,
+		&i.LastDetail,
+		&i.HoldReason,
+		&i.SilentSince,
+	)
+	return i, err
+}
+
+const alertJobWindow = `-- name: AlertJobWindow :one
+SELECT count(*) FILTER (WHERE j.dispatched_at > $1 AND j.status = 'JS_SUCCESS')::bigint AS succeeded,
+       count(*) FILTER (WHERE j.dispatched_at > $1 AND j.evaluated_joined_at IS NOT NULL
+           AND EXTRACT(EPOCH FROM j.evaluated_joined_at - j.dispatched_at) * 1000 <= COALESCE(ps.join_ms, 2000))::bigint AS joined_in_time,
+       max(j.observed_at)::timestamptz AS last_seen_at
+FROM issue_job_observations j
+LEFT JOIN project_settings ps ON ps.organisation_id = j.organisation_id AND ps.project_id = j.project_id
+WHERE j.organisation_id = $2 AND j.project_id = $3 AND COALESCE(j.agent_name, '') = $4
+`
+
+type AlertJobWindowParams struct {
+	After          pgtype.Timestamptz
+	OrganisationID string
+	ProjectID      string
+	AgentName      pgtype.Text
+}
+
+type AlertJobWindowRow struct {
+	Succeeded    int64
+	JoinedInTime int64
+	LastSeenAt   pgtype.Timestamptz
+}
+
+// Jobs of one agent dispatched after a time: how many succeeded, and how many joined within the
+// project's join threshold. last_seen_at is when any job of the agent was last read.
+func (q *Queries) AlertJobWindow(ctx context.Context, arg AlertJobWindowParams) (AlertJobWindowRow, error) {
+	row := q.db.QueryRow(ctx, alertJobWindow,
+		arg.After,
+		arg.OrganisationID,
+		arg.ProjectID,
+		arg.AgentName,
+	)
+	var i AlertJobWindowRow
+	err := row.Scan(&i.Succeeded, &i.JoinedInTime, &i.LastSeenAt)
+	return i, err
+}
+
+const alertRuleTargets = `-- name: AlertRuleTargets :one
+SELECT COALESCE(r.enabled, true)::boolean AS enabled,
+       COALESCE((SELECT array_agg(c.kind ORDER BY c.kind) FROM alert_channels c
+                 WHERE c.organisation_id = $1 AND c.project_id = $2 AND c.kind = ANY(r.channels)), '{}')::text[] AS channels
+FROM (SELECT 1) one
+LEFT JOIN alert_rules r ON r.organisation_id = $1 AND r.project_id = $2 AND r.rule_id = $3
+`
+
+type AlertRuleTargetsParams struct {
+	OrganisationID string
+	ProjectID      string
+	RuleID         string
+}
+
+type AlertRuleTargetsRow struct {
+	Enabled  bool
+	Channels []string
+}
+
+// Whether a rule sends, and to which of its chosen kinds a channel is configured.
+func (q *Queries) AlertRuleTargets(ctx context.Context, arg AlertRuleTargetsParams) (AlertRuleTargetsRow, error) {
+	row := q.db.QueryRow(ctx, alertRuleTargets, arg.OrganisationID, arg.ProjectID, arg.RuleID)
+	var i AlertRuleTargetsRow
+	err := row.Scan(&i.Enabled, &i.Channels)
+	return i, err
+}
+
+const alertSourceRead = `-- name: AlertSourceRead :one
+SELECT good_at, fresh_until FROM issue_sources
+WHERE organisation_id = $1 AND project_id = $2 AND layer = $3
+`
+
+type AlertSourceReadParams struct {
+	OrganisationID string
+	ProjectID      string
+	Layer          string
+}
+
+type AlertSourceReadRow struct {
+	GoodAt     pgtype.Timestamptz
+	FreshUntil pgtype.Timestamptz
+}
+
+func (q *Queries) AlertSourceRead(ctx context.Context, arg AlertSourceReadParams) (AlertSourceReadRow, error) {
+	row := q.db.QueryRow(ctx, alertSourceRead, arg.OrganisationID, arg.ProjectID, arg.Layer)
+	var i AlertSourceReadRow
+	err := row.Scan(&i.GoodAt, &i.FreshUntil)
+	return i, err
+}
+
 const callByID = `-- name: CallByID :one
 SELECT l.id, l.room_name, l.room_sid, l.job_id, l.started_at, l.ended_at, l.end_state, l.first_seen_at,
        l.participants, l.servable, l.summarized::boolean AS summarized, c.tags, c.archived, c.metadata_revision, c.fields,
@@ -387,6 +647,70 @@ func (q *Queries) CallTotals(ctx context.Context, arg CallTotalsParams) (CallTot
 	return i, err
 }
 
+const claimAlertDeliveries = `-- name: ClaimAlertDeliveries :many
+UPDATE alert_deliveries d SET lease_until = $1
+WHERE d.id IN (
+    SELECT x.id FROM alert_deliveries x
+    WHERE x.state IN ('pending', 'retrying') AND x.next_attempt_at <= $2
+      AND (x.lease_until IS NULL OR x.lease_until < $2)
+    ORDER BY x.next_attempt_at
+    LIMIT $3
+    FOR UPDATE SKIP LOCKED)
+RETURNING d.id, d.organisation_id, d.project_id, d.incident_id, d.channel, d.change, d.idempotency_key, d.message, d.attempts, d.created_at
+`
+
+type ClaimAlertDeliveriesParams struct {
+	LeaseUntil pgtype.Timestamptz
+	Now        pgtype.Timestamptz
+	MaxRows    int32
+}
+
+type ClaimAlertDeliveriesRow struct {
+	ID             pgtype.UUID
+	OrganisationID string
+	ProjectID      string
+	IncidentID     pgtype.UUID
+	Channel        string
+	Change         string
+	IdempotencyKey string
+	Message        []byte
+	Attempts       int32
+	CreatedAt      pgtype.Timestamptz
+}
+
+// Due deliveries, leased so a second worker skips them; a lease that lapses (a crashed worker) frees
+// the delivery for the next claim.
+func (q *Queries) ClaimAlertDeliveries(ctx context.Context, arg ClaimAlertDeliveriesParams) ([]ClaimAlertDeliveriesRow, error) {
+	rows, err := q.db.Query(ctx, claimAlertDeliveries, arg.LeaseUntil, arg.Now, arg.MaxRows)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ClaimAlertDeliveriesRow
+	for rows.Next() {
+		var i ClaimAlertDeliveriesRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.OrganisationID,
+			&i.ProjectID,
+			&i.IncidentID,
+			&i.Channel,
+			&i.Change,
+			&i.IdempotencyKey,
+			&i.Message,
+			&i.Attempts,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const claimBackfillFindings = `-- name: ClaimBackfillFindings :execrows
 UPDATE calls SET issue_evaluated_at = $1, issue_settings_revision = $2,
  issue_source_available = $3, issue_retry_at = NULL, issue_failures = 0, issue_evaluation_revision = issue_evaluation_revision + 1
@@ -563,6 +887,66 @@ func (q *Queries) CountAdmins(ctx context.Context, organisationID string) (int64
 	var count int64
 	err := row.Scan(&count)
 	return count, err
+}
+
+const countAlertOccurrence = `-- name: CountAlertOccurrence :one
+UPDATE alert_incidents SET occurrences = occurrences + 1, state = 'firing', resolved_at = NULL, resolved_by = NULL,
+    last_occurrence_at = CASE WHEN $1::timestamptz IS NULL THEN last_occurrence_at
+                              ELSE GREATEST(last_occurrence_at, $1::timestamptz) END,
+    last_detail = $2, silent_since = NULL
+WHERE id = $3
+RETURNING id, organisation_id, project_id, rule_id, subject, subject_label, state, opened_at, resolved_at, resolved_by, occurrences, notified_occurrences, notified_at, changes, last_occurrence_at, last_detail, hold_reason, silent_since
+`
+
+type CountAlertOccurrenceParams struct {
+	LastOccurrenceAt pgtype.Timestamptz
+	LastDetail       []byte
+	ID               pgtype.UUID
+}
+
+// A new occurrence joins the incident (reopening it under the flap guard) and proves its source is
+// reporting again.
+func (q *Queries) CountAlertOccurrence(ctx context.Context, arg CountAlertOccurrenceParams) (AlertIncident, error) {
+	row := q.db.QueryRow(ctx, countAlertOccurrence, arg.LastOccurrenceAt, arg.LastDetail, arg.ID)
+	var i AlertIncident
+	err := row.Scan(
+		&i.ID,
+		&i.OrganisationID,
+		&i.ProjectID,
+		&i.RuleID,
+		&i.Subject,
+		&i.SubjectLabel,
+		&i.State,
+		&i.OpenedAt,
+		&i.ResolvedAt,
+		&i.ResolvedBy,
+		&i.Occurrences,
+		&i.NotifiedOccurrences,
+		&i.NotifiedAt,
+		&i.Changes,
+		&i.LastOccurrenceAt,
+		&i.LastDetail,
+		&i.HoldReason,
+		&i.SilentSince,
+	)
+	return i, err
+}
+
+const countPlainPhoneTrunks = `-- name: CountPlainPhoneTrunks :one
+SELECT count(*)::bigint FROM issue_occurrences
+WHERE organisation_id = $1 AND project_id = $2 AND issue_id = 'sip:plain-phone' AND active
+`
+
+type CountPlainPhoneTrunksParams struct {
+	OrganisationID string
+	ProjectID      string
+}
+
+func (q *Queries) CountPlainPhoneTrunks(ctx context.Context, arg CountPlainPhoneTrunksParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countPlainPhoneTrunks, arg.OrganisationID, arg.ProjectID)
+	var column_1 int64
+	err := row.Scan(&column_1)
+	return column_1, err
 }
 
 const countUsers = `-- name: CountUsers :one
@@ -911,6 +1295,24 @@ func (q *Queries) DeferStale(ctx context.Context, id pgtype.UUID) error {
 	return err
 }
 
+const deleteAlertChannel = `-- name: DeleteAlertChannel :execrows
+DELETE FROM alert_channels WHERE organisation_id = $1 AND project_id = $2 AND kind = $3
+`
+
+type DeleteAlertChannelParams struct {
+	OrganisationID string
+	ProjectID      string
+	Kind           string
+}
+
+func (q *Queries) DeleteAlertChannel(ctx context.Context, arg DeleteAlertChannelParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteAlertChannel, arg.OrganisationID, arg.ProjectID, arg.Kind)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const deleteExpiredRecordings = `-- name: DeleteExpiredRecordings :execrows
 DELETE FROM call_recordings WHERE stored_at < $1
 `
@@ -918,6 +1320,42 @@ DELETE FROM call_recordings WHERE stored_at < $1
 // Forgets recordings stored before the cutoff; the worker removes their objects by day.
 func (q *Queries) DeleteExpiredRecordings(ctx context.Context, cutoff pgtype.Timestamptz) (int64, error) {
 	result, err := q.db.Exec(ctx, deleteExpiredRecordings, cutoff)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const deleteOldAlertIncidents = `-- name: DeleteOldAlertIncidents :execrows
+DELETE FROM alert_incidents WHERE state = 'resolved' AND resolved_at < $1
+`
+
+func (q *Queries) DeleteOldAlertIncidents(ctx context.Context, before pgtype.Timestamptz) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteOldAlertIncidents, before)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const deleteOldAlertOccurrences = `-- name: DeleteOldAlertOccurrences :execrows
+DELETE FROM alert_occurrences WHERE seen_at < $1
+`
+
+func (q *Queries) DeleteOldAlertOccurrences(ctx context.Context, before pgtype.Timestamptz) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteOldAlertOccurrences, before)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const deleteOldAlertTests = `-- name: DeleteOldAlertTests :execrows
+DELETE FROM alert_deliveries WHERE incident_id IS NULL AND created_at < $1
+`
+
+func (q *Queries) DeleteOldAlertTests(ctx context.Context, before pgtype.Timestamptz) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteOldAlertTests, before)
 	if err != nil {
 		return 0, err
 	}
@@ -1006,6 +1444,22 @@ func (q *Queries) EmbedGrantActive(ctx context.Context, arg EmbedGrantActivePara
 	var active bool
 	err := row.Scan(&active)
 	return active, err
+}
+
+const ensureAlertDeliveryIssue = `-- name: EnsureAlertDeliveryIssue :exec
+INSERT INTO issues (organisation_id, project_id, id, title, kind, source, severity)
+VALUES ($1, $2, 'alert-not-delivered', 'Alert not delivered', 'event', 'delivery', 'high')
+ON CONFLICT (organisation_id, project_id, id) DO NOTHING
+`
+
+type EnsureAlertDeliveryIssueParams struct {
+	OrganisationID string
+	ProjectID      string
+}
+
+func (q *Queries) EnsureAlertDeliveryIssue(ctx context.Context, arg EnsureAlertDeliveryIssueParams) error {
+	_, err := q.db.Exec(ctx, ensureAlertDeliveryIssue, arg.OrganisationID, arg.ProjectID)
+	return err
 }
 
 const ensureCallIssue = `-- name: EnsureCallIssue :exec
@@ -1147,6 +1601,36 @@ func (q *Queries) FailedSignIns(ctx context.Context, arg FailedSignInsParams) (F
 	return i, err
 }
 
+const finishAlertAttempt = `-- name: FinishAlertAttempt :exec
+UPDATE alert_deliveries SET state = $1, attempts = $2, next_attempt_at = $3, lease_until = NULL,
+    last_status = $4, last_error = $5,
+    delivered_at = CASE WHEN $1 = 'delivered' THEN $6::timestamptz ELSE delivered_at END
+WHERE id = $7
+`
+
+type FinishAlertAttemptParams struct {
+	State         string
+	Attempts      int32
+	NextAttemptAt pgtype.Timestamptz
+	LastStatus    pgtype.Text
+	LastError     pgtype.Text
+	At            pgtype.Timestamptz
+	ID            pgtype.UUID
+}
+
+func (q *Queries) FinishAlertAttempt(ctx context.Context, arg FinishAlertAttemptParams) error {
+	_, err := q.db.Exec(ctx, finishAlertAttempt,
+		arg.State,
+		arg.Attempts,
+		arg.NextAttemptAt,
+		arg.LastStatus,
+		arg.LastError,
+		arg.At,
+		arg.ID,
+	)
+	return err
+}
+
 const finishCall = `-- name: FinishCall :exec
 UPDATE calls SET
     ended_at         = COALESCE($1, ended_at),
@@ -1165,6 +1649,93 @@ type FinishCallParams struct {
 func (q *Queries) FinishCall(ctx context.Context, arg FinishCallParams) error {
 	_, err := q.db.Exec(ctx, finishCall, arg.EndedAt, arg.ID)
 	return err
+}
+
+const firingAlertIncident = `-- name: FiringAlertIncident :one
+SELECT id, organisation_id, project_id, rule_id, subject, subject_label, state, opened_at, resolved_at, resolved_by, occurrences, notified_occurrences, notified_at, changes, last_occurrence_at, last_detail, hold_reason, silent_since FROM alert_incidents
+WHERE organisation_id = $1 AND project_id = $2 AND rule_id = $3 AND subject = $4 AND state = 'firing'
+FOR UPDATE
+`
+
+type FiringAlertIncidentParams struct {
+	OrganisationID string
+	ProjectID      string
+	RuleID         string
+	Subject        string
+}
+
+func (q *Queries) FiringAlertIncident(ctx context.Context, arg FiringAlertIncidentParams) (AlertIncident, error) {
+	row := q.db.QueryRow(ctx, firingAlertIncident,
+		arg.OrganisationID,
+		arg.ProjectID,
+		arg.RuleID,
+		arg.Subject,
+	)
+	var i AlertIncident
+	err := row.Scan(
+		&i.ID,
+		&i.OrganisationID,
+		&i.ProjectID,
+		&i.RuleID,
+		&i.Subject,
+		&i.SubjectLabel,
+		&i.State,
+		&i.OpenedAt,
+		&i.ResolvedAt,
+		&i.ResolvedBy,
+		&i.Occurrences,
+		&i.NotifiedOccurrences,
+		&i.NotifiedAt,
+		&i.Changes,
+		&i.LastOccurrenceAt,
+		&i.LastDetail,
+		&i.HoldReason,
+		&i.SilentSince,
+	)
+	return i, err
+}
+
+const firingAlertIncidents = `-- name: FiringAlertIncidents :many
+SELECT id, organisation_id, project_id, rule_id, subject, subject_label, state, opened_at, resolved_at, resolved_by, occurrences, notified_occurrences, notified_at, changes, last_occurrence_at, last_detail, hold_reason, silent_since FROM alert_incidents WHERE state = 'firing' ORDER BY opened_at, id LIMIT $1
+`
+
+func (q *Queries) FiringAlertIncidents(ctx context.Context, maxRows int32) ([]AlertIncident, error) {
+	rows, err := q.db.Query(ctx, firingAlertIncidents, maxRows)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []AlertIncident
+	for rows.Next() {
+		var i AlertIncident
+		if err := rows.Scan(
+			&i.ID,
+			&i.OrganisationID,
+			&i.ProjectID,
+			&i.RuleID,
+			&i.Subject,
+			&i.SubjectLabel,
+			&i.State,
+			&i.OpenedAt,
+			&i.ResolvedAt,
+			&i.ResolvedBy,
+			&i.Occurrences,
+			&i.NotifiedOccurrences,
+			&i.NotifiedAt,
+			&i.Changes,
+			&i.LastOccurrenceAt,
+			&i.LastDetail,
+			&i.HoldReason,
+			&i.SilentSince,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const firstCall = `-- name: FirstCall :one
@@ -1243,6 +1814,23 @@ func (q *Queries) HealCall(ctx context.Context, arg HealCallParams) error {
 	return err
 }
 
+const holdAlertIncident = `-- name: HoldAlertIncident :exec
+UPDATE alert_incidents SET hold_reason = $1, silent_since = $2
+WHERE id = $3 AND state = 'firing'
+  AND (hold_reason IS DISTINCT FROM $1 OR silent_since IS DISTINCT FROM $2)
+`
+
+type HoldAlertIncidentParams struct {
+	HoldReason  pgtype.Text
+	SilentSince pgtype.Timestamptz
+	ID          pgtype.UUID
+}
+
+func (q *Queries) HoldAlertIncident(ctx context.Context, arg HoldAlertIncidentParams) error {
+	_, err := q.db.Exec(ctx, holdAlertIncident, arg.HoldReason, arg.SilentSince, arg.ID)
+	return err
+}
+
 const identityOwner = `-- name: IdentityOwner :one
 SELECT user_id FROM identities WHERE provider = $1 AND subject = $2
 `
@@ -1268,6 +1856,89 @@ ON CONFLICT DO NOTHING
 func (q *Queries) InitMediaBackfills(ctx context.Context) error {
 	_, err := q.db.Exec(ctx, initMediaBackfills)
 	return err
+}
+
+const insertAlertDelivery = `-- name: InsertAlertDelivery :exec
+INSERT INTO alert_deliveries (organisation_id, project_id, incident_id, channel, change, idempotency_key, message)
+VALUES ($1, $2, $3, $4, $5, $6, $7)
+ON CONFLICT (idempotency_key) DO NOTHING
+`
+
+type InsertAlertDeliveryParams struct {
+	OrganisationID string
+	ProjectID      string
+	IncidentID     pgtype.UUID
+	Channel        string
+	Change         string
+	IdempotencyKey string
+	Message        []byte
+}
+
+func (q *Queries) InsertAlertDelivery(ctx context.Context, arg InsertAlertDeliveryParams) error {
+	_, err := q.db.Exec(ctx, insertAlertDelivery,
+		arg.OrganisationID,
+		arg.ProjectID,
+		arg.IncidentID,
+		arg.Channel,
+		arg.Change,
+		arg.IdempotencyKey,
+		arg.Message,
+	)
+	return err
+}
+
+const insertAlertDeliveryOccurrence = `-- name: InsertAlertDeliveryOccurrence :execrows
+INSERT INTO issue_occurrences (organisation_id, project_id, issue_id, source_id, source_layer, occurred_at, detail)
+VALUES ($1, $2, 'alert-not-delivered', $3, 'alert_deliveries', $4, $5)
+ON CONFLICT DO NOTHING
+`
+
+type InsertAlertDeliveryOccurrenceParams struct {
+	OrganisationID string
+	ProjectID      string
+	SourceID       string
+	OccurredAt     pgtype.Timestamptz
+	Detail         []byte
+}
+
+func (q *Queries) InsertAlertDeliveryOccurrence(ctx context.Context, arg InsertAlertDeliveryOccurrenceParams) (int64, error) {
+	result, err := q.db.Exec(ctx, insertAlertDeliveryOccurrence,
+		arg.OrganisationID,
+		arg.ProjectID,
+		arg.SourceID,
+		arg.OccurredAt,
+		arg.Detail,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const insertAlertOccurrence = `-- name: InsertAlertOccurrence :execrows
+INSERT INTO alert_occurrences (organisation_id, project_id, rule_id, occurrence_id)
+VALUES ($1, $2, $3, $4)
+ON CONFLICT DO NOTHING
+`
+
+type InsertAlertOccurrenceParams struct {
+	OrganisationID string
+	ProjectID      string
+	RuleID         string
+	OccurrenceID   string
+}
+
+func (q *Queries) InsertAlertOccurrence(ctx context.Context, arg InsertAlertOccurrenceParams) (int64, error) {
+	result, err := q.db.Exec(ctx, insertAlertOccurrence,
+		arg.OrganisationID,
+		arg.ProjectID,
+		arg.RuleID,
+		arg.OccurrenceID,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const insertCallRecording = `-- name: InsertCallRecording :exec
@@ -1622,6 +2293,260 @@ func (q *Queries) LimitingSignInAttempt(ctx context.Context, arg LimitingSignInA
 	var wait_seconds float64
 	err := row.Scan(&wait_seconds)
 	return wait_seconds, err
+}
+
+const linkAlertOccurrence = `-- name: LinkAlertOccurrence :exec
+UPDATE alert_occurrences SET incident_id = $1
+WHERE organisation_id = $2 AND project_id = $3 AND rule_id = $4 AND occurrence_id = $5
+`
+
+type LinkAlertOccurrenceParams struct {
+	IncidentID     pgtype.UUID
+	OrganisationID string
+	ProjectID      string
+	RuleID         string
+	OccurrenceID   string
+}
+
+func (q *Queries) LinkAlertOccurrence(ctx context.Context, arg LinkAlertOccurrenceParams) error {
+	_, err := q.db.Exec(ctx, linkAlertOccurrence,
+		arg.IncidentID,
+		arg.OrganisationID,
+		arg.ProjectID,
+		arg.RuleID,
+		arg.OccurrenceID,
+	)
+	return err
+}
+
+const listAlertChannels = `-- name: ListAlertChannels :many
+SELECT c.kind, c.target, c.broken, c.updated_at,
+       d.id AS delivery_id, COALESCE(d.change, '')::text AS change, COALESCE(d.state, '')::text AS state,
+       COALESCE(d.attempts, 0)::integer AS attempts, d.next_attempt_at, d.last_status, d.last_error,
+       d.delivered_at, d.created_at AS delivery_created_at
+FROM alert_channels c
+LEFT JOIN LATERAL (
+    SELECT x.id, x.change, x.state, x.attempts, x.next_attempt_at, x.last_status, x.last_error, x.delivered_at, x.created_at
+    FROM alert_deliveries x
+    WHERE x.organisation_id = c.organisation_id AND x.project_id = c.project_id AND x.channel = c.kind
+    ORDER BY x.created_at DESC
+    LIMIT 1) d ON true
+WHERE c.organisation_id = $1 AND c.project_id = $2
+ORDER BY c.kind
+`
+
+type ListAlertChannelsParams struct {
+	OrganisationID string
+	ProjectID      string
+}
+
+type ListAlertChannelsRow struct {
+	Kind              string
+	Target            string
+	Broken            bool
+	UpdatedAt         pgtype.Timestamptz
+	DeliveryID        pgtype.UUID
+	Change            string
+	State             string
+	Attempts          int32
+	NextAttemptAt     pgtype.Timestamptz
+	LastStatus        pgtype.Text
+	LastError         pgtype.Text
+	DeliveredAt       pgtype.Timestamptz
+	DeliveryCreatedAt pgtype.Timestamptz
+}
+
+// Each configured channel with its latest delivery, for Settings, Integrations.
+func (q *Queries) ListAlertChannels(ctx context.Context, arg ListAlertChannelsParams) ([]ListAlertChannelsRow, error) {
+	rows, err := q.db.Query(ctx, listAlertChannels, arg.OrganisationID, arg.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListAlertChannelsRow
+	for rows.Next() {
+		var i ListAlertChannelsRow
+		if err := rows.Scan(
+			&i.Kind,
+			&i.Target,
+			&i.Broken,
+			&i.UpdatedAt,
+			&i.DeliveryID,
+			&i.Change,
+			&i.State,
+			&i.Attempts,
+			&i.NextAttemptAt,
+			&i.LastStatus,
+			&i.LastError,
+			&i.DeliveredAt,
+			&i.DeliveryCreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listAlertIncidentDeliveries = `-- name: ListAlertIncidentDeliveries :many
+SELECT id, incident_id, channel, change, state, attempts, next_attempt_at, last_status, last_error, delivered_at, created_at
+FROM alert_deliveries
+WHERE organisation_id = $1 AND project_id = $2 AND incident_id = ANY($3::uuid[])
+ORDER BY created_at, channel
+`
+
+type ListAlertIncidentDeliveriesParams struct {
+	OrganisationID string
+	ProjectID      string
+	IncidentIds    []pgtype.UUID
+}
+
+type ListAlertIncidentDeliveriesRow struct {
+	ID            pgtype.UUID
+	IncidentID    pgtype.UUID
+	Channel       string
+	Change        string
+	State         string
+	Attempts      int32
+	NextAttemptAt pgtype.Timestamptz
+	LastStatus    pgtype.Text
+	LastError     pgtype.Text
+	DeliveredAt   pgtype.Timestamptz
+	CreatedAt     pgtype.Timestamptz
+}
+
+func (q *Queries) ListAlertIncidentDeliveries(ctx context.Context, arg ListAlertIncidentDeliveriesParams) ([]ListAlertIncidentDeliveriesRow, error) {
+	rows, err := q.db.Query(ctx, listAlertIncidentDeliveries, arg.OrganisationID, arg.ProjectID, arg.IncidentIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListAlertIncidentDeliveriesRow
+	for rows.Next() {
+		var i ListAlertIncidentDeliveriesRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.IncidentID,
+			&i.Channel,
+			&i.Change,
+			&i.State,
+			&i.Attempts,
+			&i.NextAttemptAt,
+			&i.LastStatus,
+			&i.LastError,
+			&i.DeliveredAt,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listAlertIncidents = `-- name: ListAlertIncidents :many
+SELECT id, organisation_id, project_id, rule_id, subject, subject_label, state, opened_at, resolved_at, resolved_by, occurrences, notified_occurrences, notified_at, changes, last_occurrence_at, last_detail, hold_reason, silent_since FROM alert_incidents
+WHERE organisation_id = $1 AND project_id = $2
+  AND opened_at < $3 AND (resolved_at IS NULL OR resolved_at >= $4)
+ORDER BY opened_at DESC, id
+LIMIT $5
+`
+
+type ListAlertIncidentsParams struct {
+	OrganisationID string
+	ProjectID      string
+	ToAt           pgtype.Timestamptz
+	FromAt         pgtype.Timestamptz
+	MaxRows        int32
+}
+
+// Incidents open in, or still open across, a range, newest first.
+func (q *Queries) ListAlertIncidents(ctx context.Context, arg ListAlertIncidentsParams) ([]AlertIncident, error) {
+	rows, err := q.db.Query(ctx, listAlertIncidents,
+		arg.OrganisationID,
+		arg.ProjectID,
+		arg.ToAt,
+		arg.FromAt,
+		arg.MaxRows,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []AlertIncident
+	for rows.Next() {
+		var i AlertIncident
+		if err := rows.Scan(
+			&i.ID,
+			&i.OrganisationID,
+			&i.ProjectID,
+			&i.RuleID,
+			&i.Subject,
+			&i.SubjectLabel,
+			&i.State,
+			&i.OpenedAt,
+			&i.ResolvedAt,
+			&i.ResolvedBy,
+			&i.Occurrences,
+			&i.NotifiedOccurrences,
+			&i.NotifiedAt,
+			&i.Changes,
+			&i.LastOccurrenceAt,
+			&i.LastDetail,
+			&i.HoldReason,
+			&i.SilentSince,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listAlertRules = `-- name: ListAlertRules :many
+SELECT rule_id, enabled, channels FROM alert_rules
+WHERE organisation_id = $1 AND project_id = $2
+ORDER BY rule_id
+`
+
+type ListAlertRulesParams struct {
+	OrganisationID string
+	ProjectID      string
+}
+
+type ListAlertRulesRow struct {
+	RuleID   string
+	Enabled  bool
+	Channels []string
+}
+
+func (q *Queries) ListAlertRules(ctx context.Context, arg ListAlertRulesParams) ([]ListAlertRulesRow, error) {
+	rows, err := q.db.Query(ctx, listAlertRules, arg.OrganisationID, arg.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListAlertRulesRow
+	for rows.Next() {
+		var i ListAlertRulesRow
+		if err := rows.Scan(&i.RuleID, &i.Enabled, &i.Channels); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listCalls = `-- name: ListCalls :many
@@ -2276,6 +3201,174 @@ func (q *Queries) MergeCallFields(ctx context.Context, arg MergeCallFieldsParams
 	var fields []byte
 	err := row.Scan(&fields)
 	return fields, err
+}
+
+const newAlertOccurrences = `-- name: NewAlertOccurrences :many
+
+SELECT o.organisation_id, o.project_id,
+       (CASE o.issue_id WHEN 'slow' THEN 'slow-answer' WHEN 'cut' THEN 'cut-off' ELSE o.issue_id END)::text AS rule_id,
+       o.source_id AS occurrence_id,
+       (CASE WHEN o.issue_id IN ('slow', 'cut') THEN COALESCE(s.agent_key, '')
+             WHEN o.issue_id IN ('job-failed', 'slow-join') THEN COALESCE(j.agent_name, '')
+             ELSE COALESCE(o.detail->>'where', o.source_id) END)::text AS subject,
+       o.occurred_at, o.call_id,
+       COALESCE(o.detail->>'where', '')::text AS location, COALESCE(o.detail->>'detail', '')::text AS detail
+FROM issue_occurrences o
+LEFT JOIN call_summaries s ON s.call_id = o.call_id
+LEFT JOIN issue_job_observations j ON j.organisation_id = o.organisation_id AND j.project_id = o.project_id
+    AND o.source_id = 'job:' || j.job_id
+WHERE o.active AND o.observed_at >= $1
+  AND o.issue_id IN ('slow', 'cut', 'job-failed', 'slow-join', 'recording-lost', 'ingress-error')
+  AND NOT EXISTS (
+    SELECT 1 FROM alert_occurrences a
+    WHERE a.organisation_id = o.organisation_id AND a.project_id = o.project_id AND a.occurrence_id = o.source_id
+      AND a.rule_id = (CASE o.issue_id WHEN 'slow' THEN 'slow-answer' WHEN 'cut' THEN 'cut-off' ELSE o.issue_id END))
+ORDER BY o.observed_at
+LIMIT $2
+`
+
+type NewAlertOccurrencesParams struct {
+	Since   pgtype.Timestamptz
+	MaxRows int32
+}
+
+type NewAlertOccurrencesRow struct {
+	OrganisationID string
+	ProjectID      string
+	RuleID         string
+	OccurrenceID   string
+	Subject        string
+	OccurredAt     pgtype.Timestamptz
+	CallID         pgtype.UUID
+	Location       string
+	Detail         string
+}
+
+// Alerts (docs/specs/alerts-delivery.md). The worker is the only writer of incidents, occurrences
+// and deliveries; web writes rule and channel setup, test deliveries and a person's resolve.
+// Occurrences the Issues page stored since a time that no incident has counted yet, mapped to the
+// seven rules. The subject is the agent for call and job rules, else the component (where).
+func (q *Queries) NewAlertOccurrences(ctx context.Context, arg NewAlertOccurrencesParams) ([]NewAlertOccurrencesRow, error) {
+	rows, err := q.db.Query(ctx, newAlertOccurrences, arg.Since, arg.MaxRows)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []NewAlertOccurrencesRow
+	for rows.Next() {
+		var i NewAlertOccurrencesRow
+		if err := rows.Scan(
+			&i.OrganisationID,
+			&i.ProjectID,
+			&i.RuleID,
+			&i.OccurrenceID,
+			&i.Subject,
+			&i.OccurredAt,
+			&i.CallID,
+			&i.Location,
+			&i.Detail,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const nextAlertChange = `-- name: NextAlertChange :one
+UPDATE alert_incidents SET changes = changes + 1,
+    notified_occurrences = CASE WHEN $1::boolean THEN occurrences ELSE notified_occurrences END,
+    notified_at = CASE WHEN $1::boolean THEN $2::timestamptz ELSE notified_at END
+WHERE id = $3
+RETURNING id, organisation_id, project_id, rule_id, subject, subject_label, state, opened_at, resolved_at, resolved_by, occurrences, notified_occurrences, notified_at, changes, last_occurrence_at, last_detail, hold_reason, silent_since
+`
+
+type NextAlertChangeParams struct {
+	Notified bool
+	At       pgtype.Timestamptz
+	ID       pgtype.UUID
+}
+
+// A change takes the next number. A firing or reminder message records the count it carried.
+func (q *Queries) NextAlertChange(ctx context.Context, arg NextAlertChangeParams) (AlertIncident, error) {
+	row := q.db.QueryRow(ctx, nextAlertChange, arg.Notified, arg.At, arg.ID)
+	var i AlertIncident
+	err := row.Scan(
+		&i.ID,
+		&i.OrganisationID,
+		&i.ProjectID,
+		&i.RuleID,
+		&i.Subject,
+		&i.SubjectLabel,
+		&i.State,
+		&i.OpenedAt,
+		&i.ResolvedAt,
+		&i.ResolvedBy,
+		&i.Occurrences,
+		&i.NotifiedOccurrences,
+		&i.NotifiedAt,
+		&i.Changes,
+		&i.LastOccurrenceAt,
+		&i.LastDetail,
+		&i.HoldReason,
+		&i.SilentSince,
+	)
+	return i, err
+}
+
+const openAlertIncident = `-- name: OpenAlertIncident :one
+INSERT INTO alert_incidents (organisation_id, project_id, rule_id, subject, subject_label, opened_at, occurrences, last_occurrence_at, last_detail)
+VALUES ($1, $2, $3, $4, $5, $6, 1, $7, $8)
+RETURNING id, organisation_id, project_id, rule_id, subject, subject_label, state, opened_at, resolved_at, resolved_by, occurrences, notified_occurrences, notified_at, changes, last_occurrence_at, last_detail, hold_reason, silent_since
+`
+
+type OpenAlertIncidentParams struct {
+	OrganisationID   string
+	ProjectID        string
+	RuleID           string
+	Subject          string
+	SubjectLabel     string
+	OpenedAt         pgtype.Timestamptz
+	LastOccurrenceAt pgtype.Timestamptz
+	LastDetail       []byte
+}
+
+func (q *Queries) OpenAlertIncident(ctx context.Context, arg OpenAlertIncidentParams) (AlertIncident, error) {
+	row := q.db.QueryRow(ctx, openAlertIncident,
+		arg.OrganisationID,
+		arg.ProjectID,
+		arg.RuleID,
+		arg.Subject,
+		arg.SubjectLabel,
+		arg.OpenedAt,
+		arg.LastOccurrenceAt,
+		arg.LastDetail,
+	)
+	var i AlertIncident
+	err := row.Scan(
+		&i.ID,
+		&i.OrganisationID,
+		&i.ProjectID,
+		&i.RuleID,
+		&i.Subject,
+		&i.SubjectLabel,
+		&i.State,
+		&i.OpenedAt,
+		&i.ResolvedAt,
+		&i.ResolvedBy,
+		&i.Occurrences,
+		&i.NotifiedOccurrences,
+		&i.NotifiedAt,
+		&i.Changes,
+		&i.LastOccurrenceAt,
+		&i.LastDetail,
+		&i.HoldReason,
+		&i.SilentSince,
+	)
+	return i, err
 }
 
 const openCallInRoom = `-- name: OpenCallInRoom :one
@@ -3127,6 +4220,31 @@ func (q *Queries) ReadProjectSettings(ctx context.Context, arg ReadProjectSettin
 	return i, err
 }
 
+const recordAlertAttempt = `-- name: RecordAlertAttempt :exec
+INSERT INTO alert_delivery_attempts (delivery_id, attempt, at, status, error)
+VALUES ($1, $2, $3, $4, $5)
+ON CONFLICT DO NOTHING
+`
+
+type RecordAlertAttemptParams struct {
+	DeliveryID pgtype.UUID
+	Attempt    int32
+	At         pgtype.Timestamptz
+	Status     string
+	Error      pgtype.Text
+}
+
+func (q *Queries) RecordAlertAttempt(ctx context.Context, arg RecordAlertAttemptParams) error {
+	_, err := q.db.Exec(ctx, recordAlertAttempt,
+		arg.DeliveryID,
+		arg.Attempt,
+		arg.At,
+		arg.Status,
+		arg.Error,
+	)
+	return err
+}
+
 const recordConnectionAccepted = `-- name: RecordConnectionAccepted :execrows
 INSERT INTO project_connections (organisation_id, project_id, source, last_accepted_at)
 SELECT p.organisation_id, p.id, $1, $2
@@ -3282,6 +4400,94 @@ func (q *Queries) RemoveMembership(ctx context.Context, arg RemoveMembershipPara
 	return result.RowsAffected(), nil
 }
 
+const resolveAlertIncident = `-- name: ResolveAlertIncident :one
+UPDATE alert_incidents SET state = 'resolved', resolved_at = $1, resolved_by = $2, hold_reason = NULL
+WHERE id = $3 AND state = 'firing'
+RETURNING id, organisation_id, project_id, rule_id, subject, subject_label, state, opened_at, resolved_at, resolved_by, occurrences, notified_occurrences, notified_at, changes, last_occurrence_at, last_detail, hold_reason, silent_since
+`
+
+type ResolveAlertIncidentParams struct {
+	At         pgtype.Timestamptz
+	ResolvedBy pgtype.Text
+	ID         pgtype.UUID
+}
+
+func (q *Queries) ResolveAlertIncident(ctx context.Context, arg ResolveAlertIncidentParams) (AlertIncident, error) {
+	row := q.db.QueryRow(ctx, resolveAlertIncident, arg.At, arg.ResolvedBy, arg.ID)
+	var i AlertIncident
+	err := row.Scan(
+		&i.ID,
+		&i.OrganisationID,
+		&i.ProjectID,
+		&i.RuleID,
+		&i.Subject,
+		&i.SubjectLabel,
+		&i.State,
+		&i.OpenedAt,
+		&i.ResolvedAt,
+		&i.ResolvedBy,
+		&i.Occurrences,
+		&i.NotifiedOccurrences,
+		&i.NotifiedAt,
+		&i.Changes,
+		&i.LastOccurrenceAt,
+		&i.LastDetail,
+		&i.HoldReason,
+		&i.SilentSince,
+	)
+	return i, err
+}
+
+const resolvedAlertIncidentSince = `-- name: ResolvedAlertIncidentSince :one
+SELECT id, organisation_id, project_id, rule_id, subject, subject_label, state, opened_at, resolved_at, resolved_by, occurrences, notified_occurrences, notified_at, changes, last_occurrence_at, last_detail, hold_reason, silent_since FROM alert_incidents
+WHERE organisation_id = $1 AND project_id = $2 AND rule_id = $3 AND subject = $4
+  AND state = 'resolved' AND resolved_at >= $5 AND resolved_by = 'condition'
+ORDER BY resolved_at DESC
+LIMIT 1
+FOR UPDATE
+`
+
+type ResolvedAlertIncidentSinceParams struct {
+	OrganisationID string
+	ProjectID      string
+	RuleID         string
+	Subject        string
+	Since          pgtype.Timestamptz
+}
+
+// The flap guard: an incident on the same subject resolved this recently is reopened, not replaced.
+func (q *Queries) ResolvedAlertIncidentSince(ctx context.Context, arg ResolvedAlertIncidentSinceParams) (AlertIncident, error) {
+	row := q.db.QueryRow(ctx, resolvedAlertIncidentSince,
+		arg.OrganisationID,
+		arg.ProjectID,
+		arg.RuleID,
+		arg.Subject,
+		arg.Since,
+	)
+	var i AlertIncident
+	err := row.Scan(
+		&i.ID,
+		&i.OrganisationID,
+		&i.ProjectID,
+		&i.RuleID,
+		&i.Subject,
+		&i.SubjectLabel,
+		&i.State,
+		&i.OpenedAt,
+		&i.ResolvedAt,
+		&i.ResolvedBy,
+		&i.Occurrences,
+		&i.NotifiedOccurrences,
+		&i.NotifiedAt,
+		&i.Changes,
+		&i.LastOccurrenceAt,
+		&i.LastDetail,
+		&i.HoldReason,
+		&i.SilentSince,
+	)
+	return i, err
+}
+
 const resourceEndpoints = `-- name: ResourceEndpoints :many
 SELECT organisation_id, project_id, id, host, url_sealed, kind, target, container_id, created_at FROM project_resource_endpoints
 WHERE organisation_id = $1 AND project_id = $2
@@ -3400,6 +4606,24 @@ func (q *Queries) RevokeUsedLink(ctx context.Context, id pgtype.UUID) error {
 	return err
 }
 
+const sealedAlertChannel = `-- name: SealedAlertChannel :one
+SELECT config_sealed FROM alert_channels
+WHERE organisation_id = $1 AND project_id = $2 AND kind = $3
+`
+
+type SealedAlertChannelParams struct {
+	OrganisationID string
+	ProjectID      string
+	Kind           string
+}
+
+func (q *Queries) SealedAlertChannel(ctx context.Context, arg SealedAlertChannelParams) ([]byte, error) {
+	row := q.db.QueryRow(ctx, sealedAlertChannel, arg.OrganisationID, arg.ProjectID, arg.Kind)
+	var config_sealed []byte
+	err := row.Scan(&config_sealed)
+	return config_sealed, err
+}
+
 const sealedLiveKitSecret = `-- name: SealedLiveKitSecret :one
 SELECT livekit_api_secret_sealed
 FROM projects
@@ -3416,6 +4640,63 @@ func (q *Queries) SealedLiveKitSecret(ctx context.Context, arg SealedLiveKitSecr
 	var livekit_api_secret_sealed []byte
 	err := row.Scan(&livekit_api_secret_sealed)
 	return livekit_api_secret_sealed, err
+}
+
+const sendingAlertRules = `-- name: SendingAlertRules :many
+SELECT r.organisation_id, r.project_id, r.rule_id FROM alert_rules r
+WHERE r.enabled AND EXISTS (
+    SELECT 1 FROM alert_channels c
+    WHERE c.organisation_id = r.organisation_id AND c.project_id = r.project_id AND c.kind = ANY(r.channels))
+`
+
+type SendingAlertRulesRow struct {
+	OrganisationID string
+	ProjectID      string
+	RuleID         string
+}
+
+// Rules that are on and choose at least one configured channel. A rule with no saved row sends
+// nowhere, so it is not listed.
+func (q *Queries) SendingAlertRules(ctx context.Context) ([]SendingAlertRulesRow, error) {
+	rows, err := q.db.Query(ctx, sendingAlertRules)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []SendingAlertRulesRow
+	for rows.Next() {
+		var i SendingAlertRulesRow
+		if err := rows.Scan(&i.OrganisationID, &i.ProjectID, &i.RuleID); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const setAlertChannelBroken = `-- name: SetAlertChannelBroken :exec
+UPDATE alert_channels SET broken = $1
+WHERE organisation_id = $2 AND project_id = $3 AND kind = $4 AND broken <> $1
+`
+
+type SetAlertChannelBrokenParams struct {
+	Broken         bool
+	OrganisationID string
+	ProjectID      string
+	Kind           string
+}
+
+func (q *Queries) SetAlertChannelBroken(ctx context.Context, arg SetAlertChannelBrokenParams) error {
+	_, err := q.db.Exec(ctx, setAlertChannelBroken,
+		arg.Broken,
+		arg.OrganisationID,
+		arg.ProjectID,
+		arg.Kind,
+	)
+	return err
 }
 
 const setMemberRole = `-- name: SetMemberRole :execrows
@@ -3571,6 +4852,51 @@ func (q *Queries) StaleCalls(ctx context.Context, maxCalls int32) ([]StaleCallsR
 			&i.ProjectID,
 			&i.ID,
 			&i.SummaryStaleAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const standingAlertOccurrences = `-- name: StandingAlertOccurrences :many
+SELECT o.organisation_id, o.project_id, o.source_id, o.changed_at,
+       COALESCE(o.detail->>'where', o.source_id)::text AS location, COALESCE(o.detail->>'detail', '')::text AS detail
+FROM issue_occurrences o
+WHERE o.issue_id = 'sip:plain-phone' AND o.active
+ORDER BY o.organisation_id, o.project_id, o.source_id
+`
+
+type StandingAlertOccurrencesRow struct {
+	OrganisationID string
+	ProjectID      string
+	SourceID       string
+	ChangedAt      pgtype.Timestamptz
+	Location       string
+	Detail         string
+}
+
+// Every SIP trunk carrying plain RTP now (plain-phone watches a standing condition).
+func (q *Queries) StandingAlertOccurrences(ctx context.Context) ([]StandingAlertOccurrencesRow, error) {
+	rows, err := q.db.Query(ctx, standingAlertOccurrences)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []StandingAlertOccurrencesRow
+	for rows.Next() {
+		var i StandingAlertOccurrencesRow
+		if err := rows.Scan(
+			&i.OrganisationID,
+			&i.ProjectID,
+			&i.SourceID,
+			&i.ChangedAt,
+			&i.Location,
+			&i.Detail,
 		); err != nil {
 			return nil, err
 		}
@@ -3961,6 +5287,67 @@ func (q *Queries) UpdateProjectSettings(ctx context.Context, arg UpdateProjectSe
 	return i, err
 }
 
+const upsertAlertChannel = `-- name: UpsertAlertChannel :exec
+INSERT INTO alert_channels (organisation_id, project_id, kind, config_sealed, target, updated_at)
+VALUES ($1, $2, $3, $4, $5, now())
+ON CONFLICT (organisation_id, project_id, kind) DO UPDATE
+SET config_sealed = EXCLUDED.config_sealed, target = EXCLUDED.target, broken = false, updated_at = now()
+`
+
+type UpsertAlertChannelParams struct {
+	OrganisationID string
+	ProjectID      string
+	Kind           string
+	ConfigSealed   []byte
+	Target         string
+}
+
+func (q *Queries) UpsertAlertChannel(ctx context.Context, arg UpsertAlertChannelParams) error {
+	_, err := q.db.Exec(ctx, upsertAlertChannel,
+		arg.OrganisationID,
+		arg.ProjectID,
+		arg.Kind,
+		arg.ConfigSealed,
+		arg.Target,
+	)
+	return err
+}
+
+const upsertAlertRule = `-- name: UpsertAlertRule :one
+INSERT INTO alert_rules (organisation_id, project_id, rule_id, enabled, channels, updated_at)
+VALUES ($1, $2, $3, $4, $5, now())
+ON CONFLICT (organisation_id, project_id, rule_id) DO UPDATE
+SET enabled = EXCLUDED.enabled, channels = EXCLUDED.channels, updated_at = now()
+RETURNING rule_id, enabled, channels
+`
+
+type UpsertAlertRuleParams struct {
+	OrganisationID string
+	ProjectID      string
+	RuleID         string
+	Enabled        bool
+	Channels       []string
+}
+
+type UpsertAlertRuleRow struct {
+	RuleID   string
+	Enabled  bool
+	Channels []string
+}
+
+func (q *Queries) UpsertAlertRule(ctx context.Context, arg UpsertAlertRuleParams) (UpsertAlertRuleRow, error) {
+	row := q.db.QueryRow(ctx, upsertAlertRule,
+		arg.OrganisationID,
+		arg.ProjectID,
+		arg.RuleID,
+		arg.Enabled,
+		arg.Channels,
+	)
+	var i UpsertAlertRuleRow
+	err := row.Scan(&i.RuleID, &i.Enabled, &i.Channels)
+	return i, err
+}
+
 const upsertCallByJobID = `-- name: UpsertCallByJobID :one
 INSERT INTO calls (organisation_id, project_id, job_id, last_activity_at, first_seen_at)
 VALUES ($1, $2, $3, $4, $5)
@@ -4281,7 +5668,7 @@ WITH prior AS (
 INSERT INTO issue_occurrences (organisation_id, project_id, issue_id, source_id, source_layer, detail)
 VALUES ($1, $2, $3, $4, $5, $6)
 ON CONFLICT (organisation_id, project_id, issue_id, source_id) DO UPDATE
-SET detail = EXCLUDED.detail, active = true, observed_at = now()
+SET detail = EXCLUDED.detail, active = true, observed_at = now(), changed_at = now()
 WHERE NOT issue_occurrences.active OR issue_occurrences.detail IS DISTINCT FROM EXCLUDED.detail
 RETURNING 1
 )

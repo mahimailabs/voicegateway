@@ -2,7 +2,7 @@
 
 import type { Client, ClientMeta, Options as Options2, RequestResult, ServerSentEventsResult, TDataShape } from './client';
 import { client } from './client.gen';
-import type { CreateEmbedTokenData, CreateEmbedTokenErrors, CreateEmbedTokenResponses, CreateInvitationData, CreateInvitationErrors, CreateInvitationResponses, CreateOrganisationInvitationData, CreateOrganisationInvitationErrors, CreateOrganisationInvitationResponses, CreatePasswordResetData, CreatePasswordResetErrors, CreatePasswordResetResponses, CreateProjectData, CreateProjectErrors, CreateProjectKeyData, CreateProjectKeyErrors, CreateProjectKeyResponses, CreateProjectResponses, GetAlertSetupData, GetAlertSetupErrors, GetAlertSetupResponses, GetCallData, GetCallErrors, GetCallMetadataData, GetCallMetadataErrors, GetCallMetadataResponses, GetCallResponses, GetCallStatsData, GetCallStatsErrors, GetCallStatsResponses, GetCallTagsData, GetCallTagsErrors, GetCallTagsResponses, GetCapacityData, GetCapacityErrors, GetCapacityResponses, GetCloudAgentsData, GetCloudAgentsErrors, GetCloudAgentsResponses, GetEgressData, GetEgressErrors, GetEgressResponses, GetIngressData, GetIngressErrors, GetIngressResponses, GetInvitationsData, GetInvitationsErrors, GetInvitationsResponses, GetIssueMetadataData, GetIssueMetadataErrors, GetIssueMetadataResponses, GetLiveEventsData, GetLiveEventsErrors, GetLiveEventsResponse, GetLiveEventsResponses, GetMediaServerData, GetMediaServerErrors, GetMediaServerResponses, GetMembersData, GetMembersErrors, GetMembersResponses, GetMyOrganisationEntitlementData, GetMyOrganisationEntitlementErrors, GetMyOrganisationEntitlementResponses, GetOrganisationData, GetOrganisationEntitlementData, GetOrganisationEntitlementErrors, GetOrganisationEntitlementResponses, GetOrganisationErrors, GetOrganisationResponses, GetOrganisationUsageData, GetOrganisationUsageErrors, GetOrganisationUsageResponses, GetProjectConnectionData, GetProjectConnectionErrors, GetProjectConnectionResponses, GetProjectSettingsData, GetProjectSettingsErrors, GetProjectSettingsResponses, GetProjectSnapshotData, GetProjectSnapshotErrors, GetProjectSnapshotResponses, GetProviderProbesData, GetProviderProbesErrors, GetProviderProbesResponses, GetRecordingMediaData, GetRecordingMediaErrors, GetRecordingMediaResponses, GetResourcesData, GetResourcesErrors, GetResourcesResponses, GetSipData, GetSipErrors, GetSipResponses, GetWorkersData, GetWorkersErrors, GetWorkersResponses, GetWorkspacesData, GetWorkspacesErrors, GetWorkspacesResponses, ListAlertEventsData, ListAlertEventsErrors, ListAlertEventsResponses, ListCallsData, ListCallsErrors, ListCallsResponses, ListIssuesData, ListIssuesErrors, ListIssuesResponses, ListProjectKeysData, ListProjectKeysErrors, ListProjectKeysResponses, PutOrganisationData, PutOrganisationEntitlementData, PutOrganisationEntitlementErrors, PutOrganisationEntitlementResponses, PutOrganisationErrors, PutOrganisationResponses, RemoveMemberData, RemoveMemberErrors, RemoveMemberResponses, RevokeInvitationData, RevokeInvitationErrors, RevokeInvitationResponses, RevokeProjectKeyData, RevokeProjectKeyErrors, RevokeProjectKeyResponses, UpdateAllowedOriginsData, UpdateAllowedOriginsErrors, UpdateAllowedOriginsResponses, UpdateCallMetadataData, UpdateCallMetadataErrors, UpdateCallMetadataResponses, UpdateIssueMetadataData, UpdateIssueMetadataErrors, UpdateIssueMetadataResponses, UpdateMemberData, UpdateMemberErrors, UpdateMemberResponses, UpdateProjectLiveKitCredentialsData, UpdateProjectLiveKitCredentialsErrors, UpdateProjectLiveKitCredentialsResponses, UpdateProjectSettingsData, UpdateProjectSettingsErrors, UpdateProjectSettingsResponses } from './types.gen';
+import type { CreateEmbedTokenData, CreateEmbedTokenErrors, CreateEmbedTokenResponses, CreateInvitationData, CreateInvitationErrors, CreateInvitationResponses, CreateOrganisationInvitationData, CreateOrganisationInvitationErrors, CreateOrganisationInvitationResponses, CreatePasswordResetData, CreatePasswordResetErrors, CreatePasswordResetResponses, CreateProjectData, CreateProjectErrors, CreateProjectKeyData, CreateProjectKeyErrors, CreateProjectKeyResponses, CreateProjectResponses, DeleteAlertChannelData, DeleteAlertChannelErrors, DeleteAlertChannelResponses, GetAlertSetupData, GetAlertSetupErrors, GetAlertSetupResponses, GetCallData, GetCallErrors, GetCallMetadataData, GetCallMetadataErrors, GetCallMetadataResponses, GetCallResponses, GetCallStatsData, GetCallStatsErrors, GetCallStatsResponses, GetCallTagsData, GetCallTagsErrors, GetCallTagsResponses, GetCapacityData, GetCapacityErrors, GetCapacityResponses, GetCloudAgentsData, GetCloudAgentsErrors, GetCloudAgentsResponses, GetEgressData, GetEgressErrors, GetEgressResponses, GetIngressData, GetIngressErrors, GetIngressResponses, GetInvitationsData, GetInvitationsErrors, GetInvitationsResponses, GetIssueMetadataData, GetIssueMetadataErrors, GetIssueMetadataResponses, GetLiveEventsData, GetLiveEventsErrors, GetLiveEventsResponse, GetLiveEventsResponses, GetMediaServerData, GetMediaServerErrors, GetMediaServerResponses, GetMembersData, GetMembersErrors, GetMembersResponses, GetMyOrganisationEntitlementData, GetMyOrganisationEntitlementErrors, GetMyOrganisationEntitlementResponses, GetOrganisationData, GetOrganisationEntitlementData, GetOrganisationEntitlementErrors, GetOrganisationEntitlementResponses, GetOrganisationErrors, GetOrganisationResponses, GetOrganisationUsageData, GetOrganisationUsageErrors, GetOrganisationUsageResponses, GetProjectConnectionData, GetProjectConnectionErrors, GetProjectConnectionResponses, GetProjectSettingsData, GetProjectSettingsErrors, GetProjectSettingsResponses, GetProjectSnapshotData, GetProjectSnapshotErrors, GetProjectSnapshotResponses, GetProviderProbesData, GetProviderProbesErrors, GetProviderProbesResponses, GetRecordingMediaData, GetRecordingMediaErrors, GetRecordingMediaResponses, GetResourcesData, GetResourcesErrors, GetResourcesResponses, GetSipData, GetSipErrors, GetSipResponses, GetWorkersData, GetWorkersErrors, GetWorkersResponses, GetWorkspacesData, GetWorkspacesErrors, GetWorkspacesResponses, ListAlertEventsData, ListAlertEventsErrors, ListAlertEventsResponses, ListAlertIncidentsData, ListAlertIncidentsErrors, ListAlertIncidentsResponses, ListCallsData, ListCallsErrors, ListCallsResponses, ListIssuesData, ListIssuesErrors, ListIssuesResponses, ListProjectKeysData, ListProjectKeysErrors, ListProjectKeysResponses, PutOrganisationData, PutOrganisationEntitlementData, PutOrganisationEntitlementErrors, PutOrganisationEntitlementResponses, PutOrganisationErrors, PutOrganisationResponses, RemoveMemberData, RemoveMemberErrors, RemoveMemberResponses, ResolveAlertIncidentData, ResolveAlertIncidentErrors, ResolveAlertIncidentResponses, RevokeInvitationData, RevokeInvitationErrors, RevokeInvitationResponses, RevokeProjectKeyData, RevokeProjectKeyErrors, RevokeProjectKeyResponses, TestAlertChannelData, TestAlertChannelErrors, TestAlertChannelResponses, UpdateAlertChannelData, UpdateAlertChannelErrors, UpdateAlertChannelResponses, UpdateAlertRuleData, UpdateAlertRuleErrors, UpdateAlertRuleResponses, UpdateAllowedOriginsData, UpdateAllowedOriginsErrors, UpdateAllowedOriginsResponses, UpdateCallMetadataData, UpdateCallMetadataErrors, UpdateCallMetadataResponses, UpdateIssueMetadataData, UpdateIssueMetadataErrors, UpdateIssueMetadataResponses, UpdateMemberData, UpdateMemberErrors, UpdateMemberResponses, UpdateProjectLiveKitCredentialsData, UpdateProjectLiveKitCredentialsErrors, UpdateProjectLiveKitCredentialsResponses, UpdateProjectSettingsData, UpdateProjectSettingsErrors, UpdateProjectSettingsResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -564,6 +564,108 @@ export const getAlertSetup = <ThrowOnError extends boolean = false>(options: Opt
             type: 'http'
         }],
     url: '/api/v1/org/{orgId}/project/{projectId}/alert-setup',
+    ...options
+});
+
+/**
+ * Turn an alert rule on or off and choose where it sends
+ *
+ * A rule that is off still opens incidents, so its history stays, but sends nothing (docs/specs/alerts-behaviour.md). to names channel kinds only; email and webhook deliver today, and any other kind is invalid_request. A kind with no configured channel is kept and sends once an Admin configures it.
+ */
+export const updateAlertRule = <ThrowOnError extends boolean = false>(options: Options<UpdateAlertRuleData, ThrowOnError>): RequestResult<UpdateAlertRuleResponses, UpdateAlertRuleErrors, ThrowOnError> => (options.client ?? client).put<UpdateAlertRuleResponses, UpdateAlertRuleErrors, ThrowOnError>({
+    security: [{
+            in: 'cookie',
+            name: 'vg_session',
+            type: 'apiKey'
+        }],
+    url: '/api/v1/org/{orgId}/project/{projectId}/alert-rules/{ruleId}',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Remove an alert channel
+ *
+ * Admins only. Rules keep the kind among their choices; nothing is sent to it until it is configured again. A delivery still waiting fails as channel_removed. A channel not configured is not_found.
+ */
+export const deleteAlertChannel = <ThrowOnError extends boolean = false>(options: Options<DeleteAlertChannelData, ThrowOnError>): RequestResult<DeleteAlertChannelResponses, DeleteAlertChannelErrors, ThrowOnError> => (options.client ?? client).delete<DeleteAlertChannelResponses, DeleteAlertChannelErrors, ThrowOnError>({
+    security: [{
+            in: 'cookie',
+            name: 'vg_session',
+            type: 'apiKey'
+        }],
+    url: '/api/v1/org/{orgId}/project/{projectId}/alert-channels/{kind}',
+    ...options
+});
+
+/**
+ * Set where an alert channel sends
+ *
+ * Admins only. Email takes 1 to 20 recipient addresses and needs the server's VOICEGATEWAY_SMTP_URL. A webhook takes an http or https URL; the URL is sealed on the server and never returned, and only its host is shown. A new webhook gets a Standard Webhooks signing secret, returned in this answer only; saving again keeps it unless rotateSecret is true. Saving clears a broken channel.
+ */
+export const updateAlertChannel = <ThrowOnError extends boolean = false>(options: Options<UpdateAlertChannelData, ThrowOnError>): RequestResult<UpdateAlertChannelResponses, UpdateAlertChannelErrors, ThrowOnError> => (options.client ?? client).put<UpdateAlertChannelResponses, UpdateAlertChannelErrors, ThrowOnError>({
+    security: [{
+            in: 'cookie',
+            name: 'vg_session',
+            type: 'apiKey'
+        }],
+    url: '/api/v1/org/{orgId}/project/{projectId}/alert-channels/{kind}',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Send a test alert to a channel
+ *
+ * Admins only. Queues one test delivery, retried and recorded like any other; its outcome appears as the channel's lastDelivery in getAlertSetup. A channel not configured is not_found.
+ */
+export const testAlertChannel = <ThrowOnError extends boolean = false>(options: Options<TestAlertChannelData, ThrowOnError>): RequestResult<TestAlertChannelResponses, TestAlertChannelErrors, ThrowOnError> => (options.client ?? client).post<TestAlertChannelResponses, TestAlertChannelErrors, ThrowOnError>({
+    security: [{
+            in: 'cookie',
+            name: 'vg_session',
+            type: 'apiKey'
+        }],
+    url: '/api/v1/org/{orgId}/project/{projectId}/alert-channels/{kind}/test',
+    ...options
+});
+
+/**
+ * List alert incidents and their deliveries in a range
+ *
+ * Delivery history (docs/specs/alerts-behaviour.md, History): incidents opened in, or still open across, the range, newest first, each with every delivery of its changes. At most 500; complete is false when more exist. Incidents and deliveries are kept 30 days after they resolve.
+ */
+export const listAlertIncidents = <ThrowOnError extends boolean = false>(options: Options<ListAlertIncidentsData, ThrowOnError>): RequestResult<ListAlertIncidentsResponses, ListAlertIncidentsErrors, ThrowOnError> => (options.client ?? client).get<ListAlertIncidentsResponses, ListAlertIncidentsErrors, ThrowOnError>({
+    security: [{
+            in: 'cookie',
+            name: 'vg_session',
+            type: 'apiKey'
+        }, {
+            key: 'projectKey',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/api/v1/org/{orgId}/project/{projectId}/alert-incidents',
+    ...options
+});
+
+/**
+ * Resolve a recording-lost incident
+ *
+ * A lost recording never comes back, so a person resolves a firing recording-lost incident; no resolved message is sent. Every other rule resolves when its condition holds, and resolving one, or an incident not firing, is incident_not_resolvable.
+ */
+export const resolveAlertIncident = <ThrowOnError extends boolean = false>(options: Options<ResolveAlertIncidentData, ThrowOnError>): RequestResult<ResolveAlertIncidentResponses, ResolveAlertIncidentErrors, ThrowOnError> => (options.client ?? client).post<ResolveAlertIncidentResponses, ResolveAlertIncidentErrors, ThrowOnError>({
+    security: [{
+            in: 'cookie',
+            name: 'vg_session',
+            type: 'apiKey'
+        }],
+    url: '/api/v1/org/{orgId}/project/{projectId}/alert-incidents/{incidentId}/resolve',
     ...options
 });
 

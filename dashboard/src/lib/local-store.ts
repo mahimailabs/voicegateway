@@ -1,5 +1,3 @@
-import { type QueryClient, useQueryClient } from "@tanstack/react-query"
-
 // What the console saves before the server can store it. Until web takes these writes they stay in
 // this browser, and the mock API reads them back from here as the server will read its own tables.
 // When storage is blocked a value lasts for this page view.
@@ -34,30 +32,5 @@ export function writeLocal(key: string, value: unknown) {
   } catch {
     // Storage is unavailable or full; the value lasts for this page view.
     unsaved.add(key)
-  }
-}
-
-// The last value saved under each key, with the answer it was based on. Until the read is answered
-// again, a further save starts from this value, so two quick saves do not undo each other.
-const pending = new Map<string, { data: unknown; value: unknown }>()
-
-// A save for one read: writes the value here, then asks the read again so every page shows what the
-// API now answers. A change is the whole value or a function of the current one; `from` turns the
-// read's answer into the saved shape.
-export function useLocalSave<T, D = unknown>(key: string, queryKey: readonly unknown[], from?: (data: D | undefined) => T) {
-  return localSave(useQueryClient(), key, queryKey, from)
-}
-export function localSave<T, D = unknown>(client: QueryClient, key: string, queryKey: readonly unknown[], from?: (data: D | undefined) => T) {
-  return (change: T | ((current: T) => T)) => {
-    const data = client.getQueryData<D>(queryKey)
-    let value: T
-    if (typeof change === "function") {
-      const last = pending.get(key)
-      const current = last && last.data === data ? (last.value as T) : (from as (d: D | undefined) => T)(data)
-      value = (change as (current: T) => T)(current)
-    } else value = change
-    pending.set(key, { data, value })
-    writeLocal(key, value)
-    return client.invalidateQueries({ queryKey })
   }
 }

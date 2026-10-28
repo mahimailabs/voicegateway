@@ -1,10 +1,9 @@
 import { useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { CircleHalf, DotsThree, Stack, EnvelopeSimple as Envelope, WebhooksLogo, Buildings, Database, Key as KeyIcon, Clock, EnvelopeSimple, GearSix, FrameCorners, Lock, UsersThree, X, Plug, PlugsConnected, Plus, TreeStructure, User } from "@phosphor-icons/react"
+import { CircleHalf, DotsThree, Stack, Buildings, Database, Key as KeyIcon, Clock, EnvelopeSimple, GearSix, FrameCorners, Lock, UsersThree, X, Plug, PlugsConnected, Plus, TreeStructure, User } from "@phosphor-icons/react"
 import type { Icon } from "@phosphor-icons/react"
 import { toast } from "sonner"
 import { Badge } from "@/components/ui/badge"
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { ProviderLogo } from "@/components/provider-logo"
 import { Button } from "@/components/ui/button"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
@@ -35,6 +34,7 @@ import { errorText } from "@/components/page-state"
 import { ConnectAgentPanel } from "@/features/connection/connect-agent"
 import { ChangeLiveKitKey } from "@/features/connection/livekit-credentials"
 import { useHosted } from "@/lib/hosted"
+import { AlertChannels } from "./alert-channels"
 
 // Settings as a modal over the page you are on (layout from shadcn's sidebar-13 block). Three groups,
 // as in ShipVoice Pro's settings: the project picked at the top of the sidebar (integrations, data,
@@ -611,55 +611,6 @@ function InvitationList() {
   )
 }
 
-type Integration = { logo: string; name: string; description: string; status: string; ok?: boolean; body?: React.ReactNode; icon?: Icon; connect?: boolean }
-
-function IntegrationList({ list }: { list: Integration[] }) {
-  return (
-    <ItemGroup className="gap-0 has-data-[size=sm]:gap-0">
-      {list.map((x, k) => (
-        <span key={x.name} className="contents">
-          <Item role="listitem" size="sm" className="flex-col items-stretch gap-3 rounded-none border-0 px-0 py-4">
-            <div className="flex items-center gap-4">
-              <span className="flex size-10 shrink-0 items-center justify-center rounded-lg border bg-background">{x.icon ? <x.icon size={20} /> : <ProviderLogo provider={x.logo} size={20} />}</span>
-              <ItemContent className="min-w-0 gap-0.5">
-                <ItemTitle className="text-[14px] font-medium">{x.name}</ItemTitle>
-                <ItemDescription className={x.ok ? "truncate font-mono text-[12px]" : "line-clamp-none text-[13px]"}>{x.description}</ItemDescription>
-              </ItemContent>
-              {x.connect ? (
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <span tabIndex={0}>
-                      <Button variant="outline" size="sm" disabled>
-                        Connect
-                      </Button>
-                    </span>
-                  </TooltipTrigger>
-                  <TooltipContent className="max-w-60 text-xs">Connects on the server, so the webhook URL or key never sits in the browser.</TooltipContent>
-                </Tooltip>
-              ) : (
-                <Badge variant={x.ok ? "secondary" : "outline"} className="shrink-0 font-normal text-muted-foreground">
-                  {x.status}
-                </Badge>
-              )}
-            </div>
-            {x.body && <div className="pl-14">{x.body}</div>}
-          </Item>
-          {k < list.length - 1 && <ItemSeparator className="my-0" />}
-        </span>
-      ))}
-    </ItemGroup>
-  )
-}
-
-const notifications: Integration[] = [
-  { logo: "slack", name: "Slack", description: "Post alerts to a channel.", status: "", connect: true },
-  { logo: "teams", name: "Microsoft Teams", description: "Post alerts to a channel.", status: "", connect: true },
-  { logo: "discord", name: "Discord", description: "Post alerts to a channel.", status: "", connect: true },
-  { logo: "pagerduty", name: "PagerDuty", description: "Page whoever is on call for high alerts.", status: "", connect: true },
-  { logo: "opsgenie", name: "Opsgenie", description: "Page whoever is on call for high alerts.", status: "", connect: true },
-  { logo: "", icon: Envelope, name: "Email", description: "Send alerts to an address or a list.", status: "", connect: true },
-  { logo: "", icon: WebhooksLogo, name: "Webhook", description: "POST each alert as JSON to your endpoint.", status: "", connect: true },
-]
 // The LiveKit project this project reads (getProjectConnection's livekit): its URL, which never
 // changes, and the API key agents and webhooks sign with. An Admin changes the key and secret here.
 function LiveKitProject() {
@@ -696,11 +647,13 @@ export function Connection() {
 }
 
 function Integrations() {
+  const isAdmin = roleIn(org().id, useSession()) === "Admin"
+  const selfHosted = useHosted() === "self-hosted"
   return (
     <>
       <Header title="Integrations" description="Where this project's alerts go. Pick channels per rule on the Alerts page." />
       <div className="pt-2">
-        <IntegrationList list={notifications} />
+        <AlertChannels isAdmin={isAdmin} selfHosted={selfHosted} />
       </div>
     </>
   )

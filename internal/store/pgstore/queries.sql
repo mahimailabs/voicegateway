@@ -821,7 +821,7 @@ WITH prior AS (
 INSERT INTO issue_occurrences (organisation_id, project_id, issue_id, source_id, source_layer, detail)
 VALUES (@organisation_id, @project_id, @issue_id, @source_id, @source_layer, @detail)
 ON CONFLICT (organisation_id, project_id, issue_id, source_id) DO UPDATE
-SET detail = EXCLUDED.detail, active = true, observed_at = now()
+SET detail = EXCLUDED.detail, active = true, observed_at = now(), changed_at = now()
 WHERE NOT issue_occurrences.active OR issue_occurrences.detail IS DISTINCT FROM EXCLUDED.detail
 RETURNING 1
 )
@@ -1071,3 +1071,275 @@ SELECT (u.password_hash IS NOT NULL)::boolean AS has_password, i.provider, i.cre
 FROM users u LEFT JOIN identities i ON i.user_id = u.id
 WHERE u.id = @user_id
 ORDER BY i.provider, i.created_at;
+
+-- Alerts (docs/specs/alerts-delivery.md). The worker is the only writer of incidents, occurrences
+-- and deliveries; web writes rule and channel setup, test deliveries and a person's resolve.
+
+-- name: NewAlertOccurrences :many
+-- Occurrences the Issues page stored since a time that no incident has counted yet, mapped to the
+-- seven rules. The subject is the agent for call and job rules, else the component (where).
+SELECT o.organisation_id, o.project_id,
+       (CASE o.issue_id WHEN 'slow' THEN 'slow-answer' WHEN 'cut' THEN 'cut-off' ELSE o.issue_id END)::text AS rule_id,
+       o.source_id AS occurrence_id,
+       (CASE WHEN o.issue_id IN ('slow', 'cut') THEN COALESCE(s.agent_key, '')
+             WHEN o.issue_id IN ('job-failed', 'slow-join') THEN COALESCE(j.agent_name, '')
+             ELSE COALESCE(o.detail->>'where', o.source_id) END)::text AS subject,
+       o.occurred_at, o.call_id,
+       COALESCE(o.detail->>'where', '')::text AS location, COALESCE(o.detail->>'detail', '')::text AS detail
+FROM issue_occurrences o
+LEFT JOIN call_summaries s ON s.call_id = o.call_id
+LEFT JOIN issue_job_observations j ON j.organisation_id = o.organisation_id AND j.project_id = o.project_id
+    AND o.source_id = 'job:' || j.job_id
+WHERE o.active AND o.observed_at >= @since
+  AND o.issue_id IN ('slow', 'cut', 'job-failed', 'slow-join', 'recording-lost', 'ingress-error')
+  AND NOT EXISTS (
+    SELECT 1 FROM alert_occurrences a
+    WHERE a.organisation_id = o.organisation_id AND a.project_id = o.project_id AND a.occurrence_id = o.source_id
+      AND a.rule_id = (CASE o.issue_id WHEN 'slow' THEN 'slow-answer' WHEN 'cut' THEN 'cut-off' ELSE o.issue_id END))
+ORDER BY o.observed_at
+LIMIT @max_rows;
+
+-- name: StandingAlertOccurrences :many
+-- Every SIP trunk carrying plain RTP now (plain-phone watches a standing condition).
+SELECT o.organisation_id, o.project_id, o.source_id, o.changed_at,
+       COALESCE(o.detail->>'where', o.source_id)::text AS location, COALESCE(o.detail->>'detail', '')::text AS detail
+FROM issue_occurrences o
+WHERE o.issue_id = 'sip:plain-phone' AND o.active
+ORDER BY o.organisation_id, o.project_id, o.source_id;
+
+-- name: InsertAlertOccurrence :execrows
+INSERT INTO alert_occurrences (organisation_id, project_id, rule_id, occurrence_id)
+VALUES (@organisation_id, @project_id, @rule_id, @occurrence_id)
+ON CONFLICT DO NOTHING;
+
+-- name: LinkAlertOccurrence :exec
+UPDATE alert_occurrences SET incident_id = @incident_id
+WHERE organisation_id = @organisation_id AND project_id = @project_id AND rule_id = @rule_id AND occurrence_id = @occurrence_id;
+
+-- name: FiringAlertIncident :one
+SELECT * FROM alert_incidents
+WHERE organisation_id = @organisation_id AND project_id = @project_id AND rule_id = @rule_id AND subject = @subject AND state = 'firing'
+FOR UPDATE;
+
+-- name: ResolvedAlertIncidentSince :one
+-- The flap guard: an incident on the same subject resolved this recently is reopened, not replaced.
+SELECT * FROM alert_incidents
+WHERE organisation_id = @organisation_id AND project_id = @project_id AND rule_id = @rule_id AND subject = @subject
+  AND state = 'resolved' AND resolved_at >= @since AND resolved_by = 'condition'
+ORDER BY resolved_at DESC
+LIMIT 1
+FOR UPDATE;
+
+-- name: OpenAlertIncident :one
+INSERT INTO alert_incidents (organisation_id, project_id, rule_id, subject, subject_label, opened_at, occurrences, last_occurrence_at, last_detail)
+VALUES (@organisation_id, @project_id, @rule_id, @subject, @subject_label, @opened_at, 1, sqlc.narg(last_occurrence_at), @last_detail)
+RETURNING *;
+
+-- name: CountAlertOccurrence :one
+-- A new occurrence joins the incident (reopening it under the flap guard) and proves its source is
+-- reporting again.
+UPDATE alert_incidents SET occurrences = occurrences + 1, state = 'firing', resolved_at = NULL, resolved_by = NULL,
+    last_occurrence_at = CASE WHEN sqlc.narg(last_occurrence_at)::timestamptz IS NULL THEN last_occurrence_at
+                              ELSE GREATEST(last_occurrence_at, sqlc.narg(last_occurrence_at)::timestamptz) END,
+    last_detail = @last_detail, silent_since = NULL
+WHERE id = @id
+RETURNING *;
+
+-- name: AlertRuleTargets :one
+-- Whether a rule sends, and to which of its chosen kinds a channel is configured.
+SELECT COALESCE(r.enabled, true)::boolean AS enabled,
+       COALESCE((SELECT array_agg(c.kind ORDER BY c.kind) FROM alert_channels c
+                 WHERE c.organisation_id = @organisation_id AND c.project_id = @project_id AND c.kind = ANY(r.channels)), '{}')::text[] AS channels
+FROM (SELECT 1) one
+LEFT JOIN alert_rules r ON r.organisation_id = @organisation_id AND r.project_id = @project_id AND r.rule_id = @rule_id;
+
+-- name: NextAlertChange :one
+-- A change takes the next number. A firing or reminder message records the count it carried.
+UPDATE alert_incidents SET changes = changes + 1,
+    notified_occurrences = CASE WHEN @notified::boolean THEN occurrences ELSE notified_occurrences END,
+    notified_at = CASE WHEN @notified::boolean THEN @at::timestamptz ELSE notified_at END
+WHERE id = @id
+RETURNING *;
+
+-- name: InsertAlertDelivery :exec
+INSERT INTO alert_deliveries (organisation_id, project_id, incident_id, channel, change, idempotency_key, message)
+VALUES (@organisation_id, @project_id, sqlc.narg(incident_id), @channel, @change, @idempotency_key, @message)
+ON CONFLICT (idempotency_key) DO NOTHING;
+
+-- name: FiringAlertIncidents :many
+SELECT * FROM alert_incidents WHERE state = 'firing' ORDER BY opened_at, id LIMIT @max_rows;
+
+-- name: AlertIncidentForUpdate :one
+SELECT * FROM alert_incidents WHERE id = @id FOR UPDATE;
+
+-- name: ResolveAlertIncident :one
+UPDATE alert_incidents SET state = 'resolved', resolved_at = @at, resolved_by = @resolved_by, hold_reason = NULL
+WHERE id = @id AND state = 'firing'
+RETURNING *;
+
+-- name: HoldAlertIncident :exec
+UPDATE alert_incidents SET hold_reason = sqlc.narg(hold_reason), silent_since = sqlc.narg(silent_since)
+WHERE id = @id AND state = 'firing'
+  AND (hold_reason IS DISTINCT FROM sqlc.narg(hold_reason) OR silent_since IS DISTINCT FROM sqlc.narg(silent_since));
+
+-- name: AlertCallWindow :one
+-- Calls of one agent the issue engine evaluated with turn data, ended since a time, and how many of
+-- them matched the rule; last_call_at is the latest such call ever, for "source silent".
+SELECT count(*) FILTER (WHERE COALESCE(c.ended_at, c.last_activity_at) >= @since)::bigint AS calls,
+       count(*) FILTER (WHERE COALESCE(c.ended_at, c.last_activity_at) >= @since AND EXISTS (
+           SELECT 1 FROM issue_occurrences o
+           WHERE o.organisation_id = c.organisation_id AND o.project_id = c.project_id AND o.call_id = c.id
+             AND o.issue_id = @issue_id AND o.active))::bigint AS matched,
+       max(COALESCE(c.ended_at, c.last_activity_at))::timestamptz AS last_call_at
+FROM calls c
+JOIN call_summaries s ON s.call_id = c.id
+WHERE c.organisation_id = @organisation_id AND c.project_id = @project_id AND COALESCE(s.agent_key, '') = @agent_key
+  AND c.end_state <> 'open' AND c.issue_evaluated_at IS NOT NULL AND c.issue_source_available;
+
+-- name: AlertJobWindow :one
+-- Jobs of one agent dispatched after a time: how many succeeded, and how many joined within the
+-- project's join threshold. last_seen_at is when any job of the agent was last read.
+SELECT count(*) FILTER (WHERE j.dispatched_at > @after AND j.status = 'JS_SUCCESS')::bigint AS succeeded,
+       count(*) FILTER (WHERE j.dispatched_at > @after AND j.evaluated_joined_at IS NOT NULL
+           AND EXTRACT(EPOCH FROM j.evaluated_joined_at - j.dispatched_at) * 1000 <= COALESCE(ps.join_ms, 2000))::bigint AS joined_in_time,
+       max(j.observed_at)::timestamptz AS last_seen_at
+FROM issue_job_observations j
+LEFT JOIN project_settings ps ON ps.organisation_id = j.organisation_id AND ps.project_id = j.project_id
+WHERE j.organisation_id = @organisation_id AND j.project_id = @project_id AND COALESCE(j.agent_name, '') = @agent_name;
+
+-- name: AlertSourceRead :one
+SELECT good_at, fresh_until FROM issue_sources
+WHERE organisation_id = @organisation_id AND project_id = @project_id AND layer = @layer;
+
+-- name: ClaimAlertDeliveries :many
+-- Due deliveries, leased so a second worker skips them; a lease that lapses (a crashed worker) frees
+-- the delivery for the next claim.
+UPDATE alert_deliveries d SET lease_until = @lease_until
+WHERE d.id IN (
+    SELECT x.id FROM alert_deliveries x
+    WHERE x.state IN ('pending', 'retrying') AND x.next_attempt_at <= @now
+      AND (x.lease_until IS NULL OR x.lease_until < @now)
+    ORDER BY x.next_attempt_at
+    LIMIT @max_rows
+    FOR UPDATE SKIP LOCKED)
+RETURNING d.id, d.organisation_id, d.project_id, d.incident_id, d.channel, d.change, d.idempotency_key, d.message, d.attempts, d.created_at;
+
+-- name: SealedAlertChannel :one
+SELECT config_sealed FROM alert_channels
+WHERE organisation_id = @organisation_id AND project_id = @project_id AND kind = @kind;
+
+-- name: RecordAlertAttempt :exec
+INSERT INTO alert_delivery_attempts (delivery_id, attempt, at, status, error)
+VALUES (@delivery_id, @attempt, @at, @status, sqlc.narg(error))
+ON CONFLICT DO NOTHING;
+
+-- name: FinishAlertAttempt :exec
+UPDATE alert_deliveries SET state = @state, attempts = @attempts, next_attempt_at = @next_attempt_at, lease_until = NULL,
+    last_status = @last_status, last_error = sqlc.narg(last_error),
+    delivered_at = CASE WHEN @state = 'delivered' THEN @at::timestamptz ELSE delivered_at END
+WHERE id = @id;
+
+-- name: SetAlertChannelBroken :exec
+UPDATE alert_channels SET broken = @broken
+WHERE organisation_id = @organisation_id AND project_id = @project_id AND kind = @kind AND broken <> @broken;
+
+-- name: EnsureAlertDeliveryIssue :exec
+INSERT INTO issues (organisation_id, project_id, id, title, kind, source, severity)
+VALUES (@organisation_id, @project_id, 'alert-not-delivered', 'Alert not delivered', 'event', 'delivery', 'high')
+ON CONFLICT (organisation_id, project_id, id) DO NOTHING;
+
+-- name: InsertAlertDeliveryOccurrence :execrows
+INSERT INTO issue_occurrences (organisation_id, project_id, issue_id, source_id, source_layer, occurred_at, detail)
+VALUES (@organisation_id, @project_id, 'alert-not-delivered', @source_id, 'alert_deliveries', @occurred_at, @detail)
+ON CONFLICT DO NOTHING;
+
+-- name: DeleteOldAlertIncidents :execrows
+DELETE FROM alert_incidents WHERE state = 'resolved' AND resolved_at < @before;
+
+-- name: DeleteOldAlertTests :execrows
+DELETE FROM alert_deliveries WHERE incident_id IS NULL AND created_at < @before;
+
+-- name: DeleteOldAlertOccurrences :execrows
+DELETE FROM alert_occurrences WHERE seen_at < @before;
+
+-- name: ListAlertRules :many
+SELECT rule_id, enabled, channels FROM alert_rules
+WHERE organisation_id = @organisation_id AND project_id = @project_id
+ORDER BY rule_id;
+
+-- name: UpsertAlertRule :one
+INSERT INTO alert_rules (organisation_id, project_id, rule_id, enabled, channels, updated_at)
+VALUES (@organisation_id, @project_id, @rule_id, @enabled, @channels, now())
+ON CONFLICT (organisation_id, project_id, rule_id) DO UPDATE
+SET enabled = EXCLUDED.enabled, channels = EXCLUDED.channels, updated_at = now()
+RETURNING rule_id, enabled, channels;
+
+-- name: ListAlertChannels :many
+-- Each configured channel with its latest delivery, for Settings, Integrations.
+SELECT c.kind, c.target, c.broken, c.updated_at,
+       d.id AS delivery_id, COALESCE(d.change, '')::text AS change, COALESCE(d.state, '')::text AS state,
+       COALESCE(d.attempts, 0)::integer AS attempts, d.next_attempt_at, d.last_status, d.last_error,
+       d.delivered_at, d.created_at AS delivery_created_at
+FROM alert_channels c
+LEFT JOIN LATERAL (
+    SELECT x.id, x.change, x.state, x.attempts, x.next_attempt_at, x.last_status, x.last_error, x.delivered_at, x.created_at
+    FROM alert_deliveries x
+    WHERE x.organisation_id = c.organisation_id AND x.project_id = c.project_id AND x.channel = c.kind
+    ORDER BY x.created_at DESC
+    LIMIT 1) d ON true
+WHERE c.organisation_id = @organisation_id AND c.project_id = @project_id
+ORDER BY c.kind;
+
+-- name: UpsertAlertChannel :exec
+INSERT INTO alert_channels (organisation_id, project_id, kind, config_sealed, target, updated_at)
+VALUES (@organisation_id, @project_id, @kind, @config_sealed, @target, now())
+ON CONFLICT (organisation_id, project_id, kind) DO UPDATE
+SET config_sealed = EXCLUDED.config_sealed, target = EXCLUDED.target, broken = false, updated_at = now();
+
+-- name: DeleteAlertChannel :execrows
+DELETE FROM alert_channels WHERE organisation_id = @organisation_id AND project_id = @project_id AND kind = @kind;
+
+-- name: ListAlertIncidents :many
+-- Incidents open in, or still open across, a range, newest first.
+SELECT * FROM alert_incidents
+WHERE organisation_id = @organisation_id AND project_id = @project_id
+  AND opened_at < @to_at AND (resolved_at IS NULL OR resolved_at >= @from_at)
+ORDER BY opened_at DESC, id
+LIMIT @max_rows;
+
+-- name: ListAlertIncidentDeliveries :many
+SELECT id, incident_id, channel, change, state, attempts, next_attempt_at, last_status, last_error, delivered_at, created_at
+FROM alert_deliveries
+WHERE organisation_id = @organisation_id AND project_id = @project_id AND incident_id = ANY(@incident_ids::uuid[])
+ORDER BY created_at, channel;
+
+-- name: AlertIncidentInProject :one
+SELECT * FROM alert_incidents WHERE organisation_id = @organisation_id AND project_id = @project_id AND id = @id
+FOR UPDATE;
+
+-- name: AlertEventOccurrences :many
+-- What each rule matched in a range, as the Issues page stores it: the evaluation the Alerts page
+-- charts, not delivery history.
+SELECT (CASE o.issue_id WHEN 'slow' THEN 'slow-answer' WHEN 'cut' THEN 'cut-off' WHEN 'sip:plain-phone' THEN 'plain-phone' ELSE o.issue_id END)::text AS rule_id,
+       o.occurred_at, o.call_id,
+       COALESCE(o.detail->>'where', o.source_id)::text AS location, COALESCE(o.detail->>'detail', '')::text AS detail
+FROM issue_occurrences o
+LEFT JOIN call_list c ON c.id = o.call_id AND c.organisation_id = o.organisation_id AND c.project_id = o.project_id
+WHERE o.organisation_id = @organisation_id AND o.project_id = @project_id AND o.active
+  AND o.issue_id IN ('slow', 'cut', 'job-failed', 'slow-join', 'recording-lost', 'ingress-error')
+  AND (o.call_id IS NULL OR c.servable)
+  AND o.occurred_at >= @from_at AND o.occurred_at < @to_at
+ORDER BY o.occurred_at DESC
+LIMIT @max_rows;
+
+-- name: CountPlainPhoneTrunks :one
+SELECT count(*)::bigint FROM issue_occurrences
+WHERE organisation_id = @organisation_id AND project_id = @project_id AND issue_id = 'sip:plain-phone' AND active;
+
+-- name: SendingAlertRules :many
+-- Rules that are on and choose at least one configured channel. A rule with no saved row sends
+-- nowhere, so it is not listed.
+SELECT r.organisation_id, r.project_id, r.rule_id FROM alert_rules r
+WHERE r.enabled AND EXISTS (
+    SELECT 1 FROM alert_channels c
+    WHERE c.organisation_id = r.organisation_id AND c.project_id = r.project_id AND c.kind = ANY(r.channels));

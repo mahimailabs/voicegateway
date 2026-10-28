@@ -84,6 +84,11 @@ func NewWorkerClient(publicOnly bool) *http.Client {
 	}
 }
 
+// Refused reports whether err is the address guard refusing to dial, which retrying cannot change.
+func Refused(err error) bool {
+	return errors.Is(err, errMetadataAddress) || errors.Is(err, ssrf.ErrProhibitedIP) || errors.Is(err, ssrf.ErrProhibitedNetwork) || errors.Is(err, ssrf.ErrProhibitedPort) || errors.Is(err, ssrf.ErrInvalidHostPort)
+}
+
 // dialGuard is the net.Dialer Control that decides, per resolved address, whether the worker may
 // dial it: metadata addresses first, in both modes, then code.dny.dev/ssrf.
 func dialGuard(publicOnly bool) func(network, address string, c syscall.RawConn) error {

@@ -1259,7 +1259,7 @@ export type IssueList = {
          */
         severity: 'high' | 'medium' | 'low' | 'info';
         /**
-         * The component the check runs on. delivery is a recorded egress or ingress failure.
+         * The component the check runs on. delivery is a recorded egress or ingress failure, or an alert not delivered.
          */
         source: 'calls' | 'agent_workers' | 'phone_bridge' | 'delivery';
         /**
@@ -1351,7 +1351,7 @@ export type Error = {
     /**
      * Stable error category.
      */
-    code: 'invalid_request' | 'revision_conflict' | 'unauthenticated' | 'forbidden' | 'not_found' | 'source_unavailable' | 'internal_error' | 'range_not_satisfiable' | 'last_admin' | 'already_member' | 'member_of_other_organisations' | 'project_exists' | 'livekit_secret_invalid' | 'livekit_unreachable' | 'recording_bucket_refused' | 'recording_bucket_unreachable' | 'origin_not_allowed';
+    code: 'invalid_request' | 'revision_conflict' | 'unauthenticated' | 'forbidden' | 'not_found' | 'source_unavailable' | 'internal_error' | 'range_not_satisfiable' | 'last_admin' | 'already_member' | 'member_of_other_organisations' | 'project_exists' | 'livekit_secret_invalid' | 'livekit_unreachable' | 'recording_bucket_refused' | 'recording_bucket_unreachable' | 'origin_not_allowed' | 'incident_not_resolvable';
     /**
      * Safe human-readable explanation, excluding upstream credentials and request bodies.
      */
@@ -1383,17 +1383,227 @@ export type AlertRuleSetup = {
      */
     ruleId: 'slow-answer' | 'cut-off' | 'job-failed' | 'slow-join' | 'plain-phone' | 'recording-lost' | 'ingress-error';
     /**
-     * Saved rule enablement. The preview uses true when no override exists.
+     * Whether the rule sends; true when never saved. A rule that is off still opens incidents.
      */
     on: boolean;
     /**
-     * Selected notification channel kinds only. No webhook URLs or credentials.
+     * Channel kinds the rule sends to. No webhook URLs or credentials. Email and webhook deliver today.
      */
     to: Array<'slack' | 'teams' | 'discord' | 'pagerduty' | 'opsgenie' | 'email' | 'webhook'>;
 };
 
 export type AlertSetup = {
     items: Array<AlertRuleSetup>;
+    /**
+     * The project's configured channels, each with its latest delivery. A kind not listed is not configured.
+     */
+    channels: Array<AlertChannel>;
+    /**
+     * Whether this server sends email (VOICEGATEWAY_SMTP_URL is set). Without it the email channel cannot be configured.
+     */
+    emailAvailable: boolean;
+};
+
+export type AlertRuleUpdate = {
+    /**
+     * Whether the rule sends. Off still opens incidents.
+     */
+    on: boolean;
+    /**
+     * Channel kinds the rule sends to. Email and webhook deliver today.
+     */
+    to: Array<'email' | 'webhook'>;
+};
+
+export type AlertChannelUpdate = {
+    /**
+     * Webhook only: the http or https URL each delivery is POSTed to. Sealed on the server and never returned.
+     */
+    url?: string;
+    /**
+     * Webhook only: true makes a new signing secret, returned once.
+     */
+    rotateSecret?: boolean;
+    /**
+     * Email only: 1 to 20 addresses that get every alert as one email.
+     */
+    recipients?: Array<string>;
+};
+
+export type SavedAlertChannel = {
+    /**
+     * The channel kind.
+     */
+    kind: 'email' | 'webhook';
+    /**
+     * What the channel sends to, safe to show: the webhook's host, or the recipient count.
+     */
+    target: string;
+    /**
+     * The email channel's recipients.
+     */
+    recipients: Array<string> | null;
+    /**
+     * The webhook's Standard Webhooks signing secret (whsec_...), returned only when it was made. Verify each delivery's webhook-signature with it.
+     */
+    signingSecret: string | null;
+};
+
+export type AlertDelivery = {
+    /**
+     * The delivery.
+     */
+    id: string;
+    /**
+     * Where it goes.
+     */
+    channel: 'email' | 'webhook';
+    /**
+     * The incident change it carries, or a channel test.
+     */
+    change: 'firing' | 'reminder' | 'resolved' | 'test';
+    /**
+     * failed is final: refused (the channel is broken) or still failing after 24 hours of retries.
+     */
+    state: 'pending' | 'retrying' | 'delivered' | 'failed';
+    /**
+     * Attempts made so far.
+     */
+    attempts: number | null;
+    /**
+     * When the next attempt is planned.
+     */
+    nextAttemptAt: string | null;
+    /**
+     * The last answer: an HTTP status (HTTP 500), an SMTP class, or timeout, unreachable, channel_removed, smtp_not_configured.
+     */
+    status: string | null;
+    /**
+     * The provider's message, at most 200 characters, with the channel's URL and secret removed.
+     */
+    message: string | null;
+    /**
+     * When the channel accepted it.
+     */
+    deliveredAt: string | null;
+    /**
+     * When the change was queued.
+     */
+    createdAt: string;
+};
+
+export type AlertChannel = {
+    /**
+     * The channel kind.
+     */
+    kind: 'email' | 'webhook';
+    /**
+     * What the channel sends to, safe to show: the webhook's host, or the recipient count. Never the URL or secret.
+     */
+    target: string;
+    /**
+     * The email channel's recipients.
+     */
+    recipients: Array<string> | null;
+    /**
+     * A delivery was refused with an answer retrying cannot fix. Cleared by a delivery that succeeds or by saving the channel.
+     */
+    broken: boolean;
+    /**
+     * When an Admin last saved the channel.
+     */
+    updatedAt: string;
+    /**
+     * The channel's latest delivery.
+     */
+    lastDelivery: AlertDelivery | null;
+};
+
+export type AlertIncident = {
+    /**
+     * The incident.
+     */
+    id: string;
+    /**
+     * The rule.
+     */
+    ruleId: 'slow-answer' | 'cut-off' | 'job-failed' | 'slow-join' | 'plain-phone' | 'recording-lost' | 'ingress-error';
+    /**
+     * What the incident is about: an agent for call and job rules, else the trunk, egress or ingress.
+     */
+    subject: string;
+    /**
+     * Firing until its resolve condition holds, or a person resolves a lost recording.
+     */
+    state: 'firing' | 'resolved';
+    /**
+     * When it opened.
+     */
+    openedAt: string;
+    /**
+     * When it resolved.
+     */
+    resolvedAt: string | null;
+    /**
+     * condition when the resolve rule held; person for a lost recording a person resolved.
+     */
+    resolvedBy: 'condition' | 'person' | null;
+    /**
+     * Occurrences grouped into it.
+     */
+    occurrences: number | null;
+    /**
+     * The latest thing the rule matched.
+     */
+    lastOccurrence: {
+        /**
+         * When it happened.
+         */
+        at: string | null;
+        /**
+         * The call room, job, trunk, egress or ingress, as a label.
+         */
+        where: string;
+        /**
+         * What happened.
+         */
+        detail: string;
+        /**
+         * The call, when it is on one.
+         */
+        callId: string | null;
+    };
+    /**
+     * Why a firing incident has not resolved when the data cannot decide, such as fewer than 5 calls in the last 30 minutes.
+     */
+    holdReason: string | null;
+    /**
+     * The incident's source has reported nothing since this time. It stays firing: silence never resolves it.
+     */
+    silentSince: string | null;
+    /**
+     * Every delivery of its changes, oldest first.
+     */
+    deliveries: Array<AlertDelivery>;
+};
+
+export type AlertIncidents = {
+    /**
+     * Inclusive range start, UTC.
+     */
+    from: string;
+    /**
+     * Exclusive range end, UTC.
+     */
+    to: string;
+    /**
+     * false when more than 500 incidents are in the range.
+     */
+    complete: boolean;
+    /**
+     * Incidents, newest first.
+     */
+    items: Array<AlertIncident>;
 };
 
 export type CallTags = {
@@ -2154,6 +2364,21 @@ export type InstanceOrganisationId = string;
  * 1 to 200 printable characters; a Cloud control plane sends its checkout session id. A repeat with the same key returns the first invitation.
  */
 export type IdempotencyKey = string;
+
+/**
+ * One of the seven alert rules; any other value is not_found.
+ */
+export type AlertRuleId = 'slow-answer' | 'cut-off' | 'job-failed' | 'slow-join' | 'plain-phone' | 'recording-lost' | 'ingress-error';
+
+/**
+ * A channel kind that delivers today; any other value is not_found.
+ */
+export type AlertChannelKind = 'email' | 'webhook';
+
+/**
+ * An alert incident's id; one from another project, or not a UUID, is not_found.
+ */
+export type AlertIncidentId = string;
 
 /**
  * A project key's id, the 12 characters after vgk_; one from another project is not_found, and any other value is invalid_request.
@@ -3327,7 +3552,7 @@ export type UpdateCallMetadataErrors = {
      */
     404: Error;
     /**
-     * revision_conflict, settings changed since they were read; last_admin, the change would leave the organisation without an admin; already_member, the invited email's account is a member already; member_of_other_organisations, a reset's member belongs to an organisation the requester does not administer; project_exists, the organisation already has a project with the new name's id.
+     * revision_conflict, settings changed since they were read; last_admin, the change would leave the organisation without an admin; already_member, the invited email's account is a member already; member_of_other_organisations, a reset's member belongs to an organisation the requester does not administer; project_exists, the organisation already has a project with the new name's id; incident_not_resolvable, a person may resolve only a firing recording-lost incident.
      */
     409: Error;
     /**
@@ -3447,7 +3672,7 @@ export type UpdateIssueMetadataErrors = {
      */
     404: Error;
     /**
-     * revision_conflict, settings changed since they were read; last_admin, the change would leave the organisation without an admin; already_member, the invited email's account is a member already; member_of_other_organisations, a reset's member belongs to an organisation the requester does not administer; project_exists, the organisation already has a project with the new name's id.
+     * revision_conflict, settings changed since they were read; last_admin, the change would leave the organisation without an admin; already_member, the invited email's account is a member already; member_of_other_organisations, a reset's member belongs to an organisation the requester does not administer; project_exists, the organisation already has a project with the new name's id; incident_not_resolvable, a person may resolve only a firing recording-lost incident.
      */
     409: Error;
     /**
@@ -3559,7 +3784,7 @@ export type UpdateProjectSettingsErrors = {
      */
     404: Error;
     /**
-     * revision_conflict, settings changed since they were read; last_admin, the change would leave the organisation without an admin; already_member, the invited email's account is a member already; member_of_other_organisations, a reset's member belongs to an organisation the requester does not administer; project_exists, the organisation already has a project with the new name's id.
+     * revision_conflict, settings changed since they were read; last_admin, the change would leave the organisation without an admin; already_member, the invited email's account is a member already; member_of_other_organisations, a reset's member belongs to an organisation the requester does not administer; project_exists, the organisation already has a project with the new name's id; incident_not_resolvable, a person may resolve only a firing recording-lost incident.
      */
     409: Error;
     /**
@@ -3671,7 +3896,7 @@ export type UpdateAllowedOriginsErrors = {
      */
     404: Error;
     /**
-     * revision_conflict, settings changed since they were read; last_admin, the change would leave the organisation without an admin; already_member, the invited email's account is a member already; member_of_other_organisations, a reset's member belongs to an organisation the requester does not administer; project_exists, the organisation already has a project with the new name's id.
+     * revision_conflict, settings changed since they were read; last_admin, the change would leave the organisation without an admin; already_member, the invited email's account is a member already; member_of_other_organisations, a reset's member belongs to an organisation the requester does not administer; project_exists, the organisation already has a project with the new name's id; incident_not_resolvable, a person may resolve only a firing recording-lost incident.
      */
     409: Error;
     /**
@@ -3803,6 +4028,363 @@ export type GetAlertSetupResponses = {
 
 export type GetAlertSetupResponse = GetAlertSetupResponses[keyof GetAlertSetupResponses];
 
+export type UpdateAlertRuleData = {
+    body: AlertRuleUpdate;
+    path: {
+        /**
+         * Authorised orgId; the server must verify organisation/project ownership before any read.
+         */
+        orgId: string;
+        /**
+         * Authorised projectId; the server must verify organisation/project ownership before any read.
+         */
+        projectId: string;
+        /**
+         * One of the seven alert rules; any other value is not_found.
+         */
+        ruleId: 'slow-answer' | 'cut-off' | 'job-failed' | 'slow-join' | 'plain-phone' | 'recording-lost' | 'ingress-error';
+    };
+    query?: never;
+    url: '/api/v1/org/{orgId}/project/{projectId}/alert-rules/{ruleId}';
+};
+
+export type UpdateAlertRuleErrors = {
+    /**
+     * invalid_request; never return an empty success result for this failure.
+     */
+    400: Error;
+    /**
+     * unauthenticated; never return an empty success result for this failure.
+     */
+    401: Error;
+    /**
+     * forbidden; never return an empty success result for this failure.
+     */
+    403: Error;
+    /**
+     * not_found; never return an empty success result for this failure.
+     */
+    404: Error;
+    /**
+     * internal_error; never return an empty success result for this failure.
+     */
+    500: Error;
+    /**
+     * source_unavailable; never return an empty success result for this failure.
+     */
+    503: Error;
+};
+
+export type UpdateAlertRuleError = UpdateAlertRuleErrors[keyof UpdateAlertRuleErrors];
+
+export type UpdateAlertRuleResponses = {
+    /**
+     * The rule as saved.
+     */
+    200: AlertRuleSetup;
+};
+
+export type UpdateAlertRuleResponse = UpdateAlertRuleResponses[keyof UpdateAlertRuleResponses];
+
+export type DeleteAlertChannelData = {
+    body?: never;
+    path: {
+        /**
+         * Authorised orgId; the server must verify organisation/project ownership before any read.
+         */
+        orgId: string;
+        /**
+         * Authorised projectId; the server must verify organisation/project ownership before any read.
+         */
+        projectId: string;
+        /**
+         * A channel kind that delivers today; any other value is not_found.
+         */
+        kind: 'email' | 'webhook';
+    };
+    query?: never;
+    url: '/api/v1/org/{orgId}/project/{projectId}/alert-channels/{kind}';
+};
+
+export type DeleteAlertChannelErrors = {
+    /**
+     * invalid_request; never return an empty success result for this failure.
+     */
+    400: Error;
+    /**
+     * unauthenticated; never return an empty success result for this failure.
+     */
+    401: Error;
+    /**
+     * forbidden; never return an empty success result for this failure.
+     */
+    403: Error;
+    /**
+     * not_found; never return an empty success result for this failure.
+     */
+    404: Error;
+    /**
+     * internal_error; never return an empty success result for this failure.
+     */
+    500: Error;
+    /**
+     * source_unavailable; never return an empty success result for this failure.
+     */
+    503: Error;
+};
+
+export type DeleteAlertChannelError = DeleteAlertChannelErrors[keyof DeleteAlertChannelErrors];
+
+export type DeleteAlertChannelResponses = {
+    /**
+     * Removed.
+     */
+    204: void;
+};
+
+export type DeleteAlertChannelResponse = DeleteAlertChannelResponses[keyof DeleteAlertChannelResponses];
+
+export type UpdateAlertChannelData = {
+    body: AlertChannelUpdate;
+    path: {
+        /**
+         * Authorised orgId; the server must verify organisation/project ownership before any read.
+         */
+        orgId: string;
+        /**
+         * Authorised projectId; the server must verify organisation/project ownership before any read.
+         */
+        projectId: string;
+        /**
+         * A channel kind that delivers today; any other value is not_found.
+         */
+        kind: 'email' | 'webhook';
+    };
+    query?: never;
+    url: '/api/v1/org/{orgId}/project/{projectId}/alert-channels/{kind}';
+};
+
+export type UpdateAlertChannelErrors = {
+    /**
+     * invalid_request; never return an empty success result for this failure.
+     */
+    400: Error;
+    /**
+     * unauthenticated; never return an empty success result for this failure.
+     */
+    401: Error;
+    /**
+     * forbidden; never return an empty success result for this failure.
+     */
+    403: Error;
+    /**
+     * not_found; never return an empty success result for this failure.
+     */
+    404: Error;
+    /**
+     * internal_error; never return an empty success result for this failure.
+     */
+    500: Error;
+    /**
+     * source_unavailable; never return an empty success result for this failure.
+     */
+    503: Error;
+};
+
+export type UpdateAlertChannelError = UpdateAlertChannelErrors[keyof UpdateAlertChannelErrors];
+
+export type UpdateAlertChannelResponses = {
+    /**
+     * The channel as saved, with a new signing secret when one was made.
+     */
+    200: SavedAlertChannel;
+};
+
+export type UpdateAlertChannelResponse = UpdateAlertChannelResponses[keyof UpdateAlertChannelResponses];
+
+export type TestAlertChannelData = {
+    body?: never;
+    path: {
+        /**
+         * Authorised orgId; the server must verify organisation/project ownership before any read.
+         */
+        orgId: string;
+        /**
+         * Authorised projectId; the server must verify organisation/project ownership before any read.
+         */
+        projectId: string;
+        /**
+         * A channel kind that delivers today; any other value is not_found.
+         */
+        kind: 'email' | 'webhook';
+    };
+    query?: never;
+    url: '/api/v1/org/{orgId}/project/{projectId}/alert-channels/{kind}/test';
+};
+
+export type TestAlertChannelErrors = {
+    /**
+     * invalid_request; never return an empty success result for this failure.
+     */
+    400: Error;
+    /**
+     * unauthenticated; never return an empty success result for this failure.
+     */
+    401: Error;
+    /**
+     * forbidden; never return an empty success result for this failure.
+     */
+    403: Error;
+    /**
+     * not_found; never return an empty success result for this failure.
+     */
+    404: Error;
+    /**
+     * internal_error; never return an empty success result for this failure.
+     */
+    500: Error;
+    /**
+     * source_unavailable; never return an empty success result for this failure.
+     */
+    503: Error;
+};
+
+export type TestAlertChannelError = TestAlertChannelErrors[keyof TestAlertChannelErrors];
+
+export type TestAlertChannelResponses = {
+    /**
+     * Queued. The channel's lastDelivery in getAlertSetup shows how it went.
+     */
+    204: void;
+};
+
+export type TestAlertChannelResponse = TestAlertChannelResponses[keyof TestAlertChannelResponses];
+
+export type ListAlertIncidentsData = {
+    body?: never;
+    path: {
+        /**
+         * Authorised orgId; the server must verify organisation/project ownership before any read.
+         */
+        orgId: string;
+        /**
+         * Authorised projectId; the server must verify organisation/project ownership before any read.
+         */
+        projectId: string;
+    };
+    query: {
+        /**
+         * Inclusive UTC start of the range.
+         */
+        from: string;
+        /**
+         * Exclusive UTC end of the range.
+         */
+        to: string;
+    };
+    url: '/api/v1/org/{orgId}/project/{projectId}/alert-incidents';
+};
+
+export type ListAlertIncidentsErrors = {
+    /**
+     * invalid_request; never return an empty success result for this failure.
+     */
+    400: Error;
+    /**
+     * unauthenticated; never return an empty success result for this failure.
+     */
+    401: Error;
+    /**
+     * forbidden; never return an empty success result for this failure.
+     */
+    403: Error;
+    /**
+     * not_found; never return an empty success result for this failure.
+     */
+    404: Error;
+    /**
+     * internal_error; never return an empty success result for this failure.
+     */
+    500: Error;
+    /**
+     * source_unavailable; never return an empty success result for this failure.
+     */
+    503: Error;
+};
+
+export type ListAlertIncidentsError = ListAlertIncidentsErrors[keyof ListAlertIncidentsErrors];
+
+export type ListAlertIncidentsResponses = {
+    /**
+     * Incidents in the range. Null means unreported, never zero.
+     */
+    200: AlertIncidents;
+};
+
+export type ListAlertIncidentsResponse = ListAlertIncidentsResponses[keyof ListAlertIncidentsResponses];
+
+export type ResolveAlertIncidentData = {
+    body?: never;
+    path: {
+        /**
+         * Authorised orgId; the server must verify organisation/project ownership before any read.
+         */
+        orgId: string;
+        /**
+         * Authorised projectId; the server must verify organisation/project ownership before any read.
+         */
+        projectId: string;
+        /**
+         * An alert incident's id; one from another project, or not a UUID, is not_found.
+         */
+        incidentId: string;
+    };
+    query?: never;
+    url: '/api/v1/org/{orgId}/project/{projectId}/alert-incidents/{incidentId}/resolve';
+};
+
+export type ResolveAlertIncidentErrors = {
+    /**
+     * invalid_request; never return an empty success result for this failure.
+     */
+    400: Error;
+    /**
+     * unauthenticated; never return an empty success result for this failure.
+     */
+    401: Error;
+    /**
+     * forbidden; never return an empty success result for this failure.
+     */
+    403: Error;
+    /**
+     * not_found; never return an empty success result for this failure.
+     */
+    404: Error;
+    /**
+     * revision_conflict, settings changed since they were read; last_admin, the change would leave the organisation without an admin; already_member, the invited email's account is a member already; member_of_other_organisations, a reset's member belongs to an organisation the requester does not administer; project_exists, the organisation already has a project with the new name's id; incident_not_resolvable, a person may resolve only a firing recording-lost incident.
+     */
+    409: Error;
+    /**
+     * internal_error; never return an empty success result for this failure.
+     */
+    500: Error;
+    /**
+     * source_unavailable; never return an empty success result for this failure.
+     */
+    503: Error;
+};
+
+export type ResolveAlertIncidentError = ResolveAlertIncidentErrors[keyof ResolveAlertIncidentErrors];
+
+export type ResolveAlertIncidentResponses = {
+    /**
+     * The resolved incident.
+     */
+    200: AlertIncident;
+};
+
+export type ResolveAlertIncidentResponse = ResolveAlertIncidentResponses[keyof ResolveAlertIncidentResponses];
+
 export type GetInvitationsData = {
     body?: never;
     path: {
@@ -3883,7 +4465,7 @@ export type CreateInvitationErrors = {
      */
     404: Error;
     /**
-     * revision_conflict, settings changed since they were read; last_admin, the change would leave the organisation without an admin; already_member, the invited email's account is a member already; member_of_other_organisations, a reset's member belongs to an organisation the requester does not administer; project_exists, the organisation already has a project with the new name's id.
+     * revision_conflict, settings changed since they were read; last_admin, the change would leave the organisation without an admin; already_member, the invited email's account is a member already; member_of_other_organisations, a reset's member belongs to an organisation the requester does not administer; project_exists, the organisation already has a project with the new name's id; incident_not_resolvable, a person may resolve only a firing recording-lost incident.
      */
     409: Error;
     /**
@@ -3991,7 +4573,7 @@ export type CreateProjectErrors = {
      */
     404: Error;
     /**
-     * revision_conflict, settings changed since they were read; last_admin, the change would leave the organisation without an admin; already_member, the invited email's account is a member already; member_of_other_organisations, a reset's member belongs to an organisation the requester does not administer; project_exists, the organisation already has a project with the new name's id.
+     * revision_conflict, settings changed since they were read; last_admin, the change would leave the organisation without an admin; already_member, the invited email's account is a member already; member_of_other_organisations, a reset's member belongs to an organisation the requester does not administer; project_exists, the organisation already has a project with the new name's id; incident_not_resolvable, a person may resolve only a firing recording-lost incident.
      */
     409: Error;
     /**
@@ -4161,7 +4743,7 @@ export type RemoveMemberErrors = {
      */
     404: Error;
     /**
-     * revision_conflict, settings changed since they were read; last_admin, the change would leave the organisation without an admin; already_member, the invited email's account is a member already; member_of_other_organisations, a reset's member belongs to an organisation the requester does not administer; project_exists, the organisation already has a project with the new name's id.
+     * revision_conflict, settings changed since they were read; last_admin, the change would leave the organisation without an admin; already_member, the invited email's account is a member already; member_of_other_organisations, a reset's member belongs to an organisation the requester does not administer; project_exists, the organisation already has a project with the new name's id; incident_not_resolvable, a person may resolve only a firing recording-lost incident.
      */
     409: Error;
     /**
@@ -4219,7 +4801,7 @@ export type UpdateMemberErrors = {
      */
     404: Error;
     /**
-     * revision_conflict, settings changed since they were read; last_admin, the change would leave the organisation without an admin; already_member, the invited email's account is a member already; member_of_other_organisations, a reset's member belongs to an organisation the requester does not administer; project_exists, the organisation already has a project with the new name's id.
+     * revision_conflict, settings changed since they were read; last_admin, the change would leave the organisation without an admin; already_member, the invited email's account is a member already; member_of_other_organisations, a reset's member belongs to an organisation the requester does not administer; project_exists, the organisation already has a project with the new name's id; incident_not_resolvable, a person may resolve only a firing recording-lost incident.
      */
     409: Error;
     /**
@@ -4277,7 +4859,7 @@ export type CreatePasswordResetErrors = {
      */
     404: Error;
     /**
-     * revision_conflict, settings changed since they were read; last_admin, the change would leave the organisation without an admin; already_member, the invited email's account is a member already; member_of_other_organisations, a reset's member belongs to an organisation the requester does not administer; project_exists, the organisation already has a project with the new name's id.
+     * revision_conflict, settings changed since they were read; last_admin, the change would leave the organisation without an admin; already_member, the invited email's account is a member already; member_of_other_organisations, a reset's member belongs to an organisation the requester does not administer; project_exists, the organisation already has a project with the new name's id; incident_not_resolvable, a person may resolve only a firing recording-lost incident.
      */
     409: Error;
     /**
@@ -4724,7 +5306,7 @@ export type CreateOrganisationInvitationErrors = {
      */
     404: Error;
     /**
-     * revision_conflict, settings changed since they were read; last_admin, the change would leave the organisation without an admin; already_member, the invited email's account is a member already; member_of_other_organisations, a reset's member belongs to an organisation the requester does not administer; project_exists, the organisation already has a project with the new name's id.
+     * revision_conflict, settings changed since they were read; last_admin, the change would leave the organisation without an admin; already_member, the invited email's account is a member already; member_of_other_organisations, a reset's member belongs to an organisation the requester does not administer; project_exists, the organisation already has a project with the new name's id; incident_not_resolvable, a person may resolve only a firing recording-lost incident.
      */
     409: Error;
     /**

@@ -75,3 +75,16 @@ func TestNewRejectsWrongKeySize(t *testing.T) {
 		t.Error("New() accepted a 16-byte key")
 	}
 }
+
+func TestSealRefusesOversizedValues(t *testing.T) {
+	s, err := New(key(1))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Seal(make([]byte, MaxPlaintext), "ctx"); err != nil {
+		t.Fatalf("Seal() at the limit: %v", err)
+	}
+	if _, err := s.Seal(make([]byte, MaxPlaintext+1), "ctx"); err == nil {
+		t.Error("Seal() accepted a value over the limit")
+	}
+}

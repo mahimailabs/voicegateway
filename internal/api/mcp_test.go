@@ -103,9 +103,9 @@ func TestMCPToolsReadTheKeysProject(t *testing.T) {
 	}
 	slices.Sort(names)
 	want := []string{
-		"getCall", "getCallMetadata", "getCallStats", "getCallTags", "getCloudAgents", "getEgress", "getIngress",
+		"getAlertSetup", "getCall", "getCallMetadata", "getCallStats", "getCallTags", "getCloudAgents", "getEgress", "getIngress",
 		"getIssueMetadata", "getMediaServer", "getProjectConnection", "getProjectSettings", "getResources", "getSip", "getWorkers",
-		"getWorkspaces", "listCalls", "listIssues",
+		"getWorkspaces", "listAlertEvents", "listAlertIncidents", "listCalls", "listIssues",
 	}
 	if !slices.Equal(names, want) {
 		t.Fatalf("tools = %v, want %v", names, want)

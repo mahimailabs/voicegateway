@@ -73,6 +73,17 @@ var routeAccess = map[string]access{
 	"GET /api/v1/instance/organisations/{orgId}":                      {"Instance", scopeInstance},
 	"POST /api/v1/instance/organisations/{orgId}/invitations":         {"Instance", scopeInstance},
 	"GET /api/v1/instance/organisations/{orgId}/usage":                {"Instance", scopeInstance},
+
+	"GET /api/v1/org/{orgId}/project/{projectId}/alert-events":                          {"Viewer", scopeProject},
+	"GET /api/v1/org/{orgId}/project/{projectId}/alert-setup":                           {"Viewer", scopeProject},
+	"PUT /api/v1/org/{orgId}/project/{projectId}/alert-rules/{ruleId}":                  {"Member", scopeProject},
+	"GET /api/v1/org/{orgId}/project/{projectId}/alert-incidents":                       {"Viewer", scopeProject},
+	"POST /api/v1/org/{orgId}/project/{projectId}/alert-incidents/{incidentId}/resolve": {"Member", scopeProject},
+
+	// A channel holds a webhook URL and signing secret, so only an Admin sets, removes or tests one.
+	"PUT /api/v1/org/{orgId}/project/{projectId}/alert-channels/{kind}":       {"Admin", scopeProject},
+	"DELETE /api/v1/org/{orgId}/project/{projectId}/alert-channels/{kind}":    {"Admin", scopeProject},
+	"POST /api/v1/org/{orgId}/project/{projectId}/alert-channels/{kind}/test": {"Admin", scopeProject},
 }
 
 // embedAccess names the routes an embed token may call (decision 0023), each with the widgets that

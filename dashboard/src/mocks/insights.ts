@@ -1,5 +1,5 @@
 import { issueMetadataOf } from "./issue-metadata"
-import type { AlertEvents, IssueList } from "@/lib/api-types"
+import type { AlertEvents, AlertIncident, AlertIncidents, IssueList } from "@/lib/api-types"
 import { BUDGET_MS, JOIN_MS } from "@/lib/thresholds"
 import { buildModel } from "@/features/call/call-model"
 import { findingsFor } from "@/features/call/call-steps"
@@ -146,4 +146,50 @@ export function alertEvents(from: Date, to: Date): AlertEvents {
         .map((e) => ({ at: iso(e.at), where: e.where, detail: e.detail, callId: e.link && "callId" in e.link ? e.link.callId : null })),
     })),
   }
+}
+
+// The incidents the worker would have opened over the same evaluation: one per rule with events in
+// the range. Call and agent rules group by agent, which the capture does not name, so the subject is
+// "Unknown agent", as the worker labels a call with no agent key. A standing rule is firing; the
+// others resolved 30 minutes after their last event, when 5 clean calls would have followed. No
+// delivery is listed: the capture was made before any channel was set up.
+const personResolved = new Map<string, string>()
+const agentRules = new Set<string>(["slow-answer", "cut-off", "job-failed", "slow-join"])
+export function alertIncidents(from: Date, to: Date): AlertIncidents {
+  const items = alertEvents(from, to).rules.flatMap((r, k): AlertIncident[] => {
+    const dated = r.events.filter((e) => e.at !== null)
+    if (!r.state && !dated.length) return []
+    const last = dated[0] ?? r.events[0]
+    const opened = dated.length ? dated[dated.length - 1].at! : new Date(+to - 3600_000).toISOString()
+    const id = `00000000-0000-4000-8000-${String(k + 1).padStart(12, "0")}`
+    const clean = last?.at ? new Date(Date.parse(last.at) + 30 * 60_000).toISOString() : null
+    const byPerson = personResolved.get(id) ?? null
+    const firing = !byPerson && (Boolean(r.state) || r.ruleId === "recording-lost" || !clean || Date.parse(clean) > Date.now())
+    return [{
+      id,
+      ruleId: r.ruleId,
+      subject: agentRules.has(r.ruleId) ? "Unknown agent" : (last?.where ?? meta(r.ruleId).source),
+      state: firing ? "firing" : "resolved",
+      openedAt: opened,
+      resolvedAt: firing ? null : (byPerson ?? clean),
+      resolvedBy: firing ? null : byPerson ? "person" : "condition",
+      occurrences: r.state && !dated.length ? 1 : dated.length,
+      lastOccurrence: { at: last?.at ?? null, where: last?.where ?? r.state ?? "unknown", detail: last?.detail ?? r.state ?? "", callId: last?.callId ?? null },
+      holdReason: null,
+      silentSince: null,
+      deliveries: [],
+    }]
+  })
+  items.sort((a, b) => Date.parse(b.openedAt) - Date.parse(a.openedAt))
+  return { from: from.toISOString(), to: to.toISOString(), complete: true, items }
+}
+
+/** Resolves a lost recording as a person, as web does; any other firing rule is not resolvable. */
+export function resolveAlertIncident(id: string): AlertIncident | "not_found" | "not_resolvable" {
+  const all = alertIncidents(new Date(0), new Date(Date.now() + 60_000)).items
+  const inc = all.find((i) => i.id === id)
+  if (!inc) return "not_found"
+  if (inc.ruleId !== "recording-lost" || inc.state !== "firing") return "not_resolvable"
+  personResolved.set(id, new Date().toISOString())
+  return alertIncidents(new Date(0), new Date(Date.now() + 60_000)).items.find((i) => i.id === id)!
 }
