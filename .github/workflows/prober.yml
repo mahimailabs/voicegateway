@@ -1,0 +1,29 @@
+name: Prober
+
+# The distributed SFU prober's AWS template (deploy/prober, decision 0037): cfn-lint checks it
+# against the CloudFormation resource specification. Nothing here deploys.
+
+on:
+  pull_request:
+    paths:
+      - 'deploy/prober/**'
+      - '.github/workflows/prober.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'deploy/prober/**'
+
+permissions:
+  contents: read
+
+jobs:
+  cfn-lint:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          version: '0.8.15'
+      - run: uvx cfn-lint==1.57.2 deploy/prober/cloudformation.yaml
