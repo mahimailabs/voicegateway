@@ -75,6 +75,11 @@ Parameters:
   LogRetentionDays:
     Type: Number
     Default: 14
+  AvailabilityZoneIndex:
+    Type: Number
+    Default: 0
+    AllowedValues: [0, 1, 2]
+    Description: Which of the region's zones holds the subnet. Change it for a stack instance if RunTask reports no Fargate capacity in the first zone
 
 Resources:
   # A one-subnet public VPC per region: tasks get a public IP for egress, so there
@@ -98,7 +103,7 @@ Resources:
     Properties:
       VpcId: !Ref Vpc
       CidrBlock: 10.42.0.0/24
-      AvailabilityZone: !Select [0, !GetAZs ""]
+      AvailabilityZone: !Select [!Ref AvailabilityZoneIndex, !GetAZs ""]
       Tags: [{ Key: Name, Value: vg-sfu-prober }]
   RouteTable:
     Type: AWS::EC2::RouteTable

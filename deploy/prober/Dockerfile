@@ -3,20 +3,24 @@
 # A thin image that runs `voicegw livekit sfu --report-to ...` against a
 # coordinator. Deploy one per AWS region (deploy/prober/cloudformation.yaml,
 # decision 0037) to load one SFU room concurrently from many vantages. The
-# prober needs only the base install (httpx); the coordinator is the one that
-# needs the [server] extra.
-FROM python:3.12-slim
+# prober needs the [livekit] extra (livekit.api and livekit.rtc); the
+# coordinator is the one that also needs the [server] extra.
+FROM python:3.12.16-slim@sha256:8523d6abeb48ceae0b7240d30c5808fc26cb79c1a635bacdf19cf3baecfbec07
 
 # Non-root: the prober only makes outbound connections.
 RUN useradd --create-home --uid 10001 prober
 WORKDIR /home/prober
 
-# Pin the same engine version you run the coordinator with so the wire contract
-# (register / job / report) matches. Override at build time: --build-arg VERSION=...
-# 0.27.0 is the last engine release with `voicegw livekit sfu`: from 1.0 the
-# voicegateway package on PyPI is the agent SDK, which has no prober.
-ARG VERSION=0.27.0
-RUN pip install --no-cache-dir "voicegateway==${VERSION}"
+# requirements.txt locks voicegateway[livekit]==0.27.0 and every dependency
+# with hashes, so two builds install the same packages. Run the coordinator on
+# the same engine version so the wire contract (register / job / report)
+# matches. 0.27.0 is the last engine release with `voicegw livekit sfu`: from
+# 1.0 the voicegateway package on PyPI is the agent SDK, which has no prober.
+# To change it, edit requirements.in and regenerate from deploy/prober/:
+#   uv pip compile requirements.in --python-version 3.12 \
+#       --python-platform x86_64-manylinux_2_28 --generate-hashes -o requirements.txt
+COPY requirements.txt /tmp/requirements.txt
+RUN pip install --no-cache-dir --require-hashes -r /tmp/requirements.txt
 
 USER prober
 
