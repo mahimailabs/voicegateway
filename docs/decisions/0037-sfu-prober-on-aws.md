@@ -5,7 +5,7 @@
 
 ## Context
 
-The distributed SFU load test runs one coordinator and one prober per vantage region; each prober registers with the coordinator, runs its job and reports, then exits. The repository shipped `deploy/prober/fly.toml` as the deploy template. It was never deployed. On 2026-10-29 Mahimai decided there is no Fly: everything runs on AWS.
+The distributed SFU load test runs one coordinator and one prober per vantage region; each prober registers with the coordinator, runs its job and reports, then exits. The repository shipped `deploy/prober/fly.toml` as the deploy template. It was never deployed. On 2026-10-29 Mahimai wrote: "There is not fly, lets use aws for all".
 
 A prober needs: an image, the three LiveKit values as secrets, outbound network, a vantage label per region, and a way to start it once or on a schedule. It answers nothing, so it needs no load balancer, service or inbound port.
 
