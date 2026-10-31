@@ -12,9 +12,7 @@ import (
 	"time"
 
 	"code.dny.dev/ssrf"
-	"github.com/livekit/protocol/livekit"
 	lksdk "github.com/livekit/server-sdk-go/v2"
-	"github.com/twitchtv/twirp"
 
 	"github.com/mahimailabs/voicegateway/internal/store"
 )
@@ -114,42 +112,42 @@ func TestSelfHostedLiveKitDialIsTheSDK(t *testing.T) {
 	}
 }
 
-// cloudAgents answers the two Cloud agents reads with one agent and one version.
-type cloudAgents struct{ livekit.CloudAgent }
-
-func (cloudAgents) ListAgents(context.Context, *livekit.ListAgentsRequest) (*livekit.ListAgentsResponse, error) {
-	return &livekit.ListAgentsResponse{Agents: []*livekit.AgentInfo{{AgentId: "CA_1"}}}, nil
-}
-
-func (cloudAgents) ListAgentVersions(context.Context, *livekit.ListAgentVersionsRequest) (*livekit.ListAgentVersionsResponse, error) {
-	return &livekit.ListAgentVersionsResponse{Versions: []*livekit.AgentVersion{{Version: "v1"}}}, nil
-}
-
-// LiveKit Cloud's agents API refuses a call without the CLI version header, as Twirp malformed. Both
-// dials send it, so both Cloud agents reads succeed against a server that checks for it.
-func TestCloudAgentsReadsSendTheCLIVersionHeader(t *testing.T) {
-	agents := livekit.NewCloudAgentServer(cloudAgents{})
+// LiveKit Cloud's agents API refuses a call without the livekit-cli version header, as Twirp
+// "malformed". Both dials send it, set to the SDK's version, on ListAgents and ListAgentVersions.
+func TestCloudAgentsCallsSendCLIVersion(t *testing.T) {
+	var seen []string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get("X-LIVEKIT-CLI-VERSION") == "" {
-			_ = twirp.WriteError(w, twirp.NewError(twirp.Malformed, "livekit-cli version header is required"))
+		v := r.Header.Get("X-LIVEKIT-CLI-VERSION")
+		seen = append(seen, v)
+		if v == "" {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			_, _ = w.Write([]byte(`{"code":"malformed","msg":"livekit-cli version header is required"}`))
 			return
 		}
-		agents.ServeHTTP(w, r)
+		w.Header().Set("Content-Type", "application/protobuf")
 	}))
 	defer srv.Close()
 	t.Setenv("LK_AGENTS_URL", srv.URL)
 	for name, dial := range map[string]Dial{"sdk": DialSDK, "through a client": DialThrough(srv.Client())} {
 		t.Run(name, func(t *testing.T) {
+			seen = nil
 			lk := dial(srv.URL, "APIkey", "a-test-secret-not-real")
 			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 			defer cancel()
-			got, err := lk.ListAgents(ctx)
-			if err != nil || len(got) != 1 {
-				t.Fatalf("ListAgents: %d agents, err %v, want 1 and no error", len(got), err)
+			if _, err := lk.ListAgents(ctx); err != nil {
+				t.Errorf("ListAgents: %v", err)
 			}
-			versions, err := lk.ListAgentVersions(ctx, "CA_1")
-			if err != nil || len(versions) != 1 {
-				t.Fatalf("ListAgentVersions: %d versions, err %v, want 1 and no error", len(versions), err)
+			if _, err := lk.ListAgentVersions(ctx, "CA_a"); err != nil {
+				t.Errorf("ListAgentVersions: %v", err)
+			}
+			for i, v := range seen {
+				if v != lksdk.Version {
+					t.Errorf("call %d sent version %q, want %q", i, v, lksdk.Version)
+				}
+			}
+			if len(seen) != 2 {
+				t.Errorf("%d calls reached the server, want 2", len(seen))
 			}
 		})
 	}

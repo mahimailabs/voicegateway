@@ -149,7 +149,7 @@ func (s *Scraper) MediaServer(ctx context.Context, p store.Project) error {
 			return nil
 		}
 		read.ErrorClass = classify(err)
-		s.Log.Warn("scrape: media server read failed", "organisation", p.OrganisationID, "project", p.ID, "class", read.ErrorClass)
+		s.Log.Warn("scrape: media server read failed", "organisation", p.OrganisationID, "project", p.ID, "class", read.ErrorClass, failure(err))
 		s.forget(key)
 		return s.store(ctx, read, nil, nil)
 	}

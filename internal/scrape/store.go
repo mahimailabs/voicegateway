@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"slices"
 	"time"
 
 	"github.com/livekit/protocol/livekit"
@@ -230,12 +231,17 @@ func (c sdkClient) ListIngress(ctx context.Context) ([]*livekit.IngressInfo, err
 	return nil, fmt.Errorf("ingress: more than %d pages", maxListPages)
 }
 
-// cliVersionHeader sends the X-LIVEKIT-CLI-VERSION header LiveKit Cloud's agents API requires on
-// every call: without it the API answers Twirp malformed "livekit-cli version header is required".
-// lk 2.19.0 sets it the same way in pkg/cloudagents.New, to the server-sdk-go version.
-var cliVersionHeader = lksdk.WithTwirpClientOptions(twirp.WithClientHooks(&twirp.ClientHooks{
+// cliVersionHeader is the header LiveKit Cloud's agents API requires on every call: without it,
+// ListAgents answers Twirp "malformed: livekit-cli version header is required" (seen on a Cloud
+// project, 2026-10-29). server-sdk-go v2.19.0's AgentClient does not send it; its pkg/cloudagents
+// client, which lk uses, sets it to lksdk.Version from a RequestPrepared hook (auth.go
+// setLivekitHeaders). That package pulls in BuildKit for deploys, so the same hook is set here.
+const cliVersionHeader = "X-LIVEKIT-CLI-VERSION"
+
+// withCLIVersion sends cliVersionHeader as pkg/cloudagents does.
+var withCLIVersion = lksdk.WithTwirpClientOptions(twirp.WithClientHooks(&twirp.ClientHooks{
 	RequestPrepared: func(ctx context.Context, req *http.Request) (context.Context, error) {
-		req.Header.Set("X-LIVEKIT-CLI-VERSION", lksdk.Version)
+		req.Header.Set(cliVersionHeader, lksdk.Version)
 		return ctx, nil
 	},
 }))
@@ -243,8 +249,7 @@ var cliVersionHeader = lksdk.WithTwirpClientOptions(twirp.WithClientHooks(&twirp
 // agentClient makes the Cloud agents client. NewAgentClient never fails in server-sdk-go v2.19.0;
 // its error is still returned in case a later version does.
 func (c sdkClient) agentClient() (*lksdk.AgentClient, error) {
-	opts := append([]lksdk.AgentClientOption{cliVersionHeader}, c.agentOptions...)
-	agents, err := lksdk.NewAgentClient(c.url, c.apiKey, c.apiSecret, opts...)
+	agents, err := lksdk.NewAgentClient(c.url, c.apiKey, c.apiSecret, append(slices.Clip(c.agentOptions), withCLIVersion)...)
 	if err != nil {
 		return nil, fmt.Errorf("cloud agents client: %w", err)
 	}
