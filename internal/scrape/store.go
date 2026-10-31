@@ -4,11 +4,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
+	"slices"
 	"time"
 
 	"github.com/livekit/protocol/livekit"
 	lksdk "github.com/livekit/server-sdk-go/v2"
 	"github.com/redis/go-redis/v9"
+	"github.com/twitchtv/twirp"
 
 	"github.com/mahimailabs/voicegateway/internal/store"
 )
@@ -228,12 +231,36 @@ func (c sdkClient) ListIngress(ctx context.Context) ([]*livekit.IngressInfo, err
 	return nil, fmt.Errorf("ingress: more than %d pages", maxListPages)
 }
 
-// ListAgents lists the project's LiveKit Cloud agents. NewAgentClient never fails in server-sdk-go
-// v2.19.0; its error is still returned in case a later version does.
-func (c sdkClient) ListAgents(ctx context.Context) ([]*livekit.AgentInfo, error) {
-	agents, err := lksdk.NewAgentClient(c.url, c.apiKey, c.apiSecret, c.agentOptions...)
+// cliVersionHeader is the header LiveKit Cloud's agents API requires on every call: without it,
+// ListAgents answers Twirp "malformed: livekit-cli version header is required" (seen on a Cloud
+// project, 2026-10-29). server-sdk-go v2.19.0's AgentClient does not send it; its pkg/cloudagents
+// client, which lk uses, sets it to lksdk.Version from a RequestPrepared hook (auth.go
+// setLivekitHeaders). That package pulls in BuildKit for deploys, so the same hook is set here.
+const cliVersionHeader = "X-LIVEKIT-CLI-VERSION"
+
+// withCLIVersion sends cliVersionHeader as pkg/cloudagents does.
+var withCLIVersion = lksdk.WithTwirpClientOptions(twirp.WithClientHooks(&twirp.ClientHooks{
+	RequestPrepared: func(ctx context.Context, req *http.Request) (context.Context, error) {
+		req.Header.Set(cliVersionHeader, lksdk.Version)
+		return ctx, nil
+	},
+}))
+
+// agentClient makes the Cloud agents client. NewAgentClient never fails in server-sdk-go v2.19.0;
+// its error is still returned in case a later version does.
+func (c sdkClient) agentClient() (*lksdk.AgentClient, error) {
+	agents, err := lksdk.NewAgentClient(c.url, c.apiKey, c.apiSecret, append(slices.Clip(c.agentOptions), withCLIVersion)...)
 	if err != nil {
 		return nil, fmt.Errorf("cloud agents client: %w", err)
+	}
+	return agents, nil
+}
+
+// ListAgents lists the project's LiveKit Cloud agents.
+func (c sdkClient) ListAgents(ctx context.Context) ([]*livekit.AgentInfo, error) {
+	agents, err := c.agentClient()
+	if err != nil {
+		return nil, err
 	}
 	res, err := agents.ListAgents(ctx, &livekit.ListAgentsRequest{})
 	return res.GetAgents(), err
@@ -241,9 +268,9 @@ func (c sdkClient) ListAgents(ctx context.Context) ([]*livekit.AgentInfo, error)
 
 // ListAgentVersions lists one Cloud agent's versions.
 func (c sdkClient) ListAgentVersions(ctx context.Context, agentID string) ([]*livekit.AgentVersion, error) {
-	agents, err := lksdk.NewAgentClient(c.url, c.apiKey, c.apiSecret, c.agentOptions...)
+	agents, err := c.agentClient()
 	if err != nil {
-		return nil, fmt.Errorf("cloud agents client: %w", err)
+		return nil, err
 	}
 	res, err := agents.ListAgentVersions(ctx, &livekit.ListAgentVersionsRequest{AgentId: agentID})
 	return res.GetVersions(), err

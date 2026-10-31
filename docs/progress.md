@@ -627,3 +627,10 @@ Mahimai decided Cloud keeps recordings in VoiceGateway's bucket by default, and 
 - **Roadmap #320:** checklists only, 32 of 39 done. Open: alert channels in settings, alert evaluation, alert channels, capacity runner, docs per console page, install timing report, 1,000-call load test.
 - **Installer:** `install.sh` and `docs/self-hosting.md` install `1.0.0-preview.8`, the image cloud-1 runs, pinned to digest `sha256:4e03820efd7e6d376cfbe782b87abed84d51487bb26ca8c7df94c414c16ac3d1` (ghcr.io's manifest for that tag). A `VOICEGATEWAY_VERSION` override still pulls by tag.
 - **Install timing:** not measured. A Linux cloud container could not pull the image from ghcr.io (its blob host is outside that network policy) and Docker Hub rate-limited it.
+
+### 2026-10-29: Cloud agents read fixed (livekit-cli version header)
+
+- **Bug:** on a LiveKit Cloud project, `GET /agents` answered 503 and the worker logged `scrape: cloud agents read failed` with class `error` every minute. A probe on the test project showed LiveKit Cloud's agents API refuses any call without `X-LIVEKIT-CLI-VERSION`: Twirp `malformed: livekit-cli version header is required`. server-sdk-go v2.19.0's `AgentClient` does not send it; its `pkg/cloudagents` client, which `lk` uses, sets it to `lksdk.Version` from a Twirp `RequestPrepared` hook. Not tied to the container, the address guard, the credentials or a versionless agent.
+- **Fix:** both dials build the Cloud agents client with the same hook (`withCLIVersion` in `internal/scrape/store.go`). `pkg/cloudagents` itself is not imported because it pulls in BuildKit for deploys.
+- **Logs:** the media server, SIP, egress, ingress and Cloud agents "read failed" lines now carry a `failure` group (Twirp code, HTTP status of a non-Twirp reply, the Twirp client step, the innermost cause type) next to the class. LiveKit's own message is still never logged (phase 05 rule).
+- Tests: `TestCloudAgentsCallsSendCLIVersion` (fails without the hook), `TestFailureSaysWhereWithoutLiveKitsMessage`.
