@@ -37,11 +37,12 @@ Sign in at [localhost:8080](http://localhost:8080). On a server, forward the por
 
 ## How long it takes
 
-Timed on clean machines, from nothing installed to the console answering:
+Timed on clean machines that already have Docker, git and make, until the console answers:
 
 | Machine | Install |
 | --- | --- |
-| Ubuntu 24.04, GitHub Actions runner, 4 cores | 22 s (median of five nightly runs, 19 to 29 s) |
+| Ubuntu 24.04, GitHub Actions runner, 4 cores | 23 s with `install.sh` (median of five CI runs on 28 October, 20 to 31 s) |
+| macOS 26.5.1, Apple M4, 16 GB, Docker Desktop 4.80.0 | 27 s (`make up` with the published 1.0.0-preview.8 image, cold image cache) |
 
 Most of it is pulling the images, so a slower network takes longer.
 

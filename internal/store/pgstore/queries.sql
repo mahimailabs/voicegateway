@@ -1163,8 +1163,13 @@ WHERE id = @id
 RETURNING *;
 
 -- name: InsertAlertDelivery :exec
+-- Queued only while the channel exists. FOR SHARE holds off a concurrent removal until this commits,
+-- so the removal's cancel sees the new delivery; a channel already removed queues nothing.
 INSERT INTO alert_deliveries (organisation_id, project_id, incident_id, channel, change, idempotency_key, message)
-VALUES (@organisation_id, @project_id, sqlc.narg(incident_id), @channel, @change, @idempotency_key, @message)
+SELECT @organisation_id, @project_id, sqlc.narg(incident_id), @channel, @change, @idempotency_key, @message
+FROM (SELECT 1 FROM alert_channels c
+      WHERE c.organisation_id = @organisation_id AND c.project_id = @project_id AND c.kind = @channel
+      FOR SHARE) live
 ON CONFLICT (idempotency_key) DO NOTHING;
 
 -- name: FiringAlertIncidents :many
@@ -1225,6 +1230,13 @@ WHERE d.id IN (
     FOR UPDATE SKIP LOCKED)
 RETURNING d.id, d.organisation_id, d.project_id, d.incident_id, d.channel, d.change, d.idempotency_key, d.message, d.attempts, d.created_at;
 
+-- name: SealedDeliveryChannel :one
+-- The channel a claimed delivery goes to, only while the delivery is still due: a delivery cancelled
+-- after the claim (its channel removed, maybe added again since) is never sent.
+SELECT c.config_sealed FROM alert_deliveries d
+JOIN alert_channels c ON c.organisation_id = d.organisation_id AND c.project_id = d.project_id AND c.kind = d.channel
+WHERE d.id = @id AND d.state IN ('pending', 'retrying');
+
 -- name: SealedAlertChannel :one
 SELECT config_sealed FROM alert_channels
 WHERE organisation_id = @organisation_id AND project_id = @project_id AND kind = @kind;
@@ -1234,11 +1246,12 @@ INSERT INTO alert_delivery_attempts (delivery_id, attempt, at, status, error)
 VALUES (@delivery_id, @attempt, @at, @status, sqlc.narg(error))
 ON CONFLICT DO NOTHING;
 
--- name: FinishAlertAttempt :exec
+-- name: FinishAlertAttempt :execrows
+-- A delivery cancelled while it was being sent (its channel removed) stays cancelled.
 UPDATE alert_deliveries SET state = @state, attempts = @attempts, next_attempt_at = @next_attempt_at, lease_until = NULL,
     last_status = @last_status, last_error = sqlc.narg(last_error),
     delivered_at = CASE WHEN @state = 'delivered' THEN @at::timestamptz ELSE delivered_at END
-WHERE id = @id;
+WHERE id = @id AND state IN ('pending', 'retrying');
 
 -- name: SetAlertChannelBroken :exec
 UPDATE alert_channels SET broken = @broken
@@ -1299,6 +1312,13 @@ SET config_sealed = EXCLUDED.config_sealed, target = EXCLUDED.target, broken = f
 
 -- name: DeleteAlertChannel :execrows
 DELETE FROM alert_channels WHERE organisation_id = @organisation_id AND project_id = @project_id AND kind = @kind;
+
+-- name: CancelAlertDeliveries :exec
+-- Deliveries still queued for a removed channel: nothing will send them, and nothing is wrong.
+UPDATE alert_deliveries SET state = 'cancelled', lease_until = NULL, last_status = 'channel_removed',
+    last_error = 'the channel was removed before delivery'
+WHERE organisation_id = @organisation_id AND project_id = @project_id AND channel = @channel
+  AND state IN ('pending', 'retrying');
 
 -- name: ListAlertIncidents :many
 -- Incidents open in, or still open across, a range, newest first.

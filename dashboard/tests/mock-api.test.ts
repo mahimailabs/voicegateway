@@ -560,10 +560,25 @@ describe("settings reads", () => {
     const saved = await put("slow-join", { on: false, to: ["webhook", "email", "webhook"] })
     expect(saved.status).toBe(200)
     expect(valid("AlertRuleSetup", await saved.json())).toBe("")
-    expect((await put("slow-join", { on: true, to: ["slack"] })).status).toBe(400)
+    expect((await put("slow-join", { on: true, to: ["sms"] })).status).toBe(400)
     expect((await put("no-such-rule", { on: true, to: [] })).status).toBe(404)
     const after = (await get(`${base}/alert-setup`)).body
     expect(after.items.find((r: { ruleId: string }) => r.ruleId === "slow-join")).toEqual({ ruleId: "slow-join", on: false, to: ["email", "webhook"] })
+  })
+
+  test("a chat channel takes only its provider's URL, and a paging channel a key and region", async () => {
+    resetAlerts()
+    const put = (kind: string, b: unknown) => fetch(`${base}/alert-channels/${kind}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(b) })
+    const slack = await (await put("slack", { url: "https://hooks.slack.com/services/T0/B0/X" })).json()
+    expect(valid("SavedAlertChannel", slack)).toBe("")
+    expect(slack).toEqual({ kind: "slack", target: "hooks.slack.com", recipients: null, signingSecret: null })
+    expect((await put("slack", { url: "https://hooks.example.com/services/T0/B0/X" })).status).toBe(400)
+    expect((await put("discord", { url: "http://discord.com/api/webhooks/1/x" })).status).toBe(400)
+    const opsgenie = await (await put("opsgenie", { key: "00000000-0000-0000-0000-000000000000", region: "eu" })).json()
+    expect(valid("SavedAlertChannel", opsgenie)).toBe("")
+    expect(opsgenie.target).toBe("api.eu.opsgenie.com")
+    expect((await put("pagerduty", { key: "short" })).status).toBe(400)
+    expect((await put("sms", { url: "https://example.com" })).status).toBe(404)
   })
 
   test("a webhook channel answers its signing secret once and shows only its host", async () => {

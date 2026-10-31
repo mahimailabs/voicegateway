@@ -1436,7 +1436,7 @@ export type AlertRuleSetup = {
      */
     on: boolean;
     /**
-     * Channel kinds the rule sends to. No webhook URLs or credentials. Email and webhook deliver today.
+     * Channel kinds the rule sends to. No webhook URLs or credentials.
      */
     to: Array<'slack' | 'teams' | 'discord' | 'pagerduty' | 'opsgenie' | 'email' | 'webhook'>;
 };
@@ -1459,14 +1459,14 @@ export type AlertRuleUpdate = {
      */
     on: boolean;
     /**
-     * Channel kinds the rule sends to. Email and webhook deliver today.
+     * Channel kinds the rule sends to.
      */
-    to: Array<'email' | 'webhook'>;
+    to: Array<'email' | 'webhook' | 'slack' | 'teams' | 'discord' | 'pagerduty' | 'opsgenie'>;
 };
 
 export type AlertChannelUpdate = {
     /**
-     * Webhook only: the http or https URL each delivery is POSTed to. Sealed on the server and never returned.
+     * Webhook: the http or https URL each delivery is POSTed to (https only on Cloud). Slack, Teams, Discord: the provider's incoming webhook URL, https://hooks.slack.com/services/..., a Teams Workflows URL on logic.azure.com or api.powerplatform.com, or https://discord.com/api/webhooks/.... Sealed on the server and never returned.
      */
     url?: string;
     /**
@@ -1477,15 +1477,23 @@ export type AlertChannelUpdate = {
      * Email only: 1 to 20 addresses that get every alert as one email.
      */
     recipients?: Array<string>;
+    /**
+     * PagerDuty: the Events API v2 integration (routing) key, 32 characters. Opsgenie: the API integration key. Sealed on the server and never returned.
+     */
+    key?: string;
+    /**
+     * PagerDuty and Opsgenie only: the provider's service region, events.pagerduty.com or events.eu.pagerduty.com, api.opsgenie.com or api.eu.opsgenie.com.
+     */
+    region?: 'us' | 'eu';
 };
 
 export type SavedAlertChannel = {
     /**
      * The channel kind.
      */
-    kind: 'email' | 'webhook';
+    kind: 'email' | 'webhook' | 'slack' | 'teams' | 'discord' | 'pagerduty' | 'opsgenie';
     /**
-     * What the channel sends to, safe to show: the webhook's host, or the recipient count.
+     * What the channel sends to, safe to show: the host it posts to, or the recipient count.
      */
     target: string;
     /**
@@ -1506,15 +1514,15 @@ export type AlertDelivery = {
     /**
      * Where it goes.
      */
-    channel: 'email' | 'webhook';
+    channel: 'email' | 'webhook' | 'slack' | 'teams' | 'discord' | 'pagerduty' | 'opsgenie';
     /**
      * The incident change it carries, or a channel test.
      */
     change: 'firing' | 'reminder' | 'resolved' | 'test';
     /**
-     * failed is final: refused (the channel is broken) or still failing after 24 hours of retries.
+     * failed is final: refused (the channel is broken) or still failing after 24 hours of retries. cancelled: the channel was removed before it was sent.
      */
-    state: 'pending' | 'retrying' | 'delivered' | 'failed';
+    state: 'pending' | 'retrying' | 'delivered' | 'failed' | 'cancelled';
     /**
      * Attempts made so far.
      */
@@ -1524,11 +1532,11 @@ export type AlertDelivery = {
      */
     nextAttemptAt: string | null;
     /**
-     * The last answer: an HTTP status (HTTP 500), an SMTP class, or timeout, unreachable, channel_removed, smtp_not_configured.
+     * The last answer: an HTTP status (HTTP 500), an SMTP class, or timeout, unreachable, address_not_allowed, channel_removed, smtp_not_configured.
      */
     status: string | null;
     /**
-     * The provider's message, at most 200 characters, with the channel's URL and secret removed.
+     * The provider's message, at most 200 characters, with the channel's URL, key and secret removed.
      */
     message: string | null;
     /**
@@ -1545,13 +1553,13 @@ export type AlertChannel = {
     /**
      * The channel kind.
      */
-    kind: 'email' | 'webhook';
+    kind: 'email' | 'webhook' | 'slack' | 'teams' | 'discord' | 'pagerduty' | 'opsgenie';
     /**
-     * What the channel sends to, safe to show: the webhook's host, or the recipient count. Never the URL or secret.
+     * What the channel sends to, safe to show: the host it posts to, or the recipient count. Never the URL, key or secret.
      */
     target: string;
     /**
-     * The email channel's recipients.
+     * The email channel's recipients, shown to Admins only.
      */
     recipients: Array<string> | null;
     /**
@@ -2420,9 +2428,9 @@ export type IdempotencyKey = string;
 export type AlertRuleId = 'slow-answer' | 'cut-off' | 'job-failed' | 'slow-join' | 'plain-phone' | 'recording-lost' | 'ingress-error';
 
 /**
- * A channel kind that delivers today; any other value is not_found.
+ * A channel kind; any other value is not_found.
  */
-export type AlertChannelKind = 'email' | 'webhook';
+export type AlertChannelKind = 'email' | 'webhook' | 'slack' | 'teams' | 'discord' | 'pagerduty' | 'opsgenie';
 
 /**
  * An alert incident's id; one from another project, or not a UUID, is not_found.
@@ -4263,9 +4271,9 @@ export type DeleteAlertChannelData = {
          */
         projectId: string;
         /**
-         * A channel kind that delivers today; any other value is not_found.
+         * A channel kind; any other value is not_found.
          */
-        kind: 'email' | 'webhook';
+        kind: 'email' | 'webhook' | 'slack' | 'teams' | 'discord' | 'pagerduty' | 'opsgenie';
     };
     query?: never;
     url: '/api/v1/org/{orgId}/project/{projectId}/alert-channels/{kind}';
@@ -4321,9 +4329,9 @@ export type UpdateAlertChannelData = {
          */
         projectId: string;
         /**
-         * A channel kind that delivers today; any other value is not_found.
+         * A channel kind; any other value is not_found.
          */
-        kind: 'email' | 'webhook';
+        kind: 'email' | 'webhook' | 'slack' | 'teams' | 'discord' | 'pagerduty' | 'opsgenie';
     };
     query?: never;
     url: '/api/v1/org/{orgId}/project/{projectId}/alert-channels/{kind}';
@@ -4379,9 +4387,9 @@ export type TestAlertChannelData = {
          */
         projectId: string;
         /**
-         * A channel kind that delivers today; any other value is not_found.
+         * A channel kind; any other value is not_found.
          */
-        kind: 'email' | 'webhook';
+        kind: 'email' | 'webhook' | 'slack' | 'teams' | 'discord' | 'pagerduty' | 'opsgenie';
     };
     query?: never;
     url: '/api/v1/org/{orgId}/project/{projectId}/alert-channels/{kind}/test';

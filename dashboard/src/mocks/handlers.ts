@@ -12,6 +12,16 @@ import { playbackUrl, recordingMedia } from "./recordings"
 import { alertSetup, changeMember, deleteAlertChannel, testAlertChannel, updateAlertChannel, updateAlertRule, createKey, invitations, invite, members, passwordReset, projectKeys, projectSettings, updateSettings, updateAllowedOrigins, normaliseOrigin, revokeInvitation, revokeKey } from "./settings"
 import { addProject, knownOrg, knownProject, workspaces } from "./workspaces"
 
+// What web answers a channel saved with a bad value, by kind.
+const invalidChannel: Record<string, string> = {
+  email: "recipients must be 1 to 20 email addresses",
+  slack: "url must be a Slack incoming webhook URL, https://hooks.slack.com/services/...",
+  teams: "url must be a Teams Workflows webhook URL",
+  discord: "url must be a Discord webhook URL, https://discord.com/api/webhooks/...",
+  pagerduty: "key must be a PagerDuty Events API v2 integration key (32 characters), and region us or eu",
+  opsgenie: "key must be an Opsgenie API integration key, and region us or eu",
+}
+
 // Everything but the paging parameters, in a stable order, so a cursor can name what it was issued for.
 function filterKey(q: URLSearchParams) {
   const kept = [...q.entries()].filter(([k]) => !["limit", "cursor", "snapshot"].includes(k)).sort(([a, x], [b, y]) => a.localeCompare(b) || x.localeCompare(y))
@@ -316,13 +326,13 @@ export const handlers = [
     if (!known(params)) return fail(404, "not_found", "No such project.")
     const r = updateAlertRule(String(params.ruleId), await request.json().catch(() => null))
     if (r === "not_found") return fail(404, "not_found", "no such alert rule")
-    return r === "invalid_request" ? fail(400, "invalid_request", "on must be a boolean and to a list of email and webhook") : HttpResponse.json(r)
+    return r === "invalid_request" ? fail(400, "invalid_request", "on must be a boolean and to a list of channel kinds") : HttpResponse.json(r)
   }),
   http.put<PathParams, never, SavedAlertChannel | ApiErrorBody>(`${project}/alert-channels/:kind`, async ({ params, request }) => {
     if (!known(params)) return fail(404, "not_found", "No such project.")
     const r = updateAlertChannel(String(params.kind), await request.json().catch(() => null))
-    if (r === "not_found") return fail(404, "not_found", "no such alert channel; email and webhook are available")
-    return r === "invalid_request" ? fail(400, "invalid_request", params.kind === "email" ? "recipients must be 1 to 20 email addresses" : "url must be an http or https URL with a host") : HttpResponse.json(r)
+    if (r === "not_found") return fail(404, "not_found", "no such alert channel")
+    return r === "invalid_request" ? fail(400, "invalid_request", invalidChannel[String(params.kind)] ?? "url must be an http or https URL with a host") : HttpResponse.json(r)
   }),
   http.delete<PathParams, never, ApiErrorBody>(`${project}/alert-channels/:kind`, ({ params }) => {
     if (!known(params)) return fail(404, "not_found", "No such project.")

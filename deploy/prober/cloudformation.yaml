@@ -1,0 +1,259 @@
+# One distributed SFU prober vantage on AWS (decision 0037).
+#
+# A run-to-completion ECS Fargate task, started by EventBridge Scheduler or by
+# hand with `aws ecs run-task`. Deploy one stack per region: the vantage label is
+# the stack's region (VOICEGW_REGION = AWS::Region), so every region runs the
+# same template with the same parameters. No load balancer, no service, no
+# inbound ports: the prober only connects out, to LiveKit and to the coordinator.
+#
+# Deploy sketch (from deploy/prober/; nothing here runs until you do this):
+#
+#   1. Image, pushed once to ECR in one region; Fargate pulls it from any region.
+#        aws ecr create-repository --repository-name vg-sfu-prober --region us-east-1
+#        docker build --platform linux/amd64 -t <account>.dkr.ecr.us-east-1.amazonaws.com/vg-sfu-prober:0.27.0 .
+#        docker push <account>.dkr.ecr.us-east-1.amazonaws.com/vg-sfu-prober:0.27.0
+#
+#   2. LiveKit credentials, one Secrets Manager secret replicated to every vantage
+#      region. A replica keeps the name and its six-character suffix, so the same
+#      LiveKitSecretName works in every region.
+#        aws secretsmanager create-secret --region us-east-1 --name vg-sfu-prober/livekit \
+#            --secret-string file://livekit.json \
+#            --add-replica-regions Region=us-west-2 Region=eu-west-2
+#      livekit.json holds LIVEKIT_URL, LIVEKIT_API_KEY and LIVEKIT_API_SECRET as
+#      JSON keys. Keep it out of git.
+#
+#   3. The stack in every vantage region, with CloudFormation StackSets:
+#        aws cloudformation create-stack-set --stack-set-name vg-sfu-prober \
+#            --template-body file://cloudformation.yaml --capabilities CAPABILITY_IAM \
+#            --parameters ParameterKey=ImageUri,ParameterValue=<image uri> \
+#                ParameterKey=CoordinatorUrl,ParameterValue=http://<coordinator-host>:8787 \
+#                ParameterKey=LiveKitSecretName,ParameterValue=vg-sfu-prober/livekit-AbCdEf
+#        aws cloudformation create-stack-instances --stack-set-name vg-sfu-prober \
+#            --accounts <account> --regions us-east-1 us-west-2 eu-west-2
+#      Self-managed StackSets need the AWSCloudFormationStackSetAdministrationRole
+#      and AWSCloudFormationStackSetExecutionRole roles in the account. For a
+#      single vantage, `aws cloudformation deploy --region <region>` with the same
+#      parameters is enough.
+#
+#   4. Run it. The stack's RunTaskCommand output is the one-off command for its
+#      region. For a recurring run, set ScheduleExpression to the same cron in
+#      every region and ScheduleState to ENABLED, so all vantages start together.
+#
+# The ramp and duration are set on the coordinator, not here: every vantage runs
+# the coordinator's job.
+
+AWSTemplateFormatVersion: "2010-09-09"
+Description: VoiceGateway distributed SFU prober, one vantage per region (decision 0037)
+
+Parameters:
+  ImageUri:
+    Type: String
+    Description: The prober image built from deploy/prober/Dockerfile, pinned by tag or digest
+  CoordinatorUrl:
+    Type: String
+    Description: The coordinator every vantage registers with, for example http://coordinator.example.com:8787
+  LiveKitSecretName:
+    Type: String
+    Description: Secrets Manager secret name with its six-character suffix (vg-sfu-prober/livekit-AbCdEf), holding LIVEKIT_URL, LIVEKIT_API_KEY and LIVEKIT_API_SECRET
+  ScheduleExpression:
+    Type: String
+    Default: rate(1 day)
+    Description: When the scheduler starts a probe. Use the same cron() in every region so the vantages run together
+  ScheduleState:
+    Type: String
+    Default: DISABLED
+    AllowedValues: [ENABLED, DISABLED]
+    Description: DISABLED creates the schedule without running it; run-task still works
+  Cpu:
+    Type: String
+    Default: "256"
+    AllowedValues: ["256", "512", "1024", "2048"]
+  Memory:
+    Type: String
+    Default: "512"
+    Description: MiB, a value Fargate allows for the chosen Cpu
+  LogRetentionDays:
+    Type: Number
+    Default: 14
+  AvailabilityZoneIndex:
+    Type: Number
+    Default: 0
+    AllowedValues: [0, 1, 2]
+    Description: Which of the region's zones holds the subnet. Change it for a stack instance if RunTask reports no Fargate capacity in the first zone
+
+Resources:
+  # A one-subnet public VPC per region: tasks get a public IP for egress, so there
+  # is no NAT gateway to pay for, and the stack needs no per-region subnet ids.
+  Vpc:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.42.0.0/24
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags: [{ Key: Name, Value: vg-sfu-prober }]
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+  GatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref Vpc
+      InternetGatewayId: !Ref InternetGateway
+  Subnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref Vpc
+      CidrBlock: 10.42.0.0/24
+      AvailabilityZone: !Select [!Ref AvailabilityZoneIndex, !GetAZs ""]
+      Tags: [{ Key: Name, Value: vg-sfu-prober }]
+  RouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref Vpc
+  DefaultRoute:
+    Type: AWS::EC2::Route
+    DependsOn: GatewayAttachment
+    Properties:
+      RouteTableId: !Ref RouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+  SubnetRouteTable:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref Subnet
+      RouteTableId: !Ref RouteTable
+  SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: VoiceGateway SFU prober, outbound only
+      VpcId: !Ref Vpc
+      SecurityGroupEgress:
+        - IpProtocol: "-1"
+          CidrIp: 0.0.0.0/0
+
+  Cluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: vg-sfu-prober
+  LogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: /vg-sfu-prober
+      RetentionInDays: !Ref LogRetentionDays
+
+  # Pulls the image, writes logs and reads the one secret. The container itself
+  # calls no AWS API, so the task has no task role.
+  ExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: { Service: ecs-tasks.amazonaws.com }
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - !Sub arn:${AWS::Partition}:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+      Policies:
+        - PolicyName: livekit-secret
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: secretsmanager:GetSecretValue
+                Resource: !Sub arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${LiveKitSecretName}
+
+  TaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: vg-sfu-prober
+      RequiresCompatibilities: [FARGATE]
+      NetworkMode: awsvpc
+      Cpu: !Ref Cpu
+      Memory: !Ref Memory
+      RuntimePlatform:
+        OperatingSystemFamily: LINUX
+        CpuArchitecture: X86_64
+      ExecutionRoleArn: !GetAtt ExecutionRole.Arn
+      ContainerDefinitions:
+        - Name: prober
+          Image: !Ref ImageUri
+          Essential: true
+          Environment:
+            - Name: COORDINATOR_URL
+              Value: !Ref CoordinatorUrl
+            - Name: VOICEGW_REGION
+              Value: !Ref AWS::Region
+          Secrets:
+            - Name: LIVEKIT_URL
+              ValueFrom: !Sub "arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${LiveKitSecretName}:LIVEKIT_URL::"
+            - Name: LIVEKIT_API_KEY
+              ValueFrom: !Sub "arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${LiveKitSecretName}:LIVEKIT_API_KEY::"
+            - Name: LIVEKIT_API_SECRET
+              ValueFrom: !Sub "arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${LiveKitSecretName}:LIVEKIT_API_SECRET::"
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref LogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: prober
+
+  SchedulerRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: { Service: scheduler.amazonaws.com }
+            Action: sts:AssumeRole
+            Condition:
+              StringEquals:
+                aws:SourceAccount: !Ref AWS::AccountId
+      Policies:
+        - PolicyName: run-prober
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: ecs:RunTask
+                Resource: !Sub arn:${AWS::Partition}:ecs:${AWS::Region}:${AWS::AccountId}:task-definition/vg-sfu-prober:*
+                Condition:
+                  ArnEquals:
+                    ecs:cluster: !GetAtt Cluster.Arn
+              - Effect: Allow
+                Action: iam:PassRole
+                Resource: !GetAtt ExecutionRole.Arn
+
+  Schedule:
+    Type: AWS::Scheduler::Schedule
+    Properties:
+      Name: vg-sfu-prober
+      ScheduleExpression: !Ref ScheduleExpression
+      State: !Ref ScheduleState
+      FlexibleTimeWindow: { Mode: "OFF" }
+      Target:
+        Arn: !GetAtt Cluster.Arn
+        RoleArn: !GetAtt SchedulerRole.Arn
+        # A probe started late is not the run the coordinator is waiting for.
+        RetryPolicy: { MaximumRetryAttempts: 0 }
+        EcsParameters:
+          TaskDefinitionArn: !Ref TaskDefinition
+          LaunchType: FARGATE
+          TaskCount: 1
+          NetworkConfiguration:
+            AwsvpcConfiguration:
+              AssignPublicIp: ENABLED
+              Subnets: [!Ref Subnet]
+              SecurityGroups: [!Ref SecurityGroup]
+
+Outputs:
+  ClusterArn:
+    Value: !GetAtt Cluster.Arn
+  TaskDefinitionArn:
+    Value: !Ref TaskDefinition
+  RunTaskCommand:
+    Description: Starts one probe in this region now
+    Value: !Sub >-
+      aws ecs run-task --region ${AWS::Region} --cluster vg-sfu-prober --launch-type FARGATE
+      --task-definition ${TaskDefinition}
+      --network-configuration awsvpcConfiguration={subnets=[${Subnet}],securityGroups=[${SecurityGroup}],assignPublicIp=ENABLED}

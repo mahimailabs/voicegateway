@@ -647,6 +647,25 @@ func (q *Queries) CallTotals(ctx context.Context, arg CallTotalsParams) (CallTot
 	return i, err
 }
 
+const cancelAlertDeliveries = `-- name: CancelAlertDeliveries :exec
+UPDATE alert_deliveries SET state = 'cancelled', lease_until = NULL, last_status = 'channel_removed',
+    last_error = 'the channel was removed before delivery'
+WHERE organisation_id = $1 AND project_id = $2 AND channel = $3
+  AND state IN ('pending', 'retrying')
+`
+
+type CancelAlertDeliveriesParams struct {
+	OrganisationID string
+	ProjectID      string
+	Channel        string
+}
+
+// Deliveries still queued for a removed channel: nothing will send them, and nothing is wrong.
+func (q *Queries) CancelAlertDeliveries(ctx context.Context, arg CancelAlertDeliveriesParams) error {
+	_, err := q.db.Exec(ctx, cancelAlertDeliveries, arg.OrganisationID, arg.ProjectID, arg.Channel)
+	return err
+}
+
 const capacityRunByID = `-- name: CapacityRunByID :one
 SELECT id, organisation_id, project_id, agent, max_step, requested_at, state, started_at, ended_at,
     stop_requested, join_threshold_ms, cloud_agent, capacity, limited_by, error
@@ -1810,11 +1829,11 @@ func (q *Queries) FailedSignIns(ctx context.Context, arg FailedSignInsParams) (F
 	return i, err
 }
 
-const finishAlertAttempt = `-- name: FinishAlertAttempt :exec
+const finishAlertAttempt = `-- name: FinishAlertAttempt :execrows
 UPDATE alert_deliveries SET state = $1, attempts = $2, next_attempt_at = $3, lease_until = NULL,
     last_status = $4, last_error = $5,
     delivered_at = CASE WHEN $1 = 'delivered' THEN $6::timestamptz ELSE delivered_at END
-WHERE id = $7
+WHERE id = $7 AND state IN ('pending', 'retrying')
 `
 
 type FinishAlertAttemptParams struct {
@@ -1827,8 +1846,9 @@ type FinishAlertAttemptParams struct {
 	ID            pgtype.UUID
 }
 
-func (q *Queries) FinishAlertAttempt(ctx context.Context, arg FinishAlertAttemptParams) error {
-	_, err := q.db.Exec(ctx, finishAlertAttempt,
+// A delivery cancelled while it was being sent (its channel removed) stays cancelled.
+func (q *Queries) FinishAlertAttempt(ctx context.Context, arg FinishAlertAttemptParams) (int64, error) {
+	result, err := q.db.Exec(ctx, finishAlertAttempt,
 		arg.State,
 		arg.Attempts,
 		arg.NextAttemptAt,
@@ -1837,7 +1857,10 @@ func (q *Queries) FinishAlertAttempt(ctx context.Context, arg FinishAlertAttempt
 		arg.At,
 		arg.ID,
 	)
-	return err
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const finishCall = `-- name: FinishCall :exec
@@ -2089,7 +2112,10 @@ func (q *Queries) InitMediaBackfills(ctx context.Context) error {
 
 const insertAlertDelivery = `-- name: InsertAlertDelivery :exec
 INSERT INTO alert_deliveries (organisation_id, project_id, incident_id, channel, change, idempotency_key, message)
-VALUES ($1, $2, $3, $4, $5, $6, $7)
+SELECT $1, $2, $3, $4, $5, $6, $7
+FROM (SELECT 1 FROM alert_channels c
+      WHERE c.organisation_id = $1 AND c.project_id = $2 AND c.kind = $4
+      FOR SHARE) live
 ON CONFLICT (idempotency_key) DO NOTHING
 `
 
@@ -2103,6 +2129,8 @@ type InsertAlertDeliveryParams struct {
 	Message        []byte
 }
 
+// Queued only while the channel exists. FOR SHARE holds off a concurrent removal until this commits,
+// so the removal's cancel sees the new delivery; a channel already removed queues nothing.
 func (q *Queries) InsertAlertDelivery(ctx context.Context, arg InsertAlertDeliveryParams) error {
 	_, err := q.db.Exec(ctx, insertAlertDelivery,
 		arg.OrganisationID,
@@ -4921,6 +4949,21 @@ type SealedAlertChannelParams struct {
 
 func (q *Queries) SealedAlertChannel(ctx context.Context, arg SealedAlertChannelParams) ([]byte, error) {
 	row := q.db.QueryRow(ctx, sealedAlertChannel, arg.OrganisationID, arg.ProjectID, arg.Kind)
+	var config_sealed []byte
+	err := row.Scan(&config_sealed)
+	return config_sealed, err
+}
+
+const sealedDeliveryChannel = `-- name: SealedDeliveryChannel :one
+SELECT c.config_sealed FROM alert_deliveries d
+JOIN alert_channels c ON c.organisation_id = d.organisation_id AND c.project_id = d.project_id AND c.kind = d.channel
+WHERE d.id = $1 AND d.state IN ('pending', 'retrying')
+`
+
+// The channel a claimed delivery goes to, only while the delivery is still due: a delivery cancelled
+// after the claim (its channel removed, maybe added again since) is never sent.
+func (q *Queries) SealedDeliveryChannel(ctx context.Context, id pgtype.UUID) ([]byte, error) {
+	row := q.db.QueryRow(ctx, sealedDeliveryChannel, id)
 	var config_sealed []byte
 	err := row.Scan(&config_sealed)
 	return config_sealed, err

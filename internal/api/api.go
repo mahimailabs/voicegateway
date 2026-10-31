@@ -24,7 +24,9 @@ type API struct {
 	// AlertTest builds a channel's test message (docs/specs/alerts-delivery.md).
 	Alerts     AlertStore
 	AlertEmail bool
-	AlertTest  func(organisationID, projectID string) (json.RawMessage, error)
+	// AlertHTTPSOnly refuses plain http alert URLs, as Cloud does (VOICEGATEWAY_WORKER_ENDPOINTS_PUBLIC_ONLY).
+	AlertHTTPSOnly bool
+	AlertTest      func(organisationID, projectID string) (json.RawMessage, error)
 	// Origins stores the allowed embed origins and Embeds signs embed tokens (decision 0034); without
 	// them those routes answer 503.
 	Origins           EmbedOrigins

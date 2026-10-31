@@ -27,7 +27,7 @@ type Store interface {
 // Deliveries is what the deliverer reads and records.
 type Deliveries interface {
 	ClaimAlertDeliveries(ctx context.Context, now, leaseUntil time.Time, limit int) ([]store.AlertDelivery, error)
-	AlertChannelConfig(ctx context.Context, organisationID, projectID, kind string) ([]byte, error)
+	DeliveryChannelConfig(ctx context.Context, d store.AlertDelivery) ([]byte, error)
 	FinishAlertAttempt(ctx context.Context, d store.AlertDelivery, a store.AlertAttempt) error
 }
 
