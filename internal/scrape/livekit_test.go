@@ -12,7 +12,9 @@ import (
 	"time"
 
 	"code.dny.dev/ssrf"
+	"github.com/livekit/protocol/livekit"
 	lksdk "github.com/livekit/server-sdk-go/v2"
+	"github.com/twitchtv/twirp"
 
 	"github.com/mahimailabs/voicegateway/internal/store"
 )
@@ -109,5 +111,46 @@ func TestSelfHostedLiveKitDialIsTheSDK(t *testing.T) {
 	guarded := NewDial(true)("http://127.0.0.1:7880", "k", "s").(sdkClient)
 	if _, sdk := guarded.rooms.(*lksdk.RoomServiceClient); sdk || len(guarded.agentOptions) != 1 {
 		t.Errorf("public-only rooms client %T with %d agent options, want the guarded one and WithHTTPClient", guarded.rooms, len(guarded.agentOptions))
+	}
+}
+
+// cloudAgents answers the two Cloud agents reads with one agent and one version.
+type cloudAgents struct{ livekit.CloudAgent }
+
+func (cloudAgents) ListAgents(context.Context, *livekit.ListAgentsRequest) (*livekit.ListAgentsResponse, error) {
+	return &livekit.ListAgentsResponse{Agents: []*livekit.AgentInfo{{AgentId: "CA_1"}}}, nil
+}
+
+func (cloudAgents) ListAgentVersions(context.Context, *livekit.ListAgentVersionsRequest) (*livekit.ListAgentVersionsResponse, error) {
+	return &livekit.ListAgentVersionsResponse{Versions: []*livekit.AgentVersion{{Version: "v1"}}}, nil
+}
+
+// LiveKit Cloud's agents API refuses a call without the CLI version header, as Twirp malformed. Both
+// dials send it, so both Cloud agents reads succeed against a server that checks for it.
+func TestCloudAgentsReadsSendTheCLIVersionHeader(t *testing.T) {
+	agents := livekit.NewCloudAgentServer(cloudAgents{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("X-LIVEKIT-CLI-VERSION") == "" {
+			_ = twirp.WriteError(w, twirp.NewError(twirp.Malformed, "livekit-cli version header is required"))
+			return
+		}
+		agents.ServeHTTP(w, r)
+	}))
+	defer srv.Close()
+	t.Setenv("LK_AGENTS_URL", srv.URL)
+	for name, dial := range map[string]Dial{"sdk": DialSDK, "through a client": DialThrough(srv.Client())} {
+		t.Run(name, func(t *testing.T) {
+			lk := dial(srv.URL, "APIkey", "a-test-secret-not-real")
+			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+			defer cancel()
+			got, err := lk.ListAgents(ctx)
+			if err != nil || len(got) != 1 {
+				t.Fatalf("ListAgents: %d agents, err %v, want 1 and no error", len(got), err)
+			}
+			versions, err := lk.ListAgentVersions(ctx, "CA_1")
+			if err != nil || len(versions) != 1 {
+				t.Fatalf("ListAgentVersions: %d versions, err %v, want 1 and no error", len(versions), err)
+			}
+		})
 	}
 }
