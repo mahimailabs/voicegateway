@@ -11,7 +11,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { cn } from "@/lib/utils"
-import { CHANNELS, type Channel, type Event, meta, type Rule, type RuleId, channelName, delivers, failing, firingByRule, ruleSetup, rulesFrom, type Setup, setupFrom, useSetRule } from "./alerts-model"
+import { CHANNELS, type Channel, type Event, meta, type Rule, type RuleId, channelName, failing, firingByRule, ruleSetup, rulesFrom, type Setup, setupFrom, useSetRule } from "./alerts-model"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
@@ -126,19 +126,15 @@ function RuleCard({ r, days, setup, firing, channels, canEdit }: { r: Rule; days
           {CHANNELS.map((c) => (
             <Tooltip key={c}>
               <TooltipTrigger asChild>
-                {/* A disabled button takes no pointer events, so the span carries the tooltip. */}
-                <span tabIndex={delivers(c) ? -1 : 0}>
-                  <ToggleGroupItem
-                    value={c}
-                    disabled={!delivers(c)}
-                    aria-label={channelName[c]}
-                    className="size-7 rounded-md p-0 opacity-45 grayscale aria-pressed:bg-accent aria-pressed:opacity-100 aria-pressed:grayscale-0 aria-pressed:ring-1 aria-pressed:ring-border"
-                  >
-                    <ChannelMark c={c} />
-                  </ToggleGroupItem>
-                </span>
+                <ToggleGroupItem
+                  value={c}
+                  aria-label={channelName[c]}
+                  className="size-7 rounded-md p-0 opacity-45 grayscale aria-pressed:bg-accent aria-pressed:opacity-100 aria-pressed:grayscale-0 aria-pressed:ring-1 aria-pressed:ring-border"
+                >
+                  <ChannelMark c={c} />
+                </ToggleGroupItem>
               </TooltipTrigger>
-              <TooltipContent className="text-xs">{delivers(c) ? (connected.has(c) ? channelName[c] : `${channelName[c]}: set it up in Settings first`) : `${channelName[c]}: coming soon`}</TooltipContent>
+              <TooltipContent className="text-xs">{connected.has(c) ? channelName[c] : `${channelName[c]}: set it up in Settings first`}</TooltipContent>
             </Tooltip>
           ))}
         </ToggleGroup>
@@ -148,7 +144,7 @@ function RuleCard({ r, days, setup, firing, channels, canEdit }: { r: Rule; days
 }
 
 const changeName = { firing: "Firing", reminder: "Reminder", resolved: "Resolved", test: "Test" }
-const deliveryTone = { delivered: "text-emerald-700 dark:text-emerald-400", pending: "text-muted-foreground", retrying: "text-amber-700 dark:text-amber-400", failed: "text-destructive" }
+const deliveryTone = { delivered: "text-emerald-700 dark:text-emerald-400", pending: "text-muted-foreground", retrying: "text-amber-700 dark:text-amber-400", failed: "text-destructive", cancelled: "text-muted-foreground" }
 
 // One delivery of an incident's change: where, its state, and the last answer when it was not delivered.
 function DeliveryLine({ d }: { d: AlertDelivery }) {
