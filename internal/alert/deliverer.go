@@ -151,7 +151,7 @@ func issueText(del store.AlertDelivery, o outcome) string {
 }
 
 func (d *Deliverer) send(ctx context.Context, del store.AlertDelivery) outcome {
-	config, err := d.Store.AlertChannelConfig(ctx, del.OrganisationID, del.ProjectID, del.Channel)
+	config, err := d.Store.DeliveryChannelConfig(ctx, del)
 	if errors.Is(err, store.ErrAlertChannelMissing) {
 		o := refused("channel_removed", "the channel was removed before delivery")
 		o.cancelled = true

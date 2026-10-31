@@ -1162,8 +1162,13 @@ WHERE id = @id
 RETURNING *;
 
 -- name: InsertAlertDelivery :exec
+-- Queued only while the channel exists. FOR SHARE holds off a concurrent removal until this commits,
+-- so the removal's cancel sees the new delivery; a channel already removed queues nothing.
 INSERT INTO alert_deliveries (organisation_id, project_id, incident_id, channel, change, idempotency_key, message)
-VALUES (@organisation_id, @project_id, sqlc.narg(incident_id), @channel, @change, @idempotency_key, @message)
+SELECT @organisation_id, @project_id, sqlc.narg(incident_id), @channel, @change, @idempotency_key, @message
+FROM (SELECT 1 FROM alert_channels c
+      WHERE c.organisation_id = @organisation_id AND c.project_id = @project_id AND c.kind = @channel
+      FOR SHARE) live
 ON CONFLICT (idempotency_key) DO NOTHING;
 
 -- name: FiringAlertIncidents :many
@@ -1223,6 +1228,13 @@ WHERE d.id IN (
     LIMIT @max_rows
     FOR UPDATE SKIP LOCKED)
 RETURNING d.id, d.organisation_id, d.project_id, d.incident_id, d.channel, d.change, d.idempotency_key, d.message, d.attempts, d.created_at;
+
+-- name: SealedDeliveryChannel :one
+-- The channel a claimed delivery goes to, only while the delivery is still due: a delivery cancelled
+-- after the claim (its channel removed, maybe added again since) is never sent.
+SELECT c.config_sealed FROM alert_deliveries d
+JOIN alert_channels c ON c.organisation_id = d.organisation_id AND c.project_id = d.project_id AND c.kind = d.channel
+WHERE d.id = @id AND d.state IN ('pending', 'retrying');
 
 -- name: SealedAlertChannel :one
 SELECT config_sealed FROM alert_channels

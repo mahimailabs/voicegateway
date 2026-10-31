@@ -346,6 +346,27 @@ func (s *Store) AlertChannelConfig(ctx context.Context, organisationID, projectI
 	return plain, nil
 }
 
+// DeliveryChannelConfig opens the configuration of the channel a claimed delivery goes to, or
+// store.ErrAlertChannelMissing when the channel is gone or the delivery was cancelled since its claim.
+func (s *Store) DeliveryChannelConfig(ctx context.Context, d store.AlertDelivery) ([]byte, error) {
+	id, err := uuid(d.ID)
+	if err != nil {
+		return nil, err
+	}
+	sealed, err := s.q.SealedDeliveryChannel(ctx, id)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, store.ErrAlertChannelMissing
+	}
+	if err != nil {
+		return nil, fmt.Errorf("alert channel %s: %w", d.Channel, err)
+	}
+	plain, err := s.sealer.Open(sealed, alertChannelSealContext(d.OrganisationID, d.ProjectID, d.Channel))
+	if err != nil {
+		return nil, fmt.Errorf("alert channel %s: %w", d.Channel, err)
+	}
+	return plain, nil
+}
+
 // FinishAlertAttempt records one attempt and its outcome, marks or clears the channel broken, and
 // lists a failed delivery on the Issues page.
 func (s *Store) FinishAlertAttempt(ctx context.Context, d store.AlertDelivery, a store.AlertAttempt) error {

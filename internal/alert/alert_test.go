@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -552,5 +553,59 @@ func TestSlackChannelDelivers(t *testing.T) {
 	}
 	if n := f.count(`SELECT count(*) FROM alert_deliveries WHERE channel = 'slack' AND state = 'delivered'`); n != 1 {
 		t.Fatal("the slack delivery is not delivered")
+	}
+}
+
+// reAdding removes the webhook channel and adds it again at url right after a claim, before the
+// claimed deliveries are sent.
+type reAdding struct {
+	*pgstore.Store
+	f   *fixture
+	url string
+}
+
+func (r reAdding) ClaimAlertDeliveries(ctx context.Context, now, leaseUntil time.Time, limit int) ([]store.AlertDelivery, error) {
+	due, err := r.Store.ClaimAlertDeliveries(ctx, now, leaseUntil, limit)
+	if err == nil && len(due) > 0 {
+		if err := r.DeleteAlertChannel(ctx, "default", "one", "webhook"); err != nil {
+			return nil, err
+		}
+		r.f.webhook(r.url, "recording-lost")
+	}
+	return due, err
+}
+
+// A delivery cancelled after the worker claimed it is never sent, even to the channel added again in
+// its place; and nothing is queued to a channel that is gone.
+func TestCancelledClaimIsNotSent(t *testing.T) {
+	f := setup(t)
+	ctx := context.Background()
+	var sent atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { sent.Add(1) }))
+	defer srv.Close()
+	f.webhook(srv.URL+"/old", "recording-lost")
+	if err := f.store.PutMediaFinding(ctx, store.MediaFinding{OrganisationID: "default", ProjectID: "one", Layer: "egress", EventID: "evt-1", ComponentID: "EG_1", Status: "EGRESS_FAILED"}); err != nil {
+		t.Fatal(err)
+	}
+	f.tick()
+	f.deliver.Store = reAdding{Store: f.store, f: f, url: srv.URL + "/new"}
+	f.advance(time.Minute)
+	f.send()
+	if n := sent.Load(); n != 0 {
+		t.Fatalf("requests = %d, want the cancelled delivery left unsent", n)
+	}
+	if n := f.count(`SELECT count(*) FROM alert_deliveries WHERE state = 'cancelled' AND attempts = 0`); n != 1 {
+		t.Fatalf("cancelled deliveries = %d, want 1 never attempted", n)
+	}
+
+	// A change composed from a channel list read before the removal queues nothing for it.
+	if err := f.store.DeleteAlertChannel(ctx, "default", "one", "webhook"); err != nil {
+		t.Fatal(err)
+	}
+	if err := pgstore.New(f.pool).InsertAlertDelivery(ctx, pgstore.InsertAlertDeliveryParams{OrganisationID: "default", ProjectID: "one", Channel: "webhook", Change: "test", IdempotencyKey: "stale", Message: []byte(`{}`)}); err != nil {
+		t.Fatal(err)
+	}
+	if n := f.count(`SELECT count(*) FROM alert_deliveries WHERE idempotency_key = 'stale'`); n != 0 {
+		t.Fatalf("deliveries to a removed channel = %d, want none", n)
 	}
 }

@@ -1883,7 +1883,10 @@ func (q *Queries) InitMediaBackfills(ctx context.Context) error {
 
 const insertAlertDelivery = `-- name: InsertAlertDelivery :exec
 INSERT INTO alert_deliveries (organisation_id, project_id, incident_id, channel, change, idempotency_key, message)
-VALUES ($1, $2, $3, $4, $5, $6, $7)
+SELECT $1, $2, $3, $4, $5, $6, $7
+FROM (SELECT 1 FROM alert_channels c
+      WHERE c.organisation_id = $1 AND c.project_id = $2 AND c.kind = $4
+      FOR SHARE) live
 ON CONFLICT (idempotency_key) DO NOTHING
 `
 
@@ -1897,6 +1900,8 @@ type InsertAlertDeliveryParams struct {
 	Message        []byte
 }
 
+// Queued only while the channel exists. FOR SHARE holds off a concurrent removal until this commits,
+// so the removal's cancel sees the new delivery; a channel already removed queues nothing.
 func (q *Queries) InsertAlertDelivery(ctx context.Context, arg InsertAlertDeliveryParams) error {
 	_, err := q.db.Exec(ctx, insertAlertDelivery,
 		arg.OrganisationID,
@@ -4642,6 +4647,21 @@ type SealedAlertChannelParams struct {
 
 func (q *Queries) SealedAlertChannel(ctx context.Context, arg SealedAlertChannelParams) ([]byte, error) {
 	row := q.db.QueryRow(ctx, sealedAlertChannel, arg.OrganisationID, arg.ProjectID, arg.Kind)
+	var config_sealed []byte
+	err := row.Scan(&config_sealed)
+	return config_sealed, err
+}
+
+const sealedDeliveryChannel = `-- name: SealedDeliveryChannel :one
+SELECT c.config_sealed FROM alert_deliveries d
+JOIN alert_channels c ON c.organisation_id = d.organisation_id AND c.project_id = d.project_id AND c.kind = d.channel
+WHERE d.id = $1 AND d.state IN ('pending', 'retrying')
+`
+
+// The channel a claimed delivery goes to, only while the delivery is still due: a delivery cancelled
+// after the claim (its channel removed, maybe added again since) is never sent.
+func (q *Queries) SealedDeliveryChannel(ctx context.Context, id pgtype.UUID) ([]byte, error) {
+	row := q.db.QueryRow(ctx, sealedDeliveryChannel, id)
 	var config_sealed []byte
 	err := row.Scan(&config_sealed)
 	return config_sealed, err
