@@ -666,6 +666,109 @@ func (q *Queries) CancelAlertDeliveries(ctx context.Context, arg CancelAlertDeli
 	return err
 }
 
+const capacityRunByID = `-- name: CapacityRunByID :one
+SELECT id, organisation_id, project_id, agent, max_step, requested_at, state, started_at, ended_at,
+    stop_requested, join_threshold_ms, cloud_agent, capacity, limited_by, error
+FROM capacity_runs WHERE id = $1
+`
+
+type CapacityRunByIDRow struct {
+	ID              pgtype.UUID
+	OrganisationID  string
+	ProjectID       string
+	Agent           string
+	MaxStep         int32
+	RequestedAt     pgtype.Timestamptz
+	State           string
+	StartedAt       pgtype.Timestamptz
+	EndedAt         pgtype.Timestamptz
+	StopRequested   bool
+	JoinThresholdMs pgtype.Int4
+	CloudAgent      pgtype.Bool
+	Capacity        pgtype.Int4
+	LimitedBy       pgtype.Text
+	Error           pgtype.Text
+}
+
+func (q *Queries) CapacityRunByID(ctx context.Context, id pgtype.UUID) (CapacityRunByIDRow, error) {
+	row := q.db.QueryRow(ctx, capacityRunByID, id)
+	var i CapacityRunByIDRow
+	err := row.Scan(
+		&i.ID,
+		&i.OrganisationID,
+		&i.ProjectID,
+		&i.Agent,
+		&i.MaxStep,
+		&i.RequestedAt,
+		&i.State,
+		&i.StartedAt,
+		&i.EndedAt,
+		&i.StopRequested,
+		&i.JoinThresholdMs,
+		&i.CloudAgent,
+		&i.Capacity,
+		&i.LimitedBy,
+		&i.Error,
+	)
+	return i, err
+}
+
+const capacitySteps = `-- name: CapacitySteps :many
+SELECT step, started_at, ended_at, outcome, calls, joined, pending, failed, late, join_seconds,
+    answer_seconds, no_answer, tester_cpu_percent
+FROM capacity_steps WHERE run_id = $1 ORDER BY step
+`
+
+type CapacityStepsRow struct {
+	Step             int32
+	StartedAt        pgtype.Timestamptz
+	EndedAt          pgtype.Timestamptz
+	Outcome          string
+	Calls            int32
+	Joined           int32
+	Pending          int32
+	Failed           int32
+	Late             int32
+	JoinSeconds      []float64
+	AnswerSeconds    []float64
+	NoAnswer         int32
+	TesterCpuPercent pgtype.Float8
+}
+
+func (q *Queries) CapacitySteps(ctx context.Context, runID pgtype.UUID) ([]CapacityStepsRow, error) {
+	rows, err := q.db.Query(ctx, capacitySteps, runID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []CapacityStepsRow
+	for rows.Next() {
+		var i CapacityStepsRow
+		if err := rows.Scan(
+			&i.Step,
+			&i.StartedAt,
+			&i.EndedAt,
+			&i.Outcome,
+			&i.Calls,
+			&i.Joined,
+			&i.Pending,
+			&i.Failed,
+			&i.Late,
+			&i.JoinSeconds,
+			&i.AnswerSeconds,
+			&i.NoAnswer,
+			&i.TesterCpuPercent,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const claimAlertDeliveries = `-- name: ClaimAlertDeliveries :many
 UPDATE alert_deliveries d SET lease_until = $1
 WHERE d.id IN (
@@ -761,6 +864,28 @@ func (q *Queries) ClaimBackfillFindings(ctx context.Context, arg ClaimBackfillFi
 		return 0, err
 	}
 	return result.RowsAffected(), nil
+}
+
+const claimCapacityRun = `-- name: ClaimCapacityRun :one
+UPDATE capacity_runs SET state = 'running', runner = $1, started_at = $2, heartbeat_at = $2
+WHERE id = (
+    SELECT r.id FROM capacity_runs r WHERE r.state = 'requested'
+    ORDER BY r.requested_at LIMIT 1 FOR UPDATE SKIP LOCKED
+)
+RETURNING id
+`
+
+type ClaimCapacityRunParams struct {
+	Runner pgtype.Text
+	Now    pgtype.Timestamptz
+}
+
+// The oldest requested run, taken by one worker; SKIP LOCKED lets two workers claim two runs.
+func (q *Queries) ClaimCapacityRun(ctx context.Context, arg ClaimCapacityRunParams) (pgtype.UUID, error) {
+	row := q.db.QueryRow(ctx, claimCapacityRun, arg.Runner, arg.Now)
+	var id pgtype.UUID
+	err := row.Scan(&id)
+	return id, err
 }
 
 const claimIssueSource = `-- name: ClaimIssueSource :execrows
@@ -977,6 +1102,37 @@ func (q *Queries) CountUsers(ctx context.Context) (int64, error) {
 	var count int64
 	err := row.Scan(&count)
 	return count, err
+}
+
+const createCapacityRun = `-- name: CreateCapacityRun :one
+INSERT INTO capacity_runs (organisation_id, project_id, agent, max_step, requested_by, requested_at)
+VALUES ($1, $2, $3, $4, $5, $6)
+RETURNING id
+`
+
+type CreateCapacityRunParams struct {
+	OrganisationID string
+	ProjectID      string
+	Agent          string
+	MaxStep        int32
+	RequestedBy    pgtype.Text
+	RequestedAt    pgtype.Timestamptz
+}
+
+// A requested capacity test (Postgres 00025). capacity_runs_one_open refuses a second open run for
+// the project.
+func (q *Queries) CreateCapacityRun(ctx context.Context, arg CreateCapacityRunParams) (pgtype.UUID, error) {
+	row := q.db.QueryRow(ctx, createCapacityRun,
+		arg.OrganisationID,
+		arg.ProjectID,
+		arg.Agent,
+		arg.MaxStep,
+		arg.RequestedBy,
+		arg.RequestedAt,
+	)
+	var id pgtype.UUID
+	err := row.Scan(&id)
+	return id, err
 }
 
 const createProject = `-- name: CreateProject :one
@@ -1465,6 +1621,59 @@ func (q *Queries) EmbedGrantActive(ctx context.Context, arg EmbedGrantActivePara
 	return active, err
 }
 
+const endCapacityRun = `-- name: EndCapacityRun :execrows
+UPDATE capacity_runs SET state = 'ended', ended_at = $1, capacity = $2,
+    limited_by = $3, error = $4
+WHERE id = $5 AND runner = $6 AND state = 'running'
+`
+
+type EndCapacityRunParams struct {
+	EndedAt   pgtype.Timestamptz
+	Capacity  pgtype.Int4
+	LimitedBy pgtype.Text
+	Error     pgtype.Text
+	ID        pgtype.UUID
+	Runner    pgtype.Text
+}
+
+func (q *Queries) EndCapacityRun(ctx context.Context, arg EndCapacityRunParams) (int64, error) {
+	result, err := q.db.Exec(ctx, endCapacityRun,
+		arg.EndedAt,
+		arg.Capacity,
+		arg.LimitedBy,
+		arg.Error,
+		arg.ID,
+		arg.Runner,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const endLostCapacityRuns = `-- name: EndLostCapacityRuns :execrows
+UPDATE capacity_runs SET state = 'ended', ended_at = $1,
+    limited_by = CASE WHEN state = 'running' THEN 'runner_lost' ELSE 'no_worker' END
+WHERE (state = 'running' AND heartbeat_at < $2)
+   OR (state = 'requested' AND requested_at < $3)
+`
+
+type EndLostCapacityRunsParams struct {
+	Now             pgtype.Timestamptz
+	StaleBefore     pgtype.Timestamptz
+	UnclaimedBefore pgtype.Timestamptz
+}
+
+// A running run whose runner stopped heartbeating ends as runner_lost; a request no worker was free
+// to take in time ends as no_worker.
+func (q *Queries) EndLostCapacityRuns(ctx context.Context, arg EndLostCapacityRunsParams) (int64, error) {
+	result, err := q.db.Exec(ctx, endLostCapacityRuns, arg.Now, arg.StaleBefore, arg.UnclaimedBefore)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const ensureAlertDeliveryIssue = `-- name: EnsureAlertDeliveryIssue :exec
 INSERT INTO issues (organisation_id, project_id, id, title, kind, source, severity)
 VALUES ($1, $2, 'alert-not-delivered', 'Alert not delivered', 'event', 'delivery', 'high')
@@ -1835,6 +2044,26 @@ type HealCallParams struct {
 func (q *Queries) HealCall(ctx context.Context, arg HealCallParams) error {
 	_, err := q.db.Exec(ctx, healCall, arg.RoomName, arg.FirstSeenAt, arg.ID)
 	return err
+}
+
+const heartbeatCapacityRun = `-- name: HeartbeatCapacityRun :one
+UPDATE capacity_runs SET heartbeat_at = $1
+WHERE id = $2 AND runner = $3 AND state = 'running'
+RETURNING stop_requested
+`
+
+type HeartbeatCapacityRunParams struct {
+	Now    pgtype.Timestamptz
+	ID     pgtype.UUID
+	Runner pgtype.Text
+}
+
+// Keeps a run its runner's; no row means another worker ended it as lost.
+func (q *Queries) HeartbeatCapacityRun(ctx context.Context, arg HeartbeatCapacityRunParams) (bool, error) {
+	row := q.db.QueryRow(ctx, heartbeatCapacityRun, arg.Now, arg.ID, arg.Runner)
+	var stop_requested bool
+	err := row.Scan(&stop_requested)
+	return stop_requested, err
 }
 
 const holdAlertIncident = `-- name: HoldAlertIncident :exec
@@ -2298,6 +2527,26 @@ func (q *Queries) KeyWorkspace(ctx context.Context, arg KeyWorkspaceParams) (Key
 		&i.ProjectName,
 	)
 	return i, err
+}
+
+const latestCapacityRun = `-- name: LatestCapacityRun :one
+SELECT id FROM capacity_runs
+WHERE organisation_id = $1 AND project_id = $2 AND agent = $3
+ORDER BY requested_at DESC LIMIT 1
+`
+
+type LatestCapacityRunParams struct {
+	OrganisationID string
+	ProjectID      string
+	Agent          string
+}
+
+// capacity_runs_agent serves it.
+func (q *Queries) LatestCapacityRun(ctx context.Context, arg LatestCapacityRunParams) (pgtype.UUID, error) {
+	row := q.db.QueryRow(ctx, latestCapacityRun, arg.OrganisationID, arg.ProjectID, arg.Agent)
+	var id pgtype.UUID
+	err := row.Scan(&id)
+	return id, err
 }
 
 const limitingSignInAttempt = `-- name: LimitingSignInAttempt :one
@@ -3584,7 +3833,7 @@ const organisationUsage = `-- name: OrganisationUsage :one
 WITH period_calls AS (
     SELECT started_at, end_state,
         CASE end_state WHEN 'observed' THEN ended_at WHEN 'inferred' THEN last_activity_at END AS effective_end
-    FROM calls WHERE organisation_id = $1
+    FROM calls WHERE organisation_id = $1 AND COALESCE(room_name, '') !~ '^vg-capacity-[0-9a-f]{8}-[0-9]+$'
 ), classified AS (
     SELECT started_at, end_state, effective_end,
         started_at IS NOT NULL AND effective_end >= started_at
@@ -3623,7 +3872,8 @@ type OrganisationUsageRow struct {
 // its start and end are known and the end is not before the start, and counts in the period that
 // holds its end. Exact durations are summed first and the sum is rounded down to whole seconds
 // once, never per call. Open calls, and closed calls with no end or an end before their start,
-// are counted apart by their start and never summed.
+// are counted apart by their start and never summed. A capacity test's calls are VoiceGateway's own
+// load, not the organisation's traffic, and never count (decision 0022).
 func (q *Queries) OrganisationUsage(ctx context.Context, arg OrganisationUsageParams) (OrganisationUsageRow, error) {
 	row := q.db.QueryRow(ctx, organisationUsage, arg.OrganisationID, arg.FromAt, arg.ToAt)
 	var i OrganisationUsageRow
@@ -4008,6 +4258,58 @@ func (q *Queries) ProjectKey(ctx context.Context, keyID string) (ProjectKeyRow, 
 		&i.LastUsedAt,
 	)
 	return i, err
+}
+
+const putCapacityStep = `-- name: PutCapacityStep :exec
+INSERT INTO capacity_steps (run_id, step, started_at, ended_at, outcome, calls, joined, pending, failed, late,
+    join_seconds, answer_seconds, no_answer, tester_cpu_percent)
+SELECT r.id, $1, $2, $3, $4, $5, $6, $7, $8, $9,
+    $10::double precision[], $11::double precision[], $12, $13
+FROM capacity_runs r WHERE r.id = $14 AND r.runner = $15 AND r.state = 'running'
+ON CONFLICT (run_id, step) DO UPDATE SET
+    ended_at = EXCLUDED.ended_at, outcome = EXCLUDED.outcome, calls = EXCLUDED.calls,
+    joined = EXCLUDED.joined, pending = EXCLUDED.pending, failed = EXCLUDED.failed, late = EXCLUDED.late,
+    join_seconds = EXCLUDED.join_seconds, answer_seconds = EXCLUDED.answer_seconds,
+    no_answer = EXCLUDED.no_answer, tester_cpu_percent = EXCLUDED.tester_cpu_percent
+`
+
+type PutCapacityStepParams struct {
+	Step             int32
+	StartedAt        pgtype.Timestamptz
+	EndedAt          pgtype.Timestamptz
+	Outcome          string
+	Calls            int32
+	Joined           int32
+	Pending          int32
+	Failed           int32
+	Late             int32
+	JoinSeconds      []float64
+	AnswerSeconds    []float64
+	NoAnswer         int32
+	TesterCpuPercent pgtype.Float8
+	RunID            pgtype.UUID
+	Runner           pgtype.Text
+}
+
+func (q *Queries) PutCapacityStep(ctx context.Context, arg PutCapacityStepParams) error {
+	_, err := q.db.Exec(ctx, putCapacityStep,
+		arg.Step,
+		arg.StartedAt,
+		arg.EndedAt,
+		arg.Outcome,
+		arg.Calls,
+		arg.Joined,
+		arg.Pending,
+		arg.Failed,
+		arg.Late,
+		arg.JoinSeconds,
+		arg.AnswerSeconds,
+		arg.NoAnswer,
+		arg.TesterCpuPercent,
+		arg.RunID,
+		arg.Runner,
+	)
+	return err
 }
 
 const putListSnapshot = `-- name: PutListSnapshot :exec
@@ -4742,6 +5044,28 @@ func (q *Queries) SetAlertChannelBroken(ctx context.Context, arg SetAlertChannel
 	return err
 }
 
+const setCapacityRunContext = `-- name: SetCapacityRunContext :exec
+UPDATE capacity_runs SET join_threshold_ms = $1, cloud_agent = $2
+WHERE id = $3 AND runner = $4 AND state = 'running'
+`
+
+type SetCapacityRunContextParams struct {
+	JoinThresholdMs pgtype.Int4
+	CloudAgent      pgtype.Bool
+	ID              pgtype.UUID
+	Runner          pgtype.Text
+}
+
+func (q *Queries) SetCapacityRunContext(ctx context.Context, arg SetCapacityRunContextParams) error {
+	_, err := q.db.Exec(ctx, setCapacityRunContext,
+		arg.JoinThresholdMs,
+		arg.CloudAgent,
+		arg.ID,
+		arg.Runner,
+	)
+	return err
+}
+
 const setMemberRole = `-- name: SetMemberRole :execrows
 UPDATE memberships SET role = $1 WHERE organisation_id = $2 AND user_id = $3
 `
@@ -5008,6 +5332,36 @@ func (q *Queries) StatsCalls(ctx context.Context, arg StatsCallsParams) ([]Stats
 		return nil, err
 	}
 	return items, nil
+}
+
+const stopCapacityRun = `-- name: StopCapacityRun :one
+UPDATE capacity_runs SET
+    stop_requested = true,
+    state      = CASE WHEN state = 'requested' THEN 'ended' ELSE state END,
+    ended_at   = CASE WHEN state = 'requested' THEN $1 ELSE ended_at END,
+    limited_by = CASE WHEN state = 'requested' THEN 'stopped' ELSE limited_by END
+WHERE organisation_id = $2 AND project_id = $3 AND id = $4 AND state <> 'ended'
+RETURNING id
+`
+
+type StopCapacityRunParams struct {
+	Now            pgtype.Timestamptz
+	OrganisationID string
+	ProjectID      string
+	ID             pgtype.UUID
+}
+
+// A person's stop: a run not yet claimed ends at once, a running one is asked to stop.
+func (q *Queries) StopCapacityRun(ctx context.Context, arg StopCapacityRunParams) (pgtype.UUID, error) {
+	row := q.db.QueryRow(ctx, stopCapacityRun,
+		arg.Now,
+		arg.OrganisationID,
+		arg.ProjectID,
+		arg.ID,
+	)
+	var id pgtype.UUID
+	err := row.Scan(&id)
+	return id, err
 }
 
 const touchCall = `-- name: TouchCall :exec

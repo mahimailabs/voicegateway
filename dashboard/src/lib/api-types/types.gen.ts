@@ -637,21 +637,70 @@ export type Workers = {
     sourceStatus?: SourceStatus;
 };
 
+/**
+ * One capacity test (decision 0022, docs/specs/capacity-runner.md): synthetic calls ramped 1, 2, 4 and so on at one agent until a stop rule tripped. Values the run did not measure, or has not yet, are null, never zero.
+ */
 export type CapacityRun = {
-    source: string;
+    id: string;
     agent: string;
-    ranAt: string;
-    limitedBy: string;
-    workerLog: string;
-    steps: Array<{
-        step: number | null;
-        joined: number | null;
-        joinSeconds: Array<number | null>;
-        answerSeconds: Array<number | null>;
-        hostLoad1m: Array<number | null>;
-        hostCores: number | null;
-        pending: number | null;
-    }>;
+    maxStep: 8 | 16 | 32 | 64;
+    /**
+     * requested: waiting for a worker; running: a worker holds it and heartbeats it every second; ended: limitedBy says why.
+     */
+    state: 'requested' | 'running' | 'ended';
+    requestedAt: string;
+    startedAt: string | null;
+    endedAt: string | null;
+    stopRequested: boolean;
+    capacity: number | null;
+    /**
+     * What ended the run. The agent's limits: pending (a job waited 10 s for the agent), job_failed (an agent left a call or a dispatch was refused), answer (the median answer rose more than 50% above step 1's, or a call went unanswered for 15 s), plan (a LiveKit Cloud agent refused at the Build plan's 5 sessions). max_reached: every step passed. The rest say the run could not measure the agent: tester (the tester's CPU averaged over 90%), real_call (a room the test did not create got the agent), agent_busy (the agent had a call at the start), stopped (a person pressed Stop), runner_lost (the worker stopped heartbeating), no_worker (no worker was free to claim the request within 15 minutes), failed (LiveKit or storage failed; see error).
+     */
+    limitedBy: 'pending' | 'job_failed' | 'answer' | 'plan' | 'max_reached' | 'tester' | 'real_call' | 'agent_busy' | 'stopped' | 'runner_lost' | 'no_worker' | 'failed' | null;
+    cloudAgent: boolean | null;
+    joinThresholdMs: number | null;
+    error: string | null;
+    /**
+     * The steps run so far, in order. A step not reached is absent.
+     */
+    steps: Array<CapacityStep>;
+};
+
+export type CapacityRunStart = {
+    /**
+     * The agent's name, as it registers with LiveKit (agent_name). An agent without a name joins every room and cannot be dispatched to a test room.
+     */
+    agent: string;
+    maxStep: 8 | 16 | 32 | 64;
+    /**
+     * The person agreed to place real calls through the agent's providers.
+     */
+    consent: true;
+};
+
+export type CapacityStep = {
+    step: number;
+    startedAt: string;
+    endedAt: string | null;
+    /**
+     * failed: the agent tripped a stop rule; inconclusive: the step was stopped by something other than the agent, such as the tester or a person.
+     */
+    outcome: 'running' | 'passed' | 'failed' | 'inconclusive';
+    calls: number | null;
+    joined: number | null;
+    pending: number | null;
+    failed: number | null;
+    late: number | null;
+    noAnswer: number | null;
+    /**
+     * The join wait of each call this step added, dispatch to agent join. A call the agent never joined has none.
+     */
+    joinSeconds: Array<number | null>;
+    /**
+     * Every answer heard during the step: the caller's line ending to the agent's lk.agent.state turning speaking.
+     */
+    answerSeconds: Array<number | null>;
+    testerCpuPercent: number | null;
 };
 
 export type ProviderProbes = {
@@ -1351,7 +1400,7 @@ export type Error = {
     /**
      * Stable error category.
      */
-    code: 'invalid_request' | 'revision_conflict' | 'unauthenticated' | 'forbidden' | 'not_found' | 'source_unavailable' | 'internal_error' | 'range_not_satisfiable' | 'last_admin' | 'already_member' | 'member_of_other_organisations' | 'project_exists' | 'livekit_secret_invalid' | 'livekit_unreachable' | 'recording_bucket_refused' | 'recording_bucket_unreachable' | 'origin_not_allowed' | 'incident_not_resolvable';
+    code: 'invalid_request' | 'revision_conflict' | 'unauthenticated' | 'forbidden' | 'not_found' | 'source_unavailable' | 'internal_error' | 'range_not_satisfiable' | 'last_admin' | 'already_member' | 'member_of_other_organisations' | 'project_exists' | 'livekit_secret_invalid' | 'livekit_unreachable' | 'recording_bucket_refused' | 'recording_bucket_unreachable' | 'origin_not_allowed' | 'incident_not_resolvable' | 'run_active';
     /**
      * Safe human-readable explanation, excluding upstream credentials and request bodies.
      */
@@ -3349,12 +3398,128 @@ export type GetCapacityError = GetCapacityErrors[keyof GetCapacityErrors];
 
 export type GetCapacityResponses = {
     /**
-     * Latest retained capacity result for this agent, or null if no run was recorded. A missing run is not zero capacity. Source unavailability still uses 503.
+     * The agent's latest capacity test, running or ended, or null before its first. A missing run is not zero capacity.
      */
     200: CapacityRun | null;
 };
 
 export type GetCapacityResponse = GetCapacityResponses[keyof GetCapacityResponses];
+
+export type StartCapacityRunData = {
+    body: CapacityRunStart;
+    path: {
+        /**
+         * Authorised orgId; the server must verify organisation/project ownership before any read.
+         */
+        orgId: string;
+        /**
+         * Authorised projectId; the server must verify organisation/project ownership before any read.
+         */
+        projectId: string;
+    };
+    query?: never;
+    url: '/api/v1/org/{orgId}/project/{projectId}/capacity-runs';
+};
+
+export type StartCapacityRunErrors = {
+    /**
+     * invalid_request; never return an empty success result for this failure.
+     */
+    400: Error;
+    /**
+     * unauthenticated; never return an empty success result for this failure.
+     */
+    401: Error;
+    /**
+     * forbidden; never return an empty success result for this failure.
+     */
+    403: Error;
+    /**
+     * not_found; never return an empty success result for this failure.
+     */
+    404: Error;
+    /**
+     * revision_conflict, settings changed since they were read; last_admin, the change would leave the organisation without an admin; already_member, the invited email's account is a member already; member_of_other_organisations, a reset's member belongs to an organisation the requester does not administer; project_exists, the organisation already has a project with the new name's id; incident_not_resolvable, a person may resolve only a firing recording-lost incident; run_active, the project already has a capacity test that has not ended.
+     */
+    409: Error;
+    /**
+     * internal_error; never return an empty success result for this failure.
+     */
+    500: Error;
+    /**
+     * source_unavailable; never return an empty success result for this failure.
+     */
+    503: Error;
+};
+
+export type StartCapacityRunError = StartCapacityRunErrors[keyof StartCapacityRunErrors];
+
+export type StartCapacityRunResponses = {
+    /**
+     * The requested run; read it with getCapacity as it runs.
+     */
+    202: CapacityRun;
+};
+
+export type StartCapacityRunResponse = StartCapacityRunResponses[keyof StartCapacityRunResponses];
+
+export type StopCapacityRunData = {
+    body?: never;
+    path: {
+        /**
+         * Authorised orgId; the server must verify organisation/project ownership before any read.
+         */
+        orgId: string;
+        /**
+         * Authorised projectId; the server must verify organisation/project ownership before any read.
+         */
+        projectId: string;
+        /**
+         * The run's id from startCapacityRun or getCapacity.
+         */
+        runId: string;
+    };
+    query?: never;
+    url: '/api/v1/org/{orgId}/project/{projectId}/capacity-runs/{runId}/stop';
+};
+
+export type StopCapacityRunErrors = {
+    /**
+     * invalid_request; never return an empty success result for this failure.
+     */
+    400: Error;
+    /**
+     * unauthenticated; never return an empty success result for this failure.
+     */
+    401: Error;
+    /**
+     * forbidden; never return an empty success result for this failure.
+     */
+    403: Error;
+    /**
+     * not_found; never return an empty success result for this failure.
+     */
+    404: Error;
+    /**
+     * internal_error; never return an empty success result for this failure.
+     */
+    500: Error;
+    /**
+     * source_unavailable; never return an empty success result for this failure.
+     */
+    503: Error;
+};
+
+export type StopCapacityRunError = StopCapacityRunErrors[keyof StopCapacityRunErrors];
+
+export type StopCapacityRunResponses = {
+    /**
+     * The run, stopping or ended.
+     */
+    200: CapacityRun;
+};
+
+export type StopCapacityRunResponse = StopCapacityRunResponses[keyof StopCapacityRunResponses];
 
 export type GetProviderProbesData = {
     body?: never;
@@ -3560,7 +3725,7 @@ export type UpdateCallMetadataErrors = {
      */
     404: Error;
     /**
-     * revision_conflict, settings changed since they were read; last_admin, the change would leave the organisation without an admin; already_member, the invited email's account is a member already; member_of_other_organisations, a reset's member belongs to an organisation the requester does not administer; project_exists, the organisation already has a project with the new name's id; incident_not_resolvable, a person may resolve only a firing recording-lost incident.
+     * revision_conflict, settings changed since they were read; last_admin, the change would leave the organisation without an admin; already_member, the invited email's account is a member already; member_of_other_organisations, a reset's member belongs to an organisation the requester does not administer; project_exists, the organisation already has a project with the new name's id; incident_not_resolvable, a person may resolve only a firing recording-lost incident; run_active, the project already has a capacity test that has not ended.
      */
     409: Error;
     /**
@@ -3680,7 +3845,7 @@ export type UpdateIssueMetadataErrors = {
      */
     404: Error;
     /**
-     * revision_conflict, settings changed since they were read; last_admin, the change would leave the organisation without an admin; already_member, the invited email's account is a member already; member_of_other_organisations, a reset's member belongs to an organisation the requester does not administer; project_exists, the organisation already has a project with the new name's id; incident_not_resolvable, a person may resolve only a firing recording-lost incident.
+     * revision_conflict, settings changed since they were read; last_admin, the change would leave the organisation without an admin; already_member, the invited email's account is a member already; member_of_other_organisations, a reset's member belongs to an organisation the requester does not administer; project_exists, the organisation already has a project with the new name's id; incident_not_resolvable, a person may resolve only a firing recording-lost incident; run_active, the project already has a capacity test that has not ended.
      */
     409: Error;
     /**
@@ -3792,7 +3957,7 @@ export type UpdateProjectSettingsErrors = {
      */
     404: Error;
     /**
-     * revision_conflict, settings changed since they were read; last_admin, the change would leave the organisation without an admin; already_member, the invited email's account is a member already; member_of_other_organisations, a reset's member belongs to an organisation the requester does not administer; project_exists, the organisation already has a project with the new name's id; incident_not_resolvable, a person may resolve only a firing recording-lost incident.
+     * revision_conflict, settings changed since they were read; last_admin, the change would leave the organisation without an admin; already_member, the invited email's account is a member already; member_of_other_organisations, a reset's member belongs to an organisation the requester does not administer; project_exists, the organisation already has a project with the new name's id; incident_not_resolvable, a person may resolve only a firing recording-lost incident; run_active, the project already has a capacity test that has not ended.
      */
     409: Error;
     /**
@@ -3904,7 +4069,7 @@ export type UpdateAllowedOriginsErrors = {
      */
     404: Error;
     /**
-     * revision_conflict, settings changed since they were read; last_admin, the change would leave the organisation without an admin; already_member, the invited email's account is a member already; member_of_other_organisations, a reset's member belongs to an organisation the requester does not administer; project_exists, the organisation already has a project with the new name's id; incident_not_resolvable, a person may resolve only a firing recording-lost incident.
+     * revision_conflict, settings changed since they were read; last_admin, the change would leave the organisation without an admin; already_member, the invited email's account is a member already; member_of_other_organisations, a reset's member belongs to an organisation the requester does not administer; project_exists, the organisation already has a project with the new name's id; incident_not_resolvable, a person may resolve only a firing recording-lost incident; run_active, the project already has a capacity test that has not ended.
      */
     409: Error;
     /**
@@ -4369,7 +4534,7 @@ export type ResolveAlertIncidentErrors = {
      */
     404: Error;
     /**
-     * revision_conflict, settings changed since they were read; last_admin, the change would leave the organisation without an admin; already_member, the invited email's account is a member already; member_of_other_organisations, a reset's member belongs to an organisation the requester does not administer; project_exists, the organisation already has a project with the new name's id; incident_not_resolvable, a person may resolve only a firing recording-lost incident.
+     * revision_conflict, settings changed since they were read; last_admin, the change would leave the organisation without an admin; already_member, the invited email's account is a member already; member_of_other_organisations, a reset's member belongs to an organisation the requester does not administer; project_exists, the organisation already has a project with the new name's id; incident_not_resolvable, a person may resolve only a firing recording-lost incident; run_active, the project already has a capacity test that has not ended.
      */
     409: Error;
     /**
@@ -4473,7 +4638,7 @@ export type CreateInvitationErrors = {
      */
     404: Error;
     /**
-     * revision_conflict, settings changed since they were read; last_admin, the change would leave the organisation without an admin; already_member, the invited email's account is a member already; member_of_other_organisations, a reset's member belongs to an organisation the requester does not administer; project_exists, the organisation already has a project with the new name's id; incident_not_resolvable, a person may resolve only a firing recording-lost incident.
+     * revision_conflict, settings changed since they were read; last_admin, the change would leave the organisation without an admin; already_member, the invited email's account is a member already; member_of_other_organisations, a reset's member belongs to an organisation the requester does not administer; project_exists, the organisation already has a project with the new name's id; incident_not_resolvable, a person may resolve only a firing recording-lost incident; run_active, the project already has a capacity test that has not ended.
      */
     409: Error;
     /**
@@ -4581,7 +4746,7 @@ export type CreateProjectErrors = {
      */
     404: Error;
     /**
-     * revision_conflict, settings changed since they were read; last_admin, the change would leave the organisation without an admin; already_member, the invited email's account is a member already; member_of_other_organisations, a reset's member belongs to an organisation the requester does not administer; project_exists, the organisation already has a project with the new name's id; incident_not_resolvable, a person may resolve only a firing recording-lost incident.
+     * revision_conflict, settings changed since they were read; last_admin, the change would leave the organisation without an admin; already_member, the invited email's account is a member already; member_of_other_organisations, a reset's member belongs to an organisation the requester does not administer; project_exists, the organisation already has a project with the new name's id; incident_not_resolvable, a person may resolve only a firing recording-lost incident; run_active, the project already has a capacity test that has not ended.
      */
     409: Error;
     /**
@@ -4751,7 +4916,7 @@ export type RemoveMemberErrors = {
      */
     404: Error;
     /**
-     * revision_conflict, settings changed since they were read; last_admin, the change would leave the organisation without an admin; already_member, the invited email's account is a member already; member_of_other_organisations, a reset's member belongs to an organisation the requester does not administer; project_exists, the organisation already has a project with the new name's id; incident_not_resolvable, a person may resolve only a firing recording-lost incident.
+     * revision_conflict, settings changed since they were read; last_admin, the change would leave the organisation without an admin; already_member, the invited email's account is a member already; member_of_other_organisations, a reset's member belongs to an organisation the requester does not administer; project_exists, the organisation already has a project with the new name's id; incident_not_resolvable, a person may resolve only a firing recording-lost incident; run_active, the project already has a capacity test that has not ended.
      */
     409: Error;
     /**
@@ -4809,7 +4974,7 @@ export type UpdateMemberErrors = {
      */
     404: Error;
     /**
-     * revision_conflict, settings changed since they were read; last_admin, the change would leave the organisation without an admin; already_member, the invited email's account is a member already; member_of_other_organisations, a reset's member belongs to an organisation the requester does not administer; project_exists, the organisation already has a project with the new name's id; incident_not_resolvable, a person may resolve only a firing recording-lost incident.
+     * revision_conflict, settings changed since they were read; last_admin, the change would leave the organisation without an admin; already_member, the invited email's account is a member already; member_of_other_organisations, a reset's member belongs to an organisation the requester does not administer; project_exists, the organisation already has a project with the new name's id; incident_not_resolvable, a person may resolve only a firing recording-lost incident; run_active, the project already has a capacity test that has not ended.
      */
     409: Error;
     /**
@@ -4867,7 +5032,7 @@ export type CreatePasswordResetErrors = {
      */
     404: Error;
     /**
-     * revision_conflict, settings changed since they were read; last_admin, the change would leave the organisation without an admin; already_member, the invited email's account is a member already; member_of_other_organisations, a reset's member belongs to an organisation the requester does not administer; project_exists, the organisation already has a project with the new name's id; incident_not_resolvable, a person may resolve only a firing recording-lost incident.
+     * revision_conflict, settings changed since they were read; last_admin, the change would leave the organisation without an admin; already_member, the invited email's account is a member already; member_of_other_organisations, a reset's member belongs to an organisation the requester does not administer; project_exists, the organisation already has a project with the new name's id; incident_not_resolvable, a person may resolve only a firing recording-lost incident; run_active, the project already has a capacity test that has not ended.
      */
     409: Error;
     /**
@@ -5314,7 +5479,7 @@ export type CreateOrganisationInvitationErrors = {
      */
     404: Error;
     /**
-     * revision_conflict, settings changed since they were read; last_admin, the change would leave the organisation without an admin; already_member, the invited email's account is a member already; member_of_other_organisations, a reset's member belongs to an organisation the requester does not administer; project_exists, the organisation already has a project with the new name's id; incident_not_resolvable, a person may resolve only a firing recording-lost incident.
+     * revision_conflict, settings changed since they were read; last_admin, the change would leave the organisation without an admin; already_member, the invited email's account is a member already; member_of_other_organisations, a reset's member belongs to an organisation the requester does not administer; project_exists, the organisation already has a project with the new name's id; incident_not_resolvable, a person may resolve only a firing recording-lost incident; run_active, the project already has a capacity test that has not ended.
      */
     409: Error;
     /**

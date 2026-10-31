@@ -1,5 +1,6 @@
 import { CapacityPreview } from "./capacity-preview"
 import { useState } from "react"
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Bar, CartesianGrid, ComposedChart, Line, LineChart, ReferenceLine, XAxis, YAxis } from "recharts"
 import { type ChartConfig, ChartContainer, ChartLegend, ChartLegendContent, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart"
 import { CheckCircle, Gauge, Info, WarningCircle, X } from "@phosphor-icons/react"
@@ -14,10 +15,13 @@ import type { CapacityRun } from "@/lib/api-types"
 import { type MediaServerData, openAtWatchEnd } from "../media-server/room-drawer"
 import type { Agent } from "./agents-model"
 import { fmtDateTime } from "@/lib/format"
+import { ApiError, capacityQuery, startCapacity, stopCapacity } from "@/lib/api"
+import { roleIn, useSession } from "@/lib/session"
+import { currentScope } from "@/lib/url-state"
 
-// Capacity test (decision 0022): VoiceGateway ramps synthetic calls at an idle agent until a job stays
-// pending, and reports the last step every call got the agent. The run itself needs the Phase 2
-// server; the console shows the idle check, the plan and the one real run we have.
+// Capacity test (decision 0022, docs/specs/capacity-runner.md): a VoiceGateway worker ramps synthetic
+// calls at an idle agent until a stop rule trips, and reports the last step every call passed. The
+// console starts and stops a run (Admin only) and shows each step as the worker writes it.
 
 type Run = CapacityRun
 type Step = Run["steps"][number]
@@ -81,51 +85,97 @@ function Hint({ tone, icon: I, label, tip }: { tone: keyof typeof hintTone; icon
 const DEMO = import.meta.env.DEV && typeof location !== "undefined" && new URLSearchParams(location.search).has("demo")
 function demoRun(name: string, max: number): Run {
   const ceiling = 24
-  const steps = ladder(max).map((n) => {
+  const at = new Date().toISOString()
+  const steps = ladder(max).map((n): Step => {
     const joined = Math.min(n, ceiling)
     const slow = n >= 16 ? Math.round(joined * 0.15) : 0
     return {
-      step: n,
-      joined,
-      pending: n - joined,
+      step: n, startedAt: at, endedAt: at, outcome: joined === n ? "passed" : "failed",
+      calls: n, joined, pending: n - joined, failed: 0, late: slow, noAnswer: 0,
       joinSeconds: Array.from({ length: joined }, (_, i) => (i < joined - slow ? 0.42 + (i % 5) * 0.09 : 2.4 + (i % 3) * 0.3)),
       answerSeconds: Array.from({ length: joined }, (_, i) => 0.92 + Math.log2(n) * 0.05 + (i % 4) * 0.04),
-      hostLoad1m: [0.8, 1.1],
-      hostCores: 16,
+      testerCpuPercent: 40,
     }
   })
-  return { source: "", agent: name, ranAt: new Date().toISOString(), limitedBy: "agent", workerLog: "", steps }
+  const passed = steps.filter((x) => x.outcome === "passed")
+  return {
+    id: "demo", agent: name, maxStep: max as Run["maxStep"], state: "ended", requestedAt: at, startedAt: at, endedAt: at, stopRequested: false,
+    capacity: passed.length ? passed[passed.length - 1].step : null, limitedBy: passed.length === steps.length ? "max_reached" : "pending",
+    cloudAgent: false, joinThresholdMs: JOIN_MS, error: null, steps,
+  }
 }
 
-function CapacitySetupDialog({ agent: a, ms, onOpenChange }: { agent: Agent | null; ms: MediaServerData; onOpenChange: (o: boolean) => void }) {
+// What ended a run, in a few words, and whether the number is the agent's limit or the run's.
+const limits: Record<NonNullable<Run["limitedBy"]>, { label: string; agent: boolean }> = {
+  pending: { label: "a job waited 10 s for the agent", agent: true },
+  job_failed: { label: "a job failed", agent: true },
+  answer: { label: "answers slowed by more than 50%", agent: true },
+  plan: { label: "the LiveKit Cloud plan's 5 sessions", agent: true },
+  max_reached: { label: "every step passed", agent: true },
+  tester: { label: "limited by the tester", agent: false },
+  real_call: { label: "stopped: a real call arrived", agent: false },
+  agent_busy: { label: "not run: the agent was busy", agent: false },
+  stopped: { label: "stopped by a person", agent: false },
+  runner_lost: { label: "the worker running it stopped", agent: false },
+  no_worker: { label: "not run: no worker was free; start it again", agent: false },
+  failed: { label: "LiveKit or storage failed", agent: false },
+}
+const limitText = (r: Run) => (r.limitedBy ? limits[r.limitedBy].label : r.state === "requested" ? "waiting for a worker" : "running")
+
+// Why Start is off, or null when it is on. The server checks again, live, before the first call.
+function startBlock(a: Agent, admin: boolean, idle: boolean) {
+  if (!a.name) return "An agent without a name cannot be dispatched by name, so it cannot be tested."
+  if (!admin) return "Only an Admin can start a capacity test."
+  if (!idle) return "The agent has a call. The test runs only on an idle agent."
+  return null
+}
+
+export function CapacitySetupDialog({ agent: a, ms, onOpenChange }: { agent: Agent | null; ms: MediaServerData; onOpenChange: (o: boolean) => void }) {
   const [max, setMax] = useState("32")
   const [ok, setOk] = useState(false)
-  const [phase, setPhase] = useState<"setup" | "running" | "done">("setup")
-  const [shown, setShown] = useState(0)
+  // The run this dialog watches: one it started, or one already open for the agent.
+  const [watching, setWatching] = useState<string | null>(null)
+  const [demoShown, setDemoShown] = useState<number | null>(null)
+  const queries = useQueryClient()
+  const admin = roleIn(currentScope().org, useSession()) === "Admin"
+  const latest = useQuery({ ...capacityQuery(a && !DEMO ? (a.name ?? null) : null), enabled: Boolean(a?.name) && !DEMO })
+  const start = useMutation({
+    mutationFn: () => startCapacity(a!.name!, Number(max) as Run["maxStep"]),
+    onSuccess: (run) => (setWatching(run.id), queries.setQueryData(capacityQuery(a!.name!).queryKey, run)),
+  })
+  const stop = useMutation({ mutationFn: (id: string) => stopCapacity(id), onSuccess: (run) => queries.setQueryData(capacityQuery(a!.name!).queryKey, run) })
   const close = (o: boolean) => {
     if (!o) {
       setOk(false)
-      setPhase("setup")
-      setShown(0)
+      setWatching(null)
+      setDemoShown(null)
+      start.reset()
+      stop.reset()
     }
     onOpenChange(o)
   }
   if (!a) return <Dialog open={false} />
   const idle = idleNow(a, ms)
   const steps = ladder(Number(max))
-  const calls = steps.reduce((x, y) => x + y, 0)
   const cloud = Boolean(a.cloud)
   const production = cloud && (!a.cloud?.deployment?.deployment || a.cloud.deployment.deployment === "production")
   const demo = demoRun(a.name ?? "agent", Number(max))
-  const start = () => {
-    setPhase("running")
-    setShown(0)
-    demo.steps.forEach((_, i) => setTimeout(() => (setShown(i + 1), i === demo.steps.length - 1 && setTimeout(() => setPhase("done"), 900)), 900 * (i + 1)))
+  const live = latest.data ?? null
+  // An open run shows even when another tab started it; an ended one only when this dialog watched it.
+  const run: Run | null = DEMO ? (demoShown === null ? null : { ...demo, state: demoShown < demo.steps.length ? "running" : "ended", steps: demo.steps.slice(0, demoShown) }) : live && (live.state !== "ended" || live.id === watching) ? live : null
+  const phase = !run ? "setup" : run.state === "ended" ? "done" : "running"
+  const block = startBlock(a, admin, idle.idle)
+  const conflict = start.error instanceof ApiError && start.error.code === "run_active"
+  const startDemo = () => {
+    setDemoShown(0)
+    demo.steps.forEach((_, i) => setTimeout(() => setDemoShown(i + 1), 900 * (i + 1)))
   }
+  const ladderOf = run ? ladder(run.maxStep) : steps
+  const current = run && run.steps.length ? run.steps[run.steps.length - 1] : null
 
   return (
     <Dialog open onOpenChange={close}>
-      <DialogContent showCloseButton={false} className={cn("gap-0 overflow-hidden rounded-2xl p-0 transition-[max-width] duration-300", phase === "setup" ? "sm:max-w-[520px]" : "sm:max-w-[600px]")} onOpenAutoFocus={(e) => e.preventDefault()}>
+      <DialogContent showCloseButton={false} className={cn("gap-0 overflow-hidden rounded-2xl p-0 transition-[max-width] duration-300 [&>*]:min-w-0", phase === "setup" ? "sm:max-w-[520px]" : "sm:max-w-[600px]")} onOpenAutoFocus={(e) => e.preventDefault()}>
         <div className="flex items-start gap-4 px-6 pt-6 pb-5">
           <span className="flex size-11 shrink-0 items-center justify-center rounded-xl border bg-background shadow-xs">
             <Gauge size={22} />
@@ -158,7 +208,7 @@ function CapacitySetupDialog({ agent: a, ms, onOpenChange }: { agent: Agent | nu
               <p className="text-[13px] font-medium">Most calls at once</p>
               <ToggleGroup type="single" variant="outline" value={max} onValueChange={(v) => v && setMax(v)} aria-label="Most calls at once" className="grid w-full grid-cols-4">
                 {["8", "16", "32", "64"].map((v) => (
-                  <ToggleGroupItem key={v} value={v} className="h-10 text-[14px] font-medium tnum data-[state=on]:bg-accent data-[state=on]:text-primary">
+                  <ToggleGroupItem key={v} value={v} className="h-10 text-[14px] font-medium tnum data-[state=on]:bg-primary data-[state=on]:text-primary-foreground">
                     {v}
                   </ToggleGroupItem>
                 ))}
@@ -168,8 +218,8 @@ function CapacitySetupDialog({ agent: a, ms, onOpenChange }: { agent: Agent | nu
             <div className="grid grid-cols-3 divide-x rounded-xl border bg-muted/30">
               {[
                 ["Steps", `1 to ${max}`],
-                ["Test calls", String(calls)],
-                ["Audio", `${Math.round((calls * STEP_SECONDS) / 60)} min`],
+                ["Test calls", `up to ${max}`],
+                ["Longest", `${Math.round((steps.length * STEP_SECONDS) / 60)} min`],
               ].map(([k, v]) => (
                 <div key={k} className="px-4 py-3">
                   <p className="text-[12px] text-muted-foreground">{k}</p>
@@ -185,25 +235,26 @@ function CapacitySetupDialog({ agent: a, ms, onOpenChange }: { agent: Agent | nu
                     <Info size={14} />
                   </button>
                 </TooltipTrigger>
-                <TooltipContent className="max-w-72 text-xs leading-relaxed">{`About ${STEP_SECONDS} s per step. Also stops when a join takes over ${JOIN_MS / 1000} s, answers slow by more than 50%, a job fails, or the tester is the limit.`}</TooltipContent>
+                <TooltipContent className="max-w-72 text-xs leading-relaxed">{`About ${STEP_SECONDS} s per step, and calls stay up from one step to the next. Also stops when a job fails, a call gets no answer in 15 s, answers slow by more than 50%, or the tester is the limit. A join slower than ${JOIN_MS / 1000} s counts as late, not as a stop.`}</TooltipContent>
               </Tooltip>
             </p>
+            {start.isError && <p role="alert" className="text-[12px] text-destructive">{conflict ? "This project already has a capacity test running. Stop it or wait for it to end." : start.error.message}</p>}
           </div>
         ) : (
           <div className="px-6 pb-6">
             {phase === "running" ? (
               <div className="space-y-3">
-                <p className="flex items-center gap-2 text-[13px]">
+                <p className="flex items-center gap-2 text-[13px]" aria-live="polite">
                   <span className="relative flex size-2">
                     <span className="absolute inline-flex size-full animate-ping rounded-full bg-primary opacity-60" />
                     <span className="relative inline-flex size-2 rounded-full bg-primary" />
                   </span>
-                  {`Step ${Math.min(shown + 1, demo.steps.length)} of ${demo.steps.length}: ${demo.steps[Math.min(shown, demo.steps.length - 1)].step} calls at once`}
+                  {run!.state === "requested" ? "Waiting for a worker to start the test" : current ? `Step ${ladderOf.indexOf(current.step) + 1} of ${ladderOf.length}: ${current.step} ${current.step === 1 ? "call" : "calls"} at once` : "Checking the agent is idle"}
                 </p>
-                <CapacityChart steps={demo.steps.slice(0, shown)} all={known(demo.steps.map((x) => x.step))} />
+                <CapacityChart steps={run!.steps} all={ladderOf} threshold={run!.joinThresholdMs} />
               </div>
             ) : (
-              <CapacityResult run={demo} bare />
+              <CapacityResult run={run!} bare />
             )}
           </div>
         )}
@@ -215,7 +266,7 @@ function CapacitySetupDialog({ agent: a, ms, onOpenChange }: { agent: Agent | nu
               Place real calls through my providers
             </label>
           ) : (
-            <span className="text-[12px] text-muted-foreground tnum">{phase === "done" ? `${calls - demo.steps.reduce((x, s) => x + (s.pending ?? 0), 0)} of ${calls} test calls connected` : "Rooms vg-capacity-*"}</span>
+            <span className="text-[12px] text-muted-foreground tnum">{phase === "done" ? `${run!.steps.length} of ${ladderOf.length} steps run` : run!.stopRequested ? "Stopping" : "Rooms vg-capacity-*"}</span>
           )}
           <div className="flex gap-2">
             {phase === "setup" ? (
@@ -223,11 +274,7 @@ function CapacitySetupDialog({ agent: a, ms, onOpenChange }: { agent: Agent | nu
                 <Button variant="ghost" onClick={() => close(false)}>
                   Cancel
                 </Button>
-                {DEMO ? (
-                  <Button disabled={!ok || !idle.idle} onClick={start}>
-                    <Gauge /> Start test
-                  </Button>
-                ) : (
+                {block && !DEMO ? (
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <span tabIndex={0}>
@@ -236,13 +283,21 @@ function CapacitySetupDialog({ agent: a, ms, onOpenChange }: { agent: Agent | nu
                         </Button>
                       </span>
                     </TooltipTrigger>
-                    <TooltipContent className="max-w-64 text-xs">Runs on the VoiceGateway server, arriving in Phase 2.</TooltipContent>
+                    <TooltipContent className="max-w-64 text-xs">{block}</TooltipContent>
                   </Tooltip>
+                ) : (
+                  <Button disabled={!ok || start.isPending || (DEMO && !idle.idle)} onClick={() => (DEMO ? startDemo() : start.mutate())}>
+                    <Gauge /> Start test
+                  </Button>
                 )}
               </>
+            ) : phase === "running" && !DEMO ? (
+              <Button variant="outline" disabled={!admin || run!.stopRequested || stop.isPending} onClick={() => stop.mutate(run!.id)}>
+                Stop test
+              </Button>
             ) : (
               <Button variant={phase === "done" ? "default" : "outline"} onClick={() => close(false)}>
-                {phase === "done" ? "Done" : "Stop test"}
+                {phase === "done" ? "Done" : "Close"}
               </Button>
             )}
           </div>
@@ -252,23 +307,31 @@ function CapacitySetupDialog({ agent: a, ms, onOpenChange }: { agent: Agent | nu
   )
 }
 
-// One column per step: calls that got the agent in time, late (a new process had to start), or were
-// refused, with the median answer time as a line on its own axis. Steps not run yet keep their slot.
+// One column per step: calls that got the agent in time, late (slower than the join threshold, a new
+// process had to start), or refused or failed, with the median answer time as a line on its own
+// axis. Steps not run yet keep their slot.
 const chartConfig = {
   inTime: { label: "Joined in time", color: "var(--chart-1)" },
-  late: { label: `Joined after ${JOIN_MS / 1000} s`, color: "oklch(0.77 0.16 70)" },
-  refused: { label: "Refused", color: "var(--destructive)" },
+  late: { label: "Joined late", color: "oklch(0.77 0.16 70)" },
+  refused: { label: "Refused or failed", color: "var(--destructive)" },
   answer: { label: "Answer time (s)", color: "var(--foreground)" },
 } satisfies ChartConfig
 
-function CapacityChart({ steps, all, ceiling }: { steps: Step[]; all: number[]; ceiling?: number | null }) {
+// A step's late joins: the runner's count, or, for a run that did not report one, the reported join
+// times over the threshold (a floor when any join time is unreported).
+const lateOf = (s: Step, thresholdMs: number) => s.late ?? known(s.joinSeconds).filter((j) => j * 1000 > thresholdMs).length
+const lateIsFloor = (s: Step) => s.late === null && s.joinSeconds.some((j) => j === null)
+
+function CapacityChart({ steps, all, ceiling, threshold }: { steps: Step[]; all: number[]; ceiling?: number | null; threshold: number | null }) {
+  const ms = threshold ?? JOIN_MS
   const rows = all.map((n) => {
     const s = steps.find((x) => x.step === n)
     if (!s) return { step: String(n) }
-    const late = known(s.joinSeconds).filter((j) => j * 1000 > JOIN_MS).length
-    // The in-time bar needs every join time; with any unreported, or the joined count unknown, it is left out.
-    const allJoins = s.joinSeconds.every((j) => j !== null)
-    return { step: String(n), inTime: s.joined === null || !allJoins ? null : s.joined - late, late, refused: s.pending, answer: median(s.answerSeconds) }
+    const late = lateOf(s, ms)
+    // The in-time bar needs the joined count and an exact late count; otherwise it is left out.
+    const inTime = s.joined === null || lateIsFloor(s) ? null : s.joined - late
+    const refused = s.pending === null ? null : s.pending + (s.failed ?? 0)
+    return { step: String(n), inTime, late, refused, answer: median(s.answerSeconds) }
   })
   const top = Math.max(1, ...all)
   return (
@@ -308,20 +371,19 @@ function Tile({ label, foot, warn, children }: { label: string; foot: string; wa
 
 // The result of a run: the numbers first, then each step.
 export function CapacityResult({ run: r, bare }: { run: Run; bare?: boolean }) {
-  const passed = r.steps.filter((s) => s.pending === 0)
-  const best = passed.length ? passed[passed.length - 1].step : null
-  const failedAt = r.steps.find((s) => s.pending !== null && s.pending > 0)
-  const value = failedAt ? failedAt.joined : best
+  const value = r.capacity
+  const ms = r.joinThresholdMs ?? JOIN_MS
   const answers = r.steps.map((x) => median(x.answerSeconds)).filter((v): v is number => v !== null)
-  // The total is known only when every step reported how many joined.
-  const joined = r.steps.every((x) => x.joined !== null) ? r.steps.reduce((n, x) => n + x.joined!, 0) : null
-  const late = r.steps.reduce((n, x) => n + known(x.joinSeconds).filter((j) => j * 1000 > JOIN_MS).length, 0)
-  // With any join time unreported, the late count is a floor.
-  const lateFloor = r.steps.some((x) => x.joinSeconds.some((j) => j === null))
+  // Calls stay up from one step to the next, so the most that joined is the last step's count.
+  const last = r.steps.length ? r.steps[r.steps.length - 1] : null
+  const joined = last ? last.joined : null
+  const late = last ? lateOf(last, ms) : null
+  const lateFloor = last ? lateIsFloor(last) : false
+  const limit = r.limitedBy ? limits[r.limitedBy] : null
   return (
     <div className={cn("space-y-4", !bare && "rounded-xl border p-4")}>
-      <div className="grid grid-cols-3 divide-x rounded-xl border bg-muted/30">
-        <Tile label="Capacity" foot={r.limitedBy === "tester" ? "limited by the tester" : "limited by the agent"} warn={r.limitedBy === "tester"}>
+      <div className="grid grid-cols-1 divide-y rounded-xl border bg-muted/30 sm:grid-cols-3 sm:divide-x sm:divide-y-0">
+        <Tile label="Capacity" foot={limitText(r)} warn={limit !== null && !limit.agent}>
           <span className="text-[28px] leading-none font-semibold tracking-[-0.03em] tnum">{value ?? "Unknown"}</span>
           <span className="ml-1.5 text-[12px] text-muted-foreground">at once</span>
         </Tile>
@@ -338,12 +400,14 @@ export function CapacityResult({ run: r, bare }: { run: Run; bare?: boolean }) {
             )}
           </span>
         </Tile>
-        <Tile label="Late joins" foot={`of ${joined ?? "an unknown number"}, new process started`}>
-          <span className="text-[28px] leading-none font-semibold tracking-[-0.03em] tnum">{lateFloor ? `≥${late}` : late}</span>
+        <Tile label="Late joins" foot={`of ${joined ?? "an unknown number"}, slower than ${ms / 1000} s`}>
+          <span className="text-[28px] leading-none font-semibold tracking-[-0.03em] tnum">{late === null ? "Unknown" : lateFloor ? `≥${late}` : late}</span>
         </Tile>
       </div>
-      <CapacityChart steps={r.steps} all={known(r.steps.map((x) => x.step))} ceiling={value} />
-      {r.source && <p className="text-[11px] leading-relaxed text-muted-foreground">{`${r.source} The worker logged: ${r.workerLog}.`}</p>}
+      <CapacityChart steps={r.steps} all={ladder(r.maxStep)} ceiling={value} threshold={r.joinThresholdMs} />
+      <p className="text-[11px] leading-relaxed text-muted-foreground">
+        {`${r.endedAt ? `Ran ${fmtDateTime(Date.parse(r.endedAt))}` : "Running"}${r.cloudAgent ? ", per LiveKit Cloud replica" : ""}.${r.error ? ` Error: ${r.error}.` : ""}`}
+      </p>
     </div>
   )
 }
