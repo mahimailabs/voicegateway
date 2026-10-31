@@ -42,6 +42,8 @@ Load test (2026-10-28, docs/specs/load-test.md): `make load-test` (`tools/loadte
 
 Phases 01 to 06f are on main (06f, adding a project from the console, merged in #419). The next phase has no spec yet.
 
+SFU prober on AWS (2026-10-29, decision 0037): `deploy/prober/fly.toml` (a template, never deployed) is replaced by `deploy/prober/cloudformation.yaml`, one stack per region through StackSets: Fargate RunTask, an EventBridge Scheduler schedule created disabled, LiveKit values from a replicated Secrets Manager secret, the vantage label from the stack's region. The prober image pins `voicegateway==0.27.0`, the last engine release with the prober. cfn-lint 1.57.2 passes in CI; nothing is deployed to AWS.
+
 ## Done
 
 | Phase | Spec | Result | Date |
