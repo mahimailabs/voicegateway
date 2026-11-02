@@ -1,0 +1,132 @@
+name: Install test
+
+# Follows docs/self-hosting.md the way a new user does, on a clean runner. Runme
+# (https://runme.dev) runs the guide's named code blocks exactly as they are written, so a change to
+# the guide that no longer installs fails here, and so does a release or image the guide points at
+# that stops working. tools/tests/self_hosting_smoke.sh then checks what the guide promises: the
+# console answers, the first admin signs in, the project is there with its ingestion URLs, and /mcp
+# is served. The guide clones the release it names, so the Makefile and Compose files under test are
+# that release's, not this checkout's: a pull request runs this only when it changes the guide or
+# the test. Linux runs on those pull requests; macOS runs Docker in a Lima VM
+# (docker/setup-docker-action), which only works on Intel runners and takes longer, so it runs
+# nightly and on demand.
+
+permissions:
+  contents: read
+
+on:
+  pull_request:
+    paths:
+      - 'docs/self-hosting.md'
+      - 'tools/tests/self_hosting_smoke.sh'
+      - '.github/workflows/install-test.yml'
+  schedule:
+    - cron: '30 6 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: install-test-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  RUNME_VERSION: '3.17.6'
+  DO_NOT_TRACK: '1'
+
+jobs:
+  guide:
+    name: Self-hosting guide (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: ${{ fromJSON(github.event_name == 'pull_request' && '["ubuntu-24.04"]' || '["ubuntu-24.04", "macos-15-intel"]') }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+        with:
+          persist-credentials: false
+
+      # GitHub's macOS runners have no Docker. Apple silicon runners cannot nest a VM, so this is the
+      # Intel image; Docker and Compose are pinned to the versions the Ubuntu image ships.
+      - name: Start Docker in a Lima VM (macOS)
+        if: runner.os == 'macOS'
+        uses: docker/setup-docker-action@7ec28a010822b4626af4874f9448a4b05ac6f3e5  # v5.6.0
+        env:
+          LIMA_START_ARGS: --cpus 4 --memory 10
+        with:
+          version: v29.9.2
+      - name: Install Docker Compose (macOS)
+        if: runner.os == 'macOS'
+        uses: docker/setup-compose-action@54042514f505b273907334ae2b9cdbb9a0213c1a  # v2.4.0
+        with:
+          version: v5.6.1
+          cache-binary: false
+
+      - name: Install Runme ${{ env.RUNME_VERSION }}
+        shell: bash
+        run: |
+          case "$RUNNER_OS" in
+            Linux) asset=runme_linux_x86_64.tar.gz; sum=7f0add22316a749f59ec28fd13a7594e4e202f212fe640213f6ef7068403307d ;;
+            macOS) asset=runme_darwin_x86_64.tar.gz; sum=000d5b14a5d3184ed6dcb1c91ef119d8d676889f99faa08ac0d18e8f95e3f6e0 ;;
+          esac
+          mkdir -p "$RUNNER_TEMP/runme"
+          curl -fsSL -o "$RUNNER_TEMP/$asset" "https://github.com/runmedev/runme/releases/download/v$RUNME_VERSION/$asset"
+          echo "$sum  $RUNNER_TEMP/$asset" | shasum -a 256 -c -
+          tar -xzf "$RUNNER_TEMP/$asset" -C "$RUNNER_TEMP/runme" runme
+          echo "$RUNNER_TEMP/runme" >> "$GITHUB_PATH"
+
+      - name: The machine has what the guide needs
+        run: |
+          docker compose version
+          docker info --format 'Docker {{.ServerVersion}} on {{.OperatingSystem}}, {{.NCPU}} CPUs, {{.MemTotal}} bytes'
+          git --version
+          make --version | head -1
+          df -h "$RUNNER_TEMP"
+
+      # The guide is copied out of this checkout, so its git clone lands in a fresh folder as it
+      # would for a user. Each later step runs from the clone, where the guide says to run it.
+      - name: Step 1, start the stack
+        run: |
+          mkdir -p "$RUNNER_TEMP/guide"
+          cp docs/self-hosting.md "$RUNNER_TEMP/guide/"
+          cd "$RUNNER_TEMP/guide"
+          start=$(date +%s)
+          runme run --filename self-hosting.md start-stack
+          echo "Step 1 took $(( $(date +%s) - start )) s" >> "$GITHUB_STEP_SUMMARY"
+          cp self-hosting.md voicegateway/
+
+      - name: Set a password for the first admin
+        run: |
+          password="$(openssl rand -hex 24)"
+          echo "::add-mask::$password"
+          echo "VOICEGATEWAY_USER_PASSWORD=$password" >> "$GITHUB_ENV"
+
+      # Step 3 runs as written, placeholders included; SKIP_VERIFY=1, which the guide offers for a
+      # LiveKit server that is not reachable yet, stores the project without calling LiveKit.
+      - name: Steps 2 and 3, first admin and LiveKit project
+        working-directory: ${{ runner.temp }}/guide/voicegateway
+        env:
+          SKIP_VERIFY: '1'
+        run: runme run --filename self-hosting.md first-admin add-project
+
+      - name: Step 4, set the public URL and run make up again
+        working-directory: ${{ runner.temp }}/guide/voicegateway
+        run: |
+          runme print --filename self-hosting.md public-url >> deploy/.env
+          make up
+
+      - name: What the guide promises
+        run: tools/tests/self_hosting_smoke.sh
+
+      # voicegateway.dev serves install.sh from main (decision 0030); the nightly run checks it still
+      # serves this file, so the one-line install in the guide runs what is tested in Installers.
+      - name: voicegateway.dev serves this install.sh
+        if: github.event_name == 'schedule' && runner.os == 'Linux'
+        run: curl -fsSL https://voicegateway.dev/install.sh | diff -u install.sh -
+
+      - name: Stack logs
+        if: failure()
+        working-directory: ${{ runner.temp }}/guide/voicegateway
+        run: |
+          docker compose -f deploy/compose.yaml --env-file deploy/.env ps -a || true
+          docker compose -f deploy/compose.yaml --env-file deploy/.env logs --no-color --tail 200 || true

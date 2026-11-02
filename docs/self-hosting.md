@@ -1,5 +1,7 @@
 # Self-hosting VoiceGateway
 
+<!-- The Install test workflow (.github/workflows/install-test.yml) runs the named code blocks below with Runme, as written, on Linux and macOS. Keep each name, and keep the commands runnable: a change here that breaks the install fails that test. -->
+
 Run VoiceGateway on your own machine or server, connect your LiveKit project and see your agent's calls. This is the V1 preview: see [What is not there yet](#what-is-not-there-yet) before you start.
 
 ## What you need
@@ -11,7 +13,7 @@ Run VoiceGateway on your own machine or server, connect your LiveKit project and
 
 ## 1. Start the stack
 
-```bash
+```bash {"name":"start-stack"}
 git clone --branch v1.0.0-preview.8 --depth 1 https://github.com/mahimailabs/voicegateway.git
 cd voicegateway
 VOICEGATEWAY_IMAGE=ghcr.io/mahimailabs/voicegateway:1.0.0-preview.8@sha256:4e03820efd7e6d376cfbe782b87abed84d51487bb26ca8c7df94c414c16ac3d1 make up
@@ -26,7 +28,7 @@ The console and the API are both at [localhost:8080](http://localhost:8080). To 
 
 ## 2. Create the first admin
 
-```bash
+```bash {"name":"first-admin"}
 make user-add EMAIL=you@example.com
 ```
 
@@ -36,7 +38,7 @@ Sign-in over plain HTTP works only from the machine VoiceGateway runs on. On a s
 
 ## 3. Add your LiveKit project
 
-```bash
+```bash {"name":"add-project"}
 export LIVEKIT_URL=wss://your-project.livekit.cloud
 export LIVEKIT_API_KEY=...
 export LIVEKIT_API_SECRET=...
@@ -49,7 +51,7 @@ Before storing anything, VoiceGateway lists your LiveKit rooms once with that ke
 
 The console's **Connect your agent** panel (on the project's Overview until the first call, and always in **Settings > Connection**) shows the two URLs to copy and whether each connection works. It builds them from `VOICEGATEWAY_PUBLIC_URL`, so add the address LiveKit and your agent reach VoiceGateway on to `deploy/.env` and run `make up` again:
 
-```bash
+```bash {"name":"public-url"}
 VOICEGATEWAY_PUBLIC_URL=http://localhost:8080   # an agent on this machine; use your public HTTPS address otherwise
 ```
 
