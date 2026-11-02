@@ -29,6 +29,6 @@ The prober image now pins `voicegateway==0.27.0`. It installed the latest releas
 - Deploying it creates AWS resources and costs money only while tasks run (Fargate time, a public IPv4 address per running task, logs), plus the secret and its replicas monthly. Nothing is deployed by this decision.
 - Self-managed StackSets need the two StackSets IAM roles in the account. A single vantage can use `aws cloudformation deploy` instead.
 - Every vantage starts together only if their schedules share one cron expression; the coordinator still sets ramp and duration.
-- The coordinator is not part of this stack; it must be reachable from every region at `CoordinatorUrl`.
+- The coordinator runs from this stack in one region (see the amendment below); every prober must reach it, by the running task's public IP or a fixed `CoordinatorUrl` for scheduled runs.
 - Changing the prober image or engine version means a new image tag and a stack update.
 - Amended 2026-11-01: the same template holds the coordinator's task definition and a security group with port 8787 open, and the image adds the `[collector]` extra (FastAPI and uvicorn) so it can serve. A run starts the coordinator in one region, then each prober with the coordinator's public IP as an override. The port is open to the internet only while a coordinator task runs; anyone who reaches it then could register as a vantage and skew that run's result.
