@@ -4,7 +4,7 @@ import type { CaptureResult } from "posthog-js"
 const posthog = vi.hoisted(() => ({ init: vi.fn(), identify: vi.fn(), register: vi.fn(), capture: vi.fn(), reset: vi.fn() }))
 vi.mock("posthog-js", () => ({ default: posthog }))
 
-import { identify, scrub, startAnalytics, stopAnalyticsForTest, track } from "../src/lib/analytics.ts"
+import { identify, resetAnalytics, scrub, startAnalytics, stopAnalyticsForTest, track } from "../src/lib/analytics.ts"
 import { fetchClientConfig } from "../src/lib/client-config.ts"
 
 beforeEach(() => {
@@ -23,6 +23,13 @@ describe("off", () => {
     expect(posthog.init).not.toHaveBeenCalled()
     expect(posthog.capture).not.toHaveBeenCalled()
     expect(posthog.identify).not.toHaveBeenCalled()
+  })
+
+  it("drops events held before it learned analytics is off", async () => {
+    track({ name: "invitation_accepted" })
+    await startAnalytics(null)
+    await startAnalytics({ key: "phc_late", host: "https://us.i.posthog.com" })
+    expect(posthog.capture).not.toHaveBeenCalled()
   })
 
   it("reads a failed or malformed client config as off, and a project key as on", async () => {
@@ -65,6 +72,19 @@ describe("on", () => {
     expect(JSON.stringify([...posthog.identify.mock.calls, ...posthog.register.mock.calls])).not.toContain("ada@example.com")
   })
 
+  it("holds events recorded while PostHog loads, and sends them once it has", async () => {
+    track({ name: "setup_step_reached", organisation_id: "org-a", step: 1 })
+    await startAnalytics(on)
+    expect(posthog.capture).toHaveBeenCalledWith("setup_step_reached", { organisation_id: "org-a", step: 1 })
+  })
+
+  it("does not name the user again after sign-out reset analytics while it loaded", async () => {
+    resetAnalytics()
+    await startAnalytics(on)
+    identify({ id: "u1", email: "ada@example.com", organisations: [] })
+    expect(posthog.identify).not.toHaveBeenCalled()
+  })
+
   it("sends an event's own properties", async () => {
     await startAnalytics(on)
     track({ name: "setup_step_reached", organisation_id: "org-a", step: 2 })
@@ -86,5 +106,19 @@ describe("scrub", () => {
     expect(out.properties.$referrer).toBe("https://vg.example/org/a")
     expect(out.properties.other).toBe("kept?yes")
     expect(out.$set_once?.$initial_current_url).toBe("https://vg.example/setup")
+  })
+
+  it("drops campaign and click ids, and strips the session entry URLs", () => {
+    const event = {
+      uuid: "e",
+      event: "$pageview",
+      properties: { utm_source: "x", gclid: "g", $session_entry_url: "https://vg.example/calls?q=hi", $session_entry_utm_term: "t", $pathname: "/calls" },
+      $set: { fbclid: "f" },
+      $set_once: { $initial_utm_campaign: "c", $initial_msclkid: "m" },
+    } as unknown as CaptureResult
+    const out = scrub(event)!
+    expect(out.properties).toEqual({ $session_entry_url: "https://vg.example/calls", $pathname: "/calls" })
+    expect(out.$set).toEqual({})
+    expect(out.$set_once).toEqual({})
   })
 })
