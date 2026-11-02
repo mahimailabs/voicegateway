@@ -5,7 +5,9 @@ name: Install test
 # the guide that no longer installs fails here, and so does a release or image the guide points at
 # that stops working. tools/tests/self_hosting_smoke.sh then checks what the guide promises: the
 # console answers, the first admin signs in, the project is there with its ingestion URLs, and /mcp
-# is served. Linux runs on pull requests that touch the install path; macOS runs Docker in a Lima VM
+# is served. The guide clones the release it names, so the Makefile and Compose files under test are
+# that release's, not this checkout's: a pull request runs this only when it changes the guide or
+# the test. Linux runs on those pull requests; macOS runs Docker in a Lima VM
 # (docker/setup-docker-action), which only works on Intel runners and takes longer, so it runs
 # nightly and on demand.
 
@@ -16,9 +18,6 @@ on:
   pull_request:
     paths:
       - 'docs/self-hosting.md'
-      - 'Makefile'
-      - 'deploy/compose.yaml'
-      - 'tools/scripts/dev-env.sh'
       - 'tools/tests/self_hosting_smoke.sh'
       - '.github/workflows/install-test.yml'
   schedule:
