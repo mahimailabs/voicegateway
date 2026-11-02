@@ -269,3 +269,42 @@ func TestAuth0Settings(t *testing.T) {
 		})
 	}
 }
+
+func TestSentryIsOffUntilADSNIsSet(t *testing.T) {
+	c, err := Load(env(nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Sentry.On() || c.Sentry.ConsoleDSN != "" {
+		t.Fatalf("a self-hosted install reports to Sentry without being asked: %+v", c.Sentry)
+	}
+	const dsn = "https://dsn-secret@o1.ingest.us.sentry.io/2"
+	tests := []struct {
+		name    string
+		env     map[string]string
+		wantErr string
+	}{
+		{name: "both DSNs", env: map[string]string{"VOICEGATEWAY_SENTRY_DSN": dsn, "VOICEGATEWAY_SENTRY_CONSOLE_DSN": dsn}},
+		{name: "not a DSN", env: map[string]string{"VOICEGATEWAY_SENTRY_DSN": "dsn-secret"}, wantErr: "VOICEGATEWAY_SENTRY_DSN is not a Sentry DSN"},
+		{name: "no key", env: map[string]string{"VOICEGATEWAY_SENTRY_CONSOLE_DSN": "https://o1.ingest.us.sentry.io/2"}, wantErr: "VOICEGATEWAY_SENTRY_CONSOLE_DSN is not a Sentry DSN"},
+		{name: "rate above 1", env: map[string]string{"VOICEGATEWAY_SENTRY_TRACES_SAMPLE_RATE": "2"}, wantErr: "VOICEGATEWAY_SENTRY_TRACES_SAMPLE_RATE must be"},
+		{name: "rate not a number", env: map[string]string{"VOICEGATEWAY_SENTRY_TRACES_SAMPLE_RATE": "most"}, wantErr: "VOICEGATEWAY_SENTRY_TRACES_SAMPLE_RATE must be"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c, err := Load(env(tt.env))
+			if tt.wantErr == "" {
+				if err != nil || !c.Sentry.On() || c.Sentry.Environment != "production" || c.Sentry.TracesSampleRate != 0.1 {
+					t.Fatalf("Load() = %+v, %v", c.Sentry, err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+				t.Fatalf("error = %v, want %q", err, tt.wantErr)
+			}
+			if strings.Contains(err.Error(), "dsn-secret") {
+				t.Fatalf("error repeats the DSN: %v", err)
+			}
+		})
+	}
+}

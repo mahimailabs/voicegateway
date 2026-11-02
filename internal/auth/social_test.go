@@ -128,6 +128,22 @@ func TestProvidersOff(t *testing.T) {
 	}
 }
 
+// Decision 0039: the console reports to Sentry only when web names its DSN, and anyone may read
+// that before signing in.
+func TestClientConfig(t *testing.T) {
+	f := newFixture(t)
+	w := f.web(nil)
+	res := f.do(w.h, http.MethodGet, "/auth/client-config", "", request{tls: true})
+	if b, _ := io.ReadAll(res.Body); res.StatusCode != http.StatusOK || string(b) != `{"sentry":null}` {
+		t.Fatalf("client config = %d %s", res.StatusCode, b)
+	}
+	w.s.Client = auth.ClientConfig{Sentry: &auth.SentryClient{DSN: "https://k@o1.ingest.us.sentry.io/2", Environment: "production", TracesSampleRate: 0.1}}
+	res = f.do(w.h, http.MethodGet, "/auth/client-config", "", request{tls: true})
+	if b, _ := io.ReadAll(res.Body); res.StatusCode != http.StatusOK || string(b) != `{"sentry":{"dsn":"https://k@o1.ingest.us.sentry.io/2","environment":"production","tracesSampleRate":0.1}}` {
+		t.Fatalf("client config = %d %s", res.StatusCode, b)
+	}
+}
+
 // Decision 0036: an Auth0 tenant signs in like Google, and its identity is linked under "auth0",
 // apart from a Google identity of the same person.
 func TestAuth0SignIn(t *testing.T) {

@@ -55,7 +55,15 @@ func root() *cobra.Command {
 				if err != nil {
 					return fmt.Errorf("configuration:\n%w", err)
 				}
-				return run(cmd.Context(), c, obs.Logger(os.Stdout, c.LogLevel, name))
+				log, monitor, err := obs.StartSentry(c.Sentry, name, obs.Logger(os.Stdout, c.LogLevel, name))
+				if err != nil {
+					return fmt.Errorf("configuration:\n%w", err)
+				}
+				defer monitor.Flush()
+				defer monitor.Recover()
+				err = run(cmd.Context(), c, log)
+				monitor.Fail(cmd.Context(), err)
+				return err
 			},
 		}
 	}

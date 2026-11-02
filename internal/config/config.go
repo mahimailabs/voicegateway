@@ -60,7 +60,24 @@ type Config struct {
 	// ConsoleDir is the built dashboard web serves (decision 0011); the image sets it. Empty serves
 	// no console, as in development, where the Vite dev server runs it.
 	ConsoleDir string
+	// Sentry reports errors and request timings to a Sentry project (decision 0039); zero is off,
+	// as every self-hosted install starts.
+	Sentry Sentry
 }
+
+// Sentry is where errors and request timings go. Web and worker report to DSN; the console, a
+// separate Sentry project, to ConsoleDSN. A DSN is not a secret Sentry guards, but it lets anyone
+// send events to the project, so it is never logged.
+type Sentry struct {
+	DSN, ConsoleDSN string
+	// Environment names the install in Sentry, such as production or staging.
+	Environment string
+	// TracesSampleRate is the share of requests whose timings are sent, from 0 to 1.
+	TracesSampleRate float64
+}
+
+// On reports whether web and worker report to Sentry.
+func (s Sentry) On() bool { return s.DSN != "" }
 
 // OAuthApp is one provider's OAuth app: both set, or neither. The secret is never logged.
 type OAuthApp struct {
@@ -199,6 +216,22 @@ func Load(getenv func(string) string) (Config, error) {
 	if c.CloudQuotas && c.InstanceTokenSHA256 == nil {
 		errs = append(errs, errors.New("VOICEGATEWAY_CLOUD_QUOTAS requires VOICEGATEWAY_INSTANCE_TOKEN"))
 	}
+	c.Sentry = Sentry{
+		DSN:         optional("VOICEGATEWAY_SENTRY_DSN", ""),
+		ConsoleDSN:  optional("VOICEGATEWAY_SENTRY_CONSOLE_DSN", ""),
+		Environment: optional("VOICEGATEWAY_SENTRY_ENVIRONMENT", "production"),
+	}
+	// An error names the variable, never the DSN.
+	for name, dsn := range map[string]string{"VOICEGATEWAY_SENTRY_DSN": c.Sentry.DSN, "VOICEGATEWAY_SENTRY_CONSOLE_DSN": c.Sentry.ConsoleDSN} {
+		if u, err := url.Parse(dsn); dsn != "" && (err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.User == nil || u.Host == "") {
+			errs = append(errs, fmt.Errorf("%s is not a Sentry DSN (https://<key>@<host>/<project>)", name))
+		}
+	}
+	rate, err := strconv.ParseFloat(optional("VOICEGATEWAY_SENTRY_TRACES_SAMPLE_RATE", "0.1"), 64)
+	if err != nil || rate < 0 || rate > 1 {
+		errs = append(errs, errors.New("VOICEGATEWAY_SENTRY_TRACES_SAMPLE_RATE must be a number from 0 to 1"))
+	}
+	c.Sentry.TracesSampleRate = rate
 	if err := c.LogLevel.UnmarshalText([]byte(optional("VOICEGATEWAY_LOG_LEVEL", "info"))); err != nil {
 		errs = append(errs, errors.New("VOICEGATEWAY_LOG_LEVEL must be debug, info, warn or error"))
 	}

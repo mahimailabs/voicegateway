@@ -149,6 +149,19 @@ VOICEGATEWAY_AUTH0_CLIENT_SECRET=...
 
 The domain is the bare host, without `https://`. Set all three or none.
 
+## Report errors to Sentry
+
+Off by default: an install sends nothing to Sentry or anyone else. To send VoiceGateway's own errors and request timings to your Sentry organisation, create two projects (Go for web and worker, React for the console) and set in `deploy/.env`:
+
+```bash
+VOICEGATEWAY_SENTRY_DSN=https://<key>@<org>.ingest.sentry.io/<go project>
+VOICEGATEWAY_SENTRY_CONSOLE_DSN=https://<key>@<org>.ingest.sentry.io/<react project>
+VOICEGATEWAY_SENTRY_ENVIRONMENT=production       # optional
+VOICEGATEWAY_SENTRY_TRACES_SAMPLE_RATE=0.1       # optional, 0 to 1
+```
+
+Reports carry error messages, stack traces, request paths and timings. They never carry cookies, request headers other than Content-Type, User-Agent and Accept, query strings, request bodies, user details, transcripts or audio.
+
 ## Data retention
 
 Raw telemetry expires after 90 days; infrastructure samples keep their separate 30-day retention. Cleanup runs in the background. Month-partitioned raw tables can retain rows for up to an additional month while waiting for the whole partition to expire. Postgres call summaries remain available after raw telemetry expires.

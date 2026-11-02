@@ -142,5 +142,6 @@ Proposed, for review:
 ## Observability
 
 - Structured logs (slog) from both roles, with call and request ids.
+- Optional Sentry reports (0039): errors and request timings from web, worker and the console, off unless a DSN is set; no cookies, bodies, query strings, users, transcripts or audio.
 - Prometheus metrics: stream lag, batch sizes, write errors, dead-letter count, unmatched events.
 - `voicegateway preflight` checks every dependency before start.

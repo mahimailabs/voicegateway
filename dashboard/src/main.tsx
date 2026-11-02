@@ -10,6 +10,8 @@ import { createQueryClient } from "@/lib/query-client"
 import { setWorkspaces } from "@/lib/workspaces"
 import { fetchSession, setCurrentSession, setMockApi } from "@/lib/session"
 import { startEmbed } from "@/lib/embed"
+import { fetchClientConfig } from "@/lib/client-config"
+import { rootErrorHandlers, startMonitoring, traceRouter } from "@/lib/monitoring"
 import "./index.css"
 
 // Captured data never changes while the page is open; refetching on focus would only flicker.
@@ -22,6 +24,8 @@ const queryClient = createQueryClient()
 const mockApi = import.meta.env.VITE_MOCK_API === "on" || (import.meta.env.DEV && import.meta.env.VITE_MOCK_API !== "off")
 
 async function start() {
+  // Error reporting starts first, without waiting, so a failing sign-in is reported too.
+  void fetchClientConfig().then((c) => startMonitoring(c.sentry))
   // An invitation or reset link opens before, and without, any session: the invitee has none yet.
   if (window.location.pathname === "/invite") {
     const { InvitePage, readInviteToken } = await import("@/features/auth/invite-page")
@@ -66,7 +70,8 @@ async function start() {
   // The router decides which project a URL names, so it loads once the workspaces are read.
   setWorkspaces(embedded ? null : await fetchWorkspaces().then((w) => w.items, () => null))
   const { router } = await import("@/router")
-  createRoot(document.getElementById("root")!).render(
+  void traceRouter(router)
+  createRoot(document.getElementById("root")!, rootErrorHandlers).render(
     <StrictMode>
       <QueryClientProvider client={queryClient}>
         <ThemeProvider>
