@@ -111,3 +111,44 @@ func TestSelfHostedLiveKitDialIsTheSDK(t *testing.T) {
 		t.Errorf("public-only rooms client %T with %d agent options, want the guarded one and WithHTTPClient", guarded.rooms, len(guarded.agentOptions))
 	}
 }
+
+// LiveKit Cloud's agents API refuses a call without the livekit-cli version header, as Twirp
+// "malformed". Both dials send it, set to the SDK's version, on ListAgents and ListAgentVersions.
+func TestCloudAgentsCallsSendCLIVersion(t *testing.T) {
+	var seen []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		v := r.Header.Get("X-LIVEKIT-CLI-VERSION")
+		seen = append(seen, v)
+		if v == "" {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			_, _ = w.Write([]byte(`{"code":"malformed","msg":"livekit-cli version header is required"}`))
+			return
+		}
+		w.Header().Set("Content-Type", "application/protobuf")
+	}))
+	defer srv.Close()
+	t.Setenv("LK_AGENTS_URL", srv.URL)
+	for name, dial := range map[string]Dial{"sdk": DialSDK, "through a client": DialThrough(srv.Client())} {
+		t.Run(name, func(t *testing.T) {
+			seen = nil
+			lk := dial(srv.URL, "APIkey", "a-test-secret-not-real")
+			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+			defer cancel()
+			if _, err := lk.ListAgents(ctx); err != nil {
+				t.Errorf("ListAgents: %v", err)
+			}
+			if _, err := lk.ListAgentVersions(ctx, "CA_a"); err != nil {
+				t.Errorf("ListAgentVersions: %v", err)
+			}
+			for i, v := range seen {
+				if v != lksdk.Version {
+					t.Errorf("call %d sent version %q, want %q", i, v, lksdk.Version)
+				}
+			}
+			if len(seen) != 2 {
+				t.Errorf("%d calls reached the server, want 2", len(seen))
+			}
+		})
+	}
+}
