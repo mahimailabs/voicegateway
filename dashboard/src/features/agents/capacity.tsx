@@ -17,7 +17,7 @@ import type { Agent } from "./agents-model"
 import { fmtDateTime } from "@/lib/format"
 import { ApiError, capacityQuery, startCapacity, stopCapacity } from "@/lib/api"
 import { roleIn, useSession } from "@/lib/session"
-import { currentScope } from "@/lib/url-state"
+import { currentScope, useUrlPick, useUrlState } from "@/lib/url-state"
 
 // Capacity test (decision 0022, docs/specs/capacity-runner.md): a VoiceGateway worker ramps synthetic
 // calls at an idle agent until a stop rule trips, and reports the last step every call passed. The
@@ -130,11 +130,24 @@ function startBlock(a: Agent, admin: boolean, idle: boolean) {
   return null
 }
 
+// The agent under test (?capacityAgent=<key>). It stays while that key is set, even after the agent
+// leaves the list: a self-hosted agent is listed only while it is in a room, so it drops out once the
+// test's rooms close, and the dialog must still show the result.
+export function useCapacityAgent(list: Agent[]): [Agent | null, (a: Agent | null) => void] {
+  const [picked, pick] = useUrlPick<Agent>("capacityAgent", list, (a) => a.key)
+  const [key] = useUrlState<string | null>("capacityAgent", null)
+  const [kept, keep] = useState<Agent | null>(null)
+  if (picked && picked !== kept) keep(picked)
+  return [picked ?? (kept && kept.key === key ? kept : null), pick]
+}
+
 export function CapacitySetupDialog({ agent: a, ms, onOpenChange }: { agent: Agent | null; ms: MediaServerData; onOpenChange: (o: boolean) => void }) {
   const [max, setMax] = useState("32")
   const [ok, setOk] = useState(false)
-  // The run this dialog watches: one it started, or one already open for the agent.
-  const [watching, setWatching] = useState<string | null>(null)
+  // The run this dialog watches: one it started, or one already open for the agent. It is in the URL
+  // (?capacityRun=<id>) so the result still shows when the dialog remounts, as it does when a
+  // self-hosted agent leaves the list once the test's rooms close.
+  const [watching, setWatching] = useUrlState<string | null>("capacityRun", null)
   const [demoShown, setDemoShown] = useState<number | null>(null)
   const queries = useQueryClient()
   const admin = roleIn(currentScope().org, useSession()) === "Admin"
@@ -175,7 +188,7 @@ export function CapacitySetupDialog({ agent: a, ms, onOpenChange }: { agent: Age
 
   return (
     <Dialog open onOpenChange={close}>
-      <DialogContent showCloseButton={false} className={cn("gap-0 overflow-hidden rounded-2xl p-0 transition-[max-width] duration-300 [&>*]:min-w-0", phase === "setup" ? "sm:max-w-[520px]" : "sm:max-w-[600px]")} onOpenAutoFocus={(e) => e.preventDefault()}>
+      <DialogContent showCloseButton={false} className={cn("max-h-[calc(100dvh-2rem)] gap-0 overflow-x-hidden overflow-y-auto rounded-2xl p-0 transition-[max-width] duration-300 [&>*]:min-w-0", phase === "setup" ? "sm:max-w-[520px]" : "sm:max-w-[600px]")} onOpenAutoFocus={(e) => e.preventDefault()}>
         <div className="flex items-start gap-4 px-6 pt-6 pb-5">
           <span className="flex size-11 shrink-0 items-center justify-center rounded-xl border bg-background shadow-xs">
             <Gauge size={22} />
