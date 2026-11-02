@@ -1,7 +1,7 @@
 import { afterEach, expect, test, vi } from "vitest"
 import type { Event } from "@sentry/react"
 import { fetchClientConfig } from "../src/lib/client-config.ts"
-import { scrubBreadcrumb, scrubEvent, scrubUrl } from "../src/lib/monitoring.ts"
+import { scrubBreadcrumb, scrubEvent, scrubSpan, scrubUrl } from "../src/lib/monitoring.ts"
 
 // Error reports leave the install, so nothing in them may name a person or carry a credential.
 afterEach(() => vi.unstubAllGlobals())
@@ -24,6 +24,23 @@ test("an event keeps its path and loses the user, the request's data and the bre
   for (const secret of ["ada@", "203.0.113.9", "t1", "s1", "k1", "transcript", "t2", "t3"]) expect(raw).not.toContain(secret)
   expect(event.request?.url).toBe("https://vg.example/calls")
   expect(event.breadcrumbs?.[0].data?.status_code).toBe(200)
+})
+
+test("a span keeps its path and loses the query string and fragment", () => {
+  const span = scrubSpan({
+    trace_id: "t",
+    span_id: "s",
+    name: "GET /api/v1/calls?token=t1",
+    start_timestamp: 0,
+    status: "ok",
+    is_segment: true,
+    attributes: { "url.full": "https://vg.example/invite#t2", "http.url": { value: "/embed?token=t3", type: "string" }, "url.query": "token=t4", "http.fragment": "t5", "sentry.op": "pageload" },
+  })
+  const raw = JSON.stringify(span)
+  for (const secret of ["t1", "t2", "t3", "t4", "t5"]) expect(raw).not.toContain(secret)
+  expect(span.name).toBe("GET /api/v1/calls")
+  expect(span.attributes["url.full"]).toBe("https://vg.example/invite")
+  expect(span.attributes["sentry.op"]).toBe("pageload")
 })
 
 test("a breadcrumb without data is unchanged", () => {

@@ -1,4 +1,4 @@
-import type { Breadcrumb, Event } from "@sentry/react"
+import type { Breadcrumb, BrowserOptions, Event } from "@sentry/react"
 import type { AnyRouter } from "@tanstack/react-router"
 
 // Error and performance reporting to Sentry (decision 0039). Off unless web's client config names a
@@ -35,6 +35,27 @@ export function scrubBreadcrumb(crumb: Breadcrumb): Breadcrumb {
   return { ...crumb, data: next }
 }
 
+type StreamedSpan = Parameters<NonNullable<BrowserOptions["beforeSendSpan"]>>[0]
+
+const URL_PARTS = new Set(["url.query", "url.fragment", "http.query", "http.fragment"])
+
+/** Cuts the query string and fragment out of a span's name and of every url.* and http.* attribute. */
+export function scrubSpan(span: StreamedSpan): StreamedSpan {
+  const attributes: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(span.attributes)) {
+    if (URL_PARTS.has(key)) continue
+    if (key === "url" || key.startsWith("url.") || key.startsWith("http.")) attributes[key] = scrubValue(value)
+    else attributes[key] = value
+  }
+  return { ...span, name: scrubUrl(span.name), attributes: attributes as StreamedSpan["attributes"] }
+}
+
+function scrubValue(value: unknown): unknown {
+  if (typeof value === "string") return scrubUrl(value)
+  if (value && typeof value === "object" && "value" in value && typeof value.value === "string") return { ...value, value: scrubUrl(value.value) }
+  return value
+}
+
 let sentry: Promise<typeof import("@sentry/react") | null> = Promise.resolve(null)
 
 /** Starts Sentry when config has a DSN. Never throws: a failed start only leaves reporting off. */
@@ -52,6 +73,8 @@ export function startMonitoring(config: SentryClientConfig | null | undefined): 
         tracePropagationTargets: [/^\//],
         integrations: (defaults) => defaults.filter((i) => i.name !== "Console"),
         beforeSend: scrubEvent,
+        // Spans stream on their own in this SDK; beforeSendTransaction only sees the static lifecycle.
+        beforeSendSpan: scrubSpan,
         beforeSendTransaction: scrubEvent,
         beforeBreadcrumb: scrubBreadcrumb,
       })

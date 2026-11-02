@@ -24,8 +24,9 @@ const queryClient = createQueryClient()
 const mockApi = import.meta.env.VITE_MOCK_API === "on" || (import.meta.env.DEV && import.meta.env.VITE_MOCK_API !== "off")
 
 async function start() {
-  // Error reporting starts first, without waiting, so a failing sign-in is reported too.
-  void fetchClientConfig().then((c) => startMonitoring(c.sentry))
+  // Error reporting starts first, without waiting, so a failing sign-in is reported too. With the
+  // mock API there is no web to ask, and nothing to report to.
+  if (!mockApi) void fetchClientConfig().then((c) => startMonitoring(c.sentry))
   // An invitation or reset link opens before, and without, any session: the invitee has none yet.
   if (window.location.pathname === "/invite") {
     const { InvitePage, readInviteToken } = await import("@/features/auth/invite-page")
