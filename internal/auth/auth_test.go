@@ -201,11 +201,16 @@ func TestSignInSessionSignOut(t *testing.T) {
 	}
 	res = f.do(routes, http.MethodGet, "/auth/session", "", request{from: "10.0.0.5", tls: true, cookies: []*http.Cookie{c}})
 	var session struct {
+		ID            string `json:"id"`
 		Email         string `json:"email"`
 		Organisations []struct{ ID, Role string }
 	}
 	if err := json.NewDecoder(res.Body).Decode(&session); err != nil || res.StatusCode != http.StatusOK {
 		t.Fatalf("session = %d, %v", res.StatusCode, err)
+	}
+	// Product analytics names the user by this id, never the email (decision 0038).
+	if session.ID == "" || session.ID == session.Email {
+		t.Errorf("session id = %q, want the user's id", session.ID)
 	}
 	if session.Email != "ada@example.com" || len(session.Organisations) != 1 || session.Organisations[0].ID != "default" || session.Organisations[0].Role != "admin" {
 		t.Errorf("session = %+v", session)

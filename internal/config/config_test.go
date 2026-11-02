@@ -309,3 +309,39 @@ func TestSentryIsOffUntilADSNIsSet(t *testing.T) {
 		})
 	}
 }
+
+// Decision 0038: product analytics is off unless the operator sets a project key, and only a
+// project key (phc_), which is public, may be handed to the browser.
+func TestPostHogSettings(t *testing.T) {
+	tests := []struct {
+		name     string
+		env      map[string]string
+		wantOn   bool
+		wantHost string
+		wantErr  string
+	}{
+		{name: "off by default", env: nil},
+		{name: "key alone uses the US cloud", env: map[string]string{"VOICEGATEWAY_POSTHOG_KEY": "phc_abc"}, wantOn: true, wantHost: "https://us.i.posthog.com"},
+		{name: "own proxy", env: map[string]string{"VOICEGATEWAY_POSTHOG_KEY": "phc_abc", "VOICEGATEWAY_POSTHOG_HOST": "https://vg.example/ingest"}, wantOn: true, wantHost: "https://vg.example/ingest"},
+		{name: "personal key", env: map[string]string{"VOICEGATEWAY_POSTHOG_KEY": "phx_secret"}, wantErr: "starts with phc_"},
+		{name: "host alone", env: map[string]string{"VOICEGATEWAY_POSTHOG_HOST": "https://us.i.posthog.com"}, wantErr: "VOICEGATEWAY_POSTHOG_KEY is required"},
+		{name: "plain http host", env: map[string]string{"VOICEGATEWAY_POSTHOG_KEY": "phc_abc", "VOICEGATEWAY_POSTHOG_HOST": "http://us.i.posthog.com"}, wantErr: "https URL"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			c, err := Load(env(tc.env))
+			if tc.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+					t.Fatalf("Load err = %v, want %q", err, tc.wantErr)
+				}
+				if strings.Contains(err.Error(), "phx_secret") {
+					t.Fatalf("the error echoes the key: %v", err)
+				}
+				return
+			}
+			if err != nil || c.PostHog.On() != tc.wantOn || c.PostHog.Host != tc.wantHost {
+				t.Fatalf("Load = %+v, %v; want on %v at %q", c.PostHog, err, tc.wantOn, tc.wantHost)
+			}
+		})
+	}
+}

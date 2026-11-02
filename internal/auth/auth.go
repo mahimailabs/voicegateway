@@ -295,6 +295,9 @@ func (s *Service) signOut(w http.ResponseWriter, r *http.Request) {
 }
 
 type sessionBody struct {
+	// ID is the user's id: the console names the user by it, never by email, in product analytics
+	// (decision 0038).
+	ID            string               `json:"id"`
 	Profile       store.AccountProfile `json:"profile"`
 	Email         string               `json:"email"`
 	Organisations []orgRoleBody        `json:"organisations"`
@@ -326,7 +329,7 @@ func (s *Service) session(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, err)
 		return
 	}
-	body := sessionBody{Email: p.Email, Organisations: []orgRoleBody{}, Profile: profile}
+	body := sessionBody{ID: p.UserID, Email: p.Email, Organisations: []orgRoleBody{}, Profile: profile}
 	for org, role := range p.Roles {
 		body.Organisations = append(body.Organisations, orgRoleBody{ID: org, Role: role})
 	}

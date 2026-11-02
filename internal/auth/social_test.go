@@ -134,12 +134,12 @@ func TestClientConfig(t *testing.T) {
 	f := newFixture(t)
 	w := f.web(nil)
 	res := f.do(w.h, http.MethodGet, "/auth/client-config", "", request{tls: true})
-	if b, _ := io.ReadAll(res.Body); res.StatusCode != http.StatusOK || string(b) != `{"sentry":null}` {
+	if b, _ := io.ReadAll(res.Body); res.StatusCode != http.StatusOK || string(b) != `{"sentry":null,"posthog":null}` {
 		t.Fatalf("client config = %d %s", res.StatusCode, b)
 	}
 	w.s.Client = auth.ClientConfig{Sentry: &auth.SentryClient{DSN: "https://k@o1.ingest.us.sentry.io/2", Environment: "production", TracesSampleRate: 0.1}}
 	res = f.do(w.h, http.MethodGet, "/auth/client-config", "", request{tls: true})
-	if b, _ := io.ReadAll(res.Body); res.StatusCode != http.StatusOK || string(b) != `{"sentry":{"dsn":"https://k@o1.ingest.us.sentry.io/2","environment":"production","tracesSampleRate":0.1}}` {
+	if b, _ := io.ReadAll(res.Body); res.StatusCode != http.StatusOK || string(b) != `{"sentry":{"dsn":"https://k@o1.ingest.us.sentry.io/2","environment":"production","tracesSampleRate":0.1},"posthog":null}` {
 		t.Fatalf("client config = %d %s", res.StatusCode, b)
 	}
 }

@@ -32,6 +32,10 @@ x-voicegateway-env: &voicegateway-env
   VOICEGATEWAY_AUTH0_DOMAIN: ${VOICEGATEWAY_AUTH0_DOMAIN:-}
   VOICEGATEWAY_AUTH0_CLIENT_ID: ${VOICEGATEWAY_AUTH0_CLIENT_ID:-}
   VOICEGATEWAY_AUTH0_CLIENT_SECRET: ${VOICEGATEWAY_AUTH0_CLIENT_SECRET:-}
+  # Product analytics for the console (decision 0038): off unless set. A PostHog project API key
+  # (phc_...); the host defaults to https://us.i.posthog.com. No call content or email is sent.
+  VOICEGATEWAY_POSTHOG_KEY: ${VOICEGATEWAY_POSTHOG_KEY:-}
+  VOICEGATEWAY_POSTHOG_HOST: ${VOICEGATEWAY_POSTHOG_HOST:-}
   # Turns on the instance API (/api/v1/instance, ee/), for an operator's program that creates
   # organisations: at least 32 characters, and needs VOICEGATEWAY_PUBLIC_URL and
   # VOICEGATEWAY_WORKER_ENDPOINTS_PUBLIC_ONLY=true (every role refuses to start without it). Empty

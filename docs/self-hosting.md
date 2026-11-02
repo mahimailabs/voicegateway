@@ -164,6 +164,17 @@ VOICEGATEWAY_SENTRY_TRACES_SAMPLE_RATE=0.1       # optional, 0 to 1
 
 Reports carry error messages, stack traces, request paths and timings. Request header names are included, but only Content-Type, User-Agent and Accept keep their values; the others read `[Filtered]`. Reports never carry cookies, query strings, request bodies or user details, and no code path puts transcripts or audio into one. Error messages are sent as written.
 
+## Product analytics (optional)
+
+VoiceGateway sends no analytics unless you turn it on. To see how your own team uses the console in your PostHog project, set its project API key (it starts with `phc_`) in `deploy/.env` and run `make up` again:
+
+```bash
+VOICEGATEWAY_POSTHOG_KEY=phc_...
+VOICEGATEWAY_POSTHOG_HOST=https://eu.i.posthog.com   # optional; the US cloud by default
+```
+
+The console then records page views and a few setup steps under each user's id. It never sends email addresses, names, call content, transcripts, URL query strings, clicks or screen recordings (decision 0038).
+
 ## Data retention
 
 Raw telemetry expires after 90 days; infrastructure samples keep their separate 30-day retention. Cleanup runs in the background. Month-partitioned raw tables can retain rows for up to an additional month while waiting for the whole partition to expire. Postgres call summaries remain available after raw telemetry expires.

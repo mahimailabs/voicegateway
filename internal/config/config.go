@@ -58,6 +58,9 @@ type Config struct {
 	// Auth0 is an Auth0 tenant's application (decision 0036); zero is off. Like Google and GitHub
 	// it needs PublicURL.
 	Auth0 Auth0App
+	// PostHog is the PostHog project the console sends product analytics to (decision 0038); zero is
+	// off, as every self-hosted install is unless its operator sets a key.
+	PostHog PostHog
 	// ConsoleDir is the built dashboard web serves (decision 0011); the image sets it. Empty serves
 	// no console, as in development, where the Vite dev server runs it.
 	ConsoleDir string
@@ -95,6 +98,15 @@ type Auth0App struct {
 	Domain string
 	OAuthApp
 }
+
+// PostHog is a PostHog project's public API key (phc_...) and the host the browser sends events
+// to. The key is public by design: the browser holds it.
+type PostHog struct {
+	Key, Host string
+}
+
+// On reports whether product analytics is configured.
+func (p PostHog) On() bool { return p.Key != "" }
 
 // Callback is the provider's callback URL for a public URL: the one to register with it exactly.
 func Callback(publicURL, provider string) string {
@@ -210,6 +222,22 @@ func Load(getenv func(string) string) (Config, error) {
 		errs = append(errs, errors.New("VOICEGATEWAY_AUTH0_DOMAIN must be a bare host such as voicegateway.us.auth0.com, without https:// or a path"))
 	}
 
+	// PostHog: off without a key. The host defaults to PostHog's US cloud, and may be a reverse proxy
+	// on the console's own domain, which ad blockers leave alone.
+	c.PostHog.Key = optional("VOICEGATEWAY_POSTHOG_KEY", "")
+	c.PostHog.Host = optional("VOICEGATEWAY_POSTHOG_HOST", "")
+	switch {
+	case c.PostHog.Key == "" && c.PostHog.Host != "":
+		errs = append(errs, errors.New("VOICEGATEWAY_POSTHOG_HOST is set, so VOICEGATEWAY_POSTHOG_KEY is required"))
+	case c.PostHog.Key != "" && !strings.HasPrefix(c.PostHog.Key, "phc_"):
+		// A personal API key (phx_) reads the whole PostHog organisation; it must never reach a browser.
+		errs = append(errs, errors.New("VOICEGATEWAY_POSTHOG_KEY must be a project API key, which starts with phc_"))
+	case c.PostHog.Key != "" && c.PostHog.Host == "":
+		c.PostHog.Host = "https://us.i.posthog.com"
+	case c.PostHog.Key != "" && !httpsURL(c.PostHog.Host):
+		errs = append(errs, errors.New("VOICEGATEWAY_POSTHOG_HOST must be an https URL, such as https://us.i.posthog.com"))
+	}
+
 	c.CloudQuotas, err = strconv.ParseBool(optional("VOICEGATEWAY_CLOUD_QUOTAS", "false"))
 	if err != nil {
 		errs = append(errs, errors.New("VOICEGATEWAY_CLOUD_QUOTAS must be true or false"))
@@ -265,6 +293,13 @@ func callbackBase(raw string) bool {
 		return false
 	}
 	return u.Scheme == "https" || u.Scheme == "http" && u.Hostname() == "localhost"
+}
+
+// httpsURL reports whether raw is an absolute https URL with a host and no credentials, query or
+// fragment.
+func httpsURL(raw string) bool {
+	u, err := url.Parse(raw)
+	return err == nil && u.Scheme == "https" && u.Host != "" && u.User == nil && u.RawQuery == "" && u.Fragment == ""
 }
 
 // bareHost reports whether raw is a host name alone, as an Auth0 domain is.

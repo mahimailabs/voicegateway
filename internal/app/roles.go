@@ -533,6 +533,10 @@ func clientConfig(c config.Config) auth.ClientConfig {
 	if c.Sentry.ConsoleDSN != "" {
 		out.Sentry = &auth.SentryClient{DSN: c.Sentry.ConsoleDSN, Environment: c.Sentry.Environment, TracesSampleRate: c.Sentry.TracesSampleRate}
 	}
+	// The PostHog project, when product analytics is on (decision 0038).
+	if c.PostHog.On() {
+		out.PostHog = &auth.PostHogClient{Key: c.PostHog.Key, Host: c.PostHog.Host}
+	}
 	return out
 }
 

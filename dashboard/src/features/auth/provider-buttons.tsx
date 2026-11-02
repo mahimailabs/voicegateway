@@ -4,6 +4,7 @@ import { siAuth0 } from "simple-icons"
 import { Button } from "@/components/ui/button"
 import { FieldSeparator } from "@/components/ui/field"
 import { Spinner } from "@/components/ui/spinner"
+import { track } from "@/lib/analytics"
 import { fetchProviders, NO_PROVIDERS, startProvider, type ProviderName, type Providers } from "@/lib/providers"
 
 const LABELS: Record<ProviderName, string> = { google: "Google", github: "GitHub", auth0: "Auth0" }
@@ -43,6 +44,7 @@ export function ProviderButtons({ invitationToken, onError }: { invitationToken?
     setBusy(provider)
     const result = await startProvider(provider, invitationToken)
     if (result.kind === "redirect") {
+      track({ name: "sign_in_started", method: provider })
       window.location.assign(result.url)
       return
     }
