@@ -2,6 +2,7 @@
 import { cleanup, render, screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
+import { Outlet, RouterProvider, createMemoryHistory, createRootRoute, createRoute, createRouter } from "@tanstack/react-router"
 import { setupServer } from "msw/node"
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from "vitest"
 import { handlers, resetMockLiveKit } from "../src/mocks/handlers.ts"
@@ -38,15 +39,22 @@ afterAll(() => server.close())
 const agent = (name: string | null): Agent => ({ key: name ?? "AG_1", name, cloud: null, jobs: [], regions: [], workers: [] })
 const idle = { rooms: [], windows: [] } as unknown as MediaServerData
 
+// The dialog keeps the run it watches in the URL, so it renders inside a router. remount() mounts
+// it again on the same URL, as the agents page does when the agent leaves and rejoins the list.
 function show(a: Agent) {
   const queries = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  render(
+  const root = createRootRoute({ component: () => <Outlet /> })
+  const page = createRoute({ getParentRoute: () => root, path: "/", component: () => <CapacitySetupDialog agent={a} ms={idle} onOpenChange={() => {}} /> })
+  const router = createRouter({ routeTree: root.addChildren([page]), history: createMemoryHistory({ initialEntries: ["/"] }) })
+  const tree = (key: number) => (
     <QueryClientProvider client={queries}>
       <TooltipProvider>
-        <CapacitySetupDialog agent={a} ms={idle} onOpenChange={() => {}} />
+        <RouterProvider key={key} router={router} />
       </TooltipProvider>
-    </QueryClientProvider>,
+    </QueryClientProvider>
   )
+  const { rerender } = render(tree(0))
+  return { router, remount: () => rerender(tree(1)) }
 }
 
 describe("capacity dialog", () => {
@@ -60,6 +68,20 @@ describe("capacity dialog", () => {
     const stop = await screen.findByRole("button", { name: "Stop test" })
     await user.click(stop)
     expect((await screen.findAllByText("stopped by a person")).length).toBeGreaterThan(0)
+  }, 15000)
+
+  test("a run that ended while the dialog remounted still shows its result", async () => {
+    const user = userEvent.setup()
+    const { router, remount } = show(agent("vg-capture"))
+    const start = await screen.findByRole("button", { name: /Start test/ })
+    await user.click(screen.getByRole("checkbox"))
+    await user.click(start)
+    await user.click(await screen.findByRole("button", { name: "Stop test" }))
+    await screen.findAllByText("stopped by a person")
+    expect(router.state.location.search).toHaveProperty("capacityRun")
+    remount()
+    expect((await screen.findAllByText("stopped by a person")).length).toBeGreaterThan(0)
+    expect(screen.queryByRole("button", { name: /Start test/ })).toBeNull()
   }, 15000)
 
   test("an agent without a name cannot start a test", async () => {

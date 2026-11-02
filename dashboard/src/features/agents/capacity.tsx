@@ -17,7 +17,7 @@ import type { Agent } from "./agents-model"
 import { fmtDateTime } from "@/lib/format"
 import { ApiError, capacityQuery, startCapacity, stopCapacity } from "@/lib/api"
 import { roleIn, useSession } from "@/lib/session"
-import { currentScope } from "@/lib/url-state"
+import { currentScope, useUrlState } from "@/lib/url-state"
 
 // Capacity test (decision 0022, docs/specs/capacity-runner.md): a VoiceGateway worker ramps synthetic
 // calls at an idle agent until a stop rule trips, and reports the last step every call passed. The
@@ -133,8 +133,10 @@ function startBlock(a: Agent, admin: boolean, idle: boolean) {
 export function CapacitySetupDialog({ agent: a, ms, onOpenChange }: { agent: Agent | null; ms: MediaServerData; onOpenChange: (o: boolean) => void }) {
   const [max, setMax] = useState("32")
   const [ok, setOk] = useState(false)
-  // The run this dialog watches: one it started, or one already open for the agent.
-  const [watching, setWatching] = useState<string | null>(null)
+  // The run this dialog watches: one it started, or one already open for the agent. It is in the URL
+  // (?capacityRun=<id>) so the result still shows when the dialog remounts, as it does when a
+  // self-hosted agent leaves the list once the test's rooms close.
+  const [watching, setWatching] = useUrlState<string | null>("capacityRun", null)
   const [demoShown, setDemoShown] = useState<number | null>(null)
   const queries = useQueryClient()
   const admin = roleIn(currentScope().org, useSession()) === "Admin"

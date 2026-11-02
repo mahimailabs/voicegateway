@@ -37,5 +37,11 @@ test("an Admin starts a capacity test, watches it and stops it", async ({ page }
   await stop.click()
   await expect(dialog.getByText("stopped by a person").first()).toBeVisible()
   await axe(page, testInfo, "stopped")
+
+  // The watched run lives in the URL while the dialog is open, and closing it clears both keys.
+  expect(new URL(page.url()).searchParams.has("capacityRun")).toBe(true)
+  await page.keyboard.press("Escape")
+  await expect(dialog).toBeHidden()
+  await expect.poll(() => [...new URL(page.url()).searchParams.keys()].filter((k) => k.startsWith("capacity"))).toEqual([])
   expect.soft(errors, "browser console and uncaught errors").toEqual([])
 })
