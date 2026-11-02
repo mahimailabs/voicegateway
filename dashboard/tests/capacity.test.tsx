@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { createContext, useContext } from "react"
 import { cleanup, render, screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
@@ -9,7 +10,7 @@ import { handlers, resetMockLiveKit } from "../src/mocks/handlers.ts"
 import { capacity } from "../src/mocks/livekit.ts"
 import { setCurrentSession, setMockApi } from "../src/lib/session.ts"
 import { TooltipProvider } from "../src/components/ui/tooltip.tsx"
-import { CapacityResult, CapacitySetupDialog } from "../src/features/agents/capacity.tsx"
+import { CapacityResult, CapacitySetupDialog, useCapacityAgent } from "../src/features/agents/capacity.tsx"
 import type { Agent } from "../src/features/agents/agents-model.ts"
 import type { MediaServerData } from "../src/features/media-server/room-drawer.tsx"
 
@@ -57,6 +58,31 @@ function show(a: Agent) {
   return { router, remount: () => rerender(tree(1)) }
 }
 
+// The agents page's own wiring: the agent under test comes from ?capacityAgent= and the live list,
+// which drop() empties, as LiveKit does once a self-hosted agent's test rooms close.
+const Listed = createContext<Agent[]>([])
+function Page() {
+  const [a, set] = useCapacityAgent(useContext(Listed))
+  return <CapacitySetupDialog agent={a} ms={idle} onOpenChange={(o) => !o && set(null)} />
+}
+function showPage(a: Agent) {
+  const queries = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  const root = createRootRoute({ component: () => <Outlet /> })
+  const page = createRoute({ getParentRoute: () => root, path: "/", component: Page })
+  const router = createRouter({ routeTree: root.addChildren([page]), history: createMemoryHistory({ initialEntries: [`/?capacityAgent=${encodeURIComponent(JSON.stringify(a.key))}`] }) })
+  const tree = (list: Agent[]) => (
+    <QueryClientProvider client={queries}>
+      <TooltipProvider>
+        <Listed.Provider value={list}>
+          <RouterProvider router={router} />
+        </Listed.Provider>
+      </TooltipProvider>
+    </QueryClientProvider>
+  )
+  const { rerender } = render(tree([a]))
+  return { drop: () => rerender(tree([])) }
+}
+
 describe("capacity dialog", () => {
   test("Start needs consent, places the run on the server, and Stop ends it as stopped", async () => {
     const user = userEvent.setup()
@@ -82,6 +108,18 @@ describe("capacity dialog", () => {
     remount()
     expect((await screen.findAllByText("stopped by a person")).length).toBeGreaterThan(0)
     expect(screen.queryByRole("button", { name: /Start test/ })).toBeNull()
+  }, 15000)
+
+  test("the result stays when the agent leaves the list after Stop", async () => {
+    const user = userEvent.setup()
+    const { drop } = showPage(agent("vg-capture"))
+    await user.click(await screen.findByRole("checkbox"))
+    await user.click(screen.getByRole("button", { name: /Start test/ }))
+    await user.click(await screen.findByRole("button", { name: "Stop test" }))
+    await screen.findAllByText("stopped by a person")
+    drop()
+    expect(screen.getByRole("dialog")).toBeDefined()
+    expect(screen.getAllByText("stopped by a person").length).toBeGreaterThan(0)
   }, 15000)
 
   test("an agent without a name cannot start a test", async () => {

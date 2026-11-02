@@ -18,7 +18,7 @@ import { accessDenied, capacityQuery, cloudAgentsQuery, mediaServerQuery } from 
 import type { CloudAgents } from "@/lib/api-types"
 import { type MediaServerData, type Room, RoomDrawer, fromContract, regionCity } from "../media-server/room-drawer"
 import { AgentDrawer, type AgentReads } from "./agent-drawer"
-import { CapacityButton, CapacityDialog } from "./capacity"
+import { CapacityButton, CapacityDialog, useCapacityAgent } from "./capacity"
 import { type Agent, type Check, agentsFrom, checks, cores, gib, joinDelays, median } from "./agents-model"
 import { useUrlPick, useUrlState } from "@/lib/url-state"
 
@@ -205,7 +205,7 @@ function AgentsView({ cloud, ms }: { cloud: CloudAgents; ms: MediaServerData }) 
   const [openRoom, setOpenRoom] = useState<Room | null>(null)
   // The open agent is in the URL (?agent=<key>), which is also how the command palette opens one.
   const [openAgent, setOpenAgent] = useUrlPick<Agent>("agent", list, (a) => a.key)
-  const [testing, setTesting] = useUrlPick<Agent>("capacityAgent", list, (a) => a.key)
+  const [testing, setTesting] = useCapacityAgent(list)
   // The open agent's latest capacity run is optional: when it cannot be read the drawer says so, and
   // only a read that answered can say "not measured".
   const capacity = useQuery(capacityQuery(openAgent?.name ?? null))
