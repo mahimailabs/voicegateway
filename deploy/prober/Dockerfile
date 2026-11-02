@@ -2,16 +2,18 @@
 #
 # A thin image that runs `voicegw livekit sfu --report-to ...` against a
 # coordinator. Deploy one per AWS region (deploy/prober/cloudformation.yaml,
-# decision 0037) to load one SFU room concurrently from many vantages. The
-# prober needs the [livekit] extra (livekit.api and livekit.rtc); the
-# coordinator is the one that also needs the [server] extra.
+# decision 0037) to load one SFU room concurrently from many vantages. The same
+# image runs the coordinator: its task definition replaces the entrypoint with
+# `voicegw livekit sfu --coordinator`. The prober needs the [livekit] extra
+# (livekit.api and livekit.rtc); the coordinator also needs [collector]
+# (FastAPI and uvicorn).
 FROM python:3.12.16-slim@sha256:8523d6abeb48ceae0b7240d30c5808fc26cb79c1a635bacdf19cf3baecfbec07
 
-# Non-root: the prober only makes outbound connections.
+# Non-root: the prober only connects out; the coordinator listens on 8787.
 RUN useradd --create-home --uid 10001 prober
 WORKDIR /home/prober
 
-# requirements.txt locks voicegateway[livekit]==0.27.0 and every dependency
+# requirements.txt locks voicegateway[livekit,collector]==0.27.0 and every dependency
 # with hashes, so two builds install the same packages. Run the coordinator on
 # the same engine version so the wire contract (register / job / report)
 # matches. 0.27.0 is the last engine release with `voicegw livekit sfu`: from

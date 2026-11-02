@@ -1,10 +1,16 @@
-# One distributed SFU prober vantage on AWS (decision 0037).
+# One distributed SFU prober vantage on AWS (decision 0037), and the coordinator.
 #
 # A run-to-completion ECS Fargate task, started by EventBridge Scheduler or by
 # hand with `aws ecs run-task`. Deploy one stack per region: the vantage label is
 # the stack's region (VOICEGW_REGION = AWS::Region), so every region runs the
-# same template with the same parameters. No load balancer, no service, no
-# inbound ports: the prober only connects out, to LiveKit and to the coordinator.
+# same template with the same parameters. No load balancer and no service: the
+# prober only connects out, to LiveKit and to the coordinator.
+#
+# Every stack also holds a coordinator task definition (same image,
+# `voicegw livekit sfu --coordinator`) and its security group, which is the only
+# one with an inbound port (8787). A definition costs nothing until it runs; run
+# the coordinator in one region only. It has a public IP for the length of one
+# run (at most 10 minutes, then it aggregates what arrived and exits).
 #
 # Deploy sketch (from deploy/prober/; nothing here runs until you do this):
 #
@@ -35,12 +41,19 @@
 #      single vantage, `aws cloudformation deploy --region <region>` with the same
 #      parameters is enough.
 #
-#   4. Run it. The stack's RunTaskCommand output is the one-off command for its
-#      region. For a recurring run, set ScheduleExpression to the same cron in
-#      every region and ScheduleState to ENABLED, so all vantages start together.
+#   4. Run it. Start the coordinator in one region with that stack's
+#      RunCoordinatorCommand output, wait for the task to be RUNNING, and read
+#      its public IP (describe-tasks gives the ENI, describe-network-interfaces
+#      its public IP). Then start a prober in every region with that region's
+#      RunTaskCommand output plus
+#        --overrides '{"containerOverrides":[{"name":"prober","environment":[{"name":"COORDINATOR_URL","value":"http://<ip>:8787"}]}]}'
+#      The coordinator's log (/vg-sfu-prober, stream prefix coordinator) holds
+#      the combined result.
+#      The schedule only works with a coordinator at a fixed CoordinatorUrl, so
+#      it stays DISABLED until one exists.
 #
-# The ramp and duration are set on the coordinator, not here: every vantage runs
-# the coordinator's job.
+# The ramp, duration and number of vantages are the coordinator's (Ramp,
+# Duration, Expect): every vantage runs the coordinator's job.
 
 AWSTemplateFormatVersion: "2010-09-09"
 Description: VoiceGateway distributed SFU prober, one vantage per region (decision 0037)
@@ -51,7 +64,8 @@ Parameters:
     Description: The prober image built from deploy/prober/Dockerfile, pinned by tag or digest
   CoordinatorUrl:
     Type: String
-    Description: The coordinator every vantage registers with, for example http://coordinator.example.com:8787
+    Default: http://coordinator.invalid:8787
+    Description: The coordinator a scheduled prober registers with. A run by hand passes the running coordinator's URL as an override instead
   LiveKitSecretName:
     Type: String
     Description: Secrets Manager secret name with its six-character suffix (vg-sfu-prober/livekit-AbCdEf), holding LIVEKIT_URL, LIVEKIT_API_KEY and LIVEKIT_API_SECRET
@@ -75,6 +89,19 @@ Parameters:
   LogRetentionDays:
     Type: Number
     Default: 14
+  Expect:
+    Type: Number
+    Default: 3
+    MinValue: 1
+    Description: How many probers the coordinator waits for before it starts the run
+  Ramp:
+    Type: String
+    Default: 2,10,25,50
+    Description: Synthetic clients per vantage at each tier, comma separated
+  Duration:
+    Type: String
+    Default: "20"
+    Description: Seconds each tier is held
   AvailabilityZoneIndex:
     Type: Number
     Default: 0
@@ -126,6 +153,21 @@ Resources:
     Properties:
       GroupDescription: VoiceGateway SFU prober, outbound only
       VpcId: !Ref Vpc
+      SecurityGroupEgress:
+        - IpProtocol: "-1"
+          CidrIp: 0.0.0.0/0
+  # Probers register from public IPs in other regions that are not known in
+  # advance, so the port is open to the internet while a coordinator runs.
+  CoordinatorSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: VoiceGateway SFU coordinator, 8787 in for probers
+      VpcId: !Ref Vpc
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 8787
+          ToPort: 8787
+          CidrIp: 0.0.0.0/0
       SecurityGroupEgress:
         - IpProtocol: "-1"
           CidrIp: 0.0.0.0/0
@@ -197,6 +239,51 @@ Resources:
               awslogs-region: !Ref AWS::Region
               awslogs-stream-prefix: prober
 
+  CoordinatorTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: vg-sfu-coordinator
+      RequiresCompatibilities: [FARGATE]
+      NetworkMode: awsvpc
+      Cpu: !Ref Cpu
+      Memory: !Ref Memory
+      RuntimePlatform:
+        OperatingSystemFamily: LINUX
+        CpuArchitecture: X86_64
+      ExecutionRoleArn: !GetAtt ExecutionRole.Arn
+      ContainerDefinitions:
+        - Name: coordinator
+          Image: !Ref ImageUri
+          Essential: true
+          EntryPoint:
+            - voicegw
+            - livekit
+            - sfu
+            - --coordinator
+            - --expect
+            - !Ref Expect
+            - --ramp
+            - !Ref Ramp
+            - --duration
+            - !Ref Duration
+          PortMappings:
+            - ContainerPort: 8787
+              Protocol: tcp
+          # LiveKit values let it delete the run's rooms when it finishes.
+          Secrets:
+            - Name: LIVEKIT_URL
+              ValueFrom: !Sub "arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${LiveKitSecretName}:LIVEKIT_URL::"
+            - Name: LIVEKIT_API_KEY
+              ValueFrom: !Sub "arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${LiveKitSecretName}:LIVEKIT_API_KEY::"
+            - Name: LIVEKIT_API_SECRET
+              ValueFrom: !Sub "arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${LiveKitSecretName}:LIVEKIT_API_SECRET::"
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref LogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: coordinator
+
   SchedulerRole:
     Type: AWS::IAM::Role
     Properties:
@@ -257,3 +344,9 @@ Outputs:
       aws ecs run-task --region ${AWS::Region} --cluster vg-sfu-prober --launch-type FARGATE
       --task-definition ${TaskDefinition}
       --network-configuration awsvpcConfiguration={subnets=[${Subnet}],securityGroups=[${SecurityGroup}],assignPublicIp=ENABLED}
+  RunCoordinatorCommand:
+    Description: Starts the coordinator in this region now
+    Value: !Sub >-
+      aws ecs run-task --region ${AWS::Region} --cluster vg-sfu-prober --launch-type FARGATE
+      --task-definition ${CoordinatorTaskDefinition}
+      --network-configuration awsvpcConfiguration={subnets=[${Subnet}],securityGroups=[${CoordinatorSecurityGroup}],assignPublicIp=ENABLED}
