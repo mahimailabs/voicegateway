@@ -652,3 +652,11 @@ Mahimai decided Cloud keeps recordings in VoiceGateway's bucket by default, and 
 - **Fix:** both dials build the Cloud agents client with the same hook (`withCLIVersion` in `internal/scrape/store.go`). `pkg/cloudagents` itself is not imported because it pulls in BuildKit for deploys.
 - **Logs:** the media server, SIP, egress, ingress and Cloud agents "read failed" lines now carry a `failure` group (Twirp code, HTTP status of a non-Twirp reply, the Twirp client step, the innermost cause type) next to the class. LiveKit's own message is still never logged (phase 05 rule).
 - Tests: `TestCloudAgentsCallsSendCLIVersion` (fails without the hook), `TestFailureSaysWhereWithoutLiveKitsMessage`.
+
+### 2026-10-31: Sentry error monitoring (decision 0039)
+
+- **Go:** `obs.StartSentry` connects a role when `VOICEGATEWAY_SENTRY_DSN` is set; off otherwise. Error-level slog records become Sentry events (`samber/slog-sentry` v2.11.0 on sentry-go v0.50.0); a role's terminal error and a main-goroutine panic are reported; web's handler is wrapped by `sentryhttp` for timings and panics, `/healthz` never timed. `DataCollection` sends no cookies, query strings, bodies or user, and only Content-Type, User-Agent and Accept header values.
+- **Console:** `@sentry/react` 11.8.0 loads as its own chunk only when `GET /auth/client-config` names `VOICEGATEWAY_SENTRY_CONSOLE_DSN`. Route-named timings (TanStack Router integration), React root error callbacks, no Session Replay, no console breadcrumbs, query strings and fragments cut from every URL.
+- **Config:** `VOICEGATEWAY_SENTRY_DSN`, `_CONSOLE_DSN`, `_ENVIRONMENT` (production), `_TRACES_SAMPLE_RATE` (0.1), passed through `deploy/compose.yaml`; documented in `docs/self-hosting.md`.
+- Tests: `TestSentryOffWithoutDSN`, `TestErrorLogBecomesAnEvent`, `TestPanicReportCarriesNoCredentials`, `TestHealthProbesAreNotTimed`, `TestStoppingIsNotAFailure` (sentry-go's `MockTransport`), `TestSentryIsOffUntilADSNIsSet`, `TestClientConfig`, and `tests/monitoring.test.ts`.
+- Not yet: console source maps upload, per-route transaction names under `/api/v1/`.

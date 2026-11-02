@@ -82,6 +82,8 @@ type Service struct {
 	Identities Identities
 	// Embeds mints and checks embed tokens (decision 0034); nil refuses every embed token.
 	Embeds *EmbedTokens
+	// Client is what the console learns at runtime from GET /auth/client-config.
+	Client ClientConfig
 	Log    *slog.Logger
 	Now    func() time.Time
 
@@ -162,6 +164,7 @@ func (s *Service) Routes() http.Handler {
 	mux.HandleFunc("GET /auth/profile", s.profile)
 	mux.HandleFunc("PUT /auth/profile", s.updateProfile)
 	mux.HandleFunc("GET /auth/providers", s.providers)
+	mux.HandleFunc("GET /auth/client-config", s.clientConfig)
 	mux.HandleFunc("GET /auth/oauth/{provider}/start", s.oauthStart)
 	mux.HandleFunc("GET /auth/oauth/{provider}/callback", s.oauthCallback)
 	if s.Links != nil {

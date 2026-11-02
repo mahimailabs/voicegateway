@@ -124,7 +124,8 @@ func Web(ctx context.Context, c config.Config, log *slog.Logger) error {
 		PublicURL:   c.PublicURL, Links: links,
 		InstanceTokenSHA256: c.InstanceTokenSHA256, Embeds: embeds,
 		Providers: signInProviders(c), Identities: projects,
-		Log: log, Now: time.Now,
+		Client: clientConfig(c),
+		Log:    log, Now: time.Now,
 	}
 	// The instance API (phase 06e, ee/instance) is on only with VOICEGATEWAY_INSTANCE_TOKEN.
 	var instanceAPI api.InstanceHandlers
@@ -180,7 +181,7 @@ func Web(ctx context.Context, c config.Config, log *slog.Logger) error {
 		Addr: c.WebAddr,
 		// Writes from another origin are refused on every route (decision 0027). LiveKit's webhooks
 		// and agent uploads are server to server, carry no browser origin, and pass.
-		Handler:           http.NewCrossOriginProtection().Handler(mux),
+		Handler:           obs.SentryHandler(c.Sentry, http.NewCrossOriginProtection().Handler(mux)),
 		ReadHeaderTimeout: 5 * time.Second,
 		BaseContext:       func(net.Listener) context.Context { return ctx },
 	}
@@ -524,6 +525,15 @@ func handlePost(mux *http.ServeMux, routes map[string]http.Handler) {
 func postOnly(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Allow", http.MethodPost)
 	http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
+}
+
+// clientConfig is what web tells the console at runtime: the console's own Sentry DSN, when set.
+func clientConfig(c config.Config) auth.ClientConfig {
+	var out auth.ClientConfig
+	if c.Sentry.ConsoleDSN != "" {
+		out.Sentry = &auth.SentryClient{DSN: c.Sentry.ConsoleDSN, Environment: c.Sentry.Environment, TracesSampleRate: c.Sentry.TracesSampleRate}
+	}
+	return out
 }
 
 // signInProviders are the Google, GitHub and Auth0 sign-ins configuration turns on (phase 06h,

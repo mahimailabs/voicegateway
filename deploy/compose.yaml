@@ -40,6 +40,12 @@ x-voicegateway-env: &voicegateway-env
   # Enforce explicit organisation allowances on Cloud ingestion; requires the instance token.
   VOICEGATEWAY_CLOUD_QUOTAS: ${VOICEGATEWAY_CLOUD_QUOTAS:-false}
   VOICEGATEWAY_LOG_LEVEL: ${VOICEGATEWAY_LOG_LEVEL:-info}
+  # Report errors and request timings to your own Sentry projects (decision 0039). Empty, as by
+  # default, sends nothing anywhere. The console DSN is handed to every visitor's browser.
+  VOICEGATEWAY_SENTRY_DSN: ${VOICEGATEWAY_SENTRY_DSN:-}
+  VOICEGATEWAY_SENTRY_CONSOLE_DSN: ${VOICEGATEWAY_SENTRY_CONSOLE_DSN:-}
+  VOICEGATEWAY_SENTRY_ENVIRONMENT: ${VOICEGATEWAY_SENTRY_ENVIRONMENT:-production}
+  VOICEGATEWAY_SENTRY_TRACES_SAMPLE_RATE: ${VOICEGATEWAY_SENTRY_TRACES_SAMPLE_RATE:-0.1}
   # true refuses private and loopback worker metrics endpoints too; link-local and cloud metadata
   # addresses are always refused; it also guards the worker's LiveKit API reads. Leave false when
   # your agent workers share this network. Required with VOICEGATEWAY_INSTANCE_TOKEN.

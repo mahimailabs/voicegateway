@@ -357,6 +357,19 @@
     "exclusion": "Accepting invitation and reset links, from web's /auth routes (decision 0027, phase 06d); not part of the read contract."
   },
   {
+    "file": "dashboard/src/lib/client-config.ts",
+    "fixtures": [],
+    "assets": [
+      "/auth/client-config"
+    ],
+    "browserStorage": false,
+    "operations": [],
+    "assetNotes": {
+      "/auth/client-config": "The console's runtime settings, such as its Sentry DSN (decision 0039); not a console read."
+    },
+    "exclusion": "Runtime settings for the console from web's /auth routes (decision 0039); not part of the read contract."
+  },
+  {
     "file": "dashboard/src/lib/providers.ts",
     "fixtures": [],
     "assets": [
