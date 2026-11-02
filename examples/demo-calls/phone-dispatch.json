@@ -1,0 +1,13 @@
+{
+  "dispatchRule": {
+    "name": "voicegateway-demo phone",
+    "rule": {
+      "dispatchRuleIndividual": {
+        "roomPrefix": "demo-phone-"
+      }
+    },
+    "roomConfig": {
+      "agents": [{ "agentName": "voicegateway-demo" }]
+    }
+  }
+}
