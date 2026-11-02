@@ -96,7 +96,7 @@ func (s *CloudAgentScraper) CloudAgents(ctx context.Context, p store.Project) er
 				return nil
 			}
 			read.ErrorClass = classify(err)
-			s.Log.Warn("scrape: cloud agents read failed", "organisation", p.OrganisationID, "project", p.ID, "class", read.ErrorClass)
+			s.Log.Warn("scrape: cloud agents read failed", "organisation", p.OrganisationID, "project", p.ID, "class", read.ErrorClass, failure(err))
 			agents = nil
 		} else {
 			read.OK = true

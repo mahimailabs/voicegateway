@@ -88,7 +88,7 @@ func (s *IngressScraper) Ingress(ctx context.Context, p store.Project) error {
 			return nil
 		}
 		read.ErrorClass = classify(err)
-		s.Log.Warn("scrape: ingress read failed", "organisation", p.OrganisationID, "project", p.ID, "class", read.ErrorClass)
+		s.Log.Warn("scrape: ingress read failed", "organisation", p.OrganisationID, "project", p.ID, "class", read.ErrorClass, failure(err))
 	} else {
 		read.OK = true
 		for _, in := range items {
