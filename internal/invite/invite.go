@@ -51,6 +51,7 @@ type Store interface {
 	MarkInvitationEmailed(ctx context.Context, id string) error
 	MarkInvitationNotEmailed(ctx context.Context, id string) error
 	OpenInvitation(ctx context.Context, tokenSHA256 []byte) (store.OpenInvitation, error)
+	OpenInviteTokens(ctx context.Context, email string) ([][]byte, error)
 	AcceptInvitation(ctx context.Context, tokenSHA256 []byte, passwordHash, existingUserID string) (string, error)
 	OrganisationName(ctx context.Context, id string) (string, error)
 	OrganisationRoles(ctx context.Context, userID string) (map[string]string, error)
@@ -428,6 +429,28 @@ func (s *Service) AcceptVerified(ctx context.Context, tokenSHA256 []byte, email 
 		}
 	}
 	return store.Principal{}, ErrInvalidLink
+}
+
+// AcceptPendingVerified is a provider-verified sign-in for an email with no account yet (decision
+// 0040): it uses every open invite link for that email, as if each had been opened, and returns
+// the new account. accepted is false when the email has no open invite link. A link used or
+// revoked meanwhile is skipped.
+func (s *Service) AcceptPendingVerified(ctx context.Context, email string) (p store.Principal, accepted bool, err error) {
+	tokens, err := s.Store.OpenInviteTokens(ctx, email)
+	if err != nil {
+		return store.Principal{}, false, err
+	}
+	for _, t := range tokens {
+		got, err := s.AcceptVerified(ctx, t, email)
+		switch {
+		case errors.Is(err, ErrInvalidLink):
+			continue
+		case err != nil:
+			return store.Principal{}, false, err
+		}
+		p, accepted = got, true
+	}
+	return p, accepted, nil
 }
 
 // forget clears the reserved tries. The link is already decided, so a failure only logs.

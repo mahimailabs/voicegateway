@@ -20,6 +20,9 @@ type Links interface {
 	Accept(ctx context.Context, token, password string, limit func(ctx context.Context, email string) (success func(context.Context) error, wait time.Duration, err error)) (store.Principal, error)
 	// AcceptVerified uses an invite link, by its token's SHA-256, for an email a provider verified.
 	AcceptVerified(ctx context.Context, tokenSHA256 []byte, email string) (store.Principal, error)
+	// AcceptPendingVerified uses an email's open invite links for a provider-verified sign-in with
+	// no account yet (decision 0040); accepted is false when there are none.
+	AcceptPendingVerified(ctx context.Context, email string) (p store.Principal, accepted bool, err error)
 }
 
 // codeInvitationInvalid is the one answer for an unknown, accepted, revoked or expired link.

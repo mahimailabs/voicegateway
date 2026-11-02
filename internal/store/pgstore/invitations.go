@@ -187,6 +187,16 @@ func (s *Store) OpenInvitation(ctx context.Context, tokenSHA256 []byte) (store.O
 	}, nil
 }
 
+// OpenInviteTokens returns the token hashes of an email's open, unexpired invite links, oldest
+// first (decision 0040).
+func (s *Store) OpenInviteTokens(ctx context.Context, email string) ([][]byte, error) {
+	rows, err := s.q.OpenInviteTokensByEmail(ctx, foldEmail(email))
+	if err != nil {
+		return nil, fmt.Errorf("open invite tokens: %w", err)
+	}
+	return rows, nil
+}
+
 // OrganisationName returns an organisation's name, or store.ErrNotFound.
 func (s *Store) OrganisationName(ctx context.Context, id string) (string, error) {
 	name, err := s.q.OrganisationName(ctx, id)

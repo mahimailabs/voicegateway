@@ -476,6 +476,14 @@ SELECT i.id, i.kind, i.organisation_id, o.name AS organisation_name, i.email, i.
 FROM invitations i JOIN organisations o ON o.id = i.organisation_id
 WHERE i.token_sha256 = @token_sha256 AND i.accepted_at IS NULL AND i.revoked_at IS NULL AND i.expires_at > now();
 
+-- name: OpenInviteTokensByEmail :many
+-- The open, unexpired invite links for an email, oldest first: what a provider-verified email with
+-- no account yet accepts at sign-in (decision 0040).
+SELECT token_sha256 FROM invitations
+WHERE kind = 'invite' AND email = @email AND accepted_at IS NULL AND revoked_at IS NULL AND expires_at > now()
+ORDER BY created_at, id
+LIMIT 20;
+
 -- name: UseInvitation :one
 -- Uses a link once: anything but one row means it was used, revoked or expired meanwhile.
 UPDATE invitations SET accepted_at = now()

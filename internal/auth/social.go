@@ -110,7 +110,9 @@ func (s *Service) oauthStart(w http.ResponseWriter, r *http.Request) {
 //  1. with an invitation from the start, the invited account, when the provider verified its email;
 //  2. else the account the provider subject is linked to;
 //  3. else the account with the verified email, linking the subject to it;
-//  4. else nobody.
+//  4. else, when the verified email has open invite links, a new account that accepts them
+//     (decision 0040), as opening each link would;
+//  5. else nobody.
 //
 // Every refusal redirects to the same place; its cause is logged as a class, never with an email.
 func (s *Service) oauthCallback(w http.ResponseWriter, r *http.Request) {
@@ -227,7 +229,7 @@ func (s *Service) account(ctx context.Context, provider string, who oauth.Identi
 	}
 	u, err = s.Users.UserByEmail(ctx, who.Email)
 	if errors.Is(err, store.ErrNotFound) {
-		return "", 0, "no_account", nil
+		return s.acceptPending(ctx, provider, who)
 	}
 	if err != nil {
 		return "", 0, "", err
@@ -242,6 +244,27 @@ func (s *Service) account(ctx context.Context, provider string, who oauth.Identi
 		return "", 0, "", err
 	}
 	return u.ID, u.PasswordVersion, "", nil
+}
+
+// acceptPending signs in a verified email with no account through its open invite links, which
+// prove the same thing an opened link does: someone invited that address, and its owner is here.
+func (s *Service) acceptPending(ctx context.Context, provider string, who oauth.Identity) (string, int, string, error) {
+	if s.Links == nil {
+		return "", 0, "no_account", nil
+	}
+	pr, ok, err := s.Links.AcceptPendingVerified(ctx, who.Email)
+	if err != nil {
+		return "", 0, "", err
+	}
+	if !ok {
+		return "", 0, "no_account", nil
+	}
+	if err := s.Identities.LinkIdentity(ctx, provider, who.Subject, pr.UserID, who.Email); errors.Is(err, store.ErrIdentityLinked) {
+		s.Log.Info("auth: provider subject is linked to another account; not linked again", "provider", provider)
+	} else if err != nil {
+		return "", 0, "", err
+	}
+	return pr.UserID, pr.PasswordVersion, "", nil
 }
 
 // refuse redirects a refused provider sign-in, the same for every cause, and logs the cause's class.
