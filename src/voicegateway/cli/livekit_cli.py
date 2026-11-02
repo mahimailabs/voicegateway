@@ -255,7 +255,12 @@ def _run_sfu_prober(report_to, vantage, ramp, url, api_key, api_secret, config):
     async def _run():
         admin = LiveKitAdmin(creds)
         admin.url = creds.url
-        probe = SfuProbe(admin, lambda u, t: SyntheticClient(u, t), ResourceMonitor())
+        probe = SfuProbe(
+            admin,
+            lambda u, t: SyntheticClient(u, t),
+            ResourceMonitor(),
+            identity_prefix=f"{label}-c",
+        )
         try:
             return await run_prober(report_to, probe, vantage=label)
         finally:

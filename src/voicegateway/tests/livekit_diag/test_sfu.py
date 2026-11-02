@@ -395,3 +395,27 @@ async def test_disconnect_opens_the_quiet_window():
 
     assert client._room.disconnected  # type: ignore[attr-defined]
     assert handler.records == []
+
+
+async def test_vantages_join_a_shared_tier_with_distinct_identities():
+    """Two vantages in one room must not reuse identities: LiveKit would drop one."""
+    seen: dict[str, list[str]] = {}
+
+    def factory_for(label: str):
+        def factory(url: str, token: str) -> Any:
+            seen.setdefault(label, []).append(token.split("/", 1)[1])
+            return _ColdStartClient()
+
+        return factory
+
+    for label in ("us-east-1", "eu-west-2"):
+        probe = SfuProbe(
+            _FakeAdmin(),
+            factory_for(label),
+            _FakeMonitor(),
+            identity_prefix=f"{label}-c",
+        )
+        await probe.ramp("shared", [2], 0.0, 50.0, 1.0)
+
+    assert seen["us-east-1"] == ["us-east-1-c0", "us-east-1-c1"]
+    assert seen["eu-west-2"] == ["eu-west-2-c0", "eu-west-2-c1"]

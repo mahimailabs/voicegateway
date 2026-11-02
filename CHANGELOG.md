@@ -4,6 +4,15 @@ All notable changes to VoiceGateway are documented here. This project
 follows [Semantic Versioning](https://semver.org/) and
 [Conventional Commits](https://www.conventionalcommits.org/).
 
+## v0.27.1: distributed SFU probers no longer drop each other
+
+- `voicegw livekit sfu --report-to` joins each tier's shared room as
+  `<vantage>-c<i>` instead of `c<i>`. Every vantage used the same identities,
+  so LiveKit disconnected each earlier vantage's clients ("engine is closed")
+  and only the last vantage to join reported. Single-host probes keep `c<i>`.
+- This release publishes to PyPI only, for the prober image in
+  `deploy/prober` on main. It is not merged into main.
+
 ## Unreleased
 
 ### Realtime metering

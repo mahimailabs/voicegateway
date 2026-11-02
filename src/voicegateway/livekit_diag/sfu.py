@@ -87,10 +87,16 @@ def find_knee(
 
 
 class SfuProbe:
-    def __init__(self, admin, client_factory, monitor) -> None:
+    def __init__(
+        self, admin, client_factory, monitor, *, identity_prefix: str = "c"
+    ) -> None:
         self._admin = admin
         self._make_client = client_factory
         self._monitor = monitor
+        # Distributed probers share one room per tier, and LiveKit disconnects a
+        # participant when another joins with its identity, so each vantage
+        # passes its own prefix.
+        self._identity_prefix = identity_prefix
 
     async def _warm_up(self, clients: list[Any]) -> None:
         """One discarded ping per client, before anything is measured.
@@ -128,7 +134,7 @@ class SfuProbe:
             for i in range(n):
                 c = self._make_client(
                     getattr(self._admin, "url", ""),
-                    self._admin.join_token(room, f"c{i}"),
+                    self._admin.join_token(room, f"{self._identity_prefix}{i}"),
                 )
                 await c.connect()
                 clients.append(c)
