@@ -9,8 +9,8 @@ import (
 // Alert rules, as alerts-model.ts lists them (decision 0020, docs/specs/alerts-behaviour.md).
 var AlertRuleIDs = []string{"slow-answer", "cut-off", "job-failed", "slow-join", "plain-phone", "recording-lost", "ingress-error"}
 
-// AlertChannelKinds are the channels that deliver today (week-2: email and webhook first).
-var AlertChannelKinds = []string{"email", "webhook"}
+// AlertChannelKinds are the channels a rule may send to (docs/specs/alert-channels.md).
+var AlertChannelKinds = []string{"email", "webhook", "slack", "teams", "discord", "pagerduty", "opsgenie"}
 
 var (
 	// ErrAlertIncidentState answers a resolve of an incident that is not firing, or whose rule a
@@ -156,4 +156,17 @@ type AlertWebhookConfig struct {
 // AlertEmailConfig is an email channel's sealed configuration.
 type AlertEmailConfig struct {
 	Recipients []string `json:"recipients"`
+}
+
+// AlertURLConfig is a Slack, Microsoft Teams or Discord channel's sealed configuration: the incoming
+// webhook URL, whose path is the credential.
+type AlertURLConfig struct {
+	URL string `json:"url"`
+}
+
+// AlertKeyConfig is a PagerDuty or Opsgenie channel's sealed configuration: the PagerDuty routing
+// key or the Opsgenie API integration key, and the provider's region, us or eu.
+type AlertKeyConfig struct {
+	Key    string `json:"key"`
+	Region string `json:"region"`
 }

@@ -1,16 +1,26 @@
 import { issueMetadataOf, saveIssueMetadata } from "./issue-metadata"
 import { metadataOf, saveMetadata } from "./dispositions"
 import { http, HttpResponse, type PathParams } from "msw"
-import type { AlertEvents, AlertIncident, AlertIncidents, AlertRuleSetup, AlertSetup, SavedAlertChannel, Call, CallPage, CallStats, CreatedInvitation, CreatedPasswordReset, CreatedProjectKey, Invitations, LiveKitCredentialsUpdate, OrganisationEntitlement, ProjectCreate, ProjectCreated, Member, Members, ProjectConnection, ProjectKeys, IssueList, ProjectSettings, ProviderProbes, Resources, Workers, CapacityRun, CloudAgents, Egress, Error as ApiErrorBody, Ingress, MediaServer, ProjectSnapshot, Sip, Workspaces } from "@/lib/api-types"
+import type { AlertEvents, AlertIncident, AlertIncidents, AlertRuleSetup, AlertSetup, SavedAlertChannel, Call, CallPage, CallStats, CreatedInvitation, CreatedPasswordReset, CreatedProjectKey, Invitations, LiveKitCredentialsUpdate, OrganisationEntitlement, ProjectCreate, ProjectCreated, Member, Members, ProjectConnection, ProjectKeys, IssueList, ProjectSettings, ProviderProbes, Resources, Workers, CapacityRun, CapacityRunStart, CloudAgents, Egress, Error as ApiErrorBody, Ingress, MediaServer, ProjectSnapshot, Sip, Workspaces } from "@/lib/api-types"
 import { callStats } from "./call-stats"
 import { capturedCalls } from "./fixtures"
 import { alertEvents, alertIncidents, issueList, resolveAlertIncident } from "./insights"
-import { capacity, cloudAgents, egress, ingress, mediaServer, projectSnapshot, providerProbes, sip, workers } from "./livekit"
+import { capacity, capacitySteps, cloudAgents, egress, ingress, mediaServer, projectSnapshot, providerProbes, sip, workers } from "./livekit"
 import { summarize } from "./summaries"
 import { matchesFields, matchesFilters, parseFilters, sortCalls, totals } from "./calls-query"
 import { playbackUrl, recordingMedia } from "./recordings"
 import { alertSetup, changeMember, deleteAlertChannel, testAlertChannel, updateAlertChannel, updateAlertRule, createKey, invitations, invite, members, passwordReset, projectKeys, projectSettings, updateSettings, updateAllowedOrigins, normaliseOrigin, revokeInvitation, revokeKey } from "./settings"
 import { addProject, knownOrg, knownProject, workspaces } from "./workspaces"
+
+// What web answers a channel saved with a bad value, by kind.
+const invalidChannel: Record<string, string> = {
+  email: "recipients must be 1 to 20 email addresses",
+  slack: "url must be a Slack incoming webhook URL, https://hooks.slack.com/services/...",
+  teams: "url must be a Teams Workflows webhook URL",
+  discord: "url must be a Discord webhook URL, https://discord.com/api/webhooks/...",
+  pagerduty: "key must be a PagerDuty Events API v2 integration key (32 characters), and region us or eu",
+  opsgenie: "key must be an Opsgenie API integration key, and region us or eu",
+}
 
 // Everything but the paging parameters, in a stable order, so a cursor can name what it was issued for.
 function filterKey(q: URLSearchParams) {
@@ -46,7 +56,27 @@ function connectionOverride(): Partial<ProjectConnection> {
 const MOCK_LIVEKIT_URL = "wss://example-project.livekit.cloud"
 const livekitKeys = new Map<string, string>()
 const livekitOf = (params: PathParams) => ({ url: MOCK_LIVEKIT_URL, apiKey: livekitKeys.get(settingsScope(params)) ?? "APIexample123" })
-export const resetMockLiveKit = () => livekitKeys.clear()
+// Capacity tests started in the mock, per project, kept in memory. A started run replays the captured
+// run's steps, one more each time it is read, and ends as the capture did; Stop ends it as stopped.
+const capacityRuns = new Map<string, CapacityRun>()
+export const resetMockLiveKit = () => (livekitKeys.clear(), capacityRuns.clear())
+function readCapacity(params: PathParams, agent: string): CapacityRun | null {
+  const run = capacityRuns.get(settingsScope(params))
+  if (run && run.agent === agent && run.state !== "ended") {
+    const now = new Date().toISOString()
+    const captured = capacitySteps().filter((s) => s.step <= run.maxStep)
+    const next = captured[run.steps.length]
+    if (run.state === "requested") Object.assign(run, { state: "running", startedAt: now })
+    else if (next) run.steps.push({ ...next, startedAt: now, endedAt: now })
+    if (run.state === "running" && (!next || next.outcome !== "passed")) {
+      const passed = run.steps.filter((s) => s.outcome === "passed")
+      Object.assign(run, { state: "ended", endedAt: now, capacity: passed.length ? passed[passed.length - 1].step : null, limitedBy: next ? "tester" : "max_reached" })
+    }
+    return structuredClone(run)
+  }
+  if (run && run.agent === agent) return structuredClone(run)
+  return agent === capacity().agent ? capacity() : null
+}
 
 // The entitlement API exists only on a hosted install; the mock is a self-hosted one and answers
 // web's 404, unless a browser check sets localStorage "vg.mock-entitlement" to "hosted".
@@ -202,7 +232,32 @@ export const handlers = [
   http.get<PathParams, never, Ingress | ApiErrorBody>(`${project}/ingress`, ({ params }) => (known(params) ? HttpResponse.json(ingress()) : fail(404, "not_found", "No such project."))),
   http.get<PathParams, never, MediaServer | ApiErrorBody>(`${project}/media-server`, ({ params }) => (known(params) ? HttpResponse.json({ ...mediaServer(), rooms: mediaServer().rooms.map((r) => withPlayback(r, params)) }) : fail(404, "not_found", "No such project."))),
   http.get<PathParams, never, CloudAgents | ApiErrorBody>(`${project}/agents`, ({ params }) => (known(params) ? HttpResponse.json(cloudAgents()) : fail(404, "not_found", "No such project."))),
-  http.get<PathParams, never, CapacityRun | null | ApiErrorBody>(`${project}/capacity`, ({ params }) => (known(params) ? HttpResponse.json(capacity()) : fail(404, "not_found", "No such project."))),
+  http.get<PathParams, never, CapacityRun | null | ApiErrorBody>(`${project}/capacity`, ({ params, request }) => {
+    if (!known(params)) return fail(404, "not_found", "No such project.")
+    const agent = new URL(request.url).searchParams.get("agent") ?? ""
+    return agent ? HttpResponse.json(readCapacity(params, agent)) : fail(400, "invalid_request", "agent must be the agent's name, 1 to 256 bytes")
+  }),
+  http.post<PathParams, Partial<CapacityRunStart>, CapacityRun | ApiErrorBody>(`${project}/capacity-runs`, async ({ params, request }) => {
+    if (!known(params)) return fail(404, "not_found", "No such project.")
+    let body: Partial<CapacityRunStart>
+    try { body = await request.json() } catch { return fail(400, "invalid_request", "the body must be agent, maxStep and consent") }
+    if (typeof body.agent !== "string" || !body.agent || ![8, 16, 32, 64].includes(body.maxStep as number) || body.consent !== true) return fail(400, "invalid_request", "the body must be agent, maxStep and consent")
+    const open = capacityRuns.get(settingsScope(params))
+    if (open && open.state !== "ended") return fail(409, "run_active", "this project already has a capacity test running; stop it or wait for it to end")
+    const run: CapacityRun = {
+      id: crypto.randomUUID(), agent: body.agent, maxStep: body.maxStep as CapacityRun["maxStep"], state: "requested", requestedAt: new Date().toISOString(),
+      startedAt: null, endedAt: null, stopRequested: false, capacity: null, limitedBy: null, cloudAgent: null, joinThresholdMs: null, error: null, steps: [],
+    }
+    capacityRuns.set(settingsScope(params), run)
+    return HttpResponse.json(structuredClone(run), { status: 202 })
+  }),
+  http.post<PathParams, never, CapacityRun | ApiErrorBody>(`${project}/capacity-runs/:runId/stop`, ({ params }) => {
+    const run = capacityRuns.get(settingsScope(params))
+    if (!known(params) || !run || run.id !== params.runId || run.state === "ended") return fail(404, "not_found", "no capacity test running with this id in this project")
+    const passed = run.steps.filter((s) => s.outcome === "passed")
+    Object.assign(run, { state: "ended", stopRequested: true, endedAt: new Date().toISOString(), limitedBy: "stopped", capacity: passed.length ? passed[passed.length - 1].step : null })
+    return HttpResponse.json(structuredClone(run))
+  }),
   http.get<PathParams, never, ProjectSnapshot | ApiErrorBody>(`${project}/snapshot`, ({ params }) => (known(params) ? HttpResponse.json(projectSnapshot()) : fail(404, "not_found", "No such project."))),
   http.get<PathParams, never, Resources | ApiErrorBody>(`${project}/resources`, ({ params }) => (known(params) ? HttpResponse.json({source: "No container resource exporter configured.", resources: []}) : fail(404, "not_found", "No such project."))),
   http.get<PathParams, never, Workers | ApiErrorBody>(`${project}/workers`, ({ params }) => (known(params) ? HttpResponse.json(workers()) : fail(404, "not_found", "No such project."))),
@@ -271,13 +326,13 @@ export const handlers = [
     if (!known(params)) return fail(404, "not_found", "No such project.")
     const r = updateAlertRule(String(params.ruleId), await request.json().catch(() => null))
     if (r === "not_found") return fail(404, "not_found", "no such alert rule")
-    return r === "invalid_request" ? fail(400, "invalid_request", "on must be a boolean and to a list of email and webhook") : HttpResponse.json(r)
+    return r === "invalid_request" ? fail(400, "invalid_request", "on must be a boolean and to a list of channel kinds") : HttpResponse.json(r)
   }),
   http.put<PathParams, never, SavedAlertChannel | ApiErrorBody>(`${project}/alert-channels/:kind`, async ({ params, request }) => {
     if (!known(params)) return fail(404, "not_found", "No such project.")
     const r = updateAlertChannel(String(params.kind), await request.json().catch(() => null))
-    if (r === "not_found") return fail(404, "not_found", "no such alert channel; email and webhook are available")
-    return r === "invalid_request" ? fail(400, "invalid_request", params.kind === "email" ? "recipients must be 1 to 20 email addresses" : "url must be an http or https URL with a host") : HttpResponse.json(r)
+    if (r === "not_found") return fail(404, "not_found", "no such alert channel")
+    return r === "invalid_request" ? fail(400, "invalid_request", invalidChannel[String(params.kind)] ?? "url must be an http or https URL with a host") : HttpResponse.json(r)
   }),
   http.delete<PathParams, never, ApiErrorBody>(`${project}/alert-channels/:kind`, ({ params }) => {
     if (!known(params)) return fail(404, "not_found", "No such project.")

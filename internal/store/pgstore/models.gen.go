@@ -170,6 +170,44 @@ type CallSummary struct {
 	ComputedAt     pgtype.Timestamptz
 }
 
+type CapacityRun struct {
+	ID              pgtype.UUID
+	OrganisationID  string
+	ProjectID       string
+	Agent           string
+	MaxStep         int32
+	RequestedBy     pgtype.Text
+	RequestedAt     pgtype.Timestamptz
+	State           string
+	Runner          pgtype.Text
+	StartedAt       pgtype.Timestamptz
+	HeartbeatAt     pgtype.Timestamptz
+	StopRequested   bool
+	EndedAt         pgtype.Timestamptz
+	JoinThresholdMs pgtype.Int4
+	CloudAgent      pgtype.Bool
+	Capacity        pgtype.Int4
+	LimitedBy       pgtype.Text
+	Error           pgtype.Text
+}
+
+type CapacityStep struct {
+	RunID            pgtype.UUID
+	Step             int32
+	StartedAt        pgtype.Timestamptz
+	EndedAt          pgtype.Timestamptz
+	Outcome          string
+	Calls            int32
+	Joined           int32
+	Pending          int32
+	Failed           int32
+	Late             int32
+	JoinSeconds      []float64
+	AnswerSeconds    []float64
+	NoAnswer         int32
+	TesterCpuPercent pgtype.Float8
+}
+
 type Identity struct {
 	Provider   string
 	Subject    string

@@ -55,6 +55,8 @@ type Deliverer struct {
 	Now    func() time.Time
 	// Refused tells an address the HTTP client's guard refuses from a network failure (scrape.Refused).
 	Refused func(error) bool
+	// HTTPSOnly refuses plain http URLs, as Cloud does (VOICEGATEWAY_WORKER_ENDPOINTS_PUBLIC_ONLY).
+	HTTPSOnly bool
 }
 
 // outcome is one attempt's result before the retry schedule applies.
@@ -65,6 +67,8 @@ type outcome struct {
 	retryAfter time.Duration
 	retry      bool
 	ok         bool
+	// cancelled: the channel was removed, so nothing is sent and nothing is wrong.
+	cancelled bool
 }
 
 // Tick claims due deliveries and sends each once.
@@ -104,6 +108,8 @@ func (d *Deliverer) schedule(del store.AlertDelivery, o outcome, now time.Time) 
 	switch {
 	case o.ok:
 		a.State = "delivered"
+	case o.cancelled:
+		a.State = "cancelled"
 	case o.retry && now.Sub(del.CreatedAt) < retryFor:
 		a.State = "retrying"
 		a.NextAttemptAt = now.Add(max(backoff(del.Attempts+1), min(o.retryAfter, retryFor)))
@@ -124,7 +130,10 @@ func backoff(n int) time.Duration {
 	return min(wait, maxRetry)
 }
 
-var channelNames = map[string]string{"email": "Email", "webhook": "Webhook"}
+var channelNames = map[string]string{
+	"email": "Email", "webhook": "Webhook", "slack": "Slack", "teams": "Microsoft Teams",
+	"discord": "Discord", "pagerduty": "PagerDuty", "opsgenie": "Opsgenie",
+}
 
 // issueText says on the Issues page what was not delivered, where, and why.
 func issueText(del store.AlertDelivery, o outcome) string {
@@ -142,9 +151,11 @@ func issueText(del store.AlertDelivery, o outcome) string {
 }
 
 func (d *Deliverer) send(ctx context.Context, del store.AlertDelivery) outcome {
-	config, err := d.Store.AlertChannelConfig(ctx, del.OrganisationID, del.ProjectID, del.Channel)
+	config, err := d.Store.DeliveryChannelConfig(ctx, del)
 	if errors.Is(err, store.ErrAlertChannelMissing) {
-		return refused("channel_removed", "the channel was removed before delivery")
+		o := refused("channel_removed", "the channel was removed before delivery")
+		o.cancelled = true
+		return o
 	}
 	if err != nil {
 		// The store failing is ours, not the channel's: try again later.
@@ -166,6 +177,31 @@ func (d *Deliverer) send(ctx context.Context, del store.AlertDelivery) outcome {
 		}
 		return d.email(ctx, c, del)
 	}
+	var m Message
+	if err := json.Unmarshal(del.Message, &m); err != nil {
+		return refused("bad_config", "the message could not be read")
+	}
+	switch del.Channel {
+	case "slack", "teams", "discord":
+		var c store.AlertURLConfig
+		if err := json.Unmarshal(config, &c); err != nil {
+			return refused("bad_config", "the channel configuration could not be read")
+		}
+		body, err := chatMessage(del.Channel, m)
+		if err != nil {
+			return refused("bad_config", "the message could not be written for "+channelNames[del.Channel])
+		}
+		return d.post(ctx, c.URL, body, nil, []string{c.URL})
+	case "pagerduty", "opsgenie":
+		var c store.AlertKeyConfig
+		if err := json.Unmarshal(config, &c); err != nil {
+			return refused("bad_config", "the channel configuration could not be read")
+		}
+		if del.Channel == "pagerduty" {
+			return d.pagerDuty(ctx, c, m)
+		}
+		return d.opsgenie(ctx, c, m)
+	}
 	return refused("bad_config", "unknown channel kind")
 }
 
@@ -181,21 +217,35 @@ func (d *Deliverer) webhook(ctx context.Context, c store.AlertWebhookConfig, del
 	if err != nil {
 		return refused("bad_config", "the message could not be signed")
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.URL, bytes.NewReader(del.Message))
+	return d.post(ctx, c.URL, del.Message, map[string]string{
+		standardwebhooks.HeaderWebhookID:        del.Key,
+		standardwebhooks.HeaderWebhookTimestamp: strconv.FormatInt(at.Unix(), 10),
+		standardwebhooks.HeaderWebhookSignature: signature,
+		"Idempotency-Key":                       del.Key,
+	}, []string{c.URL, c.Secret})
+}
+
+// post sends one JSON body to a channel's URL and reads the answer: 2xx is delivered; 408, 429 and
+// 5xx are retried, honouring Retry-After; any other answer, redirects included (never followed),
+// marks the channel broken. secrets are taken out of a refusal's message.
+func (d *Deliverer) post(ctx context.Context, rawURL string, body []byte, headers map[string]string, secrets []string) outcome {
+	if d.HTTPSOnly && !strings.HasPrefix(strings.ToLower(rawURL), "https://") {
+		return refused("address_not_allowed", "plain http is not allowed from this server")
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, rawURL, bytes.NewReader(body))
 	if err != nil {
-		return refused("bad_config", "the webhook URL could not be used")
+		return refused("bad_config", "the URL could not be used")
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("User-Agent", "VoiceGateway-Alerts")
-	req.Header.Set(standardwebhooks.HeaderWebhookID, del.Key)
-	req.Header.Set(standardwebhooks.HeaderWebhookTimestamp, strconv.FormatInt(at.Unix(), 10))
-	req.Header.Set(standardwebhooks.HeaderWebhookSignature, signature)
-	req.Header.Set("Idempotency-Key", del.Key)
+	for k, v := range headers {
+		req.Header.Set(k, v)
+	}
 	resp, err := d.HTTP.Do(req)
 	if err != nil {
 		// The error text repeats the URL, which may carry a token: keep its class only.
 		if errors.Is(err, context.DeadlineExceeded) {
-			return outcome{status: "timeout", err: ptr("no answer within 10 s"), retry: true}
+			return timedOut()
 		}
 		// The worker's address guard refused the host's address: the same on every retry.
 		if d.Refused != nil && d.Refused(err) {
@@ -204,20 +254,32 @@ func (d *Deliverer) webhook(ctx context.Context, c store.AlertWebhookConfig, del
 		return outcome{status: "unreachable", err: ptr("could not connect"), retry: true}
 	}
 	defer func() { _ = resp.Body.Close() }()
-	body, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
-	o := outcome{status: "HTTP " + strconv.Itoa(resp.StatusCode)}
-	if msg := providerMessage(body, c); msg != "" {
+	answer, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
+	o := answered(resp.StatusCode, providerMessage(answer, rawURL, secrets...))
+	if o.retry {
+		o.retryAfter = retryAfter(resp.Header.Get("Retry-After"), d.Now())
+	}
+	return o
+}
+
+// answered classifies a provider's HTTP answer: 2xx is delivered; 408, 429 and 5xx are retried; any
+// other answer is final. msg is the provider's message, already free of secrets.
+func answered(code int, msg string) outcome {
+	o := outcome{status: "HTTP " + strconv.Itoa(code)}
+	if msg != "" {
 		o.err = &msg
 	}
-	switch code := resp.StatusCode; {
+	switch {
 	case code >= 200 && code < 300:
 		o.ok, o.err = true, nil
 	case code == http.StatusTooManyRequests || code == http.StatusRequestTimeout || code >= 500:
 		o.retry = true
-		o.retryAfter = retryAfter(resp.Header.Get("Retry-After"), d.Now())
 	}
-	// Any other answer, redirects included (never followed), marks the channel broken.
 	return o
+}
+
+func timedOut() outcome {
+	return outcome{status: "timeout", err: ptr("no answer within 10 s"), retry: true}
 }
 
 // email sends the message to every recipient as one email.
@@ -261,12 +323,11 @@ func retryAfter(v string, now time.Time) time.Duration {
 }
 
 // providerMessage keeps a short, printable part of a refusal's body, with the channel's URL, every
-// part of its path, query and user info, and its secret taken out, so a body that echoes a token
-// never reaches the console.
-func providerMessage(body []byte, c store.AlertWebhookConfig) string {
+// part of its path, query and user info, and the other secrets taken out, so a body that echoes a
+// token never reaches the console.
+func providerMessage(body []byte, rawURL string, secrets ...string) string {
 	s := string(body)
-	secrets := []string{c.URL, c.Secret}
-	if u, err := url.Parse(c.URL); err == nil {
+	if u, err := url.Parse(rawURL); rawURL != "" && err == nil {
 		secrets = append(secrets, u.RawQuery, u.User.String())
 		secrets = append(secrets, strings.Split(u.Path, "/")...)
 		for _, values := range u.Query() {

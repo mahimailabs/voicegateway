@@ -56,7 +56,7 @@ Every settings read below goes through the contract. The console's saves stay in
 | `sip-test.json` | Explicitly hand-written layout test, not captured traffic. May validate schema shape but cannot establish measurement provenance or populate production results. |
 | `egress.json`, `ingress.json` | Two-second ListEgress/ListIngress samples from labelled test operations. Ingress/egress history is partial. Credentials were omitted. |
 | `project-snapshot.json` | One read-only project snapshot plus a separately noted hidden-participant RemoteSession observation. Do not imply observation is on by default. |
-| `capacity.json` | Capacity feasibility run on a shared ten-core development Mac; limited by the tester. Not a production per-replica capacity guarantee. |
+| `capacity.json` | Capacity feasibility run on a shared ten-core development Mac; limited by the tester. Not a production per-replica capacity guarantee. The capture recorded one time and no per-step times, CPU, failed, late or no-answer counts: the mock gives every time that one time and leaves the rest null. A run started in the mock replays these steps, one per read. |
 | `network-probe.json` | Captured development-host TCP/TLS/first-byte probes and approximate edge geolocation. Not model inference location or measured per-call provider latency. The contract reads recorded observations; it does not make the product call model providers. |
 
 ## Non-API assets

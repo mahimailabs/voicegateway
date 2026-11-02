@@ -103,7 +103,7 @@ func TestMCPToolsReadTheKeysProject(t *testing.T) {
 	}
 	slices.Sort(names)
 	want := []string{
-		"getAlertSetup", "getCall", "getCallMetadata", "getCallStats", "getCallTags", "getCloudAgents", "getEgress", "getIngress",
+		"getAlertSetup", "getCall", "getCallMetadata", "getCallStats", "getCallTags", "getCapacity", "getCloudAgents", "getEgress", "getIngress",
 		"getIssueMetadata", "getMediaServer", "getProjectConnection", "getProjectSettings", "getResources", "getSip", "getWorkers",
 		"getWorkspaces", "listAlertEvents", "listAlertIncidents", "listCalls", "listIssues",
 	}

@@ -74,6 +74,13 @@ type Accounts interface {
 }
 
 // Keys lists, creates and revokes a project's API keys.
+// CapacityRuns stores capacity test requests and reads what the worker measured (decision 0022).
+type CapacityRuns interface {
+	CreateCapacityRun(ctx context.Context, n store.NewCapacityRun) (store.CapacityRun, error)
+	StopCapacityRun(ctx context.Context, organisationID, projectID, id string, now time.Time) (store.CapacityRun, error)
+	LatestCapacityRun(ctx context.Context, organisationID, projectID, agent string) (store.CapacityRun, error)
+}
+
 type Keys interface {
 	ProjectKeys(ctx context.Context, organisationID, projectID string) ([]store.ProjectKey, error)
 	CreateProjectKey(ctx context.Context, organisationID, projectID, keyID, name string, secretSHA256 []byte, createdBy string) (time.Time, error)

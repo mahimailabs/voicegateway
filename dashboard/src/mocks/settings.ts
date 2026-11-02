@@ -71,11 +71,13 @@ export const alertSetup = (): AlertSetup => (settleTests(), {
 })
 export const alertChannels = () => [...channelState.keys()]
 
-/** Saves a rule as web does: only email and webhook, de-duplicated and sorted. */
+const KINDS: readonly string[] = ["email", "webhook", "slack", "teams", "discord", "pagerduty", "opsgenie"] satisfies AlertChannel["kind"][]
+
+/** Saves a rule as web does: known channel kinds only, de-duplicated and sorted. */
 export function updateAlertRule(ruleId: string, input: unknown): AlertRuleSetup | "not_found" | "invalid_request" {
   if (!RULES.includes(ruleId as AlertRuleSetup["ruleId"])) return "not_found"
   const v = record(input)
-  if (Object.keys(v).some((k) => !["on", "to"].includes(k)) || typeof v.on !== "boolean" || !Array.isArray(v.to) || v.to.some((c) => c !== "email" && c !== "webhook")) return "invalid_request"
+  if (Object.keys(v).some((k) => !["on", "to"].includes(k)) || typeof v.on !== "boolean" || !Array.isArray(v.to) || v.to.some((c) => !KINDS.includes(String(c)))) return "invalid_request"
   const to = [...new Set(v.to as AlertRuleUpdate["to"])].sort()
   ruleState.set(ruleId, { on: v.on, to })
   return { ruleId: ruleId as AlertRuleSetup["ruleId"], on: v.on, to }
@@ -85,10 +87,33 @@ const secret = () => `whsec_${btoa(String.fromCharCode(...crypto.getRandomValues
 
 /** Sets a channel as web does; the webhook's secret is made on create or rotate and answered once. */
 export function updateAlertChannel(kind: string, input: unknown): SavedAlertChannel | "not_found" | "invalid_request" {
-  if (kind !== "email" && kind !== "webhook") return "not_found"
+  if (!KINDS.includes(kind)) return "not_found"
   const v = record(input)
-  if (Object.keys(v).some((k) => !["url", "rotateSecret", "recipients"].includes(k))) return "invalid_request"
+  if (Object.keys(v).some((k) => !["url", "rotateSecret", "recipients", "key", "region"].includes(k))) return "invalid_request"
   const now = new Date().toISOString()
+  const keep = (k: AlertChannel["kind"], target: string): SavedAlertChannel => {
+    channelState.set(k, { kind: k, target, recipients: null, broken: false, updatedAt: now, lastDelivery: channelState.get(k)?.lastDelivery ?? null })
+    return { kind: k, target, recipients: null, signingSecret: null }
+  }
+  // The paging providers take a key and a region; the server checks the key's shape.
+  if (kind === "pagerduty" || kind === "opsgenie") {
+    const region = v.region ?? "us"
+    if (typeof v.key !== "string" || v.key.length < 8 || (region !== "us" && region !== "eu") || v.url !== undefined || v.recipients !== undefined) return "invalid_request"
+    return keep(kind, kind === "pagerduty" ? (region === "eu" ? "events.eu.pagerduty.com" : "events.pagerduty.com") : region === "eu" ? "api.eu.opsgenie.com" : "api.opsgenie.com")
+  }
+  // The chat providers take their incoming webhook URL, on the provider's own host.
+  if (kind === "slack" || kind === "teams" || kind === "discord") {
+    let host = ""
+    try {
+      const u = new URL(String(v.url))
+      host = u.protocol === "https:" ? u.hostname : ""
+    } catch {
+      host = ""
+    }
+    const own = { slack: host === "hooks.slack.com", teams: host.endsWith(".logic.azure.com") || host.endsWith(".api.powerplatform.com"), discord: host === "discord.com" || host === "discordapp.com" }[kind]
+    if (!own || v.key !== undefined || v.recipients !== undefined) return "invalid_request"
+    return keep(kind, host)
+  }
   if (kind === "email") {
     const list = Array.isArray(v.recipients) ? [...new Set(v.recipients.map((x) => String(x).trim().toLowerCase()))] : []
     if (v.url !== undefined || !list.length || list.length > 20 || list.some((x) => !/^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(x))) return "invalid_request"
@@ -105,8 +130,8 @@ export function updateAlertChannel(kind: string, input: unknown): SavedAlertChan
   }
   if (!host || v.recipients !== undefined) return "invalid_request"
   const fresh = !channelState.has("webhook") || v.rotateSecret === true
-  channelState.set("webhook", { kind, target: host, recipients: null, broken: false, updatedAt: now, lastDelivery: channelState.get("webhook")?.lastDelivery ?? null })
-  return { kind, target: host, recipients: null, signingSecret: fresh ? secret() : null }
+  channelState.set("webhook", { kind: "webhook", target: host, recipients: null, broken: false, updatedAt: now, lastDelivery: channelState.get("webhook")?.lastDelivery ?? null })
+  return { kind: "webhook", target: host, recipients: null, signingSecret: fresh ? secret() : null }
 }
 export const deleteAlertChannel = (kind: string) => channelState.delete(kind as AlertChannel["kind"])
 

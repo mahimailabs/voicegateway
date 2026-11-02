@@ -537,11 +537,12 @@ FROM organisations o WHERE o.id = @id;
 -- its start and end are known and the end is not before the start, and counts in the period that
 -- holds its end. Exact durations are summed first and the sum is rounded down to whole seconds
 -- once, never per call. Open calls, and closed calls with no end or an end before their start,
--- are counted apart by their start and never summed.
+-- are counted apart by their start and never summed. A capacity test's calls are VoiceGateway's own
+-- load, not the organisation's traffic, and never count (decision 0022).
 WITH period_calls AS (
     SELECT started_at, end_state,
         CASE end_state WHEN 'observed' THEN ended_at WHEN 'inferred' THEN last_activity_at END AS effective_end
-    FROM calls WHERE organisation_id = @organisation_id
+    FROM calls WHERE organisation_id = @organisation_id AND COALESCE(room_name, '') !~ '^vg-capacity-[0-9a-f]{8}-[0-9]+$'
 ), classified AS (
     SELECT *,
         started_at IS NOT NULL AND effective_end >= started_at
@@ -1162,8 +1163,13 @@ WHERE id = @id
 RETURNING *;
 
 -- name: InsertAlertDelivery :exec
+-- Queued only while the channel exists. FOR SHARE holds off a concurrent removal until this commits,
+-- so the removal's cancel sees the new delivery; a channel already removed queues nothing.
 INSERT INTO alert_deliveries (organisation_id, project_id, incident_id, channel, change, idempotency_key, message)
-VALUES (@organisation_id, @project_id, sqlc.narg(incident_id), @channel, @change, @idempotency_key, @message)
+SELECT @organisation_id, @project_id, sqlc.narg(incident_id), @channel, @change, @idempotency_key, @message
+FROM (SELECT 1 FROM alert_channels c
+      WHERE c.organisation_id = @organisation_id AND c.project_id = @project_id AND c.kind = @channel
+      FOR SHARE) live
 ON CONFLICT (idempotency_key) DO NOTHING;
 
 -- name: FiringAlertIncidents :many
@@ -1224,6 +1230,13 @@ WHERE d.id IN (
     FOR UPDATE SKIP LOCKED)
 RETURNING d.id, d.organisation_id, d.project_id, d.incident_id, d.channel, d.change, d.idempotency_key, d.message, d.attempts, d.created_at;
 
+-- name: SealedDeliveryChannel :one
+-- The channel a claimed delivery goes to, only while the delivery is still due: a delivery cancelled
+-- after the claim (its channel removed, maybe added again since) is never sent.
+SELECT c.config_sealed FROM alert_deliveries d
+JOIN alert_channels c ON c.organisation_id = d.organisation_id AND c.project_id = d.project_id AND c.kind = d.channel
+WHERE d.id = @id AND d.state IN ('pending', 'retrying');
+
 -- name: SealedAlertChannel :one
 SELECT config_sealed FROM alert_channels
 WHERE organisation_id = @organisation_id AND project_id = @project_id AND kind = @kind;
@@ -1233,11 +1246,12 @@ INSERT INTO alert_delivery_attempts (delivery_id, attempt, at, status, error)
 VALUES (@delivery_id, @attempt, @at, @status, sqlc.narg(error))
 ON CONFLICT DO NOTHING;
 
--- name: FinishAlertAttempt :exec
+-- name: FinishAlertAttempt :execrows
+-- A delivery cancelled while it was being sent (its channel removed) stays cancelled.
 UPDATE alert_deliveries SET state = @state, attempts = @attempts, next_attempt_at = @next_attempt_at, lease_until = NULL,
     last_status = @last_status, last_error = sqlc.narg(last_error),
     delivered_at = CASE WHEN @state = 'delivered' THEN @at::timestamptz ELSE delivered_at END
-WHERE id = @id;
+WHERE id = @id AND state IN ('pending', 'retrying');
 
 -- name: SetAlertChannelBroken :exec
 UPDATE alert_channels SET broken = @broken
@@ -1299,6 +1313,13 @@ SET config_sealed = EXCLUDED.config_sealed, target = EXCLUDED.target, broken = f
 -- name: DeleteAlertChannel :execrows
 DELETE FROM alert_channels WHERE organisation_id = @organisation_id AND project_id = @project_id AND kind = @kind;
 
+-- name: CancelAlertDeliveries :exec
+-- Deliveries still queued for a removed channel: nothing will send them, and nothing is wrong.
+UPDATE alert_deliveries SET state = 'cancelled', lease_until = NULL, last_status = 'channel_removed',
+    last_error = 'the channel was removed before delivery'
+WHERE organisation_id = @organisation_id AND project_id = @project_id AND channel = @channel
+  AND state IN ('pending', 'retrying');
+
 -- name: ListAlertIncidents :many
 -- Incidents open in, or still open across, a range, newest first.
 SELECT * FROM alert_incidents
@@ -1343,3 +1364,80 @@ SELECT r.organisation_id, r.project_id, r.rule_id FROM alert_rules r
 WHERE r.enabled AND EXISTS (
     SELECT 1 FROM alert_channels c
     WHERE c.organisation_id = r.organisation_id AND c.project_id = r.project_id AND c.kind = ANY(r.channels));
+
+-- name: CreateCapacityRun :one
+-- A requested capacity test (Postgres 00025). capacity_runs_one_open refuses a second open run for
+-- the project.
+INSERT INTO capacity_runs (organisation_id, project_id, agent, max_step, requested_by, requested_at)
+VALUES (@organisation_id, @project_id, @agent, @max_step, sqlc.narg(requested_by), @requested_at)
+RETURNING id;
+
+-- name: ClaimCapacityRun :one
+-- The oldest requested run, taken by one worker; SKIP LOCKED lets two workers claim two runs.
+UPDATE capacity_runs SET state = 'running', runner = @runner, started_at = @now, heartbeat_at = @now
+WHERE id = (
+    SELECT r.id FROM capacity_runs r WHERE r.state = 'requested'
+    ORDER BY r.requested_at LIMIT 1 FOR UPDATE SKIP LOCKED
+)
+RETURNING id;
+
+-- name: SetCapacityRunContext :exec
+UPDATE capacity_runs SET join_threshold_ms = @join_threshold_ms, cloud_agent = sqlc.narg(cloud_agent)
+WHERE id = @id AND runner = @runner AND state = 'running';
+
+-- name: HeartbeatCapacityRun :one
+-- Keeps a run its runner's; no row means another worker ended it as lost.
+UPDATE capacity_runs SET heartbeat_at = @now
+WHERE id = @id AND runner = @runner AND state = 'running'
+RETURNING stop_requested;
+
+-- name: EndCapacityRun :execrows
+UPDATE capacity_runs SET state = 'ended', ended_at = @ended_at, capacity = sqlc.narg(capacity),
+    limited_by = @limited_by, error = sqlc.narg(error)
+WHERE id = @id AND runner = @runner AND state = 'running';
+
+-- name: EndLostCapacityRuns :execrows
+-- A running run whose runner stopped heartbeating ends as runner_lost; a request no worker was free
+-- to take in time ends as no_worker.
+UPDATE capacity_runs SET state = 'ended', ended_at = @now,
+    limited_by = CASE WHEN state = 'running' THEN 'runner_lost' ELSE 'no_worker' END
+WHERE (state = 'running' AND heartbeat_at < @stale_before)
+   OR (state = 'requested' AND requested_at < @unclaimed_before);
+
+-- name: PutCapacityStep :exec
+INSERT INTO capacity_steps (run_id, step, started_at, ended_at, outcome, calls, joined, pending, failed, late,
+    join_seconds, answer_seconds, no_answer, tester_cpu_percent)
+SELECT r.id, @step, @started_at, sqlc.narg(ended_at), @outcome, @calls, @joined, @pending, @failed, @late,
+    @join_seconds::double precision[], @answer_seconds::double precision[], @no_answer, sqlc.narg(tester_cpu_percent)
+FROM capacity_runs r WHERE r.id = @run_id AND r.runner = @runner AND r.state = 'running'
+ON CONFLICT (run_id, step) DO UPDATE SET
+    ended_at = EXCLUDED.ended_at, outcome = EXCLUDED.outcome, calls = EXCLUDED.calls,
+    joined = EXCLUDED.joined, pending = EXCLUDED.pending, failed = EXCLUDED.failed, late = EXCLUDED.late,
+    join_seconds = EXCLUDED.join_seconds, answer_seconds = EXCLUDED.answer_seconds,
+    no_answer = EXCLUDED.no_answer, tester_cpu_percent = EXCLUDED.tester_cpu_percent;
+
+-- name: StopCapacityRun :one
+-- A person's stop: a run not yet claimed ends at once, a running one is asked to stop.
+UPDATE capacity_runs SET
+    stop_requested = true,
+    state      = CASE WHEN state = 'requested' THEN 'ended' ELSE state END,
+    ended_at   = CASE WHEN state = 'requested' THEN @now ELSE ended_at END,
+    limited_by = CASE WHEN state = 'requested' THEN 'stopped' ELSE limited_by END
+WHERE organisation_id = @organisation_id AND project_id = @project_id AND id = @id AND state <> 'ended'
+RETURNING id;
+
+-- name: CapacityRunByID :one
+SELECT id, organisation_id, project_id, agent, max_step, requested_at, state, started_at, ended_at,
+    stop_requested, join_threshold_ms, cloud_agent, capacity, limited_by, error
+FROM capacity_runs WHERE id = @id;
+
+-- name: LatestCapacityRun :one
+-- capacity_runs_agent serves it.
+SELECT id FROM capacity_runs
+WHERE organisation_id = @organisation_id AND project_id = @project_id AND agent = @agent
+ORDER BY requested_at DESC LIMIT 1;
+
+-- name: CapacitySteps :many
+SELECT step, started_at, ended_at, outcome, calls, joined, pending, failed, late, join_seconds,
+    answer_seconds, no_answer, tester_cpu_percent
+FROM capacity_steps WHERE run_id = @run_id ORDER BY step;

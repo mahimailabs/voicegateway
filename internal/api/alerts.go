@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/mail"
 	"net/url"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -164,13 +165,16 @@ func (a *API) getAlertSetup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	out := alertSetup{Items: rules, Channels: make([]alertChannel, 0, len(channels)), EmailAvailable: a.AlertEmail}
+	p, _ := store.PrincipalFrom(r.Context())
+	admin := p.Key == nil && p.Embed == nil && roleRank(p.Roles[org]) >= roleRank("Admin")
 	for _, c := range channels {
 		ch := alertChannel{Kind: c.Kind, Target: c.Target, Broken: c.Broken, UpdatedAt: c.UpdatedAt}
 		if c.Last != nil {
 			d := toAlertDelivery(*c.Last)
 			ch.LastDelivery = &d
 		}
-		if c.Kind == "email" {
+		// Recipients are addresses of people: an Admin, who sets them, reads them.
+		if c.Kind == "email" && admin {
 			ch.Recipients = a.emailRecipients(r.Context(), org, proj)
 		}
 		out.Channels = append(out.Channels, ch)
@@ -224,7 +228,7 @@ func (a *API) updateAlertRule(w http.ResponseWriter, r *http.Request) {
 	to := []string{}
 	for _, kind := range body.To {
 		if !slices.Contains(store.AlertChannelKinds, kind) {
-			writeError(w, r, http.StatusBadRequest, codeInvalidRequest, "to may name email and webhook; other channels are not available yet")
+			writeError(w, r, http.StatusBadRequest, codeInvalidRequest, "to may name "+strings.Join(store.AlertChannelKinds, ", "))
 			return
 		}
 		if !slices.Contains(to, kind) {
@@ -259,13 +263,15 @@ type savedAlertChannel struct {
 func (a *API) updateAlertChannel(w http.ResponseWriter, r *http.Request) {
 	kind := chi.URLParam(r, "kind")
 	if !slices.Contains(store.AlertChannelKinds, kind) {
-		writeError(w, r, http.StatusNotFound, codeNotFound, "no such alert channel; email and webhook are available")
+		writeError(w, r, http.StatusNotFound, codeNotFound, "no such alert channel; "+strings.Join(store.AlertChannelKinds, ", ")+" are available")
 		return
 	}
 	var body struct {
 		URL          *string  `json:"url"`
 		RotateSecret bool     `json:"rotateSecret"`
 		Recipients   []string `json:"recipients"`
+		Key          *string  `json:"key"`
+		Region       *string  `json:"region"`
 	}
 	if !decodeAlertBody(w, r, &body) {
 		return
@@ -280,16 +286,20 @@ func (a *API) updateAlertChannel(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		recipients, ok := emailList(body.Recipients)
-		if body.URL != nil || body.RotateSecret || !ok {
+		if body.URL != nil || body.RotateSecret || body.Key != nil || body.Region != nil || !ok {
 			writeError(w, r, http.StatusBadRequest, codeInvalidRequest, "recipients must be 1 to 20 email addresses")
 			return
 		}
 		config, err = json.Marshal(store.AlertEmailConfig{Recipients: recipients})
 		out = savedAlertChannel{Kind: kind, Target: recipientsTarget(len(recipients)), Recipients: &recipients}
 	case "webhook":
-		host, ok := webhookHost(body.URL)
-		if body.Recipients != nil || !ok {
-			writeError(w, r, http.StatusBadRequest, codeInvalidRequest, "url must be an http or https URL with a host, at most 2048 characters")
+		host, ok := webhookHost(body.URL, a.AlertHTTPSOnly)
+		if body.Recipients != nil || body.Key != nil || body.Region != nil || !ok {
+			if a.AlertHTTPSOnly {
+				writeError(w, r, http.StatusBadRequest, codeInvalidRequest, "url must be an https URL with a host, at most 2048 characters")
+			} else {
+				writeError(w, r, http.StatusBadRequest, codeInvalidRequest, "url must be an http or https URL with a host, at most 2048 characters")
+			}
 			return
 		}
 		org, proj := chi.URLParam(r, "orgId"), chi.URLParam(r, "projectId")
@@ -312,6 +322,26 @@ func (a *API) updateAlertChannel(w http.ResponseWriter, r *http.Request) {
 		}
 		// Sealed by the store before it is written; never sent back.
 		config, err = json.Marshal(store.AlertWebhookConfig{URL: *body.URL, Secret: secret}) //nolint:gosec // G117: sealed configuration, not an answer
+	case "slack", "teams", "discord":
+		host, ok := chatHost(kind, body.URL)
+		if body.Recipients != nil || body.RotateSecret || body.Key != nil || body.Region != nil || !ok {
+			writeError(w, r, http.StatusBadRequest, codeInvalidRequest, "url must be "+chatURLs[kind])
+			return
+		}
+		out = savedAlertChannel{Kind: kind, Target: host}
+		config, err = json.Marshal(store.AlertURLConfig{URL: *body.URL})
+	case "pagerduty", "opsgenie":
+		region := "us"
+		if body.Region != nil {
+			region = *body.Region
+		}
+		host, ok := keyHosts[kind][region]
+		if body.Recipients != nil || body.RotateSecret || body.URL != nil || body.Key == nil || !ok || !keyFormats[kind].MatchString(*body.Key) {
+			writeError(w, r, http.StatusBadRequest, codeInvalidRequest, "key must be "+keyNames[kind]+", and region us or eu")
+			return
+		}
+		out = savedAlertChannel{Kind: kind, Target: host}
+		config, err = json.Marshal(store.AlertKeyConfig{Key: *body.Key, Region: region})
 	}
 	if err != nil {
 		a.fail(w, r, err, "")
@@ -352,17 +382,71 @@ func recipientsTarget(n int) string {
 }
 
 // webhookHost checks a webhook URL and returns its host, the only part the console shows: a path
-// or query may carry a token.
-func webhookHost(raw *string) (string, bool) {
+// or query may carry a token. httpsOnly refuses plain http, as Cloud does.
+func webhookHost(raw *string, httpsOnly bool) (string, bool) {
 	if raw == nil || len(*raw) > maxWebhookURL {
 		return "", false
 	}
 	u, err := url.Parse(*raw)
-	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Hostname() == "" || u.Fragment != "" {
+	if err != nil || (u.Scheme != "https" && (httpsOnly || u.Scheme != "http")) || u.Hostname() == "" || u.Fragment != "" {
 		return "", false
 	}
 	return u.Hostname(), true
 }
+
+// The incoming webhook URLs each chat provider hands out (docs/specs/alert-channels.md): Slack's
+// app webhooks, Teams Workflows (Power Automate) and Discord channel webhooks. Checking the host
+// catches a pasted URL from the wrong provider before anything is sent.
+var (
+	chatURLs = map[string]string{
+		"slack":   "a Slack incoming webhook URL, https://hooks.slack.com/services/...",
+		"teams":   "a Teams Workflows webhook URL, https://....logic.azure.com/... or https://....api.powerplatform.com/...",
+		"discord": "a Discord webhook URL, https://discord.com/api/webhooks/...",
+	}
+	chatPaths = map[string]*regexp.Regexp{
+		"slack":   regexp.MustCompile(`^/services/[A-Za-z0-9_/-]+$`),
+		"teams":   regexp.MustCompile(`^/`),
+		"discord": regexp.MustCompile(`^/api(/v[0-9]+)?/webhooks/[0-9]+/[A-Za-z0-9_-]+$`),
+	}
+)
+
+// chatHost checks a chat channel's URL and returns its host.
+func chatHost(kind string, raw *string) (string, bool) {
+	if raw == nil || len(*raw) > maxWebhookURL {
+		return "", false
+	}
+	u, err := url.Parse(*raw)
+	if err != nil || u.Scheme != "https" || u.User != nil || u.Fragment != "" || !chatPaths[kind].MatchString(u.Path) {
+		return "", false
+	}
+	host := strings.ToLower(u.Hostname())
+	switch kind {
+	case "slack":
+		return host, host == "hooks.slack.com" || host == "hooks.slack-gov.com"
+	case "teams":
+		return host, strings.HasSuffix(host, ".logic.azure.com") || strings.HasSuffix(host, ".api.powerplatform.com")
+	case "discord":
+		return host, slices.Contains([]string{"discord.com", "discordapp.com", "ptb.discord.com", "canary.discord.com"}, host)
+	}
+	return "", false
+}
+
+// The paging providers' event hosts by region, and the shape of their keys: a PagerDuty Events API
+// v2 integration (routing) key, and an Opsgenie API integration key.
+var (
+	keyHosts = map[string]map[string]string{
+		"pagerduty": {"us": "events.pagerduty.com", "eu": "events.eu.pagerduty.com"},
+		"opsgenie":  {"us": "api.opsgenie.com", "eu": "api.eu.opsgenie.com"},
+	}
+	keyFormats = map[string]*regexp.Regexp{
+		"pagerduty": regexp.MustCompile(`^[A-Za-z0-9]{32}$`),
+		"opsgenie":  regexp.MustCompile(`^[A-Fa-f0-9]{8}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{12}$`),
+	}
+	keyNames = map[string]string{
+		"pagerduty": "a PagerDuty Events API v2 integration key (32 characters)",
+		"opsgenie":  "an Opsgenie API integration key",
+	}
+)
 
 // newSigningSecret draws a Standard Webhooks signing secret: whsec_ and 32 random bytes in base64.
 func newSigningSecret() (string, error) {

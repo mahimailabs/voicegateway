@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
-import type { AlertChannel, AlertEvents, AlertIncident, AlertSetup } from "@/lib/api-types"
+import type { AlertChannel, AlertChannelKind, AlertEvents, AlertIncident, AlertSetup } from "@/lib/api-types"
 import { alertSetupQuery, saveAlertRule } from "@/lib/api"
 import { errorText } from "@/components/page-state"
 import { BUDGET_MS, JOIN_MS } from "@/lib/thresholds"
@@ -64,12 +64,8 @@ export function rulesFrom(ev: AlertEvents): Rule[] {
 }
 
 // Which rules are on and where each one goes, from getAlertSetup; updateAlertRule saves a change.
-// Email and webhook deliver today; the other kinds are listed as coming, and the server refuses them.
-export const CHANNELS = ["slack", "teams", "discord", "pagerduty", "opsgenie", "email", "webhook"] as const
+export const CHANNELS = ["slack", "teams", "discord", "pagerduty", "opsgenie", "email", "webhook"] as const satisfies readonly AlertChannelKind[]
 export type Channel = (typeof CHANNELS)[number]
-export const DELIVERING = ["email", "webhook"] as const satisfies readonly Channel[]
-export type Delivering = (typeof DELIVERING)[number]
-export const delivers = (c: Channel): c is Delivering => (DELIVERING as readonly Channel[]).includes(c)
 export const channelName: Record<Channel, string> = { slack: "Slack", teams: "Microsoft Teams", discord: "Discord", pagerduty: "PagerDuty", opsgenie: "Opsgenie", email: "Email", webhook: "Webhook" }
 export type Setup = Record<string, { on: boolean; to: Channel[] }>
 export const setupFrom = (a: AlertSetup): Setup => Object.fromEntries(a.items.map((r) => [r.ruleId, { on: r.on, to: r.to }]))
@@ -80,7 +76,7 @@ export function useSetRule() {
   const qc = useQueryClient()
   const key = alertSetupQuery().queryKey
   const save = useMutation({
-    mutationFn: (v: { id: RuleId; on: boolean; to: Delivering[] }) => saveAlertRule(v.id, { on: v.on, to: v.to }),
+    mutationFn: (v: { id: RuleId; on: boolean; to: Channel[] }) => saveAlertRule(v.id, { on: v.on, to: v.to }),
     onMutate: async (v) => {
       await qc.cancelQueries({ queryKey: key })
       const prior = qc.getQueryData<AlertSetup>(key)
@@ -95,7 +91,7 @@ export function useSetRule() {
   })
   return (s: Setup, id: RuleId, change: Partial<{ on: boolean; to: Channel[] }>) => {
     const next = { ...ruleSetup(s, id), ...change }
-    save.mutate({ id, on: next.on, to: next.to.filter(delivers) })
+    save.mutate({ id, on: next.on, to: next.to })
   }
 }
 

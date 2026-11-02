@@ -246,7 +246,7 @@ describe("LiveKit reads", () => {
     ["sip", "Sip"],
     ["media-server", "MediaServer"],
     ["agents", "CloudAgents"],
-    ["capacity", "CapacityRun"],
+    ["capacity?agent=vg-capture", "CapacityRun"],
     ["snapshot", "ProjectSnapshot"],
     ["workers", "Workers"],
     ["provider-probes", "ProviderProbes"],
@@ -262,6 +262,40 @@ describe("LiveKit reads", () => {
     const times = eg.egress.flatMap((e: { startedAt: string | null; history: { at: string | null }[] }) => [e.startedAt, ...e.history.map((h) => h.at)])
     expect(times.length).toBeGreaterThan(0)
     for (const t of times) expect(t === null || !Number.isNaN(Date.parse(t))).toBe(true)
+  })
+})
+
+describe("capacity tests", () => {
+  afterEach(() => resetMockLiveKit())
+  const post = (path: string, body?: unknown) => fetch(`${base}/${path}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: body === undefined ? undefined : JSON.stringify(body) })
+
+  test("a started run steps through to its end in the contract shape, one run at a time", async () => {
+    expect((await fetch(`${base}/capacity`)).status).toBe(400)
+    expect(await (await fetch(`${base}/capacity?agent=nobody`)).json()).toBeNull()
+    expect((await post("capacity-runs", { agent: "vg-capture", maxStep: 8, consent: false })).status).toBe(400)
+    const started = await post("capacity-runs", { agent: "vg-capture", maxStep: 8, consent: true })
+    expect(started.status).toBe(202)
+    const run = await started.json()
+    expect(valid("CapacityRun", run)).toBe("")
+    expect(run.capacity).toBeNull()
+    const again = await post("capacity-runs", { agent: "vg-capture", maxStep: 8, consent: true })
+    expect([again.status, (await again.json()).code]).toEqual([409, "run_active"])
+    let read = run
+    for (let i = 0; i < 10 && read.state !== "ended"; i++) {
+      read = await (await fetch(`${base}/capacity?agent=vg-capture`)).json()
+      expect(valid("CapacityRun", read)).toBe("")
+    }
+    expect([read.state, read.limitedBy, read.capacity, read.steps.length]).toEqual(["ended", "max_reached", 8, 4])
+    expect((await post(`capacity-runs/${run.id}/stop`)).status).toBe(404)
+  })
+
+  test("Stop ends an open run as stopped, keeping the steps that passed", async () => {
+    const run = await (await post("capacity-runs", { agent: "vg-capture", maxStep: 16, consent: true })).json()
+    for (let i = 0; i < 3; i++) await fetch(`${base}/capacity?agent=vg-capture`)
+    const stopped = await post(`capacity-runs/${run.id}/stop`)
+    const body = await stopped.json()
+    expect(valid("CapacityRun", body)).toBe("")
+    expect([stopped.status, body.state, body.limitedBy, body.capacity]).toEqual([200, "ended", "stopped", 2])
   })
 })
 
@@ -526,10 +560,25 @@ describe("settings reads", () => {
     const saved = await put("slow-join", { on: false, to: ["webhook", "email", "webhook"] })
     expect(saved.status).toBe(200)
     expect(valid("AlertRuleSetup", await saved.json())).toBe("")
-    expect((await put("slow-join", { on: true, to: ["slack"] })).status).toBe(400)
+    expect((await put("slow-join", { on: true, to: ["sms"] })).status).toBe(400)
     expect((await put("no-such-rule", { on: true, to: [] })).status).toBe(404)
     const after = (await get(`${base}/alert-setup`)).body
     expect(after.items.find((r: { ruleId: string }) => r.ruleId === "slow-join")).toEqual({ ruleId: "slow-join", on: false, to: ["email", "webhook"] })
+  })
+
+  test("a chat channel takes only its provider's URL, and a paging channel a key and region", async () => {
+    resetAlerts()
+    const put = (kind: string, b: unknown) => fetch(`${base}/alert-channels/${kind}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(b) })
+    const slack = await (await put("slack", { url: "https://hooks.slack.com/services/T0/B0/X" })).json()
+    expect(valid("SavedAlertChannel", slack)).toBe("")
+    expect(slack).toEqual({ kind: "slack", target: "hooks.slack.com", recipients: null, signingSecret: null })
+    expect((await put("slack", { url: "https://hooks.example.com/services/T0/B0/X" })).status).toBe(400)
+    expect((await put("discord", { url: "http://discord.com/api/webhooks/1/x" })).status).toBe(400)
+    const opsgenie = await (await put("opsgenie", { key: "00000000-0000-0000-0000-000000000000", region: "eu" })).json()
+    expect(valid("SavedAlertChannel", opsgenie)).toBe("")
+    expect(opsgenie.target).toBe("api.eu.opsgenie.com")
+    expect((await put("pagerduty", { key: "short" })).status).toBe(400)
+    expect((await put("sms", { url: "https://example.com" })).status).toBe(404)
   })
 
   test("a webhook channel answers its signing secret once and shows only its host", async () => {

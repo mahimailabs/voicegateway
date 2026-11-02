@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -468,5 +469,143 @@ func TestAttemptRecordedAfterTickEnds(t *testing.T) {
 	_ = f.deliver.Tick(tick, f.clock())
 	if n := f.count(`SELECT count(*) FROM alert_deliveries WHERE attempts = 1 AND lease_until IS NULL`); n != 1 {
 		t.Fatal("the attempt made before the tick ended was not recorded")
+	}
+}
+
+// A channel removed while a delivery waits for it cancels the delivery: nothing is sent, the
+// channel is not broken and nothing is listed on the Issues page. A delivery already being sent
+// when the channel goes stays cancelled, whatever the channel answered.
+func TestRemovedChannelCancelsQueuedDeliveries(t *testing.T) {
+	f := setup(t)
+	ctx := context.Background()
+	f.webhook("http://127.0.0.1:1/never", "recording-lost")
+	if err := f.store.PutMediaFinding(ctx, store.MediaFinding{OrganisationID: "default", ProjectID: "one", Layer: "egress", EventID: "evt-1", ComponentID: "EG_1", Status: "EGRESS_FAILED"}); err != nil {
+		t.Fatal(err)
+	}
+	f.tick()
+	if err := f.store.DeleteAlertChannel(ctx, "default", "one", "webhook"); err != nil {
+		t.Fatal(err)
+	}
+	f.advance(time.Minute)
+	f.send()
+	if n := f.count(`SELECT count(*) FROM alert_deliveries WHERE state = 'cancelled' AND attempts = 0 AND last_status = 'channel_removed'`); n != 1 {
+		t.Fatalf("cancelled deliveries = %d, want 1 never attempted", n)
+	}
+
+	// In flight: the channel is removed while the receiver holds the request, then it refuses.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := f.store.DeleteAlertChannel(r.Context(), "default", "one", "webhook"); err != nil {
+			t.Error(err)
+		}
+		w.WriteHeader(http.StatusBadRequest)
+	}))
+	defer srv.Close()
+	f.webhook(srv.URL, "recording-lost")
+	if err := f.store.PutMediaFinding(ctx, store.MediaFinding{OrganisationID: "default", ProjectID: "one", Layer: "egress", EventID: "evt-2", ComponentID: "EG_2", Status: "EGRESS_FAILED"}); err != nil {
+		t.Fatal(err)
+	}
+	f.tick()
+	f.advance(time.Minute)
+	f.send()
+	if n := f.count(`SELECT count(*) FROM alert_deliveries WHERE state = 'cancelled'`); n != 2 {
+		t.Fatalf("cancelled deliveries = %d, want 2", n)
+	}
+	if n := f.count(`SELECT count(*) FROM alert_delivery_attempts WHERE status = 'HTTP 400'`); n != 1 {
+		t.Fatalf("recorded attempts = %d, want the in-flight one", n)
+	}
+	if n := f.count(`SELECT count(*) FROM issue_occurrences WHERE issue_id = 'alert-not-delivered'`); n != 0 {
+		t.Fatalf("Issues rows = %d, want none for a removed channel", n)
+	}
+}
+
+// A Slack channel gets the incident as Block Kit at its incoming webhook URL.
+func TestSlackChannelDelivers(t *testing.T) {
+	f := setup(t)
+	ctx := context.Background()
+	var got []byte
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got, _ = io.ReadAll(r.Body)
+		_, _ = io.WriteString(w, "ok")
+	}))
+	defer srv.Close()
+	config, err := json.Marshal(store.AlertURLConfig{URL: srv.URL + "/services/T0/B0/X"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.store.PutAlertChannel(ctx, "default", "one", "slack", config, "hooks.slack.com"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.store.PutAlertRule(ctx, "default", "one", store.AlertRule{RuleID: "recording-lost", On: true, To: []string{"slack"}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.store.PutMediaFinding(ctx, store.MediaFinding{OrganisationID: "default", ProjectID: "one", Layer: "egress", EventID: "evt-1", ComponentID: "EG_1", Status: "EGRESS_FAILED"}); err != nil {
+		t.Fatal(err)
+	}
+	f.tick()
+	f.advance(time.Minute)
+	f.send()
+	var msg struct {
+		Text   string           `json:"text"`
+		Blocks []map[string]any `json:"blocks"`
+	}
+	if err := json.Unmarshal(got, &msg); err != nil || msg.Text != "Firing: Recording lost, EG_1" || len(msg.Blocks) < 2 {
+		t.Fatalf("slack got %s (%v)", got, err)
+	}
+	if n := f.count(`SELECT count(*) FROM alert_deliveries WHERE channel = 'slack' AND state = 'delivered'`); n != 1 {
+		t.Fatal("the slack delivery is not delivered")
+	}
+}
+
+// reAdding removes the webhook channel and adds it again at url right after a claim, before the
+// claimed deliveries are sent.
+type reAdding struct {
+	*pgstore.Store
+	f   *fixture
+	url string
+}
+
+func (r reAdding) ClaimAlertDeliveries(ctx context.Context, now, leaseUntil time.Time, limit int) ([]store.AlertDelivery, error) {
+	due, err := r.Store.ClaimAlertDeliveries(ctx, now, leaseUntil, limit)
+	if err == nil && len(due) > 0 {
+		if err := r.DeleteAlertChannel(ctx, "default", "one", "webhook"); err != nil {
+			return nil, err
+		}
+		r.f.webhook(r.url, "recording-lost")
+	}
+	return due, err
+}
+
+// A delivery cancelled after the worker claimed it is never sent, even to the channel added again in
+// its place; and nothing is queued to a channel that is gone.
+func TestCancelledClaimIsNotSent(t *testing.T) {
+	f := setup(t)
+	ctx := context.Background()
+	var sent atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { sent.Add(1) }))
+	defer srv.Close()
+	f.webhook(srv.URL+"/old", "recording-lost")
+	if err := f.store.PutMediaFinding(ctx, store.MediaFinding{OrganisationID: "default", ProjectID: "one", Layer: "egress", EventID: "evt-1", ComponentID: "EG_1", Status: "EGRESS_FAILED"}); err != nil {
+		t.Fatal(err)
+	}
+	f.tick()
+	f.deliver.Store = reAdding{Store: f.store, f: f, url: srv.URL + "/new"}
+	f.advance(time.Minute)
+	f.send()
+	if n := sent.Load(); n != 0 {
+		t.Fatalf("requests = %d, want the cancelled delivery left unsent", n)
+	}
+	if n := f.count(`SELECT count(*) FROM alert_deliveries WHERE state = 'cancelled' AND attempts = 0`); n != 1 {
+		t.Fatalf("cancelled deliveries = %d, want 1 never attempted", n)
+	}
+
+	// A change composed from a channel list read before the removal queues nothing for it.
+	if err := f.store.DeleteAlertChannel(ctx, "default", "one", "webhook"); err != nil {
+		t.Fatal(err)
+	}
+	if err := pgstore.New(f.pool).InsertAlertDelivery(ctx, pgstore.InsertAlertDeliveryParams{OrganisationID: "default", ProjectID: "one", Channel: "webhook", Change: "test", IdempotencyKey: "stale", Message: []byte(`{}`)}); err != nil {
+		t.Fatal(err)
+	}
+	if n := f.count(`SELECT count(*) FROM alert_deliveries WHERE idempotency_key = 'stale'`); n != 0 {
+		t.Fatalf("deliveries to a removed channel = %d, want none", n)
 	}
 }

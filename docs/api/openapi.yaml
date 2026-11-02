@@ -816,7 +816,7 @@ paths:
       security:
         - consoleSession: []
         - projectKey: []
-      summary: Read the captured capacity run and its limitations
+      summary: Read an agent's latest capacity test, live while it runs
       tags:
         - Console reads
       x-access:
@@ -838,13 +838,98 @@ paths:
             minLength: 1
       responses:
         "200":
-          description: Latest retained capacity result for this agent, or null if no run was recorded. A missing run is not zero capacity. Source unavailability still uses 503.
+          description: The agent's latest capacity test, running or ended, or null before its first. A missing run is not zero capacity.
           content:
             application/json:
               schema:
                 oneOf:
                   - $ref: "#/components/schemas/CapacityRun"
                   - type: "null"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/SourceUnavailable"
+  /api/v1/org/{orgId}/project/{projectId}/capacity-runs:
+    post:
+      operationId: startCapacityRun
+      summary: Start a capacity test of one agent
+      tags:
+        - Console writes
+      x-access:
+        principal: organisation_member
+        minimumRole: Admin
+        projectIsolation: required
+        browserSessionTransport: session_cookie
+        scope: project
+      description: "Requires Admin membership in the named organisation (decision 0022): the test places real calls through the agent's providers, so consent is required. A worker claims the run within seconds, refuses a busy agent and ramps synthetic calls in rooms named vg-capacity-<8 hex>-<n>, which never count as calls. One run per project at a time: a second is 409 run_active. A project key cannot start one. An instance whose worker reaches only public addresses (VOICEGATEWAY_WORKER_ENDPOINTS_PUBLIC_ONLY, as on Cloud) answers 503 source_unavailable: a test's callers dial LiveKit's signalling and ICE servers outside that guard. Reads still answer there."
+      parameters:
+        - $ref: "#/components/parameters/OrganisationId"
+        - $ref: "#/components/parameters/ProjectId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CapacityRunStart"
+      responses:
+        "202":
+          description: The requested run; read it with getCapacity as it runs.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CapacityRun"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/SourceUnavailable"
+  /api/v1/org/{orgId}/project/{projectId}/capacity-runs/{runId}/stop:
+    post:
+      operationId: stopCapacityRun
+      summary: Stop a capacity test
+      tags:
+        - Console writes
+      x-access:
+        principal: organisation_member
+        minimumRole: Admin
+        projectIsolation: required
+        browserSessionTransport: session_cookie
+        scope: project
+      description: "Requires Admin membership in the named organisation. A run no worker has claimed ends at once; a running one stops within 2 s, and every test room is deleted. An ended run, or one from another project, is not_found."
+      parameters:
+        - $ref: "#/components/parameters/OrganisationId"
+        - $ref: "#/components/parameters/ProjectId"
+        - name: runId
+          in: path
+          required: true
+          description: The run's id from startCapacityRun or getCapacity.
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: The run, stopping or ended.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CapacityRun"
         "400":
           $ref: "#/components/responses/BadRequest"
         "401":
@@ -1381,7 +1466,7 @@ paths:
         projectIsolation: required
         browserSessionTransport: session_cookie
         scope: project
-      description: "A rule that is off still opens incidents, so its history stays, but sends nothing (docs/specs/alerts-behaviour.md). to names channel kinds only; email and webhook deliver today, and any other kind is invalid_request. A kind with no configured channel is kept and sends once an Admin configures it."
+      description: "A rule that is off still opens incidents, so its history stays, but sends nothing (docs/specs/alerts-behaviour.md). to names channel kinds only; any other kind is invalid_request. A kind with no configured channel is kept and sends once an Admin configures it."
       parameters:
         - $ref: "#/components/parameters/OrganisationId"
         - $ref: "#/components/parameters/ProjectId"
@@ -1424,7 +1509,7 @@ paths:
         projectIsolation: required
         browserSessionTransport: session_cookie
         scope: project
-      description: "Admins only. Email takes 1 to 20 recipient addresses and needs the server's VOICEGATEWAY_SMTP_URL. A webhook takes an http or https URL; the URL is sealed on the server and never returned, and only its host is shown. A new webhook gets a Standard Webhooks signing secret, returned in this answer only; saving again keeps it unless rotateSecret is true. Saving clears a broken channel."
+      description: "Admins only. Email takes 1 to 20 recipient addresses and needs the server's VOICEGATEWAY_SMTP_URL. A webhook takes an http or https URL (https only on Cloud); the URL is sealed on the server and never returned, and only its host is shown. A new webhook gets a Standard Webhooks signing secret, returned in this answer only; saving again keeps it unless rotateSecret is true. Slack, Teams and Discord take the provider's incoming webhook URL; PagerDuty and Opsgenie take a key and a region. URLs and keys are sealed and never returned. Saving clears a broken channel."
       parameters:
         - $ref: "#/components/parameters/OrganisationId"
         - $ref: "#/components/parameters/ProjectId"
@@ -1466,7 +1551,7 @@ paths:
         projectIsolation: required
         browserSessionTransport: session_cookie
         scope: project
-      description: "Admins only. Rules keep the kind among their choices; nothing is sent to it until it is configured again. A delivery still waiting fails as channel_removed. A channel not configured is not_found."
+      description: "Admins only. Rules keep the kind among their choices; nothing is sent to it until it is configured again. A delivery still waiting is cancelled, with status channel_removed; it adds nothing to the Issues page. A channel not configured is not_found."
       parameters:
         - $ref: "#/components/parameters/OrganisationId"
         - $ref: "#/components/parameters/ProjectId"
@@ -4508,78 +4593,186 @@ components:
     CapacityRun:
       type: object
       additionalProperties: false
+      description: "One capacity test (decision 0022, docs/specs/capacity-runner.md): synthetic calls ramped 1, 2, 4 and so on at one agent until a stop rule tripped. Values the run did not measure, or has not yet, are null, never zero."
       properties:
-        source:
+        id:
           type: string
-          x-source: { kind: computed, file: dashboard/src/mocks/capacity.json, pointer: /source, detail: Capture annotation describing the recorded source and its limits; not a LiveKit API response field. }
+          format: uuid
+          x-source: { kind: configuration, file: migrations/postgres/00025_capacity_runs.sql, pointer: null, detail: "The run's id, drawn by Postgres when the run is requested." }
         agent:
           type: string
-          x-source: { kind: computed, file: dashboard/src/mocks/capacity.json, pointer: /agent, detail: VoiceGateway synthetic capacity feasibility run and its test-host observations }
-        ranAt:
+          x-source: { kind: configuration, file: migrations/postgres/00025_capacity_runs.sql, pointer: null, detail: "The agent name the test dispatches by, as the person chose it." }
+        maxStep:
+          type: integer
+          enum: [ 8, 16, 32, 64 ]
+          x-unit: calls
+          x-configuration: true
+          x-source: { kind: configuration, file: migrations/postgres/00025_capacity_runs.sql, pointer: null, detail: "The most calls at once the person allowed." }
+        state:
+          type: string
+          enum: [ requested, running, ended ]
+          description: "requested: waiting for a worker; running: a worker holds it and heartbeats it every second; ended: limitedBy says why."
+          x-source: { kind: computed, file: internal/capacity/run.go, pointer: null, detail: "Set by the worker that claims, runs and ends the run." }
+        requestedAt:
           type: string
           format: date-time
-          x-source: { kind: computed, file: dashboard/src/mocks/capacity.json, pointer: /ranAt, detail: VoiceGateway synthetic capacity feasibility run and its test-host observations }
+          x-source: { kind: configuration, file: migrations/postgres/00025_capacity_runs.sql, pointer: null, detail: "When the person started the test." }
+        startedAt:
+          type: [ string, "null" ]
+          format: date-time
+          x-null-reason: "No worker has claimed the run yet."
+          x-source: { kind: computed, file: internal/capacity/run.go, pointer: null, detail: "When a worker claimed the run." }
+        endedAt:
+          type: [ string, "null" ]
+          format: date-time
+          x-null-reason: "The run has not ended."
+          x-source: { kind: computed, file: internal/capacity/run.go, pointer: null, detail: "When the run ended, for any reason." }
+        stopRequested:
+          type: boolean
+          x-source: { kind: configuration, file: migrations/postgres/00025_capacity_runs.sql, pointer: null, detail: "Whether a person pressed Stop; the runner stops within 2 s." }
+        capacity:
+          type: [ integer, "null" ]
+          minimum: 1
+          x-unit: calls
+          x-null-reason: "No step has passed: the run has not finished one, or step 1 failed. Never zero."
+          x-source: { kind: computed, file: internal/capacity/run.go, pointer: null, detail: "The last step every call passed: calls at once the agent carried. On LiveKit Cloud it is per replica." }
         limitedBy:
-          type: string
-          x-source: { kind: computed, file: dashboard/src/mocks/capacity.json, pointer: /limitedBy, detail: VoiceGateway synthetic capacity feasibility run and its test-host observations }
-        workerLog:
-          type: string
-          x-source: { kind: computed, file: dashboard/src/mocks/capacity.json, pointer: /workerLog, detail: VoiceGateway synthetic capacity feasibility run and its test-host observations }
+          type: [ string, "null" ]
+          enum: [ pending, job_failed, answer, plan, max_reached, tester, real_call, agent_busy, stopped, runner_lost, no_worker, failed, null ]
+          description: "What ended the run. The agent's limits: pending (a job waited 10 s for the agent), job_failed (an agent left a call or a dispatch was refused), answer (the median answer rose more than 50% above step 1's, or a call went unanswered for 15 s), plan (a LiveKit Cloud agent refused at the Build plan's 5 sessions). max_reached: every step passed. The rest say the run could not measure the agent: tester (the tester's CPU averaged over 90%), real_call (a room the test did not create got the agent), agent_busy (the agent had a call at the start), stopped (a person pressed Stop), runner_lost (the worker stopped heartbeating), no_worker (no worker was free to claim the request within 15 minutes), failed (LiveKit or storage failed; see error)."
+          x-null-reason: "The run has not ended."
+          x-source: { kind: computed, file: internal/capacity/run.go, pointer: null, detail: "The stop rule or event that ended the run." }
+        cloudAgent:
+          type: [ boolean, "null" ]
+          x-null-reason: "LiveKit's agent API could not be read, or the run has not started."
+          x-source: { kind: computed, file: internal/capacity/livekit.go, pointer: null, detail: "Whether ListAgents (server-sdk-go v2.19.0 AgentClient) on LiveKit Cloud's agent API names the agent." }
+        joinThresholdMs:
+          type: [ integer, "null" ]
+          x-unit: milliseconds
+          x-null-reason: "The run has not started."
+          x-source: { kind: configuration, file: internal/store/settings.go, pointer: null, detail: "The project's join threshold when the run started; a join slower than it is late, not a failure." }
+        error:
+          type: [ string, "null" ]
+          maxLength: 64
+          x-null-reason: "The run did not end as failed."
+          x-source: { kind: computed, file: internal/capacity/run.go, pointer: null, detail: "The class of the LiveKit or storage error that ended the run as failed, such as livekit_create_room or caller_connect; never a message." }
         steps:
           type: array
+          description: "The steps run so far, in order. A step not reached is absent."
+          x-source: { kind: computed, file: internal/capacity/run.go, pointer: null, detail: "Written by the worker as each step runs, about once a second." }
           items:
-            type: object
-            additionalProperties: false
-            properties:
-              step:
-                type: [ integer, "null" ]
-                x-unit: count
-                x-null-reason: The capture or source did not report this value. Preserve null rather than a protobuf default or guessed zero.
-                x-source: { kind: computed, file: dashboard/src/mocks/capacity.json, pointer: /steps/0/step, detail: VoiceGateway synthetic capacity feasibility run and its test-host observations }
-              joined:
-                type: [ integer, "null" ]
-                x-unit: count
-                x-null-reason: The capture or source did not report this value. Preserve null rather than a protobuf default or guessed zero.
-                x-source: { kind: computed, file: dashboard/src/mocks/capacity.json, pointer: /steps/0/joined, detail: VoiceGateway synthetic capacity feasibility run and its test-host observations }
-              joinSeconds:
-                type: array
-                items:
-                  type: [ number, "null" ]
-                  x-unit: seconds
-                  x-null-reason: The capture or source did not report this value. Preserve null rather than a protobuf default or guessed zero.
-                  x-source: { kind: computed, file: dashboard/src/mocks/capacity.json, pointer: /steps/0/join_s/0, detail: VoiceGateway synthetic capacity feasibility run and its test-host observations }
-                x-source: { kind: computed, file: dashboard/src/mocks/capacity.json, pointer: /steps/0/join_s, detail: VoiceGateway synthetic capacity feasibility run and its test-host observations }
-              answerSeconds:
-                type: array
-                items:
-                  type: [ number, "null" ]
-                  x-unit: seconds
-                  x-null-reason: The capture or source did not report this value. Preserve null rather than a protobuf default or guessed zero.
-                  x-source: { kind: computed, file: dashboard/src/mocks/capacity.json, pointer: /steps/0/answer_s/0, detail: VoiceGateway synthetic capacity feasibility run and its test-host observations }
-                x-source: { kind: computed, file: dashboard/src/mocks/capacity.json, pointer: /steps/0/answer_s, detail: VoiceGateway synthetic capacity feasibility run and its test-host observations }
-              hostLoad1m:
-                type: array
-                items:
-                  type: [ number, "null" ]
-                  x-unit: runnable_tasks
-                  x-null-reason: The capture or source did not report this value. Preserve null rather than a protobuf default or guessed zero.
-                  x-source: { kind: computed, file: dashboard/src/mocks/capacity.json, pointer: /steps/0/host_load_1m/0, detail: VoiceGateway synthetic capacity feasibility run and its test-host observations }
-                x-source: { kind: computed, file: dashboard/src/mocks/capacity.json, pointer: /steps/0/host_load_1m, detail: VoiceGateway synthetic capacity feasibility run and its test-host observations }
-              hostCores:
-                type: [ integer, "null" ]
-                x-unit: cores
-                x-null-reason: The capture or source did not report this value. Preserve null rather than a protobuf default or guessed zero.
-                x-source: { kind: computed, file: dashboard/src/mocks/capacity.json, pointer: /steps/0/host_cores, detail: VoiceGateway synthetic capacity feasibility run and its test-host observations }
-              pending:
-                type: [ integer, "null" ]
-                x-unit: count
-                x-null-reason: The capture or source did not report this value. Preserve null rather than a protobuf default or guessed zero.
-                x-source: { kind: computed, file: dashboard/src/mocks/capacity.json, pointer: /steps/0/pending, detail: VoiceGateway synthetic capacity feasibility run and its test-host observations }
-            required: [ step, joined, joinSeconds, answerSeconds, hostLoad1m, hostCores, pending ]
-            x-source: { kind: computed, file: dashboard/src/mocks/capacity.json, pointer: /steps/0, detail: VoiceGateway synthetic capacity feasibility run and its test-host observations }
-          x-source: { kind: computed, file: dashboard/src/mocks/capacity.json, pointer: /steps, detail: VoiceGateway synthetic capacity feasibility run and its test-host observations }
-      required: [ source, agent, ranAt, limitedBy, workerLog, steps ]
-      x-source: { kind: computed, file: dashboard/src/mocks/capacity.json, pointer: "", detail: VoiceGateway synthetic capacity feasibility run and its test-host observations }
+            $ref: "#/components/schemas/CapacityStep"
+      required: [ id, agent, maxStep, state, requestedAt, startedAt, endedAt, stopRequested, capacity, limitedBy, cloudAgent, joinThresholdMs, error, steps ]
+    CapacityRunStart:
+      type: object
+      additionalProperties: false
+      properties:
+        agent:
+          type: string
+          minLength: 1
+          maxLength: 256
+          description: "The agent's name, as it registers with LiveKit (agent_name). An agent without a name joins every room and cannot be dispatched to a test room."
+          x-source: { kind: configuration, file: migrations/postgres/00025_capacity_runs.sql, pointer: null, detail: "The agent to test." }
+        maxStep:
+          type: integer
+          enum: [ 8, 16, 32, 64 ]
+          x-unit: calls
+          x-configuration: true
+          x-source: { kind: configuration, file: migrations/postgres/00025_capacity_runs.sql, pointer: null, detail: "The most calls at once to try." }
+        consent:
+          type: boolean
+          const: true
+          description: "The person agreed to place real calls through the agent's providers."
+          x-source: { kind: configuration, file: internal/api/capacity.go, pointer: null, detail: "Checked on every start; not stored." }
+      required: [ agent, maxStep, consent ]
+    CapacityStep:
+      type: object
+      additionalProperties: false
+      properties:
+        step:
+          type: integer
+          minimum: 1
+          x-unit: calls
+          x-configuration: true
+          x-source: { kind: configuration, file: internal/capacity/run.go, pointer: null, detail: "Calls at once this step brings up: 1, 2, 4 and so on." }
+        startedAt:
+          type: string
+          format: date-time
+          x-source: { kind: computed, file: internal/capacity/run.go, pointer: null, detail: "When the step started adding calls." }
+        endedAt:
+          type: [ string, "null" ]
+          format: date-time
+          x-null-reason: "The step is running."
+          x-source: { kind: computed, file: internal/capacity/run.go, pointer: null, detail: "When the step ended." }
+        outcome:
+          type: string
+          enum: [ running, passed, failed, inconclusive ]
+          description: "failed: the agent tripped a stop rule; inconclusive: the step was stopped by something other than the agent, such as the tester or a person."
+          x-source: { kind: computed, file: internal/capacity/run.go, pointer: null, detail: "The step's result under the stop rules." }
+        calls:
+          type: [ integer, "null" ]
+          minimum: 0
+          x-unit: calls
+          x-null-reason: "Not reported by the source of a captured run."
+          x-source: { kind: computed, file: internal/capacity/run.go, pointer: null, detail: "Calls up during the step, its own new calls included." }
+        joined:
+          type: [ integer, "null" ]
+          minimum: 0
+          x-unit: calls
+          x-null-reason: "Not reported by the source of a captured run."
+          x-source: { kind: computed, file: internal/capacity/run.go, pointer: null, detail: "Calls the agent joined and has not left." }
+        pending:
+          type: [ integer, "null" ]
+          minimum: 0
+          x-unit: calls
+          x-null-reason: "Not reported by the source of a captured run."
+          x-source: { kind: computed, file: internal/capacity/run.go, pointer: null, detail: "Calls dispatched that the agent had not joined when the step was last written." }
+        failed:
+          type: [ integer, "null" ]
+          minimum: 0
+          x-unit: calls
+          x-null-reason: "Not reported by the source of a captured run."
+          x-source: { kind: computed, file: internal/capacity/run.go, pointer: null, detail: "Calls the agent left before the step ended." }
+        late:
+          type: [ integer, "null" ]
+          minimum: 0
+          x-unit: calls
+          x-null-reason: "Not reported by the source of a captured run."
+          x-source: { kind: computed, file: internal/capacity/run.go, pointer: null, detail: "New calls whose agent joined slower than joinThresholdMs but within 10 s: the worker started a new process." }
+        noAnswer:
+          type: [ integer, "null" ]
+          minimum: 0
+          x-unit: calls
+          x-null-reason: "Not reported by the source of a captured run."
+          x-source: { kind: computed, file: internal/capacity/run.go, pointer: null, detail: "Calls whose line went 15 s without the agent beginning to speak." }
+        joinSeconds:
+          type: array
+          description: "The join wait of each call this step added, dispatch to agent join. A call the agent never joined has none."
+          x-source: { kind: computed, file: internal/capacity/run.go, pointer: null, detail: "Dispatch to the agent participant joining the caller's room." }
+          items:
+            type: [ number, "null" ]
+            minimum: 0
+            x-unit: seconds
+            x-null-reason: "Not reported by the source of a captured run."
+            x-source: { kind: computed, file: internal/capacity/run.go, pointer: null, detail: "One call's join wait." }
+        answerSeconds:
+          type: array
+          description: "Every answer heard during the step: the caller's line ending to the agent's lk.agent.state turning speaking."
+          x-source: { kind: computed, file: internal/capacity/caller.go, pointer: null, detail: "End of the caller's line to the agent's speaking state." }
+          items:
+            type: [ number, "null" ]
+            minimum: 0
+            x-unit: seconds
+            x-null-reason: "Not reported by the source of a captured run."
+            x-source: { kind: computed, file: internal/capacity/caller.go, pointer: null, detail: "One answer time." }
+        testerCpuPercent:
+          type: [ number, "null" ]
+          minimum: 0
+          maximum: 100
+          x-unit: percent
+          x-null-reason: "The tester's CPU could not be read, or the step had no sample yet."
+          x-source: { kind: computed, file: internal/capacity/cpu.go, pointer: null, detail: "The tester's mean CPU over the step, all cores, from gopsutil." }
+      required: [ step, startedAt, endedAt, outcome, calls, joined, pending, failed, late, noAnswer, joinSeconds, answerSeconds, testerCpuPercent ]
     ProviderProbes:
       type: object
       additionalProperties: false
@@ -5676,7 +5869,7 @@ components:
           type: string
           description: Stable error category.
           x-source: { kind: computed, file: docs/api/coverage.md, pointer: null, detail: Stable error category. }
-          enum: [ invalid_request, revision_conflict, unauthenticated, forbidden, not_found, source_unavailable, internal_error, range_not_satisfiable, last_admin, already_member, member_of_other_organisations, project_exists, livekit_secret_invalid, livekit_unreachable, recording_bucket_refused, recording_bucket_unreachable, origin_not_allowed, incident_not_resolvable ]
+          enum: [ invalid_request, revision_conflict, unauthenticated, forbidden, not_found, source_unavailable, internal_error, range_not_satisfiable, last_admin, already_member, member_of_other_organisations, project_exists, livekit_secret_invalid, livekit_unreachable, recording_bucket_refused, recording_bucket_unreachable, origin_not_allowed, incident_not_resolvable, run_active ]
         message:
           type: string
           description: Safe human-readable explanation, excluding upstream credentials and request bodies.
@@ -5734,7 +5927,7 @@ components:
           x-source: { kind: configuration, file: dashboard/src/features/alerts/alerts-model.ts, pointer: null, detail: "Saved rule enablement; true when never saved." }
         to:
           type: array
-          description: "Channel kinds the rule sends to. No webhook URLs or credentials. Email and webhook deliver today."
+          description: "Channel kinds the rule sends to. No webhook URLs or credentials."
           x-source: { kind: configuration, file: dashboard/src/features/alerts/alerts-model.ts, pointer: null, detail: Selected notification channel kinds only. No webhook URLs or credentials. }
           items:
             type: string
@@ -5771,11 +5964,11 @@ components:
           x-source: { kind: configuration, file: internal/api/alerts.go, pointer: null, detail: "Saved to alert_rules.enabled." }
         to:
           type: array
-          description: Channel kinds the rule sends to. Email and webhook deliver today.
+          description: Channel kinds the rule sends to.
           x-source: { kind: configuration, file: internal/api/alerts.go, pointer: null, detail: "Saved to alert_rules.channels, de-duplicated and sorted." }
           items:
             type: string
-            enum: [ email, webhook ]
+            enum: [ email, webhook, slack, teams, discord, pagerduty, opsgenie ]
           uniqueItems: true
     AlertChannelUpdate:
       type: object
@@ -5784,7 +5977,7 @@ components:
         url:
           type: string
           maxLength: 2048
-          description: "Webhook only: the http or https URL each delivery is POSTed to. Sealed on the server and never returned."
+          description: "Webhook: the http or https URL each delivery is POSTed to (https only on Cloud). Slack, Teams, Discord: the provider's incoming webhook URL, https://hooks.slack.com/services/..., a Teams Workflows URL on logic.azure.com or api.powerplatform.com, or https://discord.com/api/webhooks/.... Sealed on the server and never returned."
           x-source: { kind: configuration, file: internal/api/alerts.go, pointer: null, detail: "Sealed into alert_channels.config_sealed." }
         rotateSecret:
           type: boolean
@@ -5799,6 +5992,17 @@ components:
           items:
             type: string
             format: email
+        key:
+          type: string
+          maxLength: 64
+          description: "PagerDuty: the Events API v2 integration (routing) key, 32 characters. Opsgenie: the API integration key. Sealed on the server and never returned."
+          x-source: { kind: configuration, file: internal/api/alerts.go, pointer: null, detail: "Sealed into alert_channels.config_sealed." }
+        region:
+          type: string
+          enum: [ us, eu ]
+          default: us
+          description: "PagerDuty and Opsgenie only: the provider's service region, events.pagerduty.com or events.eu.pagerduty.com, api.opsgenie.com or api.eu.opsgenie.com."
+          x-source: { kind: configuration, file: internal/api/alerts.go, pointer: null, detail: "Sealed into alert_channels.config_sealed." }
     SavedAlertChannel:
       type: object
       additionalProperties: false
@@ -5806,12 +6010,12 @@ components:
       properties:
         kind:
           type: string
-          enum: [ email, webhook ]
+          enum: [ email, webhook, slack, teams, discord, pagerduty, opsgenie ]
           description: The channel kind.
           x-source: { kind: configuration, file: internal/api/alerts.go, pointer: null, detail: "The path's kind." }
         target:
           type: string
-          description: "What the channel sends to, safe to show: the webhook's host, or the recipient count."
+          description: "What the channel sends to, safe to show: the host it posts to, or the recipient count."
           x-source: { kind: configuration, file: internal/api/alerts.go, pointer: null, detail: "alert_channels.target." }
         recipients:
           type: [ array, "null" ]
@@ -5836,7 +6040,7 @@ components:
           x-source: { kind: computed, file: internal/store/pgstore/queries.sql, pointer: null, detail: "alert_deliveries.id." }
         channel:
           type: string
-          enum: [ email, webhook ]
+          enum: [ email, webhook, slack, teams, discord, pagerduty, opsgenie ]
           description: Where it goes.
           x-source: { kind: computed, file: internal/store/pgstore/queries.sql, pointer: null, detail: "alert_deliveries.channel." }
         change:
@@ -5846,8 +6050,8 @@ components:
           x-source: { kind: computed, file: internal/store/pgstore/queries.sql, pointer: null, detail: "alert_deliveries.change." }
         state:
           type: string
-          enum: [ pending, retrying, delivered, failed ]
-          description: "failed is final: refused (the channel is broken) or still failing after 24 hours of retries."
+          enum: [ pending, retrying, delivered, failed, cancelled ]
+          description: "failed is final: refused (the channel is broken) or still failing after 24 hours of retries. cancelled: the channel was removed before it was sent."
           x-source: { kind: computed, file: internal/alert/deliverer.go, pointer: null, detail: "Deliverer.schedule." }
         attempts:
           type: [ integer, "null" ]
@@ -5860,16 +6064,16 @@ components:
           type: [ string, "null" ]
           format: date-time
           description: When the next attempt is planned.
-          x-null-reason: "Delivered or failed: no attempt is planned."
+          x-null-reason: "Delivered, failed or cancelled: no attempt is planned."
           x-source: { kind: computed, file: internal/alert/deliverer.go, pointer: null, detail: "30 s, 1 min, 2 min, doubling to 30 min, honouring Retry-After." }
         status:
           type: [ string, "null" ]
-          description: "The last answer: an HTTP status (HTTP 500), an SMTP class, or timeout, unreachable, channel_removed, smtp_not_configured."
+          description: "The last answer: an HTTP status (HTTP 500), an SMTP class, or timeout, unreachable, address_not_allowed, channel_removed, smtp_not_configured."
           x-null-reason: "No attempt yet."
           x-source: { kind: computed, file: internal/alert/deliverer.go, pointer: null, detail: "outcome.status of the last attempt." }
         message:
           type: [ string, "null" ]
-          description: "The provider's message, at most 200 characters, with the channel's URL and secret removed."
+          description: "The provider's message, at most 200 characters, with the channel's URL, key and secret removed."
           x-null-reason: "No attempt yet, delivered, or the provider gave none."
           x-source: { kind: computed, file: internal/alert/deliverer.go, pointer: null, detail: "providerMessage." }
         deliveredAt:
@@ -5890,17 +6094,17 @@ components:
       properties:
         kind:
           type: string
-          enum: [ email, webhook ]
+          enum: [ email, webhook, slack, teams, discord, pagerduty, opsgenie ]
           description: The channel kind.
           x-source: { kind: configuration, file: internal/store/pgstore/queries.sql, pointer: null, detail: "alert_channels.kind." }
         target:
           type: string
-          description: "What the channel sends to, safe to show: the webhook's host, or the recipient count. Never the URL or secret."
+          description: "What the channel sends to, safe to show: the host it posts to, or the recipient count. Never the URL, key or secret."
           x-source: { kind: configuration, file: internal/store/pgstore/queries.sql, pointer: null, detail: "alert_channels.target." }
         recipients:
           type: [ array, "null" ]
-          description: The email channel's recipients.
-          x-null-reason: "Not an email channel, or the configuration could not be read."
+          description: The email channel's recipients, shown to Admins only.
+          x-null-reason: "Not an email channel, the caller is not an Admin, or the configuration could not be read."
           x-source: { kind: configuration, file: internal/api/alerts.go, pointer: null, detail: "Opened from alert_channels.config_sealed." }
           items:
             type: string
@@ -7437,7 +7641,7 @@ components:
           schema:
             $ref: "#/components/schemas/Error"
     Conflict:
-      description: revision_conflict, settings changed since they were read; last_admin, the change would leave the organisation without an admin; already_member, the invited email's account is a member already; member_of_other_organisations, a reset's member belongs to an organisation the requester does not administer; project_exists, the organisation already has a project with the new name's id; incident_not_resolvable, a person may resolve only a firing recording-lost incident.
+      description: revision_conflict, settings changed since they were read; last_admin, the change would leave the organisation without an admin; already_member, the invited email's account is a member already; member_of_other_organisations, a reset's member belongs to an organisation the requester does not administer; project_exists, the organisation already has a project with the new name's id; incident_not_resolvable, a person may resolve only a firing recording-lost incident; run_active, the project already has a capacity test that has not ended.
       content:
         application/json:
           schema:
@@ -7490,10 +7694,10 @@ components:
       name: kind
       in: path
       required: true
-      description: A channel kind that delivers today; any other value is not_found.
+      description: A channel kind; any other value is not_found.
       schema:
         type: string
-        enum: [ email, webhook ]
+        enum: [ email, webhook, slack, teams, discord, pagerduty, opsgenie ]
     AlertIncidentId:
       name: incidentId
       in: path

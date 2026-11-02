@@ -2,7 +2,7 @@
 
 import type { Client, ClientMeta, Options as Options2, RequestResult, ServerSentEventsResult, TDataShape } from './client';
 import { client } from './client.gen';
-import type { CreateEmbedTokenData, CreateEmbedTokenErrors, CreateEmbedTokenResponses, CreateInvitationData, CreateInvitationErrors, CreateInvitationResponses, CreateOrganisationInvitationData, CreateOrganisationInvitationErrors, CreateOrganisationInvitationResponses, CreatePasswordResetData, CreatePasswordResetErrors, CreatePasswordResetResponses, CreateProjectData, CreateProjectErrors, CreateProjectKeyData, CreateProjectKeyErrors, CreateProjectKeyResponses, CreateProjectResponses, DeleteAlertChannelData, DeleteAlertChannelErrors, DeleteAlertChannelResponses, GetAlertSetupData, GetAlertSetupErrors, GetAlertSetupResponses, GetCallData, GetCallErrors, GetCallMetadataData, GetCallMetadataErrors, GetCallMetadataResponses, GetCallResponses, GetCallStatsData, GetCallStatsErrors, GetCallStatsResponses, GetCallTagsData, GetCallTagsErrors, GetCallTagsResponses, GetCapacityData, GetCapacityErrors, GetCapacityResponses, GetCloudAgentsData, GetCloudAgentsErrors, GetCloudAgentsResponses, GetEgressData, GetEgressErrors, GetEgressResponses, GetIngressData, GetIngressErrors, GetIngressResponses, GetInvitationsData, GetInvitationsErrors, GetInvitationsResponses, GetIssueMetadataData, GetIssueMetadataErrors, GetIssueMetadataResponses, GetLiveEventsData, GetLiveEventsErrors, GetLiveEventsResponse, GetLiveEventsResponses, GetMediaServerData, GetMediaServerErrors, GetMediaServerResponses, GetMembersData, GetMembersErrors, GetMembersResponses, GetMyOrganisationEntitlementData, GetMyOrganisationEntitlementErrors, GetMyOrganisationEntitlementResponses, GetOrganisationData, GetOrganisationEntitlementData, GetOrganisationEntitlementErrors, GetOrganisationEntitlementResponses, GetOrganisationErrors, GetOrganisationResponses, GetOrganisationUsageData, GetOrganisationUsageErrors, GetOrganisationUsageResponses, GetProjectConnectionData, GetProjectConnectionErrors, GetProjectConnectionResponses, GetProjectSettingsData, GetProjectSettingsErrors, GetProjectSettingsResponses, GetProjectSnapshotData, GetProjectSnapshotErrors, GetProjectSnapshotResponses, GetProviderProbesData, GetProviderProbesErrors, GetProviderProbesResponses, GetRecordingMediaData, GetRecordingMediaErrors, GetRecordingMediaResponses, GetResourcesData, GetResourcesErrors, GetResourcesResponses, GetSipData, GetSipErrors, GetSipResponses, GetWorkersData, GetWorkersErrors, GetWorkersResponses, GetWorkspacesData, GetWorkspacesErrors, GetWorkspacesResponses, ListAlertEventsData, ListAlertEventsErrors, ListAlertEventsResponses, ListAlertIncidentsData, ListAlertIncidentsErrors, ListAlertIncidentsResponses, ListCallsData, ListCallsErrors, ListCallsResponses, ListIssuesData, ListIssuesErrors, ListIssuesResponses, ListProjectKeysData, ListProjectKeysErrors, ListProjectKeysResponses, PutOrganisationData, PutOrganisationEntitlementData, PutOrganisationEntitlementErrors, PutOrganisationEntitlementResponses, PutOrganisationErrors, PutOrganisationResponses, RemoveMemberData, RemoveMemberErrors, RemoveMemberResponses, ResolveAlertIncidentData, ResolveAlertIncidentErrors, ResolveAlertIncidentResponses, RevokeInvitationData, RevokeInvitationErrors, RevokeInvitationResponses, RevokeProjectKeyData, RevokeProjectKeyErrors, RevokeProjectKeyResponses, TestAlertChannelData, TestAlertChannelErrors, TestAlertChannelResponses, UpdateAlertChannelData, UpdateAlertChannelErrors, UpdateAlertChannelResponses, UpdateAlertRuleData, UpdateAlertRuleErrors, UpdateAlertRuleResponses, UpdateAllowedOriginsData, UpdateAllowedOriginsErrors, UpdateAllowedOriginsResponses, UpdateCallMetadataData, UpdateCallMetadataErrors, UpdateCallMetadataResponses, UpdateIssueMetadataData, UpdateIssueMetadataErrors, UpdateIssueMetadataResponses, UpdateMemberData, UpdateMemberErrors, UpdateMemberResponses, UpdateProjectLiveKitCredentialsData, UpdateProjectLiveKitCredentialsErrors, UpdateProjectLiveKitCredentialsResponses, UpdateProjectSettingsData, UpdateProjectSettingsErrors, UpdateProjectSettingsResponses } from './types.gen';
+import type { CreateEmbedTokenData, CreateEmbedTokenErrors, CreateEmbedTokenResponses, CreateInvitationData, CreateInvitationErrors, CreateInvitationResponses, CreateOrganisationInvitationData, CreateOrganisationInvitationErrors, CreateOrganisationInvitationResponses, CreatePasswordResetData, CreatePasswordResetErrors, CreatePasswordResetResponses, CreateProjectData, CreateProjectErrors, CreateProjectKeyData, CreateProjectKeyErrors, CreateProjectKeyResponses, CreateProjectResponses, DeleteAlertChannelData, DeleteAlertChannelErrors, DeleteAlertChannelResponses, GetAlertSetupData, GetAlertSetupErrors, GetAlertSetupResponses, GetCallData, GetCallErrors, GetCallMetadataData, GetCallMetadataErrors, GetCallMetadataResponses, GetCallResponses, GetCallStatsData, GetCallStatsErrors, GetCallStatsResponses, GetCallTagsData, GetCallTagsErrors, GetCallTagsResponses, GetCapacityData, GetCapacityErrors, GetCapacityResponses, GetCloudAgentsData, GetCloudAgentsErrors, GetCloudAgentsResponses, GetEgressData, GetEgressErrors, GetEgressResponses, GetIngressData, GetIngressErrors, GetIngressResponses, GetInvitationsData, GetInvitationsErrors, GetInvitationsResponses, GetIssueMetadataData, GetIssueMetadataErrors, GetIssueMetadataResponses, GetLiveEventsData, GetLiveEventsErrors, GetLiveEventsResponse, GetLiveEventsResponses, GetMediaServerData, GetMediaServerErrors, GetMediaServerResponses, GetMembersData, GetMembersErrors, GetMembersResponses, GetMyOrganisationEntitlementData, GetMyOrganisationEntitlementErrors, GetMyOrganisationEntitlementResponses, GetOrganisationData, GetOrganisationEntitlementData, GetOrganisationEntitlementErrors, GetOrganisationEntitlementResponses, GetOrganisationErrors, GetOrganisationResponses, GetOrganisationUsageData, GetOrganisationUsageErrors, GetOrganisationUsageResponses, GetProjectConnectionData, GetProjectConnectionErrors, GetProjectConnectionResponses, GetProjectSettingsData, GetProjectSettingsErrors, GetProjectSettingsResponses, GetProjectSnapshotData, GetProjectSnapshotErrors, GetProjectSnapshotResponses, GetProviderProbesData, GetProviderProbesErrors, GetProviderProbesResponses, GetRecordingMediaData, GetRecordingMediaErrors, GetRecordingMediaResponses, GetResourcesData, GetResourcesErrors, GetResourcesResponses, GetSipData, GetSipErrors, GetSipResponses, GetWorkersData, GetWorkersErrors, GetWorkersResponses, GetWorkspacesData, GetWorkspacesErrors, GetWorkspacesResponses, ListAlertEventsData, ListAlertEventsErrors, ListAlertEventsResponses, ListAlertIncidentsData, ListAlertIncidentsErrors, ListAlertIncidentsResponses, ListCallsData, ListCallsErrors, ListCallsResponses, ListIssuesData, ListIssuesErrors, ListIssuesResponses, ListProjectKeysData, ListProjectKeysErrors, ListProjectKeysResponses, PutOrganisationData, PutOrganisationEntitlementData, PutOrganisationEntitlementErrors, PutOrganisationEntitlementResponses, PutOrganisationErrors, PutOrganisationResponses, RemoveMemberData, RemoveMemberErrors, RemoveMemberResponses, ResolveAlertIncidentData, ResolveAlertIncidentErrors, ResolveAlertIncidentResponses, RevokeInvitationData, RevokeInvitationErrors, RevokeInvitationResponses, RevokeProjectKeyData, RevokeProjectKeyErrors, RevokeProjectKeyResponses, StartCapacityRunData, StartCapacityRunErrors, StartCapacityRunResponses, StopCapacityRunData, StopCapacityRunErrors, StopCapacityRunResponses, TestAlertChannelData, TestAlertChannelErrors, TestAlertChannelResponses, UpdateAlertChannelData, UpdateAlertChannelErrors, UpdateAlertChannelResponses, UpdateAlertRuleData, UpdateAlertRuleErrors, UpdateAlertRuleResponses, UpdateAllowedOriginsData, UpdateAllowedOriginsErrors, UpdateAllowedOriginsResponses, UpdateCallMetadataData, UpdateCallMetadataErrors, UpdateCallMetadataResponses, UpdateIssueMetadataData, UpdateIssueMetadataErrors, UpdateIssueMetadataResponses, UpdateMemberData, UpdateMemberErrors, UpdateMemberResponses, UpdateProjectLiveKitCredentialsData, UpdateProjectLiveKitCredentialsErrors, UpdateProjectLiveKitCredentialsResponses, UpdateProjectSettingsData, UpdateProjectSettingsErrors, UpdateProjectSettingsResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -317,7 +317,7 @@ export const getProjectSnapshot = <ThrowOnError extends boolean = false>(options
 });
 
 /**
- * Read the captured capacity run and its limitations
+ * Read an agent's latest capacity test, live while it runs
  *
  * Requires authenticated organisation membership and permission to read the named project. A browser signs in with the session cookie (decision 0027); the role gate admits the minimumRole and above. Credential absence is 401, denied membership is 403, cross-project resource ids are not_found. Server-side LiveKit credentials must never reach the browser.
  */
@@ -332,6 +332,40 @@ export const getCapacity = <ThrowOnError extends boolean = false>(options: Optio
             type: 'http'
         }],
     url: '/api/v1/org/{orgId}/project/{projectId}/capacity',
+    ...options
+});
+
+/**
+ * Start a capacity test of one agent
+ *
+ * Requires Admin membership in the named organisation (decision 0022): the test places real calls through the agent's providers, so consent is required. A worker claims the run within seconds, refuses a busy agent and ramps synthetic calls in rooms named vg-capacity-<8 hex>-<n>, which never count as calls. One run per project at a time: a second is 409 run_active. A project key cannot start one. An instance whose worker reaches only public addresses (VOICEGATEWAY_WORKER_ENDPOINTS_PUBLIC_ONLY, as on Cloud) answers 503 source_unavailable: a test's callers dial LiveKit's signalling and ICE servers outside that guard. Reads still answer there.
+ */
+export const startCapacityRun = <ThrowOnError extends boolean = false>(options: Options<StartCapacityRunData, ThrowOnError>): RequestResult<StartCapacityRunResponses, StartCapacityRunErrors, ThrowOnError> => (options.client ?? client).post<StartCapacityRunResponses, StartCapacityRunErrors, ThrowOnError>({
+    security: [{
+            in: 'cookie',
+            name: 'vg_session',
+            type: 'apiKey'
+        }],
+    url: '/api/v1/org/{orgId}/project/{projectId}/capacity-runs',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Stop a capacity test
+ *
+ * Requires Admin membership in the named organisation. A run no worker has claimed ends at once; a running one stops within 2 s, and every test room is deleted. An ended run, or one from another project, is not_found.
+ */
+export const stopCapacityRun = <ThrowOnError extends boolean = false>(options: Options<StopCapacityRunData, ThrowOnError>): RequestResult<StopCapacityRunResponses, StopCapacityRunErrors, ThrowOnError> => (options.client ?? client).post<StopCapacityRunResponses, StopCapacityRunErrors, ThrowOnError>({
+    security: [{
+            in: 'cookie',
+            name: 'vg_session',
+            type: 'apiKey'
+        }],
+    url: '/api/v1/org/{orgId}/project/{projectId}/capacity-runs/{runId}/stop',
     ...options
 });
 
@@ -570,7 +604,7 @@ export const getAlertSetup = <ThrowOnError extends boolean = false>(options: Opt
 /**
  * Turn an alert rule on or off and choose where it sends
  *
- * A rule that is off still opens incidents, so its history stays, but sends nothing (docs/specs/alerts-behaviour.md). to names channel kinds only; email and webhook deliver today, and any other kind is invalid_request. A kind with no configured channel is kept and sends once an Admin configures it.
+ * A rule that is off still opens incidents, so its history stays, but sends nothing (docs/specs/alerts-behaviour.md). to names channel kinds only; any other kind is invalid_request. A kind with no configured channel is kept and sends once an Admin configures it.
  */
 export const updateAlertRule = <ThrowOnError extends boolean = false>(options: Options<UpdateAlertRuleData, ThrowOnError>): RequestResult<UpdateAlertRuleResponses, UpdateAlertRuleErrors, ThrowOnError> => (options.client ?? client).put<UpdateAlertRuleResponses, UpdateAlertRuleErrors, ThrowOnError>({
     security: [{
@@ -589,7 +623,7 @@ export const updateAlertRule = <ThrowOnError extends boolean = false>(options: O
 /**
  * Remove an alert channel
  *
- * Admins only. Rules keep the kind among their choices; nothing is sent to it until it is configured again. A delivery still waiting fails as channel_removed. A channel not configured is not_found.
+ * Admins only. Rules keep the kind among their choices; nothing is sent to it until it is configured again. A delivery still waiting is cancelled, with status channel_removed; it adds nothing to the Issues page. A channel not configured is not_found.
  */
 export const deleteAlertChannel = <ThrowOnError extends boolean = false>(options: Options<DeleteAlertChannelData, ThrowOnError>): RequestResult<DeleteAlertChannelResponses, DeleteAlertChannelErrors, ThrowOnError> => (options.client ?? client).delete<DeleteAlertChannelResponses, DeleteAlertChannelErrors, ThrowOnError>({
     security: [{
@@ -604,7 +638,7 @@ export const deleteAlertChannel = <ThrowOnError extends boolean = false>(options
 /**
  * Set where an alert channel sends
  *
- * Admins only. Email takes 1 to 20 recipient addresses and needs the server's VOICEGATEWAY_SMTP_URL. A webhook takes an http or https URL; the URL is sealed on the server and never returned, and only its host is shown. A new webhook gets a Standard Webhooks signing secret, returned in this answer only; saving again keeps it unless rotateSecret is true. Saving clears a broken channel.
+ * Admins only. Email takes 1 to 20 recipient addresses and needs the server's VOICEGATEWAY_SMTP_URL. A webhook takes an http or https URL (https only on Cloud); the URL is sealed on the server and never returned, and only its host is shown. A new webhook gets a Standard Webhooks signing secret, returned in this answer only; saving again keeps it unless rotateSecret is true. Slack, Teams and Discord take the provider's incoming webhook URL; PagerDuty and Opsgenie take a key and a region. URLs and keys are sealed and never returned. Saving clears a broken channel.
  */
 export const updateAlertChannel = <ThrowOnError extends boolean = false>(options: Options<UpdateAlertChannelData, ThrowOnError>): RequestResult<UpdateAlertChannelResponses, UpdateAlertChannelErrors, ThrowOnError> => (options.client ?? client).put<UpdateAlertChannelResponses, UpdateAlertChannelErrors, ThrowOnError>({
     security: [{

@@ -187,21 +187,17 @@ export function AgentsPage() {
 function AgentFleet() {
   const cloud = useQuery(cloudAgentsQuery())
   const media = useQuery(mediaServerQuery())
-  // The capacity run is optional: when it cannot be read the drawer says so.
-  const run = useQuery(capacityQuery())
   const ms = useMemo(() => (media.data ? fromContract(media.data) : null), [media.data])
   if (!cloud.data || accessDenied(cloud.error)) return <QueryState icon={Robot} what="the agents" query={cloud} />
   if (!ms || accessDenied(media.error)) return <QueryState icon={Robot} what="the agents' rooms" query={media} />
-  // Only a read that answered can say "not measured"; while loading or after a failure the drawer says which.
-  const runNote = run.isError ? "The capacity run could not be loaded." : "Loading the capacity run."
   return <div className="space-y-4">
     <SourceStatus name="Cloud agents" source={cloud.data.sourceStatus} interval={60000} query={cloud} />
     <SourceStatus name="LiveKit SFU" source={media.data?.sourceStatus} interval={10000} query={media} />
-    <AgentsView cloud={cloud.data} ms={ms} run={run.isSuccess ? run.data : undefined} runNote={runNote} />
+    <AgentsView cloud={cloud.data} ms={ms} />
   </div>
 }
 
-function AgentsView({ cloud, ms, run, runNote }: { cloud: CloudAgents; ms: MediaServerData; run: AgentReads["run"]; runNote: string }) {
+function AgentsView({ cloud, ms }: { cloud: CloudAgents; ms: MediaServerData }) {
   const { source, readAt } = cloud
   const [tab, setTab] = useUrlState("tab", "fleet")
   const list = useMemo(() => agentsFrom(cloud, ms), [cloud, ms])
@@ -210,6 +206,12 @@ function AgentsView({ cloud, ms, run, runNote }: { cloud: CloudAgents; ms: Media
   // The open agent is in the URL (?agent=<key>), which is also how the command palette opens one.
   const [openAgent, setOpenAgent] = useUrlPick<Agent>("agent", list, (a) => a.key)
   const [testing, setTesting] = useUrlPick<Agent>("capacityAgent", list, (a) => a.key)
+  // The open agent's latest capacity run is optional: when it cannot be read the drawer says so, and
+  // only a read that answered can say "not measured".
+  const capacity = useQuery(capacityQuery(openAgent?.name ?? null))
+  // An agent without a name cannot be tested, so it has no run to read.
+  const run: AgentReads["run"] = openAgent && !openAgent.name ? null : capacity.isSuccess ? capacity.data : undefined
+  const runNote = capacity.isError ? "The capacity run could not be loaded." : "Loading the capacity run."
   const columns = useMemo(() => agentColumns(setTesting), [setTesting])
   const jobs = list.flatMap((a) => a.jobs)
   const timed = jobs.filter((j) => Number.isFinite(j.dispatchedMs) && j.joinedMs !== null)
