@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math"
 	"net/url"
 	"strconv"
 	"strings"
@@ -228,7 +229,7 @@ func Load(getenv func(string) string) (Config, error) {
 		}
 	}
 	rate, err := strconv.ParseFloat(optional("VOICEGATEWAY_SENTRY_TRACES_SAMPLE_RATE", "0.1"), 64)
-	if err != nil || rate < 0 || rate > 1 {
+	if err != nil || math.IsNaN(rate) || rate < 0 || rate > 1 {
 		errs = append(errs, errors.New("VOICEGATEWAY_SENTRY_TRACES_SAMPLE_RATE must be a number from 0 to 1"))
 	}
 	c.Sentry.TracesSampleRate = rate

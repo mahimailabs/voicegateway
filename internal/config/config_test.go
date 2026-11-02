@@ -289,6 +289,7 @@ func TestSentryIsOffUntilADSNIsSet(t *testing.T) {
 		{name: "no key", env: map[string]string{"VOICEGATEWAY_SENTRY_CONSOLE_DSN": "https://o1.ingest.us.sentry.io/2"}, wantErr: "VOICEGATEWAY_SENTRY_CONSOLE_DSN is not a Sentry DSN"},
 		{name: "rate above 1", env: map[string]string{"VOICEGATEWAY_SENTRY_TRACES_SAMPLE_RATE": "2"}, wantErr: "VOICEGATEWAY_SENTRY_TRACES_SAMPLE_RATE must be"},
 		{name: "rate not a number", env: map[string]string{"VOICEGATEWAY_SENTRY_TRACES_SAMPLE_RATE": "most"}, wantErr: "VOICEGATEWAY_SENTRY_TRACES_SAMPLE_RATE must be"},
+		{name: "rate NaN", env: map[string]string{"VOICEGATEWAY_SENTRY_TRACES_SAMPLE_RATE": "NaN"}, wantErr: "VOICEGATEWAY_SENTRY_TRACES_SAMPLE_RATE must be"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

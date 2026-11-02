@@ -160,7 +160,7 @@ VOICEGATEWAY_SENTRY_ENVIRONMENT=production       # optional
 VOICEGATEWAY_SENTRY_TRACES_SAMPLE_RATE=0.1       # optional, 0 to 1
 ```
 
-Reports carry error messages, stack traces, request paths and timings. They never carry cookies, request headers other than Content-Type, User-Agent and Accept, query strings, request bodies, user details, transcripts or audio.
+Reports carry error messages, stack traces, request paths and timings. Request header names are included, but only Content-Type, User-Agent and Accept keep their values; the others read `[Filtered]`. Reports never carry cookies, query strings, request bodies or user details, and no code path puts transcripts or audio into one. Error messages are sent as written.
 
 ## Data retention
 
