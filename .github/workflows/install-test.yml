@@ -39,7 +39,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: ${{ fromJSON(github.event_name == 'never' && '["ubuntu-24.04"]' || '["ubuntu-24.04", "macos-15-intel"]') }}
+        os: ${{ fromJSON(github.event_name == 'pull_request' && '["ubuntu-24.04"]' || '["ubuntu-24.04", "macos-15-intel"]') }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     steps:
@@ -61,6 +61,7 @@ jobs:
         uses: docker/setup-compose-action@54042514f505b273907334ae2b9cdbb9a0213c1a  # v2.4.0
         with:
           version: v5.6.1
+          cache-binary: false
 
       - name: Install Runme ${{ env.RUNME_VERSION }}
         shell: bash
