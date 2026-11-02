@@ -510,3 +510,40 @@ func newTestGoogle(t *testing.T, email string) *httptest.Server {
 	issuer.SetIssuer(srv.URL)
 	return srv
 }
+
+// Decision 0040: a verified email with no account accepts its open invite links at sign-in, as
+// opening each link would; an existing account still joins only through a link it opens.
+func TestProviderAcceptsPendingInvitationsByVerifiedEmail(t *testing.T) {
+	f := newFixture(t)
+	f.addUser("admin@example.com", "org-a", "admin")
+	f.addUser("admin-b@example.com", "org-b", "admin")
+	f.addUser("ada@example.com", "org-a", "member")
+	w, google := f.socialWeb()
+	adminA, adminB := w.signIn("admin@example.com"), w.signIn("admin-b@example.com")
+	w.link(adminA, "org-a", "new@example.com", "Admin")
+	w.link(adminB, "org-b", "new@example.com", "Viewer")
+	w.link(adminB, "org-b", "ada@example.com", "Member")
+
+	google.set(oauth.Identity{Subject: "g-new", Email: "New@Example.com"}, nil)
+	st := w.start("")
+	if _, ok := signedInBy(w.callback(st, st.state)); !ok {
+		t.Fatal("a verified email with open invitations did not sign in")
+	}
+	if f.count(`SELECT count(*) FROM users WHERE email = 'new@example.com' AND password_hash IS NULL`) != 1 ||
+		f.count(`SELECT count(*) FROM memberships m JOIN users u ON u.id = m.user_id WHERE u.email = 'new@example.com'`) != 2 ||
+		f.count(`SELECT count(*) FROM invitations WHERE email = 'new@example.com' AND accepted_at IS NOT NULL`) != 2 ||
+		f.count(`SELECT count(*) FROM identities WHERE subject = 'g-new'`) != 1 {
+		t.Fatal("want one passwordless account in both organisations, both invitations used and one identity")
+	}
+
+	// An existing account signs in as before; its open invitation stays open.
+	google.set(oauth.Identity{Subject: "g-ada", Email: "ada@example.com"}, nil)
+	st = w.start("")
+	if _, ok := signedInBy(w.callback(st, st.state)); !ok {
+		t.Fatal("an existing account did not sign in")
+	}
+	if f.count(`SELECT count(*) FROM memberships m JOIN users u ON u.id = m.user_id WHERE u.email = 'ada@example.com' AND m.organisation_id = 'org-b'`) != 0 ||
+		f.count(`SELECT count(*) FROM invitations WHERE email = 'ada@example.com' AND accepted_at IS NULL`) != 1 {
+		t.Fatal("an existing account joined an organisation without opening its link")
+	}
+}

@@ -3711,6 +3711,35 @@ func (q *Queries) OpenInvitationByToken(ctx context.Context, tokenSha256 []byte)
 	return i, err
 }
 
+const openInviteTokensByEmail = `-- name: OpenInviteTokensByEmail :many
+SELECT token_sha256 FROM invitations
+WHERE kind = 'invite' AND email = $1 AND accepted_at IS NULL AND revoked_at IS NULL AND expires_at > now()
+ORDER BY created_at, id
+LIMIT 20
+`
+
+// The open, unexpired invite links for an email, oldest first: what a provider-verified email with
+// no account yet accepts at sign-in (decision 0040).
+func (q *Queries) OpenInviteTokensByEmail(ctx context.Context, email string) ([][]byte, error) {
+	rows, err := q.db.Query(ctx, openInviteTokensByEmail, email)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items [][]byte
+	for rows.Next() {
+		var token_sha256 []byte
+		if err := rows.Scan(&token_sha256); err != nil {
+			return nil, err
+		}
+		items = append(items, token_sha256)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const organisationExists = `-- name: OrganisationExists :one
 SELECT EXISTS (SELECT 1 FROM organisations WHERE id = $1)
 `
