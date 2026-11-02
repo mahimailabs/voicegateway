@@ -365,9 +365,9 @@
     "browserStorage": false,
     "operations": [],
     "assetNotes": {
-      "/auth/client-config": "The console's runtime settings, such as its Sentry DSN (decision 0039); not a console read."
+      "/auth/client-config": "The console's runtime settings: its Sentry DSN (decision 0039) and PostHog project key and host (decision 0038); not a console read."
     },
-    "exclusion": "Runtime settings for the console from web's /auth routes (decision 0039); not part of the read contract."
+    "exclusion": "Runtime settings for the console from web's /auth routes (decisions 0038 and 0039); not part of the read contract."
   },
   {
     "file": "dashboard/src/lib/providers.ts",

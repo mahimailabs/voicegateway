@@ -7,6 +7,7 @@ import { Spinner } from "@/components/ui/spinner"
 import { AuthShell } from "@/features/auth/auth-shell"
 import { PasswordInput } from "@/features/auth/password-input"
 import { ProviderButtons } from "@/features/auth/provider-buttons"
+import { track } from "@/lib/analytics"
 import { acceptInvitation, lookInvitation, type AcceptResult, type LookResult } from "@/lib/invitation"
 
 export const INVALID = "This invitation is no longer valid. Ask an admin for a new link."
@@ -58,6 +59,8 @@ export function InvitePage({ token, onAccepted }: { token: string; onAccepted: (
     const result = await acceptInvitation(token, password)
     setBusy(false)
     if (result.kind === "accepted") {
+      // A password reset uses the same page; only a new member counts.
+      if (look?.kind === "pending" && look.invitation.kind !== "reset") track({ name: "invitation_accepted" })
       onAccepted()
       return
     }

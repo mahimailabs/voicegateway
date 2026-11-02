@@ -56,10 +56,10 @@ test.each([
   ["no network", async () => Promise.reject(new TypeError("Failed to fetch"))],
 ])("%s leaves reporting off", async (_name, answer) => {
   vi.stubGlobal("fetch", answer)
-  expect(await fetchClientConfig()).toEqual({ sentry: null })
+  expect(await fetchClientConfig()).toEqual({ sentry: null, posthog: null })
 })
 
 test("a console DSN turns reporting on", async () => {
   vi.stubGlobal("fetch", async () => Response.json({ sentry: { dsn: "https://k@o1.ingest.us.sentry.io/2", environment: "production", tracesSampleRate: 0.1 } }))
-  expect(await fetchClientConfig()).toEqual({ sentry: { dsn: "https://k@o1.ingest.us.sentry.io/2", environment: "production", tracesSampleRate: 0.1 } })
+  expect(await fetchClientConfig()).toEqual({ sentry: { dsn: "https://k@o1.ingest.us.sentry.io/2", environment: "production", tracesSampleRate: 0.1 }, posthog: null })
 })

@@ -2,6 +2,7 @@
 // reads, so they are not in docs/api/openapi.yaml.
 
 import { useSyncExternalStore } from "react"
+import { resetAnalytics } from "@/lib/analytics"
 
 export type AccountProfile = {
   name: string | null
@@ -11,7 +12,7 @@ export type AccountProfile = {
   identities?: { provider: "google" | "github" | "auth0"; linkedAt: string }[]
 }
 
-export type Session = { email: string; profile?: AccountProfile; organisations: { id: string; role: string }[] }
+export type Session = { id?: string; email: string; profile?: AccountProfile; organisations: { id: string; role: string }[] }
 
 export type SessionRead = { signedIn: true; session: Session } | { signedIn: false; needsAdmin: boolean }
 
@@ -112,6 +113,7 @@ export async function signIn(email: string, password: string): Promise<SignInRes
 /** Signs out, ending the session on the server. */
 export async function signOut(): Promise<void> {
   await fetch("/auth/sign-out", { method: "POST", credentials: "same-origin" })
+  resetAnalytics()
 }
 
 

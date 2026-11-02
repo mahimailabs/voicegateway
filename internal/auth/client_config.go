@@ -8,6 +8,15 @@ import "net/http"
 type ClientConfig struct {
 	// Sentry is where the console reports its errors (decision 0039).
 	Sentry *SentryClient `json:"sentry"`
+	// PostHog is where the console sends product analytics (decision 0038).
+	PostHog *PostHogClient `json:"posthog"`
+}
+
+// PostHogClient is the console's PostHog project: a project API key, public by design, and the host
+// events go to.
+type PostHogClient struct {
+	Key  string `json:"key"`
+	Host string `json:"host"`
 }
 
 // SentryClient is the console's Sentry project. A browser DSN is public by design: it lets the page

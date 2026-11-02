@@ -1,9 +1,10 @@
-import { useCallback, useState } from "react"
+import { useCallback, useEffect, useState } from "react"
 import { Navigate, useNavigate } from "@tanstack/react-router"
 import { useQuery } from "@tanstack/react-query"
 import { BrandWordmark } from "@/components/brand-wordmark"
 import { Button } from "@/components/ui/button"
 import { Spinner } from "@/components/ui/spinner"
+import { track } from "@/lib/analytics"
 import { connectionQuery, fetchWorkspaces } from "@/lib/api"
 import type { ProjectCreated } from "@/lib/api-types"
 import { setWorkspaces } from "@/lib/workspaces"
@@ -65,6 +66,10 @@ export function SetupPage() {
   // moves on through onNext, so its success state is seen first.
   const ready = !hasProject || read.data !== undefined || read.isError
   const [current, setCurrent] = useState<SetupStep | null>(null)
+  // The activation funnel (decision 0038): each step the project's data reaches, once per page view.
+  useEffect(() => {
+    if (ready) track({ name: "setup_step_reached", organisation_id: currentScope().org, step: derived })
+  }, [ready, derived])
   if (ready && current === null) setCurrent(viewedStep(derived, asked))
   const go = useCallback(
     (s: SetupStep) => {
@@ -77,6 +82,7 @@ export function SetupPage() {
   // The new project opens inside the app: the workspaces are read again so the router knows it, then
   // the journey continues at Agent without a page load. A failed read falls back to a page load.
   const openProject = async (p: ProjectCreated) => {
+    track({ name: "project_created", organisation_id: currentScope().org })
     const org = currentScope().org
     const href = `/org/${encodeURIComponent(org)}/project/${encodeURIComponent(p.id)}/setup`
     try {
@@ -93,6 +99,7 @@ export function SetupPage() {
   if (install === "self-hosted") return <Navigate to="/overview" />
   if (!hasProject && (!org || roleIn(org.id, session) !== "Admin")) return <Navigate to="/overview" />
   const later = () => {
+    track({ name: "setup_deferred", organisation_id: currentScope().org, step: current })
     setUpLater(currentScope().org, hasProject ? currentScope().project : null)
     void navigate({ to: "/overview" })
   }

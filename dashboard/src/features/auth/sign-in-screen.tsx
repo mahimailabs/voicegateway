@@ -10,6 +10,7 @@ import { Spinner } from "@/components/ui/spinner"
 import { AuthShell } from "@/features/auth/auth-shell"
 import { PasswordInput } from "@/features/auth/password-input"
 import { ProviderButtons } from "@/features/auth/provider-buttons"
+import { track } from "@/lib/analytics"
 import { PROVIDER_REFUSED, readProviderRefusal } from "@/lib/providers"
 import { signIn, type SignInResult } from "@/lib/session"
 
@@ -47,6 +48,7 @@ export function SignInScreen({ needsAdmin, onSignedIn }: { needsAdmin: boolean; 
     const result = await signIn(email, password)
     setBusy(false)
     if (result.kind === "signed-in") {
+      track({ name: "signed_in", method: "password" })
       onSignedIn()
       return
     }
