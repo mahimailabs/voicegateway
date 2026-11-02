@@ -4,8 +4,8 @@ import type { CaptureResult } from "posthog-js"
 const posthog = vi.hoisted(() => ({ init: vi.fn(), identify: vi.fn(), register: vi.fn(), capture: vi.fn(), reset: vi.fn() }))
 vi.mock("posthog-js", () => ({ default: posthog }))
 
-import { identify, scrub, startAnalytics, stopAnalyticsForTest, track } from "@/lib/analytics"
-import { fetchClientConfig } from "@/lib/client-config"
+import { identify, scrub, startAnalytics, stopAnalyticsForTest, track } from "../src/lib/analytics.ts"
+import { fetchClientConfig } from "../src/lib/client-config.ts"
 
 beforeEach(() => {
   stopAnalyticsForTest()
