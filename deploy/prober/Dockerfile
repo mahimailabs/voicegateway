@@ -13,11 +13,13 @@ FROM python:3.12.16-slim@sha256:8523d6abeb48ceae0b7240d30c5808fc26cb79c1a635bacd
 RUN useradd --create-home --uid 10001 prober
 WORKDIR /home/prober
 
-# requirements.txt locks voicegateway[livekit,collector]==0.27.0 and every dependency
+# requirements.txt locks voicegateway[livekit,collector]==0.27.1 and every dependency
 # with hashes, so two builds install the same packages. Run the coordinator on
 # the same engine version so the wire contract (register / job / report)
-# matches. 0.27.0 is the last engine release with `voicegw livekit sfu`: from
-# 1.0 the voicegateway package on PyPI is the agent SDK, which has no prober.
+# matches. 0.27.x is the last engine line with `voicegw livekit sfu`: from 1.0
+# the voicegateway package on PyPI is the agent SDK, which has no prober.
+# 0.27.1 gives each vantage its own participant identities, so probers in
+# different regions no longer disconnect each other in the shared room.
 # To change it, edit requirements.in and regenerate from deploy/prober/:
 #   uv pip compile requirements.in --python-version 3.12 \
 #       --python-platform x86_64-manylinux_2_28 --generate-hashes -o requirements.txt

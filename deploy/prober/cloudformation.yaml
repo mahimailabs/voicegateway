@@ -16,8 +16,8 @@
 #
 #   1. Image, pushed once to ECR in one region; Fargate pulls it from any region.
 #        aws ecr create-repository --repository-name vg-sfu-prober --region us-east-1
-#        docker build --platform linux/amd64 -t <account>.dkr.ecr.us-east-1.amazonaws.com/vg-sfu-prober:0.27.0 .
-#        docker push <account>.dkr.ecr.us-east-1.amazonaws.com/vg-sfu-prober:0.27.0
+#        docker build --platform linux/amd64 -t <account>.dkr.ecr.us-east-1.amazonaws.com/vg-sfu-prober:0.27.1 .
+#        docker push <account>.dkr.ecr.us-east-1.amazonaws.com/vg-sfu-prober:0.27.1
 #
 #   2. LiveKit credentials, one Secrets Manager secret replicated to every vantage
 #      region. A replica keeps the name and its six-character suffix, so the same
