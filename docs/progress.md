@@ -113,7 +113,7 @@ Plan agreed 2026-10-15: a team builds V1 with Cloud (decision 0024) over 30 days
 - Phase 2 candidate: inferred call labels (triage, disposition) from a self-hosted decision model such as Jev or Kev, opt-in and marked as inferred. Evaluate once V1 traces exist.
 - The docs and landing site in site/ still use the old purple theme; when do they move to The Clean Room?
 
-- Resolved, kept for the record: the worker's LiveKit reads are guarded. With `VOICEGATEWAY_WORKER_ENDPOINTS_PUBLIC_ONLY` set, `scrape.NewDial` and `capacity.NewDial` send every Twirp call through the guarded client (`scrape.NewWorkerClient`), built from livekit/protocol's generated constructors because server-sdk-go v2.19.0's room, SIP, egress, ingress and dispatch clients take no `http.Client`. Capacity tests are off on such an instance: their callers' signalling and WebRTC dials are outside the guard.
+- Resolved, kept for the record: the worker's LiveKit reads are guarded. With `VOICEGATEWAY_WORKER_ENDPOINTS_PUBLIC_ONLY=true`, `scrape.NewDial` and `capacity.NewDial` send every Twirp call through the guarded client (`scrape.NewWorkerClient`), built from livekit/protocol's generated constructors because server-sdk-go v2.19.0's room, SIP, egress, ingress and dispatch clients take no `http.Client`. With the flag unset or false the reads use the SDK's own clients, unguarded, which suits a self-hosted install on its own network. Capacity tests are off when the flag is true: their callers' signalling and WebRTC dials are outside the guard.
 
 ## Known Issues
 
