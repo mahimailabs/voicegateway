@@ -10,6 +10,7 @@ import (
 
 	"github.com/getsentry/sentry-go"
 	sentryhttp "github.com/getsentry/sentry-go/http"
+	"github.com/go-chi/chi/v5"
 	slogsentry "github.com/samber/slog-sentry/v2"
 
 	"github.com/mahimailabs/voicegateway/internal/config"
@@ -85,6 +86,35 @@ func SentryHandler(c config.Sentry, h http.Handler) http.Handler {
 		return h
 	}
 	return sentryhttp.New(sentryhttp.Options{Repanic: true}).Handle(h)
+}
+
+// RouteFinder finds the route pattern a method and path match, "" for none: chi.Routes.Find.
+type RouteFinder interface {
+	Find(rctx *chi.Context, method, path string) string
+}
+
+// SentryRoutes names each request's transaction by the route it matches in routes, as
+// "GET /api/v1/org/{orgId}/project/{projectId}/calls", so one route's requests group as one
+// transaction whatever IDs their URL holds; a path no route matches is named by mount. sentryhttp
+// names the transaction from r.Pattern once the request is answered, and ServeMux sets that to the
+// mount ("/api/v1/"), so the full pattern is put there. Without a DSN it returns h.
+func SentryRoutes(c config.Sentry, mount string, routes RouteFinder, h http.Handler) http.Handler {
+	if !c.On() {
+		return h
+	}
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// chi routes on the escaped path when there is one.
+		path := r.URL.Path
+		if r.URL.RawPath != "" {
+			path = r.URL.RawPath
+		}
+		pattern := routes.Find(chi.NewRouteContext(), r.Method, path)
+		if pattern == "" {
+			pattern = mount
+		}
+		r.Pattern = r.Method + " " + pattern
+		h.ServeHTTP(w, r)
+	})
 }
 
 // Fail reports the error a role stopped with, unless it was told to stop.
