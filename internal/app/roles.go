@@ -155,7 +155,11 @@ func Web(ctx context.Context, c config.Config, log *slog.Logger) error {
 		Connections: projects, PublicURL: c.PublicURL,
 		Instance: instanceAPI,
 	}
-	mux.Handle("/api/v1/", v1.Routes())
+	routes, ok := v1.Routes().(mcp.API)
+	if !ok {
+		return errors.New("the API router is not a chi router")
+	}
+	mux.Handle("/api/v1/", obs.SentryRoutes(c.Sentry, "/api/v1/*", routes, routes))
 	// MCP (PRODUCT.md): its tools call the /api/v1 router in process, as the key the same gate
 	// identified in front of /mcp, so that router runs without a gate of its own.
 	tools := *v1

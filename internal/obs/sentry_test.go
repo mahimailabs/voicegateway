@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/getsentry/sentry-go"
+	"github.com/go-chi/chi/v5"
 
 	"github.com/mahimailabs/voicegateway/internal/config"
 )
@@ -124,6 +125,41 @@ func TestHealthProbesAreNotTimed(t *testing.T) {
 	}
 	if len(names) != 1 || names[0] != "GET /api/v1/calls" {
 		t.Fatalf("transactions = %v, want only GET /api/v1/calls", names)
+	}
+}
+
+func TestTransactionsAreNamedByRoute(t *testing.T) {
+	_, _, transport := start(t, 1)
+	routes := chi.NewRouter()
+	routes.Get("/api/v1/org/{orgId}/calls/{callId}", func(http.ResponseWriter, *http.Request) {})
+	// The SDK drops 404 transactions, so the unmatched path answers as a gate refusing it would.
+	routes.NotFound(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusUnauthorized) })
+	on := config.Sentry{DSN: testDSN}
+	mux := http.NewServeMux()
+	mux.Handle("/api/v1/", SentryRoutes(on, "/api/v1/*", routes, routes))
+	// As web wires it (internal/app): Sentry outside cross-origin protection outside the mux.
+	h := SentryHandler(on, http.NewCrossOriginProtection().Handler(mux))
+	for _, path := range []string{"/api/v1/org/o1/calls/c1", "/api/v1/org/o2/calls/c%2F2", "/api/v1/nothing/here"} {
+		h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, path, nil))
+	}
+	sentry.Flush(0)
+	var names []string
+	for _, e := range transport.Events() {
+		if e.Type == "transaction" {
+			source := ""
+			if e.TransactionInfo != nil {
+				source = string(e.TransactionInfo.Source)
+			}
+			names = append(names, e.Transaction+" ("+source+")")
+		}
+	}
+	want := []string{
+		"GET /api/v1/org/{orgId}/calls/{callId} (route)",
+		"GET /api/v1/org/{orgId}/calls/{callId} (route)",
+		"GET /api/v1/* (route)",
+	}
+	if strings.Join(names, "|") != strings.Join(want, "|") {
+		t.Fatalf("transactions = %v, want %v", names, want)
 	}
 }
 
