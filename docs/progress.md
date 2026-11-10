@@ -46,7 +46,7 @@ Cloud onboarding (2026-10-21): a full-screen /setup journey for Cloud (Welcome, 
 
 Load test (2026-10-28, docs/specs/load-test.md): `make load-test` (`tools/loadtest`) replays the captured LiveKit Agents call as 1,000 concurrent calls, webhooks through livekit/protocol's own URLNotifier, and checks in ClickHouse, Postgres and Redis that every delivered event is stored, joined and summarised. On 4 cores both a 20 s burst and a two-minute hold of 1,000 calls lost 0 of 10,000 webhooks, 56,000 spans, 2,000 metric exports, 1,000 session reports and 1,000 SDK batches, with every upload kind under 25 ms at p99. With the stack on 2 cores nothing was lost, but p99 reached 375 ms in the burst and 224 ms held open, and summaries trailed by up to 7 minutes. Targets met on 4 cores, not on Cloud's 2 vCPU; Cloud sizing is open. Roadmap #320's load test item is done; the 2-core latency and the summary lag are open follow-ups.
 
-Phases 01 to 06f are on main (06f, adding a project from the console, merged in #419). The next phase has no spec yet.
+Phases 01 to 06h are on main (06f, adding a project from the console, in #419; 06h, Google, GitHub and Auth0 sign-in, in #449). No phase is open: what is left for V1 is the list under Next.
 
 SFU prober on AWS (2026-10-29, decision 0037): `deploy/prober/fly.toml` (a template, never deployed) is replaced by `deploy/prober/cloudformation.yaml`, one stack per region through StackSets: Fargate RunTask, an EventBridge Scheduler schedule created disabled, LiveKit values from a replicated Secrets Manager secret, the vantage label from the stack's region. The prober image pins `voicegateway==0.27.0`, the last engine release with the prober. cfn-lint 1.57.2 passes in CI; nothing is deployed to AWS.
 
@@ -68,7 +68,7 @@ SFU prober on AWS (2026-10-29, decision 0037): `deploy/prober/fly.toml` (a templ
 
 ## In progress (Phase 1)
 
-- Invitation delivery: persist send-start and confirmed failure, detach bounded sending and outcome recording from request cancellation, and preserve unknown SMTP acceptance as null for instance invitations. Concurrent idempotent repeats wait for the first outcome. Uses go-mail v0.8.1 delivery state rather than treating cleanup errors as rejection. Local Go race/lint pass; container-backed acceptance checks require CI. Deploy the Cloud nullable-outcome consumer before this engine change.
+- Invitation delivery: persist send-start and confirmed failure, detach bounded sending and outcome recording from request cancellation, and preserve unknown SMTP acceptance as null for instance invitations. Concurrent idempotent repeats wait for the first outcome. Uses go-mail v0.8.1 delivery state rather than treating cleanup errors as rejection. Local Go race/lint pass; container-backed acceptance checks require CI. Deploy the Cloud nullable-outcome consumer before this engine change. As of 2026-11-10 no branch or pull request carries this and it is not on main.
 
 - Public presentation (2026-10-15): README now leads with the current wordmark, an 18-second console teaser, and a hand-drawn call-path diagram. The teaser uses the supplied console screenshot with editorial callouts, explicitly labelled as a preview. Only the finished SVG, GIF and still image are published; media authoring workspaces stay local and gitignored. The companion `voicegateway-web` landing adopts the Clean Room theme, interactive React previews with captured data, and the OSS/Cloud V1 split with automated Stripe activation. Console build/lint and landing build/typecheck/changed-source lint pass; this does not mark Phase 1 or Cloud complete.
 - Console identity: selected Mergepoint concept 02 and Inter Semibold lettering form a single outlined wordmark, with light/dark SVGs in the existing ink and logo-only Gateway Teal. Typography was tuned to the system UI at 16px/600 after reviewing the earlier heavier geometric treatment. A brief electric sweep runs on entry and hover, with a static reduced-motion version. The tab icon and title match; the collapsed rail keeps its toggle. Artwork renders are checked at actual size; live browser verification is pending because localhost access is blocked by a saved browser permission.
@@ -95,7 +95,17 @@ SFU prober on AWS (2026-10-29, decision 0037): `deploy/prober/fly.toml` (a templ
 
 ## Next
 
-Plan agreed 2026-10-15: a team builds V1 with Cloud (decision 0024) over 30 days, release target 5 Nov.
+Plan agreed 2026-10-15: a team builds V1 with Cloud (decision 0024) over 30 days, release target 5 Nov (missed; v1.0.0-preview.10 is the latest release, on Cloud since 2026-11-09).
+
+Left for V1 (2026-11-10). The roadmap (#320) is 38 of 39; preview.10 runs on cloud-1 with Sentry on.
+
+1. Time from install to first traced call (the roadmap's last open task, and the first launch target). Install alone is measured: about 23 s on Linux and 27 s on macOS.
+2. Cloud end to end: sign up, pay through Stripe and trace a first call with no one acting (V1 capability 10). Stripe, SMTP, Auth0 and control are configured on cloud-1; the run has not been done. SES production access was denied on 2026-10-19.
+3. voicegateway-cloud #69 (first backup and restore) and #71 (restart after a reboot); a full restore test.
+4. Decide: the launch price (Open Questions), the launch targets in PRODUCT.md, whether Cloud runs its own recordings bucket for V1, and PR #452 (demo agent).
+5. Tag v1.0.0, deploy it to Cloud, and pin `install.sh` and `docs/self-hosting.md` to its digest (they pin preview.8).
+
+The plan as agreed:
 
 1. Freeze the contract: finish Phase 1's OpenAPI spec with x-source, generated types and the mock API, so the lanes build against one interface.
 2. Build V1 on its own branch; main keeps the current release until V1 replaces it. Phase 0 (removing the old Python core) is done (2026-10-18).
