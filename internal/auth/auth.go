@@ -151,7 +151,7 @@ func (s *Service) Sessions(h http.Handler) http.Handler {
 // /auth/invitation routes, with sessions loaded. It starts
 // building the dummy hash in the background, so web listens at once and the first unknown email
 // takes no longer than the rest; a sign-in that comes first waits for the same hash.
-func (s *Service) Routes() http.Handler {
+func (s *Service) Routes() Routes {
 	go func() {
 		if _, err := dummyHash(); err != nil {
 			s.Log.Error("auth: could not build the dummy password hash", "err", err)
@@ -171,7 +171,19 @@ func (s *Service) Routes() http.Handler {
 		mux.Handle("GET /auth/invitation", LinkHeaders(http.HandlerFunc(s.invitation)))
 		mux.Handle("POST /auth/invitation/accept", LinkHeaders(http.HandlerFunc(s.acceptInvitation)))
 	}
-	return s.Sessions(mux)
+	return Routes{Handler: s.Sessions(mux), mux: mux}
+}
+
+// Routes serves /auth and names the route each request matches.
+type Routes struct {
+	http.Handler
+	mux *http.ServeMux
+}
+
+// Pattern returns the route r matches, as "GET /auth/session", or "" when none does.
+func (rt Routes) Pattern(r *http.Request) string {
+	_, pattern := rt.mux.Handler(r)
+	return pattern
 }
 
 type credentials struct {

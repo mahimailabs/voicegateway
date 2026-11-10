@@ -93,26 +93,38 @@ type RouteFinder interface {
 	Find(rctx *chi.Context, method, path string) string
 }
 
-// SentryRoutes names each request's transaction by the route it matches in routes, as
-// "GET /api/v1/org/{orgId}/project/{projectId}/calls", so one route's requests group as one
-// transaction whatever IDs their URL holds; a path no route matches is named by mount. sentryhttp
-// names the transaction from r.Pattern once the request is answered, and ServeMux sets that to the
-// mount ("/api/v1/"), so the full pattern is put there. Without a DSN it returns h.
-func SentryRoutes(c config.Sentry, mount string, routes RouteFinder, h http.Handler) http.Handler {
-	if !c.On() {
-		return h
-	}
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+// ChiRoute returns the chi route pattern a request matches in routes, "" for none.
+func ChiRoute(routes RouteFinder) func(*http.Request) string {
+	return func(r *http.Request) string {
 		// chi routes on the escaped path when there is one.
 		path := r.URL.Path
 		if r.URL.RawPath != "" {
 			path = r.URL.RawPath
 		}
-		pattern := routes.Find(chi.NewRouteContext(), r.Method, path)
+		return routes.Find(chi.NewRouteContext(), r.Method, path)
+	}
+}
+
+// SentryRoutes names each request's transaction by the route route finds for it, as
+// "GET /api/v1/org/{orgId}/project/{projectId}/calls", so one route's requests group as one
+// transaction whatever IDs their URL holds; a path no route matches is named by mount. sentryhttp
+// names the transaction from r.Pattern once the request is answered, and the outer ServeMux sets
+// that to the mount ("/api/v1/"); a router inside sets it only on its own copy of the request. So
+// the full pattern is put there. A pattern without a method gets the request's. Without a DSN it
+// returns h.
+func SentryRoutes(c config.Sentry, mount string, route func(*http.Request) string, h http.Handler) http.Handler {
+	if !c.On() {
+		return h
+	}
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		pattern := route(r)
 		if pattern == "" {
 			pattern = mount
 		}
-		r.Pattern = r.Method + " " + pattern
+		if !strings.Contains(pattern, " ") {
+			pattern = r.Method + " " + pattern
+		}
+		r.Pattern = pattern
 		h.ServeHTTP(w, r)
 	})
 }

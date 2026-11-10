@@ -144,7 +144,8 @@ func Web(ctx context.Context, c config.Config, log *slog.Logger) error {
 	mux.HandleFunc("GET /healthz", obs.Health)
 	connections := &ingest.Connections{Store: projects, Log: log, Now: time.Now}
 	mountIngestion(mux, projects, producer, quota, recordings, connections, log, time.Now)
-	mux.Handle("/auth/", accounts.Routes())
+	authRoutes := accounts.Routes()
+	mux.Handle("/auth/", obs.SentryRoutes(c.Sentry, "/auth/*", authRoutes.Pattern, authRoutes))
 	v1 := &api.API{
 		Alerts: projects, AlertEmail: c.SMTPURL != "", AlertHTTPSOnly: c.WorkerEndpointsPublicOnly, AlertTest: alert.Composer{PublicURL: c.PublicURL, Now: time.Now}.Test,
 		Settings: projects, Origins: projects, Embeds: embeds, Metadata: projects, Issues: projects, StorageBucket: c.S3.Bucket,
@@ -159,7 +160,7 @@ func Web(ctx context.Context, c config.Config, log *slog.Logger) error {
 	if !ok {
 		return errors.New("the API router is not a chi router")
 	}
-	mux.Handle("/api/v1/", obs.SentryRoutes(c.Sentry, "/api/v1/*", routes, routes))
+	mux.Handle("/api/v1/", obs.SentryRoutes(c.Sentry, "/api/v1/*", obs.ChiRoute(routes), routes))
 	// MCP (PRODUCT.md): its tools call the /api/v1 router in process, as the key the same gate
 	// identified in front of /mcp, so that router runs without a gate of its own.
 	tools := *v1

@@ -9,7 +9,12 @@ COPY dashboard/package.json dashboard/package-lock.json ./
 RUN --mount=type=cache,target=/root/.npm npm ci --no-audit --no-fund
 COPY dashboard ./
 COPY docs/api /src/docs/api
-RUN npm run build
+# With a sentry_auth_token build secret the build uploads the console's source maps to Sentry and
+# deletes them (dashboard/vite.config.ts); SENTRY_ORG and SENTRY_PROJECT name where. The secret is
+# mounted for this step only and never kept in a layer. Without it the build is unchanged.
+ARG SENTRY_ORG SENTRY_PROJECT
+RUN --mount=type=secret,id=sentry_auth_token \
+    SENTRY_AUTH_TOKEN="$(cat /run/secrets/sentry_auth_token 2>/dev/null || true)" npm run build
 
 FROM golang:1.26.8-alpine@sha256:8ac98ca534ac3f51e1f420a1dd2c15e74c75cfa0f23f3ad27eb5d7236c349a0c AS build
 WORKDIR /src

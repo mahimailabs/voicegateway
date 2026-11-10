@@ -77,6 +77,12 @@ jobs:
           cache-from: type=gha,scope=voicegateway-${{ matrix.arch }}
           cache-to: type=gha,mode=max,scope=voicegateway-${{ matrix.arch }}
           outputs: type=image,name=${{ env.IMAGE }},push-by-digest=true,name-canonical=true,push=true
+          # Console source maps go to Sentry only when the repository has these set
+          # (deploy/Dockerfile); a fork without them builds the same image with no upload.
+          build-args: |
+            SENTRY_ORG=${{ vars.SENTRY_ORG }}
+            SENTRY_PROJECT=${{ vars.SENTRY_PROJECT }}
+          secrets: ${{ secrets.SENTRY_AUTH_TOKEN != '' && format('sentry_auth_token={0}', secrets.SENTRY_AUTH_TOKEN) || '' }}
 
       - name: Export digest
         env:
