@@ -12,7 +12,9 @@ COPY docs/api /src/docs/api
 # With a sentry_auth_token build secret the build uploads the console's source maps to Sentry and
 # deletes them (dashboard/vite.config.ts); SENTRY_ORG and SENTRY_PROJECT name where. The secret is
 # mounted for this step only and never kept in a layer. Without it the build is unchanged.
-ARG SENTRY_ORG SENTRY_PROJECT
+# SENTRY_UPLOAD (true when a token is passed) is in the step's cache key, since a secret is not, so
+# turning uploads on rebuilds the console instead of reusing a cached build without maps.
+ARG SENTRY_ORG SENTRY_PROJECT SENTRY_UPLOAD
 RUN --mount=type=secret,id=sentry_auth_token \
     SENTRY_AUTH_TOKEN="$(cat /run/secrets/sentry_auth_token 2>/dev/null || true)" npm run build
 

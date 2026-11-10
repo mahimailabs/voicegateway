@@ -8,6 +8,11 @@ import { defineConfig } from "vite"
 // writes source maps, uploads them to Sentry and deletes them, so stack traces read as source but no
 // map ships. Without one the build is unchanged: no maps, no upload (decision 0039).
 const sentryAuthToken = process.env.SENTRY_AUTH_TOKEN
+// Without an org and project the plugin skips the upload but still deletes the maps, so the build
+// would pass with nothing uploaded.
+if (sentryAuthToken && !(process.env.SENTRY_ORG && process.env.SENTRY_PROJECT)) {
+  throw new Error("SENTRY_AUTH_TOKEN is set, so SENTRY_ORG and SENTRY_PROJECT must be set too")
+}
 
 export default defineConfig({
   plugins: [
