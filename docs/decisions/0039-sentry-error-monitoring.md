@@ -28,4 +28,4 @@ Option 1.
 - Cloud sets the DSNs in its host's environment; they are never committed. Sentry projects: `app-api` (Go) and `app-web` (React).
 - Transaction names for routes under `/api/v1/` read `/api/v1/`: `sentryhttp` names them from the outer ServeMux pattern, not chi's route. Finer names need a span per chi route, later.
 - Errors logged below error level are not reported; a log level change is a reporting change.
-- Source maps are not uploaded yet, so console stack traces show minified names until a release step uploads them.
+- Console source maps upload at build time only when a Sentry auth token is given (dashboard/vite.config.ts; the image build takes it as the `sentry_auth_token` build secret, with `SENTRY_ORG` and `SENTRY_PROJECT` as build arguments, set from the repository secret and variables in docker-publish). The maps are deleted after upload, so none ship. Without a token, stack traces show minified names.

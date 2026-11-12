@@ -136,7 +136,7 @@ func TestTransactionsAreNamedByRoute(t *testing.T) {
 	routes.NotFound(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusUnauthorized) })
 	on := config.Sentry{DSN: testDSN}
 	mux := http.NewServeMux()
-	mux.Handle("/api/v1/", SentryRoutes(on, "/api/v1/*", routes, routes))
+	mux.Handle("/api/v1/", SentryRoutes(on, "/api/v1/*", ChiRoute(routes), routes))
 	// As web wires it (internal/app): Sentry outside cross-origin protection outside the mux.
 	h := SentryHandler(on, http.NewCrossOriginProtection().Handler(mux))
 	for _, path := range []string{"/api/v1/org/o1/calls/c1", "/api/v1/org/o2/calls/c%2F2", "/api/v1/nothing/here"} {
@@ -160,6 +160,38 @@ func TestTransactionsAreNamedByRoute(t *testing.T) {
 	}
 	if strings.Join(names, "|") != strings.Join(want, "|") {
 		t.Fatalf("transactions = %v, want %v", names, want)
+	}
+}
+
+func TestTransactionsAreNamedByServeMuxRoute(t *testing.T) {
+	_, _, transport := start(t, 1)
+	inner := http.NewServeMux()
+	inner.HandleFunc("GET /auth/oauth/{provider}/start", func(http.ResponseWriter, *http.Request) {})
+	// As auth's session middleware does, the inner mux gets a copy of the request.
+	copying := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		inner.ServeHTTP(w, r.WithContext(r.Context()))
+	})
+	route := func(r *http.Request) string {
+		_, pattern := inner.Handler(r)
+		return pattern
+	}
+	on := config.Sentry{DSN: testDSN}
+	mux := http.NewServeMux()
+	mux.Handle("/auth/", SentryRoutes(on, "/auth/*", route, copying))
+	h := SentryHandler(on, mux)
+	for _, path := range []string{"/auth/oauth/google/start", "/auth/oauth/github/start"} {
+		h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, path, nil))
+	}
+	sentry.Flush(0)
+	var names []string
+	for _, e := range transport.Events() {
+		if e.Type == "transaction" {
+			names = append(names, e.Transaction)
+		}
+	}
+	want := "GET /auth/oauth/{provider}/start|GET /auth/oauth/{provider}/start"
+	if strings.Join(names, "|") != want {
+		t.Fatalf("transactions = %v, want %s", names, want)
 	}
 }
 
