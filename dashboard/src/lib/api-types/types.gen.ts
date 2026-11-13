@@ -2016,6 +2016,87 @@ export type InstanceInvitation = {
     link: string | null;
 };
 
+export type AdminOrganisations = {
+    /**
+     * The newest organisations, newest first.
+     */
+    items: Array<AdminOrganisation>;
+    /**
+     * Every organisation on the instance at this read, so 0 is a true zero.
+     */
+    total: number;
+};
+
+export type AdminOrganisation = {
+    /**
+     * The organisation's id.
+     */
+    id: string;
+    /**
+     * The organisation's name.
+     */
+    name: string;
+    /**
+     * When the organisation was created, in UTC.
+     */
+    createdAt: string;
+    /**
+     * Accounts with a role in the organisation at this read, so 0 is a true zero.
+     */
+    members: number;
+    /**
+     * Of members, those with the Admin role.
+     */
+    admins: number;
+    /**
+     * The organisation's projects at this read, so 0 is a true zero.
+     */
+    projects: number;
+};
+
+export type AdminUsers = {
+    /**
+     * The newest accounts, newest first.
+     */
+    items: Array<AdminUser>;
+    /**
+     * Every account on the instance at this read.
+     */
+    total: number;
+};
+
+export type AdminUser = {
+    /**
+     * The account's id.
+     */
+    id: string;
+    /**
+     * The account's email address, case-folded.
+     */
+    email: string;
+    /**
+     * When the account was created, in UTC.
+     */
+    createdAt: string;
+    /**
+     * Whether the account is an instance admin (decision 0041).
+     */
+    instanceAdmin: boolean;
+    /**
+     * The organisations the account belongs to, by id, each with its role there. Empty is an account with no organisation.
+     */
+    organisations: Array<{
+        /**
+         * The organisation's id.
+         */
+        id: string;
+        /**
+         * The account's role in that organisation.
+         */
+        role: 'Admin' | 'Member' | 'Viewer';
+    }>;
+};
+
 export type InstanceUsage = {
     /**
      * The organisation read.
@@ -5221,6 +5302,155 @@ export type RevokeProjectKeyResponses = {
 };
 
 export type RevokeProjectKeyResponse = RevokeProjectKeyResponses[keyof RevokeProjectKeyResponses];
+
+export type ListAdminOrganisationsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/admin/organisations';
+};
+
+export type ListAdminOrganisationsErrors = {
+    /**
+     * invalid_request; never return an empty success result for this failure.
+     */
+    400: Error;
+    /**
+     * unauthenticated; never return an empty success result for this failure.
+     */
+    401: Error;
+    /**
+     * forbidden; never return an empty success result for this failure.
+     */
+    403: Error;
+    /**
+     * not_found; never return an empty success result for this failure.
+     */
+    404: Error;
+    /**
+     * internal_error; never return an empty success result for this failure.
+     */
+    500: Error;
+    /**
+     * source_unavailable; never return an empty success result for this failure.
+     */
+    503: Error;
+};
+
+export type ListAdminOrganisationsError = ListAdminOrganisationsErrors[keyof ListAdminOrganisationsErrors];
+
+export type ListAdminOrganisationsResponses = {
+    /**
+     * Authorised read result at this read.
+     */
+    200: AdminOrganisations;
+};
+
+export type ListAdminOrganisationsResponse = ListAdminOrganisationsResponses[keyof ListAdminOrganisationsResponses];
+
+export type ListAdminUsersData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/admin/users';
+};
+
+export type ListAdminUsersErrors = {
+    /**
+     * invalid_request; never return an empty success result for this failure.
+     */
+    400: Error;
+    /**
+     * unauthenticated; never return an empty success result for this failure.
+     */
+    401: Error;
+    /**
+     * forbidden; never return an empty success result for this failure.
+     */
+    403: Error;
+    /**
+     * not_found; never return an empty success result for this failure.
+     */
+    404: Error;
+    /**
+     * internal_error; never return an empty success result for this failure.
+     */
+    500: Error;
+    /**
+     * source_unavailable; never return an empty success result for this failure.
+     */
+    503: Error;
+};
+
+export type ListAdminUsersError = ListAdminUsersErrors[keyof ListAdminUsersErrors];
+
+export type ListAdminUsersResponses = {
+    /**
+     * Authorised read result at this read.
+     */
+    200: AdminUsers;
+};
+
+export type ListAdminUsersResponse = ListAdminUsersResponses[keyof ListAdminUsersResponses];
+
+export type GetAdminOrganisationUsageData = {
+    body?: never;
+    path: {
+        /**
+         * The organisation's id, chosen by the caller; any other shape is invalid_request.
+         */
+        orgId: string;
+    };
+    query: {
+        /**
+         * Inclusive start of the period, an RFC 3339 instant.
+         */
+        from: string;
+        /**
+         * Exclusive end of the period, an RFC 3339 instant, after from and at most 62 days later.
+         */
+        to: string;
+    };
+    url: '/api/v1/admin/organisations/{orgId}/usage';
+};
+
+export type GetAdminOrganisationUsageErrors = {
+    /**
+     * invalid_request; never return an empty success result for this failure.
+     */
+    400: Error;
+    /**
+     * unauthenticated; never return an empty success result for this failure.
+     */
+    401: Error;
+    /**
+     * forbidden; never return an empty success result for this failure.
+     */
+    403: Error;
+    /**
+     * not_found; never return an empty success result for this failure.
+     */
+    404: Error;
+    /**
+     * internal_error; never return an empty success result for this failure.
+     */
+    500: Error;
+    /**
+     * source_unavailable; never return an empty success result for this failure.
+     */
+    503: Error;
+};
+
+export type GetAdminOrganisationUsageError = GetAdminOrganisationUsageErrors[keyof GetAdminOrganisationUsageErrors];
+
+export type GetAdminOrganisationUsageResponses = {
+    /**
+     * Authorised read result at this read.
+     */
+    200: InstanceUsage;
+};
+
+export type GetAdminOrganisationUsageResponse = GetAdminOrganisationUsageResponses[keyof GetAdminOrganisationUsageResponses];
 
 export type GetWorkspacesData = {
     body?: never;

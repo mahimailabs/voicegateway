@@ -691,3 +691,38 @@ func TestUntrustedProxyIsWarnedAboutOnce(t *testing.T) {
 		t.Errorf("warnings = %d, want 1", n)
 	}
 }
+
+// The session names the instance admin flag and the operator's admin pages to an instance admin
+// only (decision 0041); every other account reads false and no page.
+func TestSessionNamesTheInstanceAdmin(t *testing.T) {
+	f := newFixture(t)
+	f.addUser("kai@example.com", "default", "admin")
+	f.addUser("john.doe@example.com", "default", "admin")
+	if err := f.pg.SetInstanceAdmin(context.Background(), "kai@example.com", true); err != nil {
+		t.Fatal(err)
+	}
+	s := f.service()
+	s.AdminPages = []auth.AdminPage{{Label: "Business", Path: "/admin/"}}
+	routes := s.Routes()
+	for email, want := range map[string]bool{"kai@example.com": true, "john.doe@example.com": false} {
+		res := f.do(routes, http.MethodPost, "/auth/sign-in", signIn(email, password), request{from: "10.0.0.5", tls: true})
+		c := sessionCookie(res)
+		if c == nil {
+			t.Fatalf("%s: sign-in = %d, no cookie", email, res.StatusCode)
+		}
+		res = f.do(routes, http.MethodGet, "/auth/session", "", request{from: "10.0.0.5", tls: true, cookies: []*http.Cookie{c}})
+		var session struct {
+			InstanceAdmin *bool            `json:"instanceAdmin"`
+			AdminPages    []auth.AdminPage `json:"adminPages"`
+		}
+		if err := json.NewDecoder(res.Body).Decode(&session); err != nil || res.StatusCode != http.StatusOK {
+			t.Fatalf("%s: session = %d, %v", email, res.StatusCode, err)
+		}
+		if session.InstanceAdmin == nil || *session.InstanceAdmin != want || session.AdminPages == nil {
+			t.Errorf("%s: instanceAdmin %v, adminPages %v; want %v and a list", email, session.InstanceAdmin, session.AdminPages, want)
+		}
+		if pages := len(session.AdminPages); want && pages != 1 || !want && pages != 0 {
+			t.Errorf("%s: %d admin pages", email, pages)
+		}
+	}
+}

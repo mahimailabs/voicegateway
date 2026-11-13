@@ -127,6 +127,9 @@ func Web(ctx context.Context, c config.Config, log *slog.Logger) error {
 		Client: clientConfig(c),
 		Log:    log, Now: time.Now,
 	}
+	for _, p := range c.AdminPages {
+		accounts.AdminPages = append(accounts.AdminPages, auth.AdminPage{Label: p.Label, Path: p.Path})
+	}
 	// The instance API (phase 06e, ee/instance) is on only with VOICEGATEWAY_INSTANCE_TOKEN.
 	var instanceAPI api.InstanceHandlers
 	if c.InstanceTokenSHA256 != nil {
@@ -150,7 +153,7 @@ func Web(ctx context.Context, c config.Config, log *slog.Logger) error {
 		Alerts: projects, AlertEmail: c.SMTPURL != "", AlertHTTPSOnly: c.WorkerEndpointsPublicOnly, AlertTest: alert.Composer{PublicURL: c.PublicURL, Now: time.Now}.Test,
 		Settings: projects, Origins: projects, Embeds: embeds, Metadata: projects, Issues: projects, StorageBucket: c.S3.Bucket,
 		Live:              live,
-		ResourceEndpoints: projects, ResourceSamples: events, Projects: projects, NewProjects: projects, Credentials: projects, VerifyLiveKit: scrape.NewVerifier(c.WorkerEndpointsPublicOnly), VerifyBucket: bucket.NewVerifier(bucketTransport), Calls: projects, Capacity: projects, CapacityOff: c.WorkerEndpointsPublicOnly, Traces: events, Layers: events, Endpoints: projects, Accounts: projects, Stats: projects, Keys: projects, NewKey: auth.NewKey, Log: log, Now: time.Now, Gate: accounts.Gate,
+		ResourceEndpoints: projects, ResourceSamples: events, Projects: projects, NewProjects: projects, Credentials: projects, VerifyLiveKit: scrape.NewVerifier(c.WorkerEndpointsPublicOnly), VerifyBucket: bucket.NewVerifier(bucketTransport), Calls: projects, Capacity: projects, CapacityOff: c.WorkerEndpointsPublicOnly, Traces: events, Layers: events, Endpoints: projects, Accounts: projects, Admin: projects, Stats: projects, Keys: projects, NewKey: auth.NewKey, Log: log, Now: time.Now, Gate: accounts.Gate,
 		Invitations: projects, Inviter: NewInviter(links), LinkBase: accounts.LinkBase,
 		Recordings: projects, Media: recordings,
 		Connections: projects, PublicURL: c.PublicURL,
