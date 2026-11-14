@@ -3,6 +3,7 @@ package pgstore
 import (
 	"crypto/sha256"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -16,8 +17,12 @@ func limit(n int32) *int32 { return &n }
 func TestPlanLimitsRefuseProjectsAndInvitations(t *testing.T) {
 	s, _ := migrated(t)
 	ctx := t.Context()
+	// Each invitation has its own token, as the invite service makes one per link; re-inviting an
+	// email replaces its open link with a new token.
+	sent := 0
 	invite := func(email string) error {
-		sum := sha256.Sum256([]byte(email))
+		sent++
+		sum := sha256.Sum256([]byte(fmt.Sprintf("%s-%d", email, sent)))
 		role := "member"
 		_, err := s.CreateInvitation(ctx, store.NewInvitation{Kind: "invite", OrganisationID: "default", Email: email, Role: &role, TokenSHA256: sum[:], ExpiresAt: time.Now().Add(time.Hour)})
 		return err
