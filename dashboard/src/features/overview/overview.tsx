@@ -58,7 +58,7 @@ export function AnswerTimeFigure({ answers }: { answers: CallStats["answers"] })
   return (
     <>
       <AnswerGauge p50={p50} budget={answers.budgetMs} />
-      <p className={cn("mt-2 text-[34px] leading-none font-semibold tracking-[-0.03em] tnum", p50 !== null && p50 > answers.budgetMs && "text-destructive")}>{p50 === null ? "Unknown" : fmtS(p50)}</p>
+      <p className="mt-2 text-[34px] leading-none font-semibold tracking-[-0.03em] tnum">{p50 === null ? "Unknown" : fmtS(p50)}</p>
       <p className="mt-1.5 text-[12px] text-muted-foreground tnum">{`median answer · ${over} turns over ${answers.budgetMs / 1000} s`}</p>
     </>
   )
@@ -103,12 +103,12 @@ function Section({ title, to, link, children, className }: { title: string; to?:
 function Stat({ icon: I, label, value, alert, to }: { icon: Icon; label: string; value: React.ReactNode; alert?: boolean; to: string }) {
   return (
     <Link to={to} className="group flex items-center gap-3 rounded-xl px-1 py-1 transition-colors hover:bg-muted/50">
-      <span className={cn("flex size-9 items-center justify-center rounded-lg border bg-background", alert && "border-destructive/30 text-destructive")}>
+      <span className="flex size-9 items-center justify-center rounded-lg border bg-background text-muted-foreground">
         <I size={17} />
       </span>
       <span>
-        <span className={cn("block text-[20px] leading-none font-semibold tracking-[-0.02em] tnum", alert && "text-destructive")}>{value}</span>
-        <span className="mt-1 block text-[12px] text-muted-foreground">{label}</span>
+        <span className="block text-[20px] leading-none font-semibold tracking-[-0.02em] tnum">{value}</span>
+        <span className="mt-1 block text-[12px] text-muted-foreground">{label}{alert && <span className="ml-1.5 inline-block size-1.5 rounded-full bg-destructive align-middle" aria-label="needs a look" role="img" />}</span>
       </span>
     </Link>
   )
@@ -341,7 +341,7 @@ function OverviewView({ stats, cloud: cloudRead, media, sip: sipQ, egress: egres
                 </span>
                 <span className="flex flex-wrap items-end justify-between gap-x-4 gap-y-3">
                   <span>
-                    <span className={cn("block text-[30px] leading-none font-semibold tracking-[-0.03em] tnum", p50 !== null && p50 > BUDGET_MS && "text-destructive")}>{p50 === null ? "Unknown" : fmtS(p50)}</span>
+                    <span className="block text-[30px] leading-none font-semibold tracking-[-0.03em] tnum">{p50 === null ? "Unknown" : fmtS(p50)}</span>
                     <span className="mt-1 block text-[12px] text-muted-foreground">median answer</span>
                   </span>
                   <span className="ml-auto flex flex-wrap justify-end gap-x-4 gap-y-2 text-right">
@@ -351,7 +351,7 @@ function OverviewView({ stats, cloud: cloudRead, media, sip: sipQ, egress: egres
                       ["at once", peak === null ? "Unknown" : String(peak)],
                     ].map(([k, v]) => (
                       <span key={k} className="min-w-12">
-                        <span className={cn("block text-[15px] font-semibold whitespace-nowrap tnum", k === "issues" && v !== "0" && v !== "Unknown" && "text-destructive", v === "Unknown" && "text-[13px] font-normal text-muted-foreground")}>{v}</span>
+                        <span className={cn("block text-[15px] font-semibold whitespace-nowrap tnum", v === "Unknown" && "text-[13px] font-normal text-muted-foreground")}>{v}</span>
                         <span className="block text-[11px] text-muted-foreground">{k}</span>
                       </span>
                     ))}
