@@ -97,13 +97,14 @@ SFU prober on AWS (2026-10-29, decision 0037): `deploy/prober/fly.toml` (a templ
 
 Plan agreed 2026-10-15: a team builds V1 with Cloud (decision 0024) over 30 days, release target 5 Nov (missed; v1.0.0-preview.10 is the latest release, on Cloud since 2026-11-09).
 
-Left for V1 (2026-11-10). The roadmap (#320) is 38 of 39; preview.10 runs on cloud-1 with Sentry on.
+Left for V1 (2026-11-13). The roadmap (#320) is 38 of 39; preview.10 runs on cloud-1 with Sentry on.
 
 1. Time from install to first traced call (the roadmap's last open task, and the first launch target). Install alone is measured: about 23 s on Linux and 27 s on macOS.
-2. Cloud end to end: sign up, pay through Stripe and trace a first call with no one acting (V1 capability 10). Stripe, SMTP, Auth0 and control are configured on cloud-1; the run has not been done. SES production access was denied on 2026-10-19.
-3. voicegateway-cloud #69 (first backup and restore) and #71 (restart after a reboot); a full restore test.
-4. Decide: the launch price (Open Questions), the launch targets in PRODUCT.md, whether Cloud runs its own recordings bucket for V1, and PR #452 (demo agent).
-5. Tag v1.0.0, deploy it to Cloud, and pin `install.sh` and `docs/self-hosting.md` to its digest (they pin preview.8).
+2. Cloud end to end: sign up, pay through Stripe and trace a first call with no one acting (V1 capability 10). Try now on voicegateway.dev signs the visitor in with Google or GitHub through Auth0 before Checkout (voicegateway-cloud #72, decision 0004; voicegateway-web #38). Stripe, Auth0, control and SES are configured on cloud-1; SES production access was granted (case 179242288100341) and voicegateway.dev is verified with DKIM. The run has not been done.
+3. Decide: the launch price (Open Questions), the launch targets in PRODUCT.md, and whether Cloud runs its own recordings bucket for V1.
+4. Tag v1.0.0, deploy it to Cloud, and pin `install.sh` and `docs/self-hosting.md` to its digest (they pin preview.8).
+
+Done since 2026-11-10: #452 (demo agent) and #469 (Sentry route names for /auth, source map upload from the image build) are merged. voicegateway-cloud #69 (backup and restore) and #71 (restart after a reboot) are merged. #71 was deployed to cloud-1 on 2026-11-13 (all eight long-running services restart unless-stopped; the two migrate jobs stay one-shot), and cloud-1 was rebooted: SSH was back in 31 s, every container ran again within a minute with no one acting, and /, /healthz and /signup answered 200. Control's first connection was refused while Postgres started and Docker restarted it once; worker logged Redis LOADING for a few seconds with 0 pending and 0 lag after. The restore test passed against that day's backup (20261113T033317Z, 62 tables equal, 14 s); vg-restore-test.timer repeats it weekly.
 
 The plan as agreed:
 
