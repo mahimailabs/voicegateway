@@ -153,6 +153,17 @@ func AddUser(ctx context.Context, c config.Config, email, organisationID, role s
 	return true, nil
 }
 
+// SetInstanceAdmin sets or clears an account's instance admin flag (decision 0041). An unknown
+// email is store.ErrNotFound.
+func SetInstanceAdmin(ctx context.Context, c config.Config, email string, on bool) error {
+	pool, err := pgxpool.New(ctx, c.PostgresURL)
+	if err != nil {
+		return fmt.Errorf("postgres: %w", redactErr(err, c.PostgresURL))
+	}
+	defer pool.Close()
+	return pgstore.NewStore(pool, nil).SetInstanceAdmin(ctx, strings.TrimSpace(email), on)
+}
+
 // ResetPassword sets a new password for an account and signs it out of every session (phase 06b):
 // decision 0027's reset by an admin, and the way back in for a lone admin. An unknown email is
 // store.ErrNotFound.

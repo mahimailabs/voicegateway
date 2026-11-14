@@ -43,6 +43,8 @@ x-voicegateway-env: &voicegateway-env
   VOICEGATEWAY_INSTANCE_TOKEN: ${VOICEGATEWAY_INSTANCE_TOKEN:-}
   # Enforce explicit organisation allowances on Cloud ingestion; requires the instance token.
   VOICEGATEWAY_CLOUD_QUOTAS: ${VOICEGATEWAY_CLOUD_QUOTAS:-false}
+  # Your own pages for the console's Admin group, as Label=/path, comma-separated (decision 0041).
+  VOICEGATEWAY_ADMIN_PAGES: ${VOICEGATEWAY_ADMIN_PAGES:-}
   VOICEGATEWAY_LOG_LEVEL: ${VOICEGATEWAY_LOG_LEVEL:-info}
   # Report errors and request timings to your own Sentry projects (decision 0039). Empty, as by
   # default, sends nothing anywhere. The console DSN is handed to every visitor's browser.

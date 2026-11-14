@@ -8,6 +8,12 @@ follows [Semantic Versioning](https://semver.org/) and
 
 ### Access
 
+- Add the instance admin role: `voicegateway user add --instance-admin`, or
+  `voicegateway user set-instance-admin --email <address>` for an existing
+  account (`--off` takes it away). An instance admin signs in as usual and gets
+  an Instance group in Settings with every organisation and account on the
+  instance. The role opens no project by itself. `VOICEGATEWAY_ADMIN_PAGES`
+  adds your own same-site pages to the top of that account's menu.
 - Add project API keys: an admin creates, lists and revokes them per project in
   Settings or with `voicegateway key create` and `key revoke`. A key reads one
   project and changes nothing; only the SHA-256 of its secret is stored.

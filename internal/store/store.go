@@ -324,6 +324,9 @@ type Principal struct {
 	// PasswordVersion is the user's current password_version; a session holding another is signed
 	// out.
 	PasswordVersion int
+	// InstanceAdmin is the account's instance admin flag (decision 0041). It is not an organisation
+	// role: it opens the admin routes and nothing in any project.
+	InstanceAdmin bool
 	// Key is set for a project API key, which names no user: it reads its one project.
 	Key *KeyScope
 	// Instance is true for the instance token (phase 06e), which names no user and no
@@ -522,6 +525,22 @@ type Organisation struct {
 	ID, Name                            string
 	CreatedAt                           time.Time
 	Members, Admins, PendingInvitations int64
+}
+
+// AdminOrganisation is one organisation as an instance admin lists it (decision 0041).
+type AdminOrganisation struct {
+	ID, Name                  string
+	CreatedAt                 time.Time
+	Members, Admins, Projects int64
+}
+
+// AdminUser is one account as an instance admin lists it: never a credential.
+type AdminUser struct {
+	ID, Email     string
+	CreatedAt     time.Time
+	InstanceAdmin bool
+	// Roles maps each organisation the account belongs to to its role there.
+	Roles map[string]string
 }
 
 // Usage is an organisation's profiled call time in a period (phase 06e, decision 0029): the calls

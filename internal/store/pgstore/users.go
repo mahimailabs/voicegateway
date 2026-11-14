@@ -90,7 +90,7 @@ func (s *Store) Principal(ctx context.Context, userID string) (store.Principal, 
 		return store.Principal{}, store.ErrNotFound
 	}
 	u := rows[0]
-	p := store.Principal{UserID: u.ID.String(), Email: u.Email, Roles: map[string]string{}, PasswordVersion: int(u.PasswordVersion)}
+	p := store.Principal{UserID: u.ID.String(), Email: u.Email, Roles: map[string]string{}, PasswordVersion: int(u.PasswordVersion), InstanceAdmin: u.InstanceAdmin}
 	for _, r := range rows {
 		if r.OrganisationID.Valid {
 			p.Roles[r.OrganisationID.String] = r.Role.String

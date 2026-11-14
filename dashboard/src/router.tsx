@@ -13,6 +13,7 @@ import { SipPage } from "@/features/sip/sip-page"
 import { MediaServerPage } from "@/features/media-server/media-server-page"
 import { EmbedPage } from "@/features/embed/embed-page"
 import { SetupPage } from "@/features/setup/setup-page"
+import { AdminFramedPage } from "@/features/admin/admin-pages"
 import { entryPath, scopeRewrite } from "@/lib/url-state"
 
 // The console pages sit inside the app shell; embeddable widgets (decision 0023) render on their own.
@@ -46,6 +47,8 @@ const alerts = createRoute({ getParentRoute: () => app, path: "/alerts", compone
 const live = createRoute({ getParentRoute: () => app, path: "/live", component: LivePage })
 const sfu = createRoute({ getParentRoute: () => app, path: "/sfu", component: MediaServerPage })
 const sip = createRoute({ getParentRoute: () => app, path: "/sip", component: SipPage })
+// An operator's own page (decision 0041), for an instance admin; anyone else sees "No such page".
+const adminPage = createRoute({ getParentRoute: () => app, path: "/admin/page/$slug", component: AdminFramedPage })
 const settings = createRoute({ getParentRoute: () => app, path: "/settings", component: OverviewPage })
 
 // A bare link is moved under the current project before the router reads it. The workspaces are read
@@ -57,7 +60,7 @@ const settings = createRoute({ getParentRoute: () => app, path: "/settings", com
 
 export const router = createRouter({
   rewrite: scopeRewrite,
-  routeTree: root.addChildren([app.addChildren([index, project, overview, calls, callRoute, live, issues, alerts, agents, sfu, sip, egress, ingress, settings]), setup, embed, apiDocs]),
+  routeTree: root.addChildren([app.addChildren([index, project, overview, calls, callRoute, live, issues, alerts, agents, sfu, sip, egress, ingress, adminPage, settings]), setup, embed, apiDocs]),
 })
 
 declare module "@tanstack/react-router" {
