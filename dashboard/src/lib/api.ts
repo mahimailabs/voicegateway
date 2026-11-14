@@ -31,6 +31,9 @@ import {
   getInvitations,
   getMediaServer,
   getMembers,
+  listAdminOrganisations,
+  listAdminUsers,
+  getAdminOrganisationUsage,
   getMyOrganisationEntitlement,
   getProjectConnection,
   getProjectSettings,
@@ -360,3 +363,17 @@ export const callTagsQuery = (selected = currentScope()) => ({
 export const saveCallMetadata = (id: string, body: import("@/lib/api-types").CallMetadata, selected = currentScope()) => data(updateCallMetadata({...thrown,path:{orgId:selected.org,projectId:selected.project,callId:id},body}))
 
 export const saveIssueMetadata = (id: string, body: import("@/lib/api-types").UpdateIssueMetadata, selected = currentScope()) => data(updateIssueMetadata({...thrown,path:{orgId:selected.org,projectId:selected.project,issueId:id},body}))
+
+// The whole instance, for an instance admin (decision 0041): a flag on the account, set from the
+// command line. Anyone else is answered 403, and the console shows no link to these pages.
+export const adminOrganisationsQuery = () => ({ queryKey: ["admin", "organisations"], queryFn: () => data(listAdminOrganisations(thrown)) })
+export const adminUsersQuery = () => ({ queryKey: ["admin", "users"], queryFn: () => data(listAdminUsers(thrown)) })
+// One organisation's profiled call time over the days days before now, by decision 0029's rules.
+export const adminUsageQuery = (orgId: string, days: number) => ({
+  queryKey: ["admin", "usage", orgId, days],
+  queryFn: () => {
+    const to = new Date()
+    const from = new Date(to.getTime() - days * 86_400_000)
+    return data(getAdminOrganisationUsage({ ...thrown, path: { orgId }, query: { from: from.toISOString(), to: to.toISOString() } }))
+  },
+})

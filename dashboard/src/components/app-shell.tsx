@@ -5,10 +5,13 @@ import { Button } from "@/components/ui/button"
 import { useMemo, useState } from "react"
 import { Link, Navigate, Outlet, useNavigate, useRouterState } from "@tanstack/react-router"
 import { useHosted } from "@/lib/hosted"
-import { roleIn, useSession } from "@/lib/session"
+import { adminPageTo, isInstanceAdmin, roleIn, useSession } from "@/lib/session"
 import { choseLater } from "@/features/setup/setup-later"
 import {
   Bell,
+  Browser,
+  Buildings,
+  UsersThree,
   MagnifyingGlass,
   TreeStructure,
   WarningCircle,
@@ -101,7 +104,16 @@ export function AppShell() {
   }
   const [palette, setPalette] = useState(false)
   const [shortcuts, setShortcuts] = useState(false)
-  const pages = useMemo(() => [...groups.flatMap((g) => g.items), { to: "/project", label: "Project", icon: TreeStructure, key: "j" }], [])
+  // The Admin group (decision 0041) shows for an instance admin only: the instance's own pages, then
+  // any page the operator added in configuration.
+  const session = useSession()
+  const menu = useMemo(() => {
+    if (!isInstanceAdmin(session)) return groups
+    const extra: Item[] = (session?.adminPages ?? []).map((p, i) => ({ to: adminPageTo(i), label: p.label, icon: Browser }))
+    const admin: Item[] = [{ to: "/admin/organisations", label: "Organisations", icon: Buildings }, { to: "/admin/users", label: "Users", icon: UsersThree }, ...extra]
+    return [...groups, { label: "Admin", items: admin }]
+  }, [session])
+  const pages = useMemo(() => [...menu.flatMap((g) => g.items), { to: "/project", label: "Project", icon: TreeStructure, key: "j" }], [menu])
   useCommandHotkeys({ pages, onPalette: () => setPalette((o) => !o), onSettings: () => openSettings(), onShortcuts: () => setShortcuts(true) })
   // Pages judge calls against the project's thresholds, so they wait for the settings read, and a
   // threshold change renders the page again. Settings that could not be read leave the contract's
@@ -149,7 +161,7 @@ export function AppShell() {
         </SidebarHeader>
         <SidebarContent>
           {/* On "No such project" the page links lead nowhere useful, so only its own link to a project shows. */}
-          {!unknown && groups.map((g, i) => (
+          {!unknown && menu.map((g, i) => (
             <SidebarGroup key={i}>
               {g.label && <SidebarGroupLabel className="text-[10.5px] font-semibold tracking-[0.08em] text-muted-foreground uppercase">{g.label}</SidebarGroupLabel>}
               <SidebarMenu className="gap-0.5">{g.items.map(nav)}</SidebarMenu>

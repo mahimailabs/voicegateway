@@ -162,6 +162,16 @@
       "listCalls",
       "getCall",
       "getMyOrganisationEntitlement"
+    ],
+    "/admin/organisations": [
+      "listAdminOrganisations",
+      "getAdminOrganisationUsage"
+    ],
+    "/admin/users": [
+      "listAdminUsers"
+    ],
+    "/admin/page/$slug": [
+      "getProjectSettings"
     ]
   },
   "shell": [

@@ -18,25 +18,27 @@ One account can be an instance admin: it signs in to the same console as everyon
 - **Granting it.** `voicegateway user add --instance-admin` sets it on a new or existing account. `voicegateway user set-instance-admin --email <e> --off` removes it. There is no HTTP route that grants or removes it, so a stolen session cannot make an admin. Removing the last instance admin is allowed: the command line can always make another.
 - **The principal.** `store.Principal` gains `InstanceAdmin`, loaded on every request with the rest of the principal, so a change applies on the next request.
 - **The session.** `GET /auth/session` adds `instanceAdmin` (boolean). Another program on the same host can forward a browser's session cookie to this route and read it; that is the supported way for an operator's own pages to check the role.
-- **A new minimum role, `InstanceAdmin`,** on the `instance` scope in `routeAccess`. A session whose account is an instance admin may call routes at that role. The instance token may call them too. Everyone else gets 403 `forbidden`; no credential gets 401. Existing `Instance` routes stay token only.
-- **Read operations** at `InstanceAdmin`, in `docs/api/openapi.yaml` with `x-access` and `x-source`:
-  - `listInstanceOrganisations` `GET /api/v1/instance/organisations`: each organisation's id, name, creation time, member, admin and project counts, newest first, paged.
-  - `listInstanceUsers` `GET /api/v1/instance/users`: each account's id, email, creation time, whether it is an instance admin, and its organisations with roles, newest first, paged. Never a password hash, session or token.
-  - Usage per organisation reuses `getOrganisationUsage`, opened to `InstanceAdmin`.
-- **The console.** For an instance admin the menu shows an Admin group with Organisations, Users and Usage, built on `data-table.tsx`. Other accounts never see the group, and its routes answer the console's not-found page for them. Unknown values stay unknown, never zero.
-- **Extra admin pages.** `VOICEGATEWAY_ADMIN_PAGES`, a comma-separated list of `Label=/path`. Each path must be a same-origin absolute path. `GET /auth/client-config` returns them only to an instance admin. The console adds each to the Admin group and shows it inside the shell in a frame at `/admin/page/<slug>`. This repository names no page; the pages check the role themselves through `GET /auth/session`.
+- **A new scope, `instance_admin`,** in `routeAccess`, with the minimum role `InstanceAdmin`. Only a session whose account has the flag may call its routes. A project key, an embed token, the instance token and every other account get 403 `forbidden`; no credential gets 401. Existing `instance` routes stay token only.
+- **Read operations** at `InstanceAdmin`, under `/api/v1/admin`, in `docs/api/openapi.yaml` with `x-access` and `x-source`:
+  - `listAdminOrganisations` `GET /api/v1/admin/organisations`: the newest 500 organisations, newest first, each with its id, name, creation time and member, admin and project counts, plus `total`, the count of all of them.
+  - `listAdminUsers` `GET /api/v1/admin/users`: the newest 500 accounts, newest first, each with its id, email, creation time, whether it is an instance admin, and its organisations with roles, plus `total`. Never a password hash, session or token.
+  - `getAdminOrganisationUsage` `GET /api/v1/admin/organisations/{orgId}/usage?from=&to=`: the same read, rules and limits as `getOrganisationUsage`.
+- **The console.** For an instance admin the menu shows an Admin group with Organisations and Users, built on `data-table.tsx`. Opening an organisation's row reads its call time for the last 30 days. Other accounts never see the group, read nothing from these routes, and see "No such page" at its addresses. Unknown values stay unknown, never zero.
+- **Extra admin pages.** `VOICEGATEWAY_ADMIN_PAGES`, a comma-separated list of `Label=/path`, at most 8. Each path must be an absolute path on this site. `GET /auth/session` returns them as `adminPages`, to an instance admin only. The console adds each to the Admin group and shows it inside the shell in a frame at `/admin/page/<n>`, `n` its place in the list. This repository names no page; the pages check the role themselves through `GET /auth/session`.
 
 ## Out of Scope
 
 - Writing from the admin pages: suspending or deleting an organisation, editing a user, impersonation.
 - Granting the role in the console.
 - Any billing, revenue or payment page. Nothing in this repository names them.
+- Admin pages for an instance admin who belongs to no organisation: the shell still needs a project to open.
+- Paging beyond the newest 500 organisations or accounts.
 - Audit log.
 
 ## Constraints
 
 - No new library. Every new route goes through `handle`.
-- A frame only ever loads a path from `VOICEGATEWAY_ADMIN_PAGES`; a path with a scheme, a host, `//` or `..` fails configuration at start.
+- A frame only ever loads a path from `VOICEGATEWAY_ADMIN_PAGES`; a path with a scheme, a host, `//`, `..`, a query or a fragment, or one under `/api/` or `/auth/`, fails configuration at start.
 - Console pages keep `frame-ancestors 'self'`, so a framed page on the same origin works and no other origin can frame the console.
 
 ## Done when
