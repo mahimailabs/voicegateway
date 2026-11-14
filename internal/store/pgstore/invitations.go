@@ -65,6 +65,12 @@ func (s *Store) createInvitation(ctx context.Context, in store.NewInvitation) (s
 		}
 	}
 	email := foldEmail(in.Email)
+	// A plan's member limit counts members and open invitations (decision 0042). A reset adds nobody.
+	if in.Kind == "invite" {
+		if err := planLimit(ctx, tx, in.OrganisationID, maxMembersQuery, seatsQuery, email); err != nil {
+			return store.Invitation{}, err
+		}
+	}
 	if err := q.RevokeOpenInvitation(ctx, RevokeOpenInvitationParams{OrganisationID: in.OrganisationID, Email: email, Kind: in.Kind}); err != nil {
 		return store.Invitation{}, err
 	}

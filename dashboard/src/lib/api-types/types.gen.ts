@@ -1400,7 +1400,7 @@ export type Error = {
     /**
      * Stable error category.
      */
-    code: 'invalid_request' | 'revision_conflict' | 'unauthenticated' | 'forbidden' | 'not_found' | 'source_unavailable' | 'internal_error' | 'range_not_satisfiable' | 'last_admin' | 'already_member' | 'member_of_other_organisations' | 'project_exists' | 'livekit_secret_invalid' | 'livekit_unreachable' | 'recording_bucket_refused' | 'recording_bucket_unreachable' | 'origin_not_allowed' | 'incident_not_resolvable' | 'run_active';
+    code: 'invalid_request' | 'revision_conflict' | 'unauthenticated' | 'forbidden' | 'not_found' | 'source_unavailable' | 'internal_error' | 'range_not_satisfiable' | 'last_admin' | 'already_member' | 'member_of_other_organisations' | 'project_exists' | 'livekit_secret_invalid' | 'livekit_unreachable' | 'recording_bucket_refused' | 'recording_bucket_unreachable' | 'origin_not_allowed' | 'incident_not_resolvable' | 'run_active' | 'plan_limit';
     /**
      * Safe human-readable explanation, excluding upstream credentials and request bodies.
      */
@@ -2388,7 +2388,22 @@ export type Clock = unknown & {
 export type OrganisationEntitlementPut = {
     from: string;
     to: string;
-    limitMinutes: number;
+    /**
+     * Credits in the billing period. One profiled call minute is one credit (decision 0042). At zero credits left, new calls are not profiled; calls themselves are never blocked.
+     */
+    limitCredits: number;
+    /**
+     * Days the organisation's call data is kept; older calls and their telemetry are trimmed, billed usage stays. Null is unlimited, the install's own retention.
+     */
+    retentionDays?: number | null;
+    /**
+     * Projects the organisation may have; creating one more is 409 plan_limit. Null is unlimited.
+     */
+    maxProjects?: number | null;
+    /**
+     * Members the organisation may have, open invitations counted; inviting one more is 409 plan_limit. Null is unlimited.
+     */
+    maxMembers?: number | null;
     active: boolean;
     revision: number;
 };
@@ -2396,7 +2411,22 @@ export type OrganisationEntitlementPut = {
 export type OrganisationEntitlement = {
     from: string;
     to: string;
-    limitMinutes: number;
+    /**
+     * Credits in the billing period. One profiled call minute is one credit (decision 0042). At zero credits left, new calls are not profiled; calls themselves are never blocked.
+     */
+    limitCredits: number;
+    /**
+     * Days the organisation's call data is kept; older calls and their telemetry are trimmed, billed usage stays. Null is unlimited, the install's own retention.
+     */
+    retentionDays: number | null;
+    /**
+     * Projects the organisation may have; creating one more is 409 plan_limit. Null is unlimited.
+     */
+    maxProjects: number | null;
+    /**
+     * Members the organisation may have, open invitations counted; inviting one more is 409 plan_limit. Null is unlimited.
+     */
+    maxMembers: number | null;
     active: boolean;
     revision: number;
     callSeconds: number;
@@ -3439,7 +3469,7 @@ export type StartCapacityRunErrors = {
      */
     404: Error;
     /**
-     * revision_conflict, settings changed since they were read; last_admin, the change would leave the organisation without an admin; already_member, the invited email's account is a member already; member_of_other_organisations, a reset's member belongs to an organisation the requester does not administer; project_exists, the organisation already has a project with the new name's id; incident_not_resolvable, a person may resolve only a firing recording-lost incident; run_active, the project already has a capacity test that has not ended.
+     * revision_conflict, settings changed since they were read; last_admin, the change would leave the organisation without an admin; already_member, the invited email's account is a member already; member_of_other_organisations, a reset's member belongs to an organisation the requester does not administer; project_exists, the organisation already has a project with the new name's id; incident_not_resolvable, a person may resolve only a firing recording-lost incident; run_active, the project already has a capacity test that has not ended; plan_limit, the organisation's plan allows no more projects or members.
      */
     409: Error;
     /**
@@ -3725,7 +3755,7 @@ export type UpdateCallMetadataErrors = {
      */
     404: Error;
     /**
-     * revision_conflict, settings changed since they were read; last_admin, the change would leave the organisation without an admin; already_member, the invited email's account is a member already; member_of_other_organisations, a reset's member belongs to an organisation the requester does not administer; project_exists, the organisation already has a project with the new name's id; incident_not_resolvable, a person may resolve only a firing recording-lost incident; run_active, the project already has a capacity test that has not ended.
+     * revision_conflict, settings changed since they were read; last_admin, the change would leave the organisation without an admin; already_member, the invited email's account is a member already; member_of_other_organisations, a reset's member belongs to an organisation the requester does not administer; project_exists, the organisation already has a project with the new name's id; incident_not_resolvable, a person may resolve only a firing recording-lost incident; run_active, the project already has a capacity test that has not ended; plan_limit, the organisation's plan allows no more projects or members.
      */
     409: Error;
     /**
@@ -3845,7 +3875,7 @@ export type UpdateIssueMetadataErrors = {
      */
     404: Error;
     /**
-     * revision_conflict, settings changed since they were read; last_admin, the change would leave the organisation without an admin; already_member, the invited email's account is a member already; member_of_other_organisations, a reset's member belongs to an organisation the requester does not administer; project_exists, the organisation already has a project with the new name's id; incident_not_resolvable, a person may resolve only a firing recording-lost incident; run_active, the project already has a capacity test that has not ended.
+     * revision_conflict, settings changed since they were read; last_admin, the change would leave the organisation without an admin; already_member, the invited email's account is a member already; member_of_other_organisations, a reset's member belongs to an organisation the requester does not administer; project_exists, the organisation already has a project with the new name's id; incident_not_resolvable, a person may resolve only a firing recording-lost incident; run_active, the project already has a capacity test that has not ended; plan_limit, the organisation's plan allows no more projects or members.
      */
     409: Error;
     /**
@@ -3957,7 +3987,7 @@ export type UpdateProjectSettingsErrors = {
      */
     404: Error;
     /**
-     * revision_conflict, settings changed since they were read; last_admin, the change would leave the organisation without an admin; already_member, the invited email's account is a member already; member_of_other_organisations, a reset's member belongs to an organisation the requester does not administer; project_exists, the organisation already has a project with the new name's id; incident_not_resolvable, a person may resolve only a firing recording-lost incident; run_active, the project already has a capacity test that has not ended.
+     * revision_conflict, settings changed since they were read; last_admin, the change would leave the organisation without an admin; already_member, the invited email's account is a member already; member_of_other_organisations, a reset's member belongs to an organisation the requester does not administer; project_exists, the organisation already has a project with the new name's id; incident_not_resolvable, a person may resolve only a firing recording-lost incident; run_active, the project already has a capacity test that has not ended; plan_limit, the organisation's plan allows no more projects or members.
      */
     409: Error;
     /**
@@ -4069,7 +4099,7 @@ export type UpdateAllowedOriginsErrors = {
      */
     404: Error;
     /**
-     * revision_conflict, settings changed since they were read; last_admin, the change would leave the organisation without an admin; already_member, the invited email's account is a member already; member_of_other_organisations, a reset's member belongs to an organisation the requester does not administer; project_exists, the organisation already has a project with the new name's id; incident_not_resolvable, a person may resolve only a firing recording-lost incident; run_active, the project already has a capacity test that has not ended.
+     * revision_conflict, settings changed since they were read; last_admin, the change would leave the organisation without an admin; already_member, the invited email's account is a member already; member_of_other_organisations, a reset's member belongs to an organisation the requester does not administer; project_exists, the organisation already has a project with the new name's id; incident_not_resolvable, a person may resolve only a firing recording-lost incident; run_active, the project already has a capacity test that has not ended; plan_limit, the organisation's plan allows no more projects or members.
      */
     409: Error;
     /**
@@ -4534,7 +4564,7 @@ export type ResolveAlertIncidentErrors = {
      */
     404: Error;
     /**
-     * revision_conflict, settings changed since they were read; last_admin, the change would leave the organisation without an admin; already_member, the invited email's account is a member already; member_of_other_organisations, a reset's member belongs to an organisation the requester does not administer; project_exists, the organisation already has a project with the new name's id; incident_not_resolvable, a person may resolve only a firing recording-lost incident; run_active, the project already has a capacity test that has not ended.
+     * revision_conflict, settings changed since they were read; last_admin, the change would leave the organisation without an admin; already_member, the invited email's account is a member already; member_of_other_organisations, a reset's member belongs to an organisation the requester does not administer; project_exists, the organisation already has a project with the new name's id; incident_not_resolvable, a person may resolve only a firing recording-lost incident; run_active, the project already has a capacity test that has not ended; plan_limit, the organisation's plan allows no more projects or members.
      */
     409: Error;
     /**
@@ -4638,7 +4668,7 @@ export type CreateInvitationErrors = {
      */
     404: Error;
     /**
-     * revision_conflict, settings changed since they were read; last_admin, the change would leave the organisation without an admin; already_member, the invited email's account is a member already; member_of_other_organisations, a reset's member belongs to an organisation the requester does not administer; project_exists, the organisation already has a project with the new name's id; incident_not_resolvable, a person may resolve only a firing recording-lost incident; run_active, the project already has a capacity test that has not ended.
+     * revision_conflict, settings changed since they were read; last_admin, the change would leave the organisation without an admin; already_member, the invited email's account is a member already; member_of_other_organisations, a reset's member belongs to an organisation the requester does not administer; project_exists, the organisation already has a project with the new name's id; incident_not_resolvable, a person may resolve only a firing recording-lost incident; run_active, the project already has a capacity test that has not ended; plan_limit, the organisation's plan allows no more projects or members.
      */
     409: Error;
     /**
@@ -4746,7 +4776,7 @@ export type CreateProjectErrors = {
      */
     404: Error;
     /**
-     * revision_conflict, settings changed since they were read; last_admin, the change would leave the organisation without an admin; already_member, the invited email's account is a member already; member_of_other_organisations, a reset's member belongs to an organisation the requester does not administer; project_exists, the organisation already has a project with the new name's id; incident_not_resolvable, a person may resolve only a firing recording-lost incident; run_active, the project already has a capacity test that has not ended.
+     * revision_conflict, settings changed since they were read; last_admin, the change would leave the organisation without an admin; already_member, the invited email's account is a member already; member_of_other_organisations, a reset's member belongs to an organisation the requester does not administer; project_exists, the organisation already has a project with the new name's id; incident_not_resolvable, a person may resolve only a firing recording-lost incident; run_active, the project already has a capacity test that has not ended; plan_limit, the organisation's plan allows no more projects or members.
      */
     409: Error;
     /**
@@ -4916,7 +4946,7 @@ export type RemoveMemberErrors = {
      */
     404: Error;
     /**
-     * revision_conflict, settings changed since they were read; last_admin, the change would leave the organisation without an admin; already_member, the invited email's account is a member already; member_of_other_organisations, a reset's member belongs to an organisation the requester does not administer; project_exists, the organisation already has a project with the new name's id; incident_not_resolvable, a person may resolve only a firing recording-lost incident; run_active, the project already has a capacity test that has not ended.
+     * revision_conflict, settings changed since they were read; last_admin, the change would leave the organisation without an admin; already_member, the invited email's account is a member already; member_of_other_organisations, a reset's member belongs to an organisation the requester does not administer; project_exists, the organisation already has a project with the new name's id; incident_not_resolvable, a person may resolve only a firing recording-lost incident; run_active, the project already has a capacity test that has not ended; plan_limit, the organisation's plan allows no more projects or members.
      */
     409: Error;
     /**
@@ -4974,7 +5004,7 @@ export type UpdateMemberErrors = {
      */
     404: Error;
     /**
-     * revision_conflict, settings changed since they were read; last_admin, the change would leave the organisation without an admin; already_member, the invited email's account is a member already; member_of_other_organisations, a reset's member belongs to an organisation the requester does not administer; project_exists, the organisation already has a project with the new name's id; incident_not_resolvable, a person may resolve only a firing recording-lost incident; run_active, the project already has a capacity test that has not ended.
+     * revision_conflict, settings changed since they were read; last_admin, the change would leave the organisation without an admin; already_member, the invited email's account is a member already; member_of_other_organisations, a reset's member belongs to an organisation the requester does not administer; project_exists, the organisation already has a project with the new name's id; incident_not_resolvable, a person may resolve only a firing recording-lost incident; run_active, the project already has a capacity test that has not ended; plan_limit, the organisation's plan allows no more projects or members.
      */
     409: Error;
     /**
@@ -5032,7 +5062,7 @@ export type CreatePasswordResetErrors = {
      */
     404: Error;
     /**
-     * revision_conflict, settings changed since they were read; last_admin, the change would leave the organisation without an admin; already_member, the invited email's account is a member already; member_of_other_organisations, a reset's member belongs to an organisation the requester does not administer; project_exists, the organisation already has a project with the new name's id; incident_not_resolvable, a person may resolve only a firing recording-lost incident; run_active, the project already has a capacity test that has not ended.
+     * revision_conflict, settings changed since they were read; last_admin, the change would leave the organisation without an admin; already_member, the invited email's account is a member already; member_of_other_organisations, a reset's member belongs to an organisation the requester does not administer; project_exists, the organisation already has a project with the new name's id; incident_not_resolvable, a person may resolve only a firing recording-lost incident; run_active, the project already has a capacity test that has not ended; plan_limit, the organisation's plan allows no more projects or members.
      */
     409: Error;
     /**
@@ -5479,7 +5509,7 @@ export type CreateOrganisationInvitationErrors = {
      */
     404: Error;
     /**
-     * revision_conflict, settings changed since they were read; last_admin, the change would leave the organisation without an admin; already_member, the invited email's account is a member already; member_of_other_organisations, a reset's member belongs to an organisation the requester does not administer; project_exists, the organisation already has a project with the new name's id; incident_not_resolvable, a person may resolve only a firing recording-lost incident; run_active, the project already has a capacity test that has not ended.
+     * revision_conflict, settings changed since they were read; last_admin, the change would leave the organisation without an admin; already_member, the invited email's account is a member already; member_of_other_organisations, a reset's member belongs to an organisation the requester does not administer; project_exists, the organisation already has a project with the new name's id; incident_not_resolvable, a person may resolve only a firing recording-lost incident; run_active, the project already has a capacity test that has not ended; plan_limit, the organisation's plan allows no more projects or members.
      */
     409: Error;
     /**

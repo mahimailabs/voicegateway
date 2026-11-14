@@ -32,7 +32,7 @@ const json = (status: number, body: unknown) => new Response(JSON.stringify(body
 // The install kind comes from the entitlement read: 404 is self-hosted, an answer is hosted, and
 // "pending" never answers, as while it loads. Only the other requests are recorded.
 type Install = "self-hosted" | "hosted" | "pending"
-const entitlement = { from: "2026-10-01T00:00:00Z", to: "2026-11-01T00:00:00Z", limitMinutes: 2000, active: true, revision: 1, callSeconds: 60, unmeasuredCalls: 0, openCalls: 0, warningPercent: 0, ingestAllowed: true }
+const entitlement = { from: "2026-10-01T00:00:00Z", to: "2026-11-01T00:00:00Z", limitCredits: 2000, retentionDays: null, maxProjects: null, maxMembers: null, active: true, revision: 1, callSeconds: 60, unmeasuredCalls: 0, openCalls: 0, warningPercent: 0, ingestAllowed: true }
 function serve(answer: () => Response = () => json(201, { id: "production", name: "Production" }), install: Install = "self-hosted") {
   const calls: { method: string; url: string; body: string | null }[] = []
   vi.stubGlobal(

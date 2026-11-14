@@ -40,7 +40,7 @@ func TestQuotaBoundaries(t *testing.T) {
 		{"exclusive end", 0, true, now.Add(30 * 24 * time.Hour), false, 0},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			u := store.EntitlementUsage{Entitlement: store.Entitlement{From: now, To: now.Add(30 * 24 * time.Hour), LimitMinutes: 2000, Active: tt.active}, CallSeconds: tt.seconds}
+			u := store.EntitlementUsage{Entitlement: store.Entitlement{From: now, To: now.Add(30 * 24 * time.Hour), LimitCredits: 2000, Active: tt.active}, CallSeconds: tt.seconds}
 			q := Quota{Store: quotaStore{u: u}, Now: func() time.Time { return tt.now }}
 			got, w, err := q.Check(t.Context(), "org")
 			if got != tt.allow || w != tt.warning || err != nil {

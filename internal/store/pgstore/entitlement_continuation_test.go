@@ -35,7 +35,7 @@ func TestQuotaAcceptsKnownCallFinishAndRefusesNewCall(t *testing.T) {
 	}
 	now := time.Date(2026, 10, 19, 1, 0, 0, 0, time.UTC)
 	start := now.Add(-time.Hour)
-	entitlement := store.Entitlement{From: start, To: start.Add(30 * 24 * time.Hour), LimitMinutes: 1, Active: true, Revision: 1}
+	entitlement := store.Entitlement{From: start, To: start.Add(30 * 24 * time.Hour), LimitCredits: 1, Active: true, Revision: 1}
 	if err := s.PutEntitlement(ctx, "default", entitlement); err != nil {
 		t.Fatal(err)
 	}

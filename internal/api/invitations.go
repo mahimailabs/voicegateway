@@ -135,6 +135,9 @@ func (a *API) createInvitation(w http.ResponseWriter, r *http.Request) {
 	case errors.Is(err, store.ErrInvalidInvitation):
 		writeError(w, r, http.StatusBadRequest, codeInvalidRequest, "email must be one address, and role Admin, Member or Viewer")
 		return
+	case errors.Is(err, store.ErrPlanLimit):
+		writeError(w, r, http.StatusConflict, codePlanLimit, "this organisation's plan allows no more members; members and open invitations both count. Revoke an invitation, remove a member or change the plan")
+		return
 	case errors.Is(err, store.ErrMemberExists):
 		writeError(w, r, http.StatusConflict, codeAlreadyMember, "that email's account is already a member of this organisation")
 		return

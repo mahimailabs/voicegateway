@@ -6,6 +6,14 @@ follows [Semantic Versioning](https://semver.org/) and
 
 ## Unreleased
 
+### Cloud plans
+
+- Count an organisation's entitlement in credits: `limitCredits` replaces
+  `limitMinutes` (no alias). One profiled call minute is one credit.
+- Add optional plan limits: `retentionDays` trims older call data,
+  `maxProjects` and `maxMembers` refuse one more with 409 `plan_limit`. A null
+  limit is unlimited. Decision 0042.
+
 ### Access
 
 - Add project API keys: an admin creates, lists and revokes them per project in

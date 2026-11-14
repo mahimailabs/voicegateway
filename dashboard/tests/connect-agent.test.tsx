@@ -243,7 +243,7 @@ describe("step state", () => {
     answer(connection({ webhook: { ...none, lastRejectedAt: ago(1), reason: "plan_cap" } }))
     show()
     const webhook = await step("Webhook")
-    expect(within(webhook).getByText("Telemetry ingestion paused")).toBeTruthy()
+    expect(within(webhook).getByText("Profiling paused")).toBeTruthy()
     expect(within(webhook).getByRole("link", { name: REQUEST_CAPACITY.label }).getAttribute("href")).toBe(REQUEST_CAPACITY.href)
   })
 

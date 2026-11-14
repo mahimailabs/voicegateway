@@ -359,7 +359,7 @@ describe("First look", () => {
     server.use(
       http.get(`${project}/calls/call-1`, () => HttpResponse.json(call)),
       http.get("*/api/v1/org/:org/entitlement", () =>
-        hosted ? HttpResponse.json({ from: ago(1000), to: ago(-1000), limitMinutes: 2000, active: true, revision: 1, callSeconds: 150, unmeasuredCalls: 0, openCalls: 0, warningPercent: 0, ingestAllowed: true }) : HttpResponse.json({ code: "not_found", message: "x", requestId: "r" }, { status: 404 }),
+        hosted ? HttpResponse.json({ from: ago(1000), to: ago(-1000), limitCredits: 2000, retentionDays: null, maxProjects: null, maxMembers: null, active: true, revision: 1, callSeconds: 150, unmeasuredCalls: 0, openCalls: 0, warningPercent: 0, ingestAllowed: true }) : HttpResponse.json({ code: "not_found", message: "x", requestId: "r" }, { status: 404 }),
       ),
     )
 
@@ -370,7 +370,7 @@ describe("First look", () => {
     // 1.20 s of 2.40 s is half, not most.
     expect(screen.getByText("The biggest part was the LLM's first token: 1.20 s of 2.40 s.")).toBeTruthy()
     expect(screen.getByRole("figure", { name: "Turn 1" })).toBeTruthy()
-    expect(await screen.findByText("2 of 2,000 min")).toBeTruthy()
+    expect(await screen.findByText("2 of 2,000 credits")).toBeTruthy()
     expect(screen.getByRole("link", { name: "Open this call" }).getAttribute("href")).toBe("/calls/call-1")
     expect(screen.getByRole("link", { name: "Go to all calls" }).getAttribute("href")).toBe("/calls")
     cloudClean()

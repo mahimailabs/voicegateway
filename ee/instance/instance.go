@@ -264,6 +264,10 @@ func (h *Handlers) createOrganisationInvitation(w http.ResponseWriter, r *http.R
 		h.done(r, op, id, "already_member")
 		api.WriteError(w, r, http.StatusConflict, api.CodeAlreadyMember, "that email's account is already a member of this organisation")
 		return
+	case errors.Is(err, store.ErrPlanLimit):
+		h.done(r, op, id, "plan_limit")
+		api.WriteError(w, r, http.StatusConflict, api.CodePlanLimit, "this organisation's plan allows no more members; members and open invitations both count")
+		return
 	case errors.Is(err, store.ErrNotFound):
 		h.done(r, op, id, "not_found")
 		api.WriteError(w, r, http.StatusNotFound, api.CodeNotFound, "no such organisation")
