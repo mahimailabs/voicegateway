@@ -12,7 +12,7 @@ export type AccountProfile = {
   identities?: { provider: "google" | "github" | "auth0"; linkedAt: string }[]
 }
 
-/** One of the operator's own pages in the Admin group (decision 0041): a label and a path on this site. */
+/** One of the operator's own pages at the top of an instance admin's menu (decision 0041): a label and a path on this site. */
 export type AdminPage = { label: string; path: string }
 
 export type Session = {

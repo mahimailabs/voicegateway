@@ -17,7 +17,7 @@ On 2026-11-13 Mahimai asked for an admin who signs in to the same console as eve
 
 ## Decision
 
-Option 2, chosen by Mahimai on 2026-11-13. The instance admin role, the command that grants it, its field on the session, the read-only admin operations (organisations, users, usage per organisation) and the console's Admin group are MIT, outside `ee/`. So is the setting that lets an operator add its own same-origin pages to that group.
+Option 2, chosen by Mahimai on 2026-11-13. The instance admin role, the command that grants it, its field on the session, the read-only admin operations (organisations, users, usage per organisation) and the console's pages for them are MIT, outside `ee/`. So is the setting that lets an operator add its own same-origin pages to that account's menu.
 
 ## Consequences
 

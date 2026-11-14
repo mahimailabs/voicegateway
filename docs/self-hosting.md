@@ -34,7 +34,7 @@ make user-add EMAIL=you@example.com
 
 It asks for a password, or reads it from `VOICEGATEWAY_USER_PASSWORD`. Sign in at localhost:8080 with that email and password.
 
-To see every organisation and account on the install, make that account an instance admin. It then gets an Admin group in the console menu:
+To see every organisation and account on the install, make that account an instance admin. It then gets an Instance group in the console's Settings:
 
 ```bash
 docker compose -f deploy/compose.yaml --env-file deploy/.env run --rm --no-deps web user set-instance-admin --email you@example.com

@@ -7,14 +7,15 @@ import { afterEach, beforeAll, expect, test, vi } from "vitest"
 import { seen } from "./fetch-call.ts"
 import { type Session, setCurrentSession } from "../src/lib/session.ts"
 
-// docs/specs/instance-admin.md: the Admin pages show for an instance admin only, read nothing for
-// anyone else, and an operator page loads only a path the session names.
+// docs/specs/instance-admin.md: the instance lists (in Settings) and an operator page show for an
+// instance admin only, read nothing for anyone else, and an operator page loads only a path the
+// session names.
 
 vi.hoisted(() => {
   window.matchMedia ??= (query: string) => ({ matches: false, media: query, onchange: null, addEventListener: () => {}, removeEventListener: () => {}, addListener: () => {}, removeListener: () => {}, dispatchEvent: () => false }) as MediaQueryList
 })
 
-const { AdminFramedPage, AdminOrganisationsPage, AdminUsersPage } = await import("../src/features/admin/admin-pages.tsx")
+const { AdminFramedPage, InstanceOrganisations, InstanceUsers } = await import("../src/features/admin/admin-pages.tsx")
 
 beforeAll(() => {
   Element.prototype.hasPointerCapture ??= () => false
@@ -62,14 +63,14 @@ function serve() {
   return calls
 }
 
-const admin: Session = { email: "kai@example.com", organisations: [{ id: "default", role: "admin" }], instanceAdmin: true, adminPages: [{ label: "Business", path: "/admin/" }] }
+const admin: Session = { email: "kai@example.com", organisations: [{ id: "default", role: "admin" }], instanceAdmin: true, adminPages: [{ label: "Console", path: "/business/" }] }
 const member: Session = { email: "john.doe@example.com", organisations: [{ id: "default", role: "admin" }], instanceAdmin: false, adminPages: [] }
 
 function show(path: string) {
   const root = createRootRoute({ component: () => <Outlet /> })
   const routes = [
-    createRoute({ getParentRoute: () => root, path: "/admin/organisations", component: AdminOrganisationsPage }),
-    createRoute({ getParentRoute: () => root, path: "/admin/users", component: AdminUsersPage }),
+    createRoute({ getParentRoute: () => root, path: "/organisations", component: InstanceOrganisations }),
+    createRoute({ getParentRoute: () => root, path: "/users", component: InstanceUsers }),
     createRoute({ getParentRoute: () => root, path: "/admin/page/$slug", component: AdminFramedPage }),
   ]
   const router = createRouter({ routeTree: root.addChildren(routes), history: createMemoryHistory({ initialEntries: [path] }) })
@@ -83,7 +84,7 @@ function show(path: string) {
 test("an instance admin lists organisations, and a row opens that organisation's call time", async () => {
   const calls = serve()
   setCurrentSession(admin)
-  show("/admin/organisations")
+  show("/organisations")
   expect(await screen.findByText("Acme Support")).toBeTruthy()
   expect(screen.getByText("Default")).toBeTruthy()
   expect(calls.some((c) => c.url.includes("/usage"))).toBe(false)
@@ -97,16 +98,16 @@ test("an instance admin lists organisations, and a row opens that organisation's
 test("an instance admin lists accounts with their roles and the admin mark", async () => {
   serve()
   setCurrentSession(admin)
-  show("/admin/users")
+  show("/users")
   expect(await screen.findByText("kai@example.com")).toBeTruthy()
-  expect(screen.getAllByText("Instance admin").length).toBe(2) // the page's own label, and Kai's mark
+  expect(screen.getAllByText("Instance admin").length).toBe(1) // Kai's mark
   expect(screen.getByText("None")).toBeTruthy()
 })
 
 test("an account without the flag sees no admin page and the console asks the API nothing", async () => {
   const calls = serve()
   setCurrentSession(member)
-  for (const path of ["/admin/organisations", "/admin/users", "/admin/page/1"]) {
+  for (const path of ["/organisations", "/users", "/admin/page/1"]) {
     show(path)
     expect(await screen.findByText("No such page")).toBeTruthy()
     expect(document.querySelector("iframe")).toBeNull()
@@ -119,8 +120,8 @@ test("an operator page frames only the path the session names", async () => {
   serve()
   setCurrentSession(admin)
   show("/admin/page/1")
-  await waitFor(() => expect(document.querySelector("iframe")?.getAttribute("src")).toBe("/admin/"))
-  expect(screen.getByRole("heading", { name: "Business" })).toBeTruthy()
+  await waitFor(() => expect(document.querySelector("iframe")?.getAttribute("src")).toBe("/business/"))
+  expect(screen.getByRole("heading", { name: "Console" })).toBeTruthy()
   cleanup()
 
   show("/admin/page/2")
@@ -131,4 +132,35 @@ test("an operator page frames only the path the session names", async () => {
   show("/admin/page/1")
   expect(await screen.findByText("No such page")).toBeTruthy()
   expect(document.querySelector("iframe")).toBeNull()
+})
+
+test("Settings shows its Instance group to an instance admin only", async () => {
+  const { SettingsDialog } = await import("../src/features/settings/settings-dialog.tsx")
+  const { scopeRewrite } = await import("../src/lib/url-state.ts")
+  const { TooltipProvider } = await import("../src/components/ui/tooltip.tsx")
+  let calls: { url: string }[] = []
+  const open = (session: Session, page: string) => {
+    calls = serve()
+    scopeRewrite.input({ url: new URL("http://localhost/org/default/project/p1/overview") })
+    setCurrentSession(session)
+    render(
+      <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+        <TooltipProvider>
+          <SettingsDialog open onOpenChange={() => {}} page={page} onPageChange={() => {}} />
+        </TooltipProvider>
+      </QueryClientProvider>,
+    )
+  }
+  open(admin, "account")
+  expect(await screen.findByText("Instance")).toBeTruthy()
+  expect(screen.getByRole("button", { name: "Organisations" })).toBeTruthy()
+  expect(screen.getByRole("button", { name: "Users" })).toBeTruthy()
+  cleanup()
+
+  // An address that names an Instance page opens the first page for everyone else.
+  open(member, "instance-users")
+  await screen.findByText("Settings")
+  expect(screen.queryByText("Instance")).toBeNull()
+  expect(screen.queryByRole("button", { name: "Users" })).toBeNull()
+  expect(calls.some((c) => c.url.includes("/admin/"))).toBe(false)
 })

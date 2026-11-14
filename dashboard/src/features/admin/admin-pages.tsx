@@ -12,9 +12,10 @@ import { fmtDateTime } from "@/lib/format"
 import { isInstanceAdmin, useSession } from "@/lib/session"
 import { cn } from "@/lib/utils"
 
-// The Admin group (decision 0041): pages about the whole instance, for an instance admin. The flag is
-// on the account and set from the command line; the server refuses everyone else, so these pages only
-// decide what to show.
+// For an instance admin (decision 0041). The lists about the whole instance, Organisations and Users,
+// are pages of the Settings modal's Instance group; an operator's own page opens from the top of the
+// menu, framed in the shell. The flag is on the account and set from the command line; the server
+// refuses everyone else, so these only decide what to show.
 
 const right = { headerClassName: "[&>div]:w-full [&>div]:justify-end", cellClassName: "text-right tnum" }
 const count = new Intl.NumberFormat()
@@ -82,7 +83,7 @@ const organisationColumns: Columns<AdminOrganisation> = [
   {
     id: "name",
     accessorFn: (o) => o.name,
-    size: 260,
+    size: 220,
     header: ({ column }) => <DataGridColumnHeader title="Organisation" column={column} />,
     cell: ({ row }) => (
       <span className="flex min-w-0 items-center gap-2">
@@ -101,9 +102,9 @@ const organisationColumns: Columns<AdminOrganisation> = [
       ),
     },
   },
-  { id: "members", accessorFn: (o) => o.members, size: 110, header: ({ column }) => <DataGridColumnHeader title="Members" column={column} />, cell: ({ row }) => count.format(row.original.members), meta: right },
-  { id: "admins", accessorFn: (o) => o.admins, size: 110, header: ({ column }) => <DataGridColumnHeader title="Admins" column={column} />, cell: ({ row }) => count.format(row.original.admins), meta: right },
-  { id: "projects", accessorFn: (o) => o.projects, size: 110, header: ({ column }) => <DataGridColumnHeader title="Projects" column={column} />, cell: ({ row }) => count.format(row.original.projects), meta: right },
+  { id: "members", accessorFn: (o) => o.members, size: 90, header: ({ column }) => <DataGridColumnHeader title="Members" column={column} />, cell: ({ row }) => count.format(row.original.members), meta: right },
+  { id: "admins", accessorFn: (o) => o.admins, size: 90, header: ({ column }) => <DataGridColumnHeader title="Admins" column={column} />, cell: ({ row }) => count.format(row.original.admins), meta: right },
+  { id: "projects", accessorFn: (o) => o.projects, size: 90, header: ({ column }) => <DataGridColumnHeader title="Projects" column={column} />, cell: ({ row }) => count.format(row.original.projects), meta: right },
   { id: "created", accessorFn: (o) => o.createdAt, size: 170, header: ({ column }) => <DataGridColumnHeader title="Created" column={column} />, cell: ({ row }) => <span className="text-muted-foreground">{fmtDateTime(row.original.createdAt)}</span> },
 ]
 
@@ -114,7 +115,8 @@ const organisationFields: Field<AdminOrganisation>[] = [
   { id: "projects", label: "Projects", type: "number", get: (o) => o.projects },
 ]
 
-export function AdminOrganisationsPage() {
+/** Settings, Instance, Organisations: every organisation on the instance; a row opens its call time. */
+export function InstanceOrganisations() {
   const admin = isInstanceAdmin(useSession())
   const read = useQuery({ ...adminOrganisationsQuery(), enabled: admin })
   if (!admin) return <NotAnAdmin />
@@ -122,12 +124,12 @@ export function AdminOrganisationsPage() {
   const { items, total } = read.data
   const note = cut(items.length, total, "organisations")
   return (
-    <div className="space-y-6">
-      <Heading title="Organisations" note={`${count.format(total)} on this instance. Open a row for its call time.`} />
+    <div className="space-y-4 pt-6">
+      <p className="text-[13px] text-muted-foreground">{`${count.format(total)} on this instance. Open a row for its call time.`}</p>
       {total === 0 ? (
         <PageState icon={Buildings} title="No organisation yet" detail="The first one appears here once it is created." />
       ) : (
-        <DataTable data={items} columns={organisationColumns} fields={organisationFields} getRowId={(o) => o.id} canExpand={() => true} sort={[{ id: "created", desc: true }]} phoneColumns={["name", "members"]} empty="No organisation matches these filters." />
+        <DataTable data={items} columns={organisationColumns} fields={organisationFields} getRowId={(o) => o.id} canExpand={() => true} sort={[{ id: "created", desc: true }]} phoneColumns={["name", "members"]} empty="No organisation matches these filters." urlPrefix="io" />
       )}
       {note && <p className="text-[12px] text-muted-foreground">{note}</p>}
     </div>
@@ -138,7 +140,7 @@ const userColumns: Columns<AdminUser> = [
   {
     id: "email",
     accessorFn: (u) => u.email,
-    size: 280,
+    size: 250,
     header: ({ column }) => <DataGridColumnHeader title="Account" column={column} />,
     cell: ({ row }) => (
       <span className="flex min-w-0 items-center gap-2">
@@ -150,7 +152,7 @@ const userColumns: Columns<AdminUser> = [
   {
     id: "organisations",
     accessorFn: (u) => u.organisations.length,
-    size: 320,
+    size: 220,
     header: ({ column }) => <DataGridColumnHeader title="Organisations" column={column} />,
     cell: ({ row }) =>
       row.original.organisations.length === 0 ? (
@@ -175,7 +177,8 @@ const userFields: Field<AdminUser>[] = [
   { id: "organisations", label: "Organisations", type: "number", get: (u) => u.organisations.length },
 ]
 
-export function AdminUsersPage() {
+/** Settings, Instance, Users: every account on the instance, with its organisations and roles. */
+export function InstanceUsers() {
   const admin = isInstanceAdmin(useSession())
   const read = useQuery({ ...adminUsersQuery(), enabled: admin })
   if (!admin) return <NotAnAdmin />
@@ -183,15 +186,16 @@ export function AdminUsersPage() {
   const { items, total } = read.data
   const note = cut(items.length, total, "accounts")
   return (
-    <div className="space-y-6">
-      <Heading title="Users" note={`${count.format(total)} accounts on this instance, with each one's organisations and roles.`} />
-      <DataTable data={items} columns={userColumns} fields={userFields} getRowId={(u) => u.id} sort={[{ id: "created", desc: true }]} phoneColumns={["email"]} empty="No account matches these filters." />
+    <div className="space-y-4 pt-6">
+      <p className="text-[13px] text-muted-foreground">{`${count.format(total)} accounts on this instance.`}</p>
+      <DataTable data={items} columns={userColumns} fields={userFields} getRowId={(u) => u.id} sort={[{ id: "created", desc: true }]} phoneColumns={["email"]} empty="No account matches these filters." urlPrefix="iu" />
       {note && <p className="text-[12px] text-muted-foreground">{note}</p>}
     </div>
   )
 }
 
-// One of the operator's own pages (VOICEGATEWAY_ADMIN_PAGES), shown inside the shell. The path comes
+// One of the operator's own pages (VOICEGATEWAY_ADMIN_PAGES), opened from the top of the menu and
+// shown inside the shell. The path comes
 // only from the session, which the server fills from configuration and checks to be on this site.
 export function AdminFramedPage() {
   const { slug } = useParams({ strict: false }) as { slug?: string }

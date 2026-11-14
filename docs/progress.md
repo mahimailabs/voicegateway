@@ -680,6 +680,6 @@ Mahimai decided Cloud keeps recordings in VoiceGateway's bucket by default, and 
 - **Role:** `users.instance_admin` (PG 00026), set only from the command line (`user add --instance-admin`, `user set-instance-admin [--off]`). It loads with the principal on every request and is not an organisation role.
 - **Gate:** a fifth scope, `instance_admin`, at the role `InstanceAdmin`: a signed-in flagged account only. `GET /auth/session` adds `instanceAdmin` and, for an instance admin, `adminPages`.
 - **Reads:** `listAdminOrganisations`, `listAdminUsers`, `getAdminOrganisationUsage` under `/api/v1/admin`, MIT, outside `ee/`.
-- **Console:** an Admin group with Organisations (a row opens its last 30 days of call time) and Users; `VOICEGATEWAY_ADMIN_PAGES` adds an operator's same-site pages, framed inside the shell.
+- **Console:** an Instance group in Settings with Organisations (a row opens its last 30 days of call time) and Users; `VOICEGATEWAY_ADMIN_PAGES` adds an operator's same-site pages at the top of the menu, framed inside the shell.
 - Tests: `TestAdminRoutesNeedTheInstanceAdminFlag`, `TestInstanceAdminFlagOpensNoProject`, `TestAdminPagesStayOnThisSite`, `TestInstanceAdminFlagAndLists`, `TestSessionNamesTheInstanceAdmin`, `tests/admin-pages.test.tsx`, and the mock API's admin reads in `tests/mock-api.test.ts`.
 - Not yet: paging past the newest 500, admin pages for an instance admin with no organisation, any write.

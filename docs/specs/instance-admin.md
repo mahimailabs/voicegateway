@@ -2,7 +2,7 @@
 
 ## Goal
 
-One account can be an instance admin: it signs in to the same console as everyone, sees what every user sees, and gets an Admin group in the menu with pages about the whole instance. No email address is named in configuration or code. An operator can add its own pages to that group without changing this repository.
+One account can be an instance admin: it signs in to the same console as everyone, sees what every user sees, and gets an Instance group in Settings with pages about the whole instance. No email address is named in configuration or code. An operator can add its own pages to the top of that account's menu without changing this repository.
 
 ## Context
 
@@ -23,8 +23,8 @@ One account can be an instance admin: it signs in to the same console as everyon
   - `listAdminOrganisations` `GET /api/v1/admin/organisations`: the newest 500 organisations, newest first, each with its id, name, creation time and member, admin and project counts, plus `total`, the count of all of them.
   - `listAdminUsers` `GET /api/v1/admin/users`: the newest 500 accounts, newest first, each with its id, email, creation time, whether it is an instance admin, and its organisations with roles, plus `total`. Never a password hash, session or token.
   - `getAdminOrganisationUsage` `GET /api/v1/admin/organisations/{orgId}/usage?from=&to=`: the same read, rules and limits as `getOrganisationUsage`.
-- **The console.** For an instance admin the menu shows an Admin group with Organisations and Users, built on `data-table.tsx`. Opening an organisation's row reads its call time for the last 30 days. Other accounts never see the group, read nothing from these routes, and see "No such page" at its addresses. Unknown values stay unknown, never zero.
-- **Extra admin pages.** `VOICEGATEWAY_ADMIN_PAGES`, a comma-separated list of `Label=/path`, at most 8. Each path must be an absolute path on this site. `GET /auth/session` returns them as `adminPages`, to an instance admin only. The console adds each to the Admin group and shows it inside the shell in a frame at `/admin/page/<n>`, `n` its place in the list. This repository names no page; the pages check the role themselves through `GET /auth/session`.
+- **The console.** For an instance admin the Settings modal shows an Instance group with Organisations and Users (`?settings=instance-organisations`, `?settings=instance-users`), built on `data-table.tsx`. Opening an organisation's row reads its call time for the last 30 days. Other accounts never see the group and read nothing from these routes; an address that names one of its pages opens Settings on its first page. Unknown values stay unknown, never zero. The menu keeps the pages people work in; lists and setup stay in Settings.
+- **Extra admin pages.** `VOICEGATEWAY_ADMIN_PAGES`, a comma-separated list of `Label=/path`, at most 8. Each path must be an absolute path on this site. `GET /auth/session` returns them as `adminPages`, to an instance admin only. The console puts each at the top of the menu, above Overview, and shows it inside the shell in a frame at `/admin/page/<n>`, `n` its place in the list; any other account sees "No such page" there. This repository names no page; the pages check the role themselves through `GET /auth/session`.
 
 ## Out of Scope
 
@@ -46,4 +46,4 @@ One account can be an instance admin: it signs in to the same console as everyon
 - `TestEveryRouteHasAMinimumRole` covers the new routes and role.
 - On real Postgres: a member gets 403 on each new route, an instance admin 200, and the flag set by the command line applies on the next request without a new sign-in.
 - `GET /auth/session` shows `instanceAdmin` true only for a flagged account.
-- Console tests: the Admin group shows only for an instance admin; a configured page appears in the group and loads in the frame; a bad `VOICEGATEWAY_ADMIN_PAGES` value stops start-up with a message that names the variable.
+- Console tests: Settings shows the Instance group only for an instance admin; a configured page loads in the frame; a bad `VOICEGATEWAY_ADMIN_PAGES` value stops start-up with a message that names the variable.

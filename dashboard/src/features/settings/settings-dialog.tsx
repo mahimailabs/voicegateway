@@ -28,12 +28,13 @@ import { DataTable, type Columns, type Field as FilterField } from "@/components
 import { DataGridColumnHeader } from "@/components/reui/data-grid/data-grid-column-header"
 import { mod } from "@/components/command-palette"
 import { CopyCommand } from "@/components/copy-command"
-import { type AccountProfile, ProfileError, readAccountProfile, saveAccountProfile, refreshSession, roleIn, useSession } from "@/lib/session"
+import { type AccountProfile, ProfileError, readAccountProfile, saveAccountProfile, isInstanceAdmin, refreshSession, roleIn, useSession } from "@/lib/session"
 import { UsageAllowance } from "@/components/usage-allowance"
 import { errorText } from "@/components/page-state"
 import { ConnectAgentPanel } from "@/features/connection/connect-agent"
 import { ChangeLiveKitKey } from "@/features/connection/livekit-credentials"
 import { useHosted } from "@/lib/hosted"
+import { InstanceOrganisations, InstanceUsers } from "@/features/admin/admin-pages"
 import { AlertChannels } from "./alert-channels"
 
 // Settings as a modal over the page you are on (layout from shadcn's sidebar-13 block). Three groups,
@@ -46,8 +47,8 @@ import { AlertChannels } from "./alert-channels"
 // none, the scope's id stands in and no project is listed.
 const org = () => currentOrg() ?? { id: currentScope().org, name: currentScope().org, projects: [] }
 
-type Key = "account" | "organisation" | "access" | "connection" | "integrations" | "embeds" | "data" | "thresholds"
-type Page = { key: Key; label: string; icon: Icon; scope: "project" | "organisation" | "you" }
+type Key = "account" | "organisation" | "access" | "connection" | "integrations" | "embeds" | "data" | "thresholds" | "instance-organisations" | "instance-users"
+type Page = { key: Key; label: string; icon: Icon; scope: "project" | "organisation" | "instance" | "you" }
 const groups: { label: string; scope: Page["scope"]; pages: Page[] }[] = [
   {
     label: "Project",
@@ -66,6 +67,15 @@ const groups: { label: string; scope: Page["scope"]; pages: Page[] }[] = [
     pages: [
       { key: "organisation", label: "Organisation", icon: Buildings, scope: "organisation" },
       { key: "access", label: "Access", icon: UsersThree, scope: "organisation" },
+    ],
+  },
+  // The whole instance, for an instance admin only (decision 0041).
+  {
+    label: "Instance",
+    scope: "instance",
+    pages: [
+      { key: "instance-organisations", label: "Organisations", icon: Buildings, scope: "instance" },
+      { key: "instance-users", label: "Users", icon: UsersThree, scope: "instance" },
     ],
   },
   { label: "You", scope: "you", pages: [{ key: "account", label: "Your account", icon: User, scope: "you" }] },
@@ -1240,13 +1250,28 @@ function TestToken({ grant, content, query, src }: { grant: string[]; content: b
   )
 }
 
-const body: Record<Key, () => React.ReactNode> = { account: Account, organisation: Organisation, access: Access, connection: Connection, integrations: Integrations, embeds: Embeds, data: Data, thresholds: Thresholds }
+const AllOrganisations = () => (
+  <>
+    <Header title="Organisations" description="Every organisation on this instance, with its members, admins and projects." badge="Instance admin" />
+    <InstanceOrganisations />
+  </>
+)
+const AllUsers = () => (
+  <>
+    <Header title="Users" description="Every account on this instance, with its organisations and roles. The instance admin role is set from the command line." badge="Instance admin" />
+    <InstanceUsers />
+  </>
+)
+
+const body: Record<Key, () => React.ReactNode> = { account: Account, organisation: Organisation, access: Access, connection: Connection, integrations: Integrations, embeds: Embeds, data: Data, thresholds: Thresholds, "instance-organisations": AllOrganisations, "instance-users": AllUsers }
 
 export type SettingsPage = Key
 export function SettingsDialog({ open, onOpenChange, page, onPageChange, orgOnly = false }: { open: boolean; onOpenChange: (o: boolean) => void; page: string | null; onPageChange: (p: Key) => void; orgOnly?: boolean }) {
   // With no project to show, only the organisation's pages and yours: People among them, so an admin
   // can manage members before the first project is added.
-  const shown = orgOnly ? groups.filter((g) => g.scope !== "project") : groups
+  // The Instance group shows for an instance admin only.
+  const instanceAdmin = isInstanceAdmin(useSession())
+  const shown = groups.filter((g) => (g.scope !== "project" || !orgOnly) && (g.scope !== "instance" || instanceAdmin))
   const shownPages = shown.flatMap((g) => g.pages)
   // The page lives in the URL (?settings=thresholds); an unknown value shows the first page.
   const active: Key = shownPages.some((p) => p.key === page) ? (page as Key) : shownPages[0].key
@@ -1292,7 +1317,7 @@ export function SettingsDialog({ open, onOpenChange, page, onPageChange, orgOnly
           <div className="min-w-0 flex-1 space-y-0.5">
             <DialogTitle className="text-[18px] font-semibold">Settings</DialogTitle>
             <DialogDescription className="text-[14px]">
-              {current.scope === "you" ? "Your own account." : current.scope === "organisation" ? `Settings for ${org().name}.` : `Settings for ${pickedName}.`}{" "}
+              {current.scope === "you" ? "Your own account." : current.scope === "instance" ? "Everything on this instance." : current.scope === "organisation" ? `Settings for ${org().name}.` : `Settings for ${pickedName}.`}{" "}
               <span className="whitespace-nowrap">
                 Open anywhere with{" "}
                 <KbdGroup>

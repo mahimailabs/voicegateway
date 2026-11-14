@@ -10,8 +10,6 @@ import { choseLater } from "@/features/setup/setup-later"
 import {
   Bell,
   Browser,
-  Buildings,
-  UsersThree,
   MagnifyingGlass,
   TreeStructure,
   WarningCircle,
@@ -104,14 +102,12 @@ export function AppShell() {
   }
   const [palette, setPalette] = useState(false)
   const [shortcuts, setShortcuts] = useState(false)
-  // The Admin group (decision 0041) shows for an instance admin only: the instance's own pages, then
-  // any page the operator added in configuration.
+  // An instance admin's own pages (decision 0041), the ones the operator added in configuration, sit
+  // at the top of the menu. The instance's lists, Organisations and Users, are in Settings.
   const session = useSession()
   const menu = useMemo(() => {
-    if (!isInstanceAdmin(session)) return groups
-    const extra: Item[] = (session?.adminPages ?? []).map((p, i) => ({ to: adminPageTo(i), label: p.label, icon: Browser }))
-    const admin: Item[] = [{ to: "/admin/organisations", label: "Organisations", icon: Buildings }, { to: "/admin/users", label: "Users", icon: UsersThree }, ...extra]
-    return [...groups, { label: "Admin", items: admin }]
+    const extra: Item[] = isInstanceAdmin(session) ? (session?.adminPages ?? []).map((p, i) => ({ to: adminPageTo(i), label: p.label, icon: Browser })) : []
+    return extra.length ? [{ label: null, items: extra }, ...groups] : groups
   }, [session])
   const pages = useMemo(() => [...menu.flatMap((g) => g.items), { to: "/project", label: "Project", icon: TreeStructure, key: "j" }], [menu])
   useCommandHotkeys({ pages, onPalette: () => setPalette((o) => !o), onSettings: () => openSettings(), onShortcuts: () => setShortcuts(true) })
