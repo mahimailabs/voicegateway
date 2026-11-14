@@ -1,7 +1,7 @@
 import { ResourceMetrics } from "@/components/resource-metrics"
+import { Stat, StatStrip } from "@/components/stat-strip"
 import { useMemo, useState } from "react"
-import { CaretRight, CircleHalf, Cloud, HardDrives, Info, Robot, ShieldWarning, Timer, WarningCircle } from "@phosphor-icons/react"
-import type { Icon } from "@phosphor-icons/react"
+import { CaretRight, CircleHalf, Cloud, HardDrives, Info, Robot, Timer, WarningCircle } from "@phosphor-icons/react"
 import { BarList } from "@/components/tremor/BarList"
 import { CategoryBar } from "@/components/tremor/CategoryBar"
 import { type Columns, DataTable, type Field } from "@/components/data-table"
@@ -39,18 +39,6 @@ const statusTone = (s: string | null) =>
           ? "bg-destructive/10 text-destructive"
           : "bg-amber-500/10 text-amber-700 dark:text-amber-400"
 
-function StatCard({ icon: I, value, label, children, alert }: { icon: Icon; value: React.ReactNode; label: string; children?: React.ReactNode; alert?: boolean }) {
-  return (
-    <div className="rounded-2xl border bg-background p-4">
-      <div className="flex items-center justify-between">
-        <p className="text-[13px] text-muted-foreground">{label}</p>
-        <I size={18} className={alert ? "text-destructive" : "text-muted-foreground"} />
-      </div>
-      <p className={cn("mt-2 text-[28px] leading-none font-semibold tracking-[-0.02em] tnum", alert && "text-destructive")}>{value}</p>
-      {children && <div className="mt-3">{children}</div>}
-    </div>
-  )
-}
 
 // Bar for the fleet table: in use, then reserved, then up to the limit.
 function MiniBar({ cur, req, limit, unit }: { cur: number | null; req: number | null; limit: number | null; unit: string }) {
@@ -190,14 +178,15 @@ function AgentFleet() {
   const ms = useMemo(() => (media.data ? fromContract(media.data) : null), [media.data])
   if (!cloud.data || accessDenied(cloud.error)) return <QueryState icon={Robot} what="the agents" query={cloud} />
   if (!ms || accessDenied(media.error)) return <QueryState icon={Robot} what="the agents' rooms" query={media} />
-  return <div className="space-y-4">
+  // Where the numbers come from sits under the title, not above it.
+  const status = <div className="space-y-1">
     <SourceStatus name="Cloud agents" source={cloud.data.sourceStatus} interval={60000} query={cloud} />
     <SourceStatus name="LiveKit SFU" source={media.data?.sourceStatus} interval={10000} query={media} />
-    <AgentsView cloud={cloud.data} ms={ms} />
   </div>
+  return <AgentsView cloud={cloud.data} ms={ms} status={status} />
 }
 
-function AgentsView({ cloud, ms }: { cloud: CloudAgents; ms: MediaServerData }) {
+function AgentsView({ cloud, ms, status }: { cloud: CloudAgents; ms: MediaServerData; status?: React.ReactNode }) {
   const { source, readAt } = cloud
   const [tab, setTab] = useUrlState("tab", "fleet")
   const list = useMemo(() => agentsFrom(cloud, ms), [cloud, ms])
@@ -241,26 +230,27 @@ function AgentsView({ cloud, ms }: { cloud: CloudAgents; ms: MediaServerData }) 
             <TooltipContent className="max-w-96 text-xs leading-relaxed">{`${source} Read ${new Date(readAt).toLocaleString()}.`}</TooltipContent>
           </Tooltip>
         </div>
-        <div className="grid grid-cols-2 gap-6 sm:grid-cols-4">
-          <StatCard icon={Robot} value={list.length} label="Agents">
+        {status}
+        <StatStrip>
+          <Stat value={list.length} label="Agents">
             <p className="text-[11px] text-muted-foreground">{`${cloudN} deployed on LiveKit Cloud, ${list.length - cloudN} seen only in rooms`}</p>
-          </StatCard>
-          <StatCard icon={WarningCircle} value={`${failed} of ${jobs.length}`} label="Jobs failed" alert={failed > 0}>
+          </Stat>
+          <Stat value={`${failed} of ${jobs.length}`} label="Jobs failed" alert={failed > 0}>
             <div className="flex gap-0.5">
               {jobs.map((j) => (
                 <span key={`${j.room.sid}${j.jobId}`} className={cn("h-2 flex-1 rounded-sm", j.failed ? "bg-destructive" : "bg-primary/60")} />
               ))}
             </div>
             <p className="mt-1.5 text-[11px] text-muted-foreground">one bar per job watched</p>
-          </StatCard>
-          <StatCard icon={Timer} value={m === null ? "Unknown" : `${m.toFixed(1)} s`} label="Dispatch to join">
+          </Stat>
+          <Stat value={m === null ? "Unknown" : `${m.toFixed(1)} s`} label="Dispatch to join">
             <p className="text-[11px] text-muted-foreground">{m === null ? "No job with dispatch detail yet" : `median of ${delays.length} jobs, LiveKit dispatches in under 150 ms`}</p>
-          </StatCard>
-          <StatCard icon={ShieldWarning} value={found.length} label="Checks to fix" alert={found.some((c) => c.severity === "high")}>
+          </Stat>
+          <Stat value={found.length} label="Checks to fix" alert={found.some((c) => c.severity === "high")}>
             <CategoryBar values={[sev("high"), sev("medium"), sev("low")]} colors={["alert", "amber", "quiet"]} showLabels={false} />
             <p className="mt-1.5 text-[11px] text-muted-foreground">{`${sev("high")} high · ${sev("medium")} medium · ${sev("low")} low`}</p>
-          </StatCard>
-        </div>
+          </Stat>
+        </StatStrip>
       </header>
 
       <Tabs value={tab} onValueChange={setTab} className="gap-5">

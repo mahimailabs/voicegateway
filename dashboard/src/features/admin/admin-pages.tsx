@@ -36,14 +36,16 @@ export function NotAnAdmin() {
   )
 }
 
-function Heading({ title, note }: { title: string; note: string }) {
+// The instance's own pages carry an "Instance admin" mark; a page the operator added is only its title,
+// so it reads as part of the console rather than a frame around someone else's page.
+function Heading({ title, note }: { title: string; note?: string }) {
   return (
     <header className="space-y-1.5">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
         <h1 className="text-[28px] leading-tight font-semibold tracking-[-0.02em]">{title}</h1>
-        <span className="rounded-full bg-muted px-2.5 py-0.5 text-[13px] text-muted-foreground">Instance admin</span>
+        {note && <span className="rounded-full bg-muted px-2.5 py-0.5 text-[13px] text-muted-foreground">Instance admin</span>}
       </div>
-      <p className="text-[13px] text-muted-foreground">{note}</p>
+      {note && <p className="text-[13px] text-muted-foreground">{note}</p>}
     </header>
   )
 }
@@ -204,8 +206,8 @@ export function AdminFramedPage() {
   if (!page || !page.path.startsWith("/") || page.path.startsWith("//")) return <NotAnAdmin />
   return (
     <div className="space-y-6">
-      <Heading title={page.label} note="A page this instance's operator added." />
-      <iframe title={page.label} src={page.path} className="h-[calc(100dvh-13rem)] min-h-[520px] w-full rounded-xl border bg-background" />
+      <Heading title={page.label} />
+      <iframe title={page.label} src={page.path} className="h-[calc(100dvh-10rem)] min-h-[520px] w-full bg-background" />
     </div>
   )
 }

@@ -1,5 +1,5 @@
-import { CaretRight, CircleHalf, Clock, DownloadSimple, Flask, Hash, Info, Pulse, ShieldWarning, Stack, WarningCircle } from "@phosphor-icons/react"
-import type { Icon } from "@phosphor-icons/react"
+import { CaretRight, CircleHalf, Clock, DownloadSimple, Flask, Hash, Info, Stack } from "@phosphor-icons/react"
+import { Stat, StatStrip } from "@/components/stat-strip"
 import { CategoryBar } from "@/components/tremor/CategoryBar"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
 import { type Columns, DataTable, type Field } from "@/components/data-table"
@@ -154,18 +154,6 @@ function checks(list: Ingress[]): Check[] {
 }
 const tone = { high: "bg-destructive", medium: "bg-amber-500", low: "bg-muted-foreground/40" }
 
-function StatCard({ icon: I, value, label, children, alert }: { icon: Icon; value: React.ReactNode; label: string; children?: React.ReactNode; alert?: boolean }) {
-  return (
-    <div className="rounded-2xl border bg-background p-4">
-      <div className="flex items-center justify-between">
-        <p className="text-[13px] text-muted-foreground">{label}</p>
-        <I size={18} className={alert ? "text-destructive" : "text-muted-foreground"} />
-      </div>
-      <p className={cn("mt-2 text-[28px] leading-none font-semibold tracking-[-0.02em] tnum", alert && "text-destructive")}>{value}</p>
-      {children && <div className="mt-3">{children}</div>}
-    </div>
-  )
-}
 
 function Detail({ e }: { e: Ingress }) {
   const t0 = sec(e.history[0]?.at ?? null)
@@ -251,22 +239,22 @@ export function IngressPage() {
             <TooltipContent className="max-w-96 text-xs leading-relaxed">{d.source}</TooltipContent>
           </Tooltip>
         </div>
-        <div className="grid grid-cols-2 gap-6 sm:grid-cols-4">
-          <StatCard icon={DownloadSimple} value={list.length} label="Endpoints">
+        <StatStrip>
+          <Stat value={list.length} label="Endpoints">
             <CategoryBar values={[by("ENDPOINT_PUBLISHING"), by("ENDPOINT_BUFFERING"), by("ENDPOINT_INACTIVE"), by("ENDPOINT_ERROR")]} colors={["accent", "amber", "quiet", "alert"]} showLabels={false} />
             <p className="mt-1.5 text-[11px] text-muted-foreground">{`${by("ENDPOINT_PUBLISHING")} publishing · ${by("ENDPOINT_INACTIVE")} idle · ${by("ENDPOINT_ERROR")} error`}</p>
-          </StatCard>
-          <StatCard icon={Pulse} value={last.length ? secs(last.reduce((a, e) => a + session(e)!, 0)) : "Unknown"} label="Last sessions">
+          </Stat>
+          <Stat value={last.length ? secs(last.reduce((a, e) => a + session(e)!, 0)) : "Unknown"} label="Last sessions">
             <p className="text-[11px] text-muted-foreground">{last.length ? `${last.length} ${last.length === 1 ? "session" : "sessions"} that published; earlier ones need webhooks` : "No session seen"}</p>
-          </StatCard>
-          <StatCard icon={WarningCircle} value={by("ENDPOINT_ERROR")} label="In error" alert={by("ENDPOINT_ERROR") > 0}>
+          </Stat>
+          <Stat value={by("ENDPOINT_ERROR")} label="In error" alert={by("ENDPOINT_ERROR") > 0}>
             <p className="truncate text-[11px] text-muted-foreground">{list.find((e) => e.error)?.error ?? "None"}</p>
-          </StatCard>
-          <StatCard icon={ShieldWarning} value={list2.length} label="Checks to fix" alert={list2.some((c) => c.severity === "high")}>
+          </Stat>
+          <Stat value={list2.length} label="Checks to fix" alert={list2.some((c) => c.severity === "high")}>
             <CategoryBar values={[sev("high"), sev("medium"), sev("low")]} colors={["alert", "amber", "quiet"]} showLabels={false} />
             <p className="mt-1.5 text-[11px] text-muted-foreground">{`${sev("high")} high · ${sev("medium")} medium · ${sev("low")} low`}</p>
-          </StatCard>
-        </div>
+          </Stat>
+        </StatStrip>
       </header>
 
       <Tabs value={tab} onValueChange={setTab} className="gap-5">

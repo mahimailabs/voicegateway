@@ -7,7 +7,7 @@ const scope = "/org/default/project/default-project/"
 const pages = [
   ["overview", "Overview"],
   ["calls", "Calls"],
-  ["issues", /^\d+ open/],
+  ["issues", "Issues"],
   ["alerts", "Alerts"],
   ["agents", "Agent workers"],
   ["sfu", "Media server"],
