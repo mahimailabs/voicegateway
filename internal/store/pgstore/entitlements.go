@@ -25,12 +25,13 @@ func (s *Store) PutEntitlement(ctx context.Context, org string, e store.Entitlem
 			return err
 		}
 		var old store.Entitlement
-		err := tx.QueryRow(ctx, "SELECT from_at,to_at,limit_minutes,active,revision FROM organisation_entitlements WHERE organisation_id=$1", org).Scan(&old.From, &old.To, &old.LimitMinutes, &old.Active, &old.Revision)
+		err := tx.QueryRow(ctx, "SELECT from_at,to_at,limit_credits,retention_days,max_projects,max_members,active,revision FROM organisation_entitlements WHERE organisation_id=$1", org).
+			Scan(&old.From, &old.To, &old.LimitCredits, &old.RetentionDays, &old.MaxProjects, &old.MaxMembers, &old.Active, &old.Revision)
 		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 			return err
 		}
 		if err == nil && old.Revision >= e.Revision {
-			if old.Revision == e.Revision && old.From.Equal(e.From) && old.To.Equal(e.To) && old.LimitMinutes == e.LimitMinutes && old.Active == e.Active {
+			if old.Revision == e.Revision && old.SameLimits(e) {
 				return nil
 			}
 			return store.ErrEntitlementRevision
@@ -41,8 +42,9 @@ func (s *Store) PutEntitlement(ctx context.Context, org string, e store.Entitlem
 				return err
 			}
 		}
-		if _, err := tx.Exec(ctx, `INSERT INTO organisation_entitlements(organisation_id,from_at,to_at,limit_minutes,active,revision)
-            VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT(organisation_id) DO UPDATE SET from_at=$2,to_at=$3,limit_minutes=$4,active=$5,revision=$6`, org, e.From, e.To, e.LimitMinutes, e.Active, e.Revision); err != nil {
+		if _, err := tx.Exec(ctx, `INSERT INTO organisation_entitlements(organisation_id,from_at,to_at,limit_credits,active,revision,retention_days,max_projects,max_members)
+            VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT(organisation_id) DO UPDATE SET from_at=$2,to_at=$3,limit_credits=$4,active=$5,revision=$6,
+            retention_days=$7,max_projects=$8,max_members=$9`, org, e.From, e.To, e.LimitCredits, e.Active, e.Revision, e.RetentionDays, e.MaxProjects, e.MaxMembers); err != nil {
 			return err
 		}
 		if !first {
@@ -63,7 +65,7 @@ func (s *Store) PutEntitlement(ctx context.Context, org string, e store.Entitlem
 // EntitlementUsage reads one snapshot of the entitlement and its durable measured usage.
 func (s *Store) EntitlementUsage(ctx context.Context, org string) (store.EntitlementUsage, error) {
 	var u store.EntitlementUsage
-	err := s.pool.QueryRow(ctx, `SELECT e.from_at,e.to_at,e.limit_minutes,e.active,e.revision,
+	err := s.pool.QueryRow(ctx, `SELECT e.from_at,e.to_at,e.limit_credits,e.retention_days,e.max_projects,e.max_members,e.active,e.revision,
         coalesce((SELECT floor(sum(seconds))::bigint FROM profiled_call_usage u
             WHERE u.organisation_id=e.organisation_id AND u.effective_end>=e.from_at AND u.effective_end<e.to_at),0),
         (SELECT count(*) FROM calls c WHERE c.organisation_id=e.organisation_id
@@ -74,7 +76,7 @@ func (s *Store) EntitlementUsage(ctx context.Context, org string) (store.Entitle
         (SELECT count(*) FROM calls c WHERE c.organisation_id=e.organisation_id
           AND c.first_seen_at>=e.from_at AND c.first_seen_at<e.to_at AND c.end_state='open')
         FROM organisation_entitlements e WHERE e.organisation_id=$1`, org).
-		Scan(&u.From, &u.To, &u.LimitMinutes, &u.Active, &u.Revision, &u.CallSeconds, &u.UnmeasuredCalls, &u.OpenCalls)
+		Scan(&u.From, &u.To, &u.LimitCredits, &u.RetentionDays, &u.MaxProjects, &u.MaxMembers, &u.Active, &u.Revision, &u.CallSeconds, &u.UnmeasuredCalls, &u.OpenCalls)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return u, store.ErrNotFound
 	}
@@ -131,4 +133,77 @@ func (s *Store) RememberQuotaCalls(ctx context.Context, org, project string, ref
 		}
 		return nil
 	})
+}
+
+// The plan limits, each read with the count it caps. A count takes the organisation as $1.
+const (
+	maxProjectsQuery = "SELECT max_projects FROM organisation_entitlements WHERE organisation_id=$1"
+	projectsQuery    = "SELECT count(*) FROM projects WHERE organisation_id=$1"
+	maxMembersQuery  = "SELECT max_members FROM organisation_entitlements WHERE organisation_id=$1"
+	// Members and the open invitations that would make more, except one for $2 that this invitation
+	// replaces.
+	seatsQuery = `SELECT (SELECT count(*) FROM memberships WHERE organisation_id=$1) +
+        (SELECT count(*) FROM invitations WHERE organisation_id=$1 AND kind='invite' AND email<>$2
+          AND accepted_at IS NULL AND revoked_at IS NULL AND expires_at>now())`
+)
+
+// planLimit refuses one more of what count counts when the organisation's plan caps it at that.
+// It runs after the organisation's row lock, so parallel creates queue and cannot both pass.
+// Without a plan, or with a null limit, nothing is refused.
+func planLimit(ctx context.Context, tx pgx.Tx, org, limit, count string, args ...any) error {
+	var maxN *int32
+	err := tx.QueryRow(ctx, limit, org).Scan(&maxN)
+	if errors.Is(err, pgx.ErrNoRows) || (err == nil && maxN == nil) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("plan limit: %w", err)
+	}
+	var n int64
+	if err := tx.QueryRow(ctx, count, append([]any{org}, args...)...).Scan(&n); err != nil {
+		return fmt.Errorf("plan limit count: %w", err)
+	}
+	if n >= int64(*maxN) {
+		return fmt.Errorf("%d of %d: %w", n, *maxN, store.ErrPlanLimit)
+	}
+	return nil
+}
+
+// RetentionPlans lists the organisations whose plan limits how long call data is kept.
+func (s *Store) RetentionPlans(ctx context.Context) ([]store.RetentionPlan, error) {
+	rows, err := s.pool.Query(ctx, "SELECT organisation_id, retention_days FROM organisation_entitlements WHERE retention_days IS NOT NULL ORDER BY organisation_id")
+	if err != nil {
+		return nil, fmt.Errorf("retention plans: %w", err)
+	}
+	plans, err := pgx.CollectRows(rows, pgx.RowToStructByPos[store.RetentionPlan])
+	if err != nil {
+		return nil, fmt.Errorf("retention plans: %w", err)
+	}
+	return plans, nil
+}
+
+// TrimCalls deletes an organisation's closed calls that ended before cutoff, with their summaries,
+// participants and recording links; an issue keeps its occurrences with no call. Billed usage in
+// profiled_call_usage has no call foreign key, so it stays. Open calls are never trimmed.
+func (s *Store) TrimCalls(ctx context.Context, org string, cutoff time.Time) (int64, error) {
+	var n int64
+	err := pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
+		const old = `SELECT id FROM calls WHERE organisation_id=$1 AND end_state<>'open'
+            AND coalesce(ended_at,last_activity_at,first_seen_at)<$2`
+		for _, q := range []string{
+			"DELETE FROM call_summaries WHERE call_id IN (" + old + ")",
+			"DELETE FROM call_participants WHERE call_id IN (" + old + ")",
+		} {
+			if _, err := tx.Exec(ctx, q, org, cutoff); err != nil {
+				return err
+			}
+		}
+		tag, err := tx.Exec(ctx, "DELETE FROM calls WHERE id IN ("+old+")", org, cutoff)
+		n = tag.RowsAffected()
+		return err
+	})
+	if err != nil {
+		return 0, fmt.Errorf("trim calls of %s: %w", org, err)
+	}
+	return n, nil
 }

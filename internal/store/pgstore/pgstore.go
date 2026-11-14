@@ -83,6 +83,15 @@ func (s *Store) CreateProject(ctx context.Context, p NewProject) (store.Project,
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 	q := s.q.WithTx(tx)
+	// The organisation's lock queues parallel creates, so a plan's project limit holds (decision 0042).
+	if _, err := q.LockOrganisation(ctx, p.OrganisationID); errors.Is(err, pgx.ErrNoRows) {
+		return store.Project{}, fmt.Errorf("organisation %s: %w", p.OrganisationID, store.ErrNotFound)
+	} else if err != nil {
+		return store.Project{}, fmt.Errorf("create project %s/%s: %w", p.OrganisationID, p.ID, err)
+	}
+	if err := planLimit(ctx, tx, p.OrganisationID, maxProjectsQuery, projectsQuery); err != nil {
+		return store.Project{}, fmt.Errorf("create project %s/%s: %w", p.OrganisationID, p.ID, err)
+	}
 	row, err := q.CreateProject(ctx, CreateProjectParams{
 		OrganisationID:         p.OrganisationID,
 		ID:                     p.ID,

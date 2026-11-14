@@ -403,6 +403,14 @@ func Worker(ctx context.Context, c config.Config, log *slog.Logger) error {
 		every(gctx, expireRecordingsEvery, "recording retention", retention.Run, log)
 		return nil
 	})
+	// A Cloud plan may keep call data for fewer days than the tables' TTLs (decision 0042).
+	if c.CloudQuotas {
+		planRetention := &instance.Retention{Plans: pgstore.NewStore(pool, nil), Telemetry: events, Log: log}
+		g.Go(func() error {
+			every(gctx, expireRecordingsEvery, "plan retention", planRetention.Run, log)
+			return nil
+		})
+	}
 	// Alerts (docs/specs/alerts-delivery.md): one worker evaluates at a time; every worker sends due
 	// deliveries, each leased to one of them. Without SMTP, email deliveries fail visibly.
 	alerts := pgstore.NewStore(pool, sealer)

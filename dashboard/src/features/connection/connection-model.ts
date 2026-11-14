@@ -97,9 +97,9 @@ export function fixText(source: Source, s: ConnectionSource): Fix {
     case "body_changed":
       return { title: "The webhook body was changed on the way", fix: "Something between LiveKit and VoiceGateway, such as a proxy, rewrote the body. Send it unmodified." }
     case "plan_inactive":
-      return { title: "Telemetry ingestion paused", fix: "This workspace's plan is not active. Existing data stays readable and your voice calls continue.", capacity: true }
+      return { title: "Profiling paused", fix: "This workspace's plan is not active. Existing data stays readable and your voice calls continue.", capacity: true }
     case "plan_cap":
-      return { title: "Telemetry ingestion paused", fix: "This workspace's allowance is used. Existing data stays readable and your voice calls continue.", capacity: true }
+      return { title: "Profiling paused", fix: "This workspace's credits are used up, so new calls are not profiled. Existing data stays readable and your voice calls continue.", capacity: true }
     case "too_large":
       if (sdk) return { title: "The request was too large", fix: "An SDK batch holds at most 1,000 events and 1 MiB. Open an issue with the voicegateway package version." }
       return agent

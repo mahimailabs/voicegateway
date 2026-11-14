@@ -324,6 +324,9 @@ func (a *API) createProject(w http.ResponseWriter, r *http.Request) {
 	}
 	p, err := a.NewProjects.CreateProject(r.Context(), in)
 	switch {
+	case errors.Is(err, store.ErrPlanLimit):
+		writeError(w, r, http.StatusConflict, codePlanLimit, "this organisation's plan allows no more projects; remove one or change the plan")
+		return
 	case errors.Is(err, store.ErrProjectExists):
 		writeError(w, r, http.StatusConflict, codeProjectExists, fmt.Sprintf("this organisation already has a project with the id %s; choose another name", in.ID))
 		return

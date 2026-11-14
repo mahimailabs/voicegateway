@@ -40,7 +40,7 @@ func (q *Quota) Check(ctx context.Context, org string) (bool, int, error) {
 }
 
 // Refusal names why Check refused org: plan_cap when its plan is active and in its window but the
-// minutes are used up, plan_inactive otherwise, including a plan that cannot be read.
+// credits are used up, plan_inactive otherwise, including a plan that cannot be read.
 func (q *Quota) Refusal(ctx context.Context, org string) string {
 	u, err := q.Store.EntitlementUsage(ctx, org)
 	now := q.Now()
@@ -50,22 +50,30 @@ func (q *Quota) Refusal(ctx context.Context, org string) string {
 	return store.ReasonPlanCap
 }
 
+// One credit is one profiled call minute (decision 0042), so a plan's credits are its seconds / 60.
+// At zero credits left, new calls are not profiled; calls themselves are never touched.
 func allowed(u store.EntitlementUsage, now time.Time) bool {
-	return u.Active && !now.Before(u.From) && now.Before(u.To) && u.CallSeconds < u.LimitMinutes*60
+	return u.Active && !now.Before(u.From) && now.Before(u.To) && u.CallSeconds < u.LimitCredits*60
 }
 
 func warning(u store.EntitlementUsage) int {
-	if u.CallSeconds >= u.LimitMinutes*60 {
+	if u.CallSeconds >= u.LimitCredits*60 {
 		return 100
 	}
-	if u.CallSeconds >= u.LimitMinutes*57 {
+	if u.CallSeconds >= u.LimitCredits*57 {
 		return 95
 	}
-	if u.CallSeconds >= u.LimitMinutes*48 {
+	if u.CallSeconds >= u.LimitCredits*48 {
 		return 80
 	}
 	return 0
 }
+
+// maxRetentionDays and maxLimit bound the optional plan limits, as the columns do (Postgres 00026).
+const (
+	maxRetentionDays = 3650
+	maxLimit         = 1000000
+)
 
 func (h *Handlers) putEntitlement(w http.ResponseWriter, r *http.Request) {
 	id, ok := orgID(w, r)
@@ -73,25 +81,36 @@ func (h *Handlers) putEntitlement(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body struct {
-		From         *time.Time `json:"from"`
-		To           *time.Time `json:"to"`
-		LimitMinutes *int64     `json:"limitMinutes"`
-		Active       *bool      `json:"active"`
-		Revision     *int64     `json:"revision"`
+		From          *time.Time `json:"from"`
+		To            *time.Time `json:"to"`
+		LimitCredits  *int64     `json:"limitCredits"`
+		RetentionDays *int32     `json:"retentionDays"`
+		MaxProjects   *int32     `json:"maxProjects"`
+		MaxMembers    *int32     `json:"maxMembers"`
+		Active        *bool      `json:"active"`
+		Revision      *int64     `json:"revision"`
 	}
 	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxBody))
 	dec.DisallowUnknownFields()
-	if err := dec.Decode(&body); err != nil || body.From == nil || body.To == nil || body.LimitMinutes == nil || body.Active == nil || body.Revision == nil {
-		api.WriteError(w, r, 400, api.CodeInvalidRequest, "from, to, limitMinutes, active and revision are required")
+	if err := dec.Decode(&body); err != nil || body.From == nil || body.To == nil || body.LimitCredits == nil || body.Active == nil || body.Revision == nil {
+		api.WriteError(w, r, 400, api.CodeInvalidRequest, "from, to, limitCredits, active and revision are required")
 		return
 	}
 	if err := dec.Decode(new(any)); err != io.EOF {
 		api.WriteError(w, r, 400, api.CodeInvalidRequest, "one JSON object is required")
 		return
 	}
-	e := store.Entitlement{From: body.From.UTC().Truncate(time.Microsecond), To: body.To.UTC().Truncate(time.Microsecond), LimitMinutes: *body.LimitMinutes, Active: *body.Active, Revision: *body.Revision}
-	if e.From.IsZero() || !e.To.After(e.From) || e.To.Sub(e.From) > maxUsageSpan || e.LimitMinutes < 0 || e.LimitMinutes > 1000000000 || e.Revision < 1 {
-		api.WriteError(w, r, 400, api.CodeInvalidRequest, "an explicit period of at most 62 days, limitMinutes 0..1000000000 and positive revision are required")
+	e := store.Entitlement{
+		From: body.From.UTC().Truncate(time.Microsecond), To: body.To.UTC().Truncate(time.Microsecond), LimitCredits: *body.LimitCredits,
+		RetentionDays: body.RetentionDays, MaxProjects: body.MaxProjects, MaxMembers: body.MaxMembers, Active: *body.Active, Revision: *body.Revision,
+	}
+	if e.From.IsZero() || !e.To.After(e.From) || e.To.Sub(e.From) > maxUsageSpan || e.LimitCredits < 0 || e.LimitCredits > 1000000000 || e.Revision < 1 {
+		api.WriteError(w, r, 400, api.CodeInvalidRequest, "an explicit period of at most 62 days, limitCredits 0..1000000000 and positive revision are required")
+		return
+	}
+	// An absent or null limit is unlimited.
+	if outside(e.RetentionDays, 1, maxRetentionDays) || outside(e.MaxProjects, 0, maxLimit) || outside(e.MaxMembers, 0, maxLimit) {
+		api.WriteError(w, r, 400, api.CodeInvalidRequest, "retentionDays is 1..3650, maxProjects and maxMembers 0..1000000, or null for unlimited")
 		return
 	}
 	err := h.Entitlements.PutEntitlement(r.Context(), id, e)
@@ -106,6 +125,8 @@ func (h *Handlers) putEntitlement(w http.ResponseWriter, r *http.Request) {
 		h.getEntitlement(w, r)
 	}
 }
+
+func outside(v *int32, lo, hi int32) bool { return v != nil && (*v < lo || *v > hi) }
 
 func (h *Handlers) getEntitlement(w http.ResponseWriter, r *http.Request) {
 	id, ok := orgID(w, r)

@@ -33,7 +33,7 @@ function serve(put: () => Response = () => new Response(null, { status: 204 }), 
   vi.stubGlobal("fetch", async (input: Request) => {
     const call = await seen(input)
     calls.push(call)
-    if (call.url.endsWith("/entitlement")) return entitlement === "hosted" ? json(200, { from: "2026-10-01T00:00:00Z", to: "2026-11-01T00:00:00Z", limitMinutes: 2000, active: true, revision: 1, callSeconds: 60, unmeasuredCalls: 0, openCalls: 0, warningPercent: 0, ingestAllowed: true }) : json(404, { code: "not_found", message: "no entitlement API", requestId: "r" })
+    if (call.url.endsWith("/entitlement")) return entitlement === "hosted" ? json(200, { from: "2026-10-01T00:00:00Z", to: "2026-11-01T00:00:00Z", limitCredits: 2000, retentionDays: null, maxProjects: null, maxMembers: null, active: true, revision: 1, callSeconds: 60, unmeasuredCalls: 0, openCalls: 0, warningPercent: 0, ingestAllowed: true }) : json(404, { code: "not_found", message: "no entitlement API", requestId: "r" })
     if (call.method === "PUT") {
       const answer = put()
       if (answer.status === 204) key = JSON.parse(call.body ?? "{}").livekitApiKey
@@ -138,7 +138,7 @@ test.each([
   if (said) await screen.findByText(/open-source edition is one organisation/)
   else {
     // The hosted answer has arrived once its usage shows; the open-source text is still absent.
-    await screen.findByText("Profiled call usage")
+    await screen.findByText("Profiled call credits")
     expect(screen.queryByText(/open-source edition is one organisation/)).toBeNull()
   }
   expect(screen.getByText(/^The organisation that owns your projects\./)).toBeTruthy()
