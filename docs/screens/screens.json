@@ -1,0 +1,156 @@
+{
+  "about": "Every VoiceGateway console page, photographed from the real code on the mock API's sample data. Regenerate with `make dashboard-screens` after any UI change.",
+  "data": "sample (dashboard/src/mocks), not a live install",
+  "screens": [
+    {
+      "title": "Overview",
+      "route": "/overview",
+      "group": "Overview",
+      "source": "dashboard/src/features/overview/overview.tsx",
+      "images": {
+        "desktop": "overview.desktop.jpg",
+        "phone": "overview.phone.jpg"
+      }
+    },
+    {
+      "title": "Live",
+      "route": "/live",
+      "group": "Observe",
+      "source": "dashboard/src/features/live/live-page.tsx",
+      "images": {
+        "desktop": "live.desktop.jpg",
+        "phone": "live.phone.jpg"
+      }
+    },
+    {
+      "title": "Calls",
+      "route": "/calls",
+      "group": "Observe",
+      "source": "dashboard/src/features/calls/calls-page.tsx",
+      "images": {
+        "desktop": "calls.desktop.jpg",
+        "phone": "calls.phone.jpg"
+      }
+    },
+    {
+      "title": "Call detail",
+      "route": "/calls/vg-capture-1791863749",
+      "group": "Observe",
+      "source": "dashboard/src/features/calls/calls-page.tsx",
+      "images": {
+        "desktop": "call-detail.desktop.jpg",
+        "phone": "call-detail.phone.jpg"
+      }
+    },
+    {
+      "title": "Call diagnosis",
+      "route": "/calls/vg-capture-1791863749?callView=diagnosis",
+      "group": "Observe",
+      "source": "dashboard/src/features/calls/calls-page.tsx",
+      "images": {
+        "desktop": "call-diagnosis.desktop.jpg",
+        "phone": "call-diagnosis.phone.jpg"
+      }
+    },
+    {
+      "title": "Issues",
+      "route": "/issues",
+      "group": "Observe",
+      "source": "dashboard/src/features/issues/issues-page.tsx",
+      "images": {
+        "desktop": "issues.desktop.jpg",
+        "phone": "issues.phone.jpg"
+      }
+    },
+    {
+      "title": "Alerts",
+      "route": "/alerts",
+      "group": "Observe",
+      "source": "dashboard/src/features/alerts/alerts-page.tsx",
+      "images": {
+        "desktop": "alerts.desktop.jpg",
+        "phone": "alerts.phone.jpg"
+      }
+    },
+    {
+      "title": "Agent workers",
+      "route": "/agents",
+      "group": "Agents",
+      "source": "dashboard/src/features/agents/agents-page.tsx",
+      "images": {
+        "desktop": "agent-workers.desktop.jpg",
+        "phone": "agent-workers.phone.jpg"
+      }
+    },
+    {
+      "title": "Media server",
+      "route": "/sfu",
+      "group": "LiveKit",
+      "source": "dashboard/src/features/media-server/media-server-page.tsx",
+      "images": {
+        "desktop": "media-server.desktop.jpg",
+        "phone": "media-server.phone.jpg"
+      }
+    },
+    {
+      "title": "Phone bridge",
+      "route": "/sip",
+      "group": "LiveKit",
+      "source": "dashboard/src/features/sip/sip-page.tsx",
+      "images": {
+        "desktop": "phone-bridge.desktop.jpg",
+        "phone": "phone-bridge.phone.jpg"
+      }
+    },
+    {
+      "title": "Egress",
+      "route": "/egress",
+      "group": "LiveKit",
+      "source": "dashboard/src/features/egress/egress-page.tsx",
+      "images": {
+        "desktop": "egress.desktop.jpg",
+        "phone": "egress.phone.jpg"
+      }
+    },
+    {
+      "title": "Ingress",
+      "route": "/ingress",
+      "group": "LiveKit",
+      "source": "dashboard/src/features/ingress/ingress-page.tsx",
+      "images": {
+        "desktop": "ingress.desktop.jpg",
+        "phone": "ingress.phone.jpg"
+      }
+    },
+    {
+      "title": "Project",
+      "route": "/project",
+      "group": "Project",
+      "source": "dashboard/src/features/project/project-page.tsx",
+      "images": {
+        "desktop": "project.desktop.jpg",
+        "phone": "project.phone.jpg"
+      }
+    },
+    {
+      "title": "Settings",
+      "route": "/settings",
+      "group": "Settings",
+      "source": "dashboard/src/features/settings/settings-dialog.tsx",
+      "images": {
+        "desktop": "settings.desktop.jpg",
+        "phone": "settings.phone.jpg"
+      }
+    },
+    {
+      "title": "API reference",
+      "route": "/docs",
+      "group": "Docs",
+      "source": "dashboard/src/features/api-docs/api-docs-page.tsx",
+      "images": {
+        "desktop": "api-reference.desktop.jpg",
+        "phone": "api-reference.phone.jpg"
+      }
+    }
+  ]
+}

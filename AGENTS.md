@@ -7,6 +7,7 @@ All rules live in [CLAUDE.md](CLAUDE.md), so the two files cannot drift. Read it
 - [PRODUCT.md](PRODUCT.md): who VoiceGateway is for, what it does and what it will not do.
 - [ARCHITECTURE.md](ARCHITECTURE.md): components, data flow, boundaries and stack.
 - [DESIGN.md](DESIGN.md): the visual system, for UI work.
+- [docs/screens/](docs/screens/): a picture of every console page; look before proposing UI.
 - [docs/decisions/](docs/decisions/), [docs/specs/](docs/specs/) and [docs/progress.md](docs/progress.md): why, what next, and where the project stands.
 
 Quick commands:

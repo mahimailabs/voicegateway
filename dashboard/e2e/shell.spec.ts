@@ -1,28 +1,9 @@
 import { test, expect } from "@playwright/test"
 import AxeBuilder from "@axe-core/playwright"
 import { watchErrors } from "./console-errors.ts"
-import capture from "../src/mocks/capture-session.json" with { type: "json" }
+import { pages, scope } from "./pages.ts"
 
-const scope = "/org/default/project/default-project/"
-const pages = [
-  ["overview", "Overview"],
-  ["calls", "Calls"],
-  ["issues", "Issues"],
-  ["alerts", "Alerts"],
-  ["agents", "Agent workers"],
-  ["sfu", "Media server"],
-  ["sip", "Phone bridge"],
-  ["egress", "Egress"],
-  ["ingress", "Ingress"],
-  ["project", /Everything this project/],
-  ["live", null],
-  ["settings", "Settings"],
-  ["docs", "VoiceGateway API"],
-  ["calls/" + encodeURIComponent(capture.call.room), capture.call.room],
-  ["calls/" + encodeURIComponent(capture.call.room) + "?callView=diagnosis", capture.call.room],
-] as const
-
-for (const [path, heading] of pages) {
+for (const { path, heading } of pages) {
   test(path + " deep link and accessibility", async ({ page }, testInfo) => {
     const { errors, unexpected } = watchErrors(page)
     await page.addInitScript((theme) => localStorage.setItem("vg-theme", theme), testInfo.project.use.colorScheme ?? "light")
@@ -38,7 +19,7 @@ for (const [path, heading] of pages) {
     if (path === "overview" && (page.viewportSize()?.width ?? 0) >= 768) {
       const links = await page.locator('[data-sidebar="menu-button"][href^="/"]').evaluateAll((items) => items.map((item) => item.getAttribute("href")))
       expect(links.length).toBeGreaterThan(0)
-      for (const href of links) expect(pages.map(([route]) => scope + route), "every internal sidebar link has a test").toContain(href)
+      for (const href of links) expect(pages.map(({ path: route }) => scope + route), "every internal sidebar link has a test").toContain(href)
     }
     await page.waitForLoadState("networkidle")
     // Wait for the built page's fonts before contrast analysis.

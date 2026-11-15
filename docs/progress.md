@@ -686,3 +686,9 @@ Mahimai decided Cloud keeps recordings in VoiceGateway's bucket by default, and 
 - **Console:** an Instance group in Settings with Organisations (a row opens its last 30 days of call time) and Users; `VOICEGATEWAY_ADMIN_PAGES` adds an operator's same-site pages at the top of the menu, framed inside the shell.
 - Tests: `TestAdminRoutesNeedTheInstanceAdminFlag`, `TestInstanceAdminFlagOpensNoProject`, `TestAdminPagesStayOnThisSite`, `TestInstanceAdminFlagAndLists`, `TestSessionNamesTheInstanceAdmin`, `tests/admin-pages.test.tsx`, and the mock API's admin reads in `tests/mock-api.test.ts`.
 - Not yet: paging past the newest 500, admin pages for an instance admin with no organisation, any write.
+
+### 2026-11-15: console screen catalog
+
+- `make dashboard-screens` builds the console on the mock API and photographs every page at 1440 and 390 px (light) into `docs/screens/`, with `screens.json` naming each page's route, sidebar group and source file. `SCREENS_DARK=1` adds dark pictures, kept local.
+- The page list moved to `dashboard/e2e/pages.ts`, shared by the shell checks (which still fail when a sidebar link is missing) and the catalog. The catalog spec is ignored by `make dashboard-e2e`.
+- Not yet: embeddable widgets, the /setup journey, per-role pictures.

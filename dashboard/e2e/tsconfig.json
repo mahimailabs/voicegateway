@@ -6,6 +6,6 @@
     "strict": true,
     "tsBuildInfoFile": "../node_modules/.tmp/tsconfig.e2e.tsbuildinfo"
   },
-  "include": ["./**/*.ts", "../playwright.config.ts"],
+  "include": ["./**/*.ts", "../playwright.config.ts", "../playwright.screens.config.ts"],
   "exclude": []
 }
