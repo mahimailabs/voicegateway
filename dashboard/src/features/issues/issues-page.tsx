@@ -276,16 +276,12 @@ function IssuesView({ all, complete, coverage }: { all: Issue[]; complete: boole
   return (
     <div className="mx-auto max-w-[1200px] space-y-6">
       <header className="space-y-1">
-        <h1 className="text-[28px] leading-tight font-semibold tracking-[-0.02em] text-balance">
-          {open.length} open{high ? `, ${high} high` : ""}. <span className="text-muted-foreground">{calls ? `On ${calls} calls and the components around them.` : "Nothing open on calls."}</span>
-        </h1>
-        <p className="text-[13px] text-muted-foreground">
-          {current.length
-            ? `Plus ${current.length} component ${current.length === 1 ? "finding" : "findings"}${currentHigh ? ` (${currentHigh} high)` : ""}. Source freshness is shown per finding.`
-            : complete ? "No open component findings." : "Standing-source coverage is incomplete."}
+        <h1 className="text-[28px] leading-tight font-semibold tracking-[-0.02em]">Issues</h1>
+        <p className="text-[13px] text-muted-foreground tnum">
+          {[`${open.length} open`, high ? `${high} high` : null, calls ? `on ${calls} calls` : "none on calls", current.length ? `${current.length} on components${currentHigh ? ` (${currentHigh} high)` : ""}` : null].filter(Boolean).join(" · ")}
         </p>
       </header>
-      {!complete && <p role="status" className="text-[13px] text-muted-foreground">Issue coverage is incomplete. {gaps ? `${gaps}. ` : ""}Listed findings are recorded evidence; missing findings do not establish recovery.</p>}
+      {!complete && <p role="status" className="text-[13px] text-muted-foreground">Not every source was checked{gaps ? ` (${gaps})` : ""}, so a problem missing from this list may still be there.</p>}
       <Tabs value={view} onValueChange={(v) => setView(v as View)}>
         <TabsList>
           {(["open", "resolved", "ignored", "archived"] as View[]).map((v) => (

@@ -345,3 +345,27 @@ func TestPostHogSettings(t *testing.T) {
 		})
 	}
 }
+
+// VOICEGATEWAY_ADMIN_PAGES names pages on this site only (decision 0041): a frame never loads
+// another origin, and a bad value stops start-up naming the variable.
+func TestAdminPagesStayOnThisSite(t *testing.T) {
+	c, err := Load(env(map[string]string{"VOICEGATEWAY_ADMIN_PAGES": " Business=/admin/ , Billing=/ops/billing"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(c.AdminPages) != 2 || c.AdminPages[0] != (AdminPage{Label: "Business", Path: "/admin/"}) || c.AdminPages[1].Path != "/ops/billing" {
+		t.Errorf("AdminPages = %+v", c.AdminPages)
+	}
+	if c, err := Load(env(nil)); err != nil || len(c.AdminPages) != 0 {
+		t.Errorf("unset: %+v, %v", c.AdminPages, err)
+	}
+	for _, bad := range []string{
+		"Business=https://evil.example/", "Business=//evil.example/", "Business=admin", "Business=/a/../b",
+		"=/admin", "Business", "Business=/admin?x=1", "Business=/api/v1/x", "Business=/auth/session", `Business=/\evil.example`,
+		"A=/1,B=/2,C=/3,D=/4,E=/5,F=/6,G=/7,H=/8,I=/9",
+	} {
+		if _, err := Load(env(map[string]string{"VOICEGATEWAY_ADMIN_PAGES": bad})); err == nil || !strings.Contains(err.Error(), "VOICEGATEWAY_ADMIN_PAGES") {
+			t.Errorf("%q: err = %v, want one naming VOICEGATEWAY_ADMIN_PAGES", bad, err)
+		}
+	}
+}

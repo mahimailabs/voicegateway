@@ -56,6 +56,36 @@
     --color-success-foreground: var(--success-foreground);
     --color-success: var(--success);
     --color-destructive-foreground: var(--destructive-foreground);
+    /* Apple's text styles, the same nine as app.mahimai.ca: text-large-title through text-caption-2. */
+    --text-large-title: 34px;
+    --text-large-title--line-height: 1.12;
+    --text-large-title--letter-spacing: -0.022em;
+    --text-large-title--font-weight: 700;
+    --text-title-1: 28px;
+    --text-title-1--line-height: 1.15;
+    --text-title-1--letter-spacing: -0.02em;
+    --text-title-1--font-weight: 700;
+    --text-title-2: 22px;
+    --text-title-2--line-height: 1.25;
+    --text-title-2--letter-spacing: -0.015em;
+    --text-title-2--font-weight: 600;
+    --text-headline: 17px;
+    --text-headline--line-height: 1.35;
+    --text-headline--letter-spacing: -0.01em;
+    --text-headline--font-weight: 600;
+    --text-body: 15px;
+    --text-body--line-height: 1.43;
+    --text-callout: 14px;
+    --text-callout--line-height: 1.43;
+    --text-footnote: 13px;
+    --text-footnote--line-height: 1.43;
+    --text-caption: 12px;
+    --text-caption--line-height: 1.3;
+    --text-caption-2: 11px;
+    --text-caption-2--line-height: 1.3;
+    /* Motion: one spring for things that arrive, one quick curve for things that leave. */
+    --ease-spring: cubic-bezier(0.32, 0.72, 0, 1);
+    --ease-exit: cubic-bezier(0.4, 0, 1, 1);
     --animate-ripple: ripple var(--duration,2s) ease calc(var(--i, 0)*.2s) infinite;
   @keyframes ripple {
   0%, 100% {
@@ -120,7 +150,8 @@
     /* The Clean Room, dark */
     --background: #000000;
     --foreground: #f5f5f7;
-    --card: #0a0a0a;
+    /* Grouped grey, so a panel reads as a panel on the black canvas (#0a0a0a disappeared). */
+    --card: #1c1c1e;
     --card-foreground: #f5f5f7;
     --popover: #2c2c2e;
     --popover-foreground: #f5f5f7;

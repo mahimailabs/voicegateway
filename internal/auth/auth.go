@@ -66,6 +66,8 @@ type Service struct {
 	// PublicHTTPS is true when VOICEGATEWAY_PUBLIC_URL is https: every session cookie is then
 	// Secure. It says nothing of how a request arrived, so it never lifts https_required.
 	PublicHTTPS bool
+	// AdminPages are VOICEGATEWAY_ADMIN_PAGES, which /auth/session lists for an instance admin only.
+	AdminPages []AdminPage
 	// PublicURL is VOICEGATEWAY_PUBLIC_URL, an invitation link's base when set.
 	PublicURL string
 	// Links reads and uses invitation links; nil serves no /auth/invitation routes.
@@ -313,6 +315,17 @@ type sessionBody struct {
 	Profile       store.AccountProfile `json:"profile"`
 	Email         string               `json:"email"`
 	Organisations []orgRoleBody        `json:"organisations"`
+	// InstanceAdmin is the account's instance admin flag (decision 0041); AdminPages are the
+	// operator's own pages for the console's Admin group, sent to an instance admin only.
+	InstanceAdmin bool        `json:"instanceAdmin"`
+	AdminPages    []AdminPage `json:"adminPages"`
+}
+
+// AdminPage is one of the operator's own pages in the console's Admin group (decision 0041): a
+// label and a same-origin path the console shows in a frame.
+type AdminPage struct {
+	Label string `json:"label"`
+	Path  string `json:"path"`
 }
 
 type orgRoleBody struct {
@@ -341,7 +354,10 @@ func (s *Service) session(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, err)
 		return
 	}
-	body := sessionBody{ID: p.UserID, Email: p.Email, Organisations: []orgRoleBody{}, Profile: profile}
+	body := sessionBody{ID: p.UserID, Email: p.Email, Organisations: []orgRoleBody{}, Profile: profile, InstanceAdmin: p.InstanceAdmin, AdminPages: []AdminPage{}}
+	if p.InstanceAdmin {
+		body.AdminPages = append(body.AdminPages, s.AdminPages...)
+	}
 	for org, role := range p.Roles {
 		body.Organisations = append(body.Organisations, orgRoleBody{ID: org, Role: role})
 	}

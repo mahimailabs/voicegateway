@@ -42,8 +42,11 @@ type API struct {
 	// Endpoints lists each project's worker metrics endpoints, from Postgres.
 	Endpoints WorkerEndpoints
 	Accounts  Accounts
-	Stats     Stats
-	Keys      Keys
+	// Admin reads the whole instance for an instance admin (decision 0041); without it those routes
+	// answer 503.
+	Admin Admin
+	Stats Stats
+	Keys  Keys
 	// Capacity stores capacity test requests and reads their results; without it those routes
 	// answer 503.
 	Capacity CapacityRuns
@@ -112,6 +115,9 @@ func (a *API) Routes() http.Handler {
 	// Every route goes through handle, which puts it behind its minimum role in routeAccess.
 	const project = "/api/v1/org/{orgId}/project/{projectId}"
 	handle(r, http.MethodGet, "/api/v1/workspaces", a.getWorkspaces)
+	handle(r, http.MethodGet, "/api/v1/admin/organisations", a.listAdminOrganisations)
+	handle(r, http.MethodGet, "/api/v1/admin/organisations/{orgId}/usage", a.getAdminOrganisationUsage)
+	handle(r, http.MethodGet, "/api/v1/admin/users", a.listAdminUsers)
 	handle(r, http.MethodGet, project+"/settings", a.getProjectSettings)
 	handle(r, http.MethodPut, project+"/settings", a.updateProjectSettings)
 	handle(r, http.MethodPut, project+"/settings/allowed-origins", a.updateAllowedOrigins)

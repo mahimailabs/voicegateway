@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react"
+import { Stat, StatStrip } from "@/components/stat-strip"
 import { Link, useNavigate, useParams } from "@tanstack/react-router"
 import { keepPreviousData, useInfiniteQuery, useQuery } from "@tanstack/react-query"
 import type { SortingState } from "@tanstack/react-table"
@@ -66,18 +67,6 @@ const answersOf = (r: Row) => r.summary.answerMs ?? []
 // Unknown when either count is unknown: it never reads as "no issues".
 const issueCounts = (r: Row) => (r.summary.issues.high === null || r.summary.issues.medium === null ? null : { high: r.summary.issues.high, medium: r.summary.issues.medium })
 
-function StatCard({ icon: I, value, label, children, alert }: { icon: Icon; value: React.ReactNode; label: string; children?: React.ReactNode; alert?: boolean }) {
-  return (
-    <div className="rounded-2xl border bg-background p-4">
-      <div className="flex items-center justify-between">
-        <p className="text-[13px] text-muted-foreground">{label}</p>
-        <I size={18} className={alert ? "text-destructive" : "text-muted-foreground"} />
-      </div>
-      <p className={cn("mt-2 text-[28px] leading-none font-semibold tracking-[-0.02em] tnum", alert && "text-destructive")}>{value}</p>
-      {children && <div className="mt-3">{children}</div>}
-    </div>
-  )
-}
 
 // Every turn's answer time on one 0 to 5 s scale, red past the response budget.
 const SCALE = 5000
@@ -114,7 +103,8 @@ export const serverSort: Record<string, string> = { started: "startedAt", length
 function AnswerCell({ r }: { r: Row }) {
   return r.summary.answerMsMedian !== null ? (
     <div className="flex items-center gap-2">
-      <span className={cn("w-12 text-[13px] tnum", r.summary.answerMsMedian > BUDGET_MS && "text-destructive")}>{fmt(r.summary.answerMsMedian)}</span>
+      {/* The dots carry the over-budget red; the number stays in ink. */}
+      <span className="w-12 text-[13px] tnum">{fmt(r.summary.answerMsMedian)}</span>
       <AnswerDots answers={answersOf(r)} />
     </div>
   ) : (
@@ -127,12 +117,14 @@ function IssuesCell({ r }: { r: Row }) {
   return n.high + n.medium ? (
     <Tooltip>
       <TooltipTrigger asChild>
-        <span className="flex cursor-help items-center gap-1">
-          {n.high > 0 && <span className="rounded-md bg-destructive/10 px-1.5 text-[11px] text-destructive tnum">{n.high} high</span>}
-          {n.medium > 0 && <span className="rounded-md bg-amber-500/10 px-1.5 text-[11px] text-amber-700 tnum dark:text-amber-400">{n.medium} medium</span>}
+        {/* A dot coloured by the worst finding and the count; the split by severity is in the tooltip. */}
+        <span className="flex min-w-0 cursor-help items-center gap-1.5 text-[13px] whitespace-nowrap tnum">
+          <span className={cn("size-1.5 shrink-0 rounded-full", n.high > 0 ? "bg-destructive" : "bg-amber-500")} aria-hidden />
+          <span className="truncate">{n.high + n.medium === 1 ? "1 issue" : `${n.high + n.medium} issues`}</span>
         </span>
       </TooltipTrigger>
       <TooltipContent className="max-w-80 text-xs">
+        <p className="mb-1 font-medium">{[n.high > 0 && `${n.high} high`, n.medium > 0 && `${n.medium} medium`].filter(Boolean).join(" · ")}</p>
         <ul className="space-y-0.5">
           {r.summary.issues.titles.map((t) => (
             <li key={t}>{t}</li>
@@ -199,11 +191,11 @@ export function columns(tagsOf: (call: CallSummary) => string[], CallName: CallL
       enableSorting: false,
       accessorFn: (r) => channelInfo[r.summary.channel].label,
       header: ({ column }) => <DataGridColumnHeader title="Channel" column={column} />,
-      size: 140,
+      size: 130,
       cell: ({ row: { original: r } }) => {
         const ch = channelInfo[r.summary.channel]
         return (
-          <span className="flex items-center gap-1.5 text-[12px] text-muted-foreground">
+          <span className="flex items-center gap-1.5 text-[13px] whitespace-nowrap text-muted-foreground">
             <ch.icon size={14} /> {ch.label}
           </span>
         )
@@ -213,15 +205,15 @@ export function columns(tagsOf: (call: CallSummary) => string[], CallName: CallL
       id: "started",
       accessorFn: (r) => r.started,
       header: ({ column }) => <DataGridColumnHeader title="Started" column={column} />,
-      size: 130,
-      cell: ({ row: { original: r } }) => <span className="text-[12px] text-muted-foreground tnum">{startedText(r)}</span>,
+      size: 140,
+      cell: ({ row: { original: r } }) => <span className="text-[13px] whitespace-nowrap text-muted-foreground tnum">{startedText(r)}</span>,
     },
     {
       id: "length",
       // Unknown sorts below every known length instead of reading as zero.
       accessorFn: (r) => r.summary.durationSeconds ?? -1,
       header: ({ column }) => <DataGridColumnHeader title="Length" column={column} />,
-      size: 90,
+      size: 80,
       meta: right,
       cell: ({ row: { original: r } }) => <span className="text-[13px] tnum">{r.summary.durationSeconds !== null ? length(r.summary.durationSeconds) : <span className="text-muted-foreground">?</span>}</span>,
     },
@@ -230,7 +222,7 @@ export function columns(tagsOf: (call: CallSummary) => string[], CallName: CallL
       // Unknown sorts below every known count instead of reading as zero.
       accessorFn: (r) => r.summary.turnCount ?? -1,
       header: ({ column }) => <DataGridColumnHeader title="Turns" column={column} />,
-      size: 80,
+      size: 70,
       meta: right,
       cell: ({ row: { original: r } }) => <span className="text-[13px] tnum">{r.summary.turnCount ?? <span className="text-muted-foreground">?</span>}</span>,
     },
@@ -238,7 +230,7 @@ export function columns(tagsOf: (call: CallSummary) => string[], CallName: CallL
       id: "answer",
       accessorFn: (r) => r.summary.answerMsMedian ?? -1,
       header: ({ column }) => <DataGridColumnHeader title="Answer time" column={column} />,
-      size: 190,
+      size: 170,
       cell: ({ row: { original: r } }) => <AnswerCell r={r} />,
     },
     {
@@ -249,7 +241,7 @@ export function columns(tagsOf: (call: CallSummary) => string[], CallName: CallL
         return n ? n.high * 100 + n.medium : -1
       },
       header: ({ column }) => <DataGridColumnHeader title="Issues" column={column} />,
-      size: 150,
+      size: 170,
       cell: ({ row: { original: r } }) => <IssuesCell r={r} />,
     },
     { id: "go", header: () => null, size: 32, enableSorting: false, cell: () => <CaretRight className="text-muted-foreground" /> },
@@ -421,20 +413,20 @@ export function CallsPage() {
           <h1 className="text-[28px] leading-tight font-semibold tracking-[-0.02em]">Calls</h1>
           <TimeRangePicker value={range} onChange={setRange} now={now} />
         </div>
-        <div className="grid grid-cols-2 gap-6 sm:grid-cols-4">
-          <StatCard icon={PhoneCall} value={known(t?.callCount)} label="Calls">
+        <StatStrip>
+          <Stat value={known(t?.callCount)} label="Calls">
             <div className="flex gap-0.5">
               {channels.map((c) => (
                 <span key={c} className="h-2 rounded-sm bg-primary/60" style={{ flex: t?.byChannel[c] ?? 0 }} title={`${channelInfo[c].label}: ${t?.byChannel[c]}`} />
               ))}
             </div>
             <p className="mt-1.5 text-[11px] text-muted-foreground">{channels.map((c) => `${t?.byChannel[c]} ${channelInfo[c].label.toLowerCase()}`).join(" · ")}</p>
-          </StatCard>
-          <StatCard icon={Timer} value={!answers || answers.p50Ms === null ? "Unknown" : fmt(answers.p50Ms)} label="Median answer time" alert={answers?.p50Ms != null && answers.p50Ms > answers.budgetMs}>
+          </Stat>
+          <Stat value={!answers || answers.p50Ms === null ? "Unknown" : fmt(answers.p50Ms)} label="Median answer time" alert={answers?.p50Ms != null && answers.p50Ms > answers.budgetMs}>
             <AnswerDots answers={answers?.valuesMs ?? []} />
             <p className="mt-1.5 text-[11px] text-muted-foreground">{answers ? `${known(answers.overBudget)} of ${known(answers.turns)} turns over the ${answers.budgetMs / 1000} s budget` : ""}</p>
-          </StatCard>
-          <StatCard icon={WarningCircle} value={`${known(flagged)} of ${known(t?.callCount)}`} label="Calls with issues" alert={(flagged ?? 0) > 0}>
+          </Stat>
+          <Stat value={`${known(flagged)} of ${known(t?.callCount)}`} label="Calls with issues" alert={(flagged ?? 0) > 0}>
             <div className="flex gap-0.5">
               {t &&
                 ([
@@ -445,11 +437,11 @@ export function CallsPage() {
                 ] as const).map(([k, color]) => (t.issues[k] ? <span key={k} className={cn("h-2 rounded-sm", color)} style={{ flex: t.issues[k] ?? 0 }} title={`${k}: ${t.issues[k]}`} /> : null))}
             </div>
             <p className="mt-1.5 text-[11px] text-muted-foreground">{t ? `calls by worst finding: ${known(t.issues.high)} high · ${known(t.issues.medium)} medium · ${known(t.issues.unknown)} not checked` : ""}</p>
-          </StatCard>
-          <StatCard icon={Waveform} value={`${known(t?.recorded)} of ${known(t?.callCount)}`} label="Recorded">
+          </Stat>
+          <Stat value={`${known(t?.recorded)} of ${known(t?.callCount)}`} label="Recorded">
             <p className="text-[11px] text-muted-foreground">from the agent's own upload, opt-in per project</p>
-          </StatCard>
-        </div>
+          </Stat>
+        </StatStrip>
       </header>
 
       <section className="space-y-3">

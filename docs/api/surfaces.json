@@ -44,7 +44,10 @@
       "getAlertSetup",
       "getCall",
       "getCallStats",
-      "listIssues"
+      "listIssues",
+      "listAdminOrganisations",
+      "getAdminOrganisationUsage",
+      "listAdminUsers"
     ],
     "/project": [
       "getProjectSnapshot"
@@ -162,6 +165,9 @@
       "listCalls",
       "getCall",
       "getMyOrganisationEntitlement"
+    ],
+    "/admin/page/$slug": [
+      "getProjectSettings"
     ]
   },
   "shell": [
@@ -178,7 +184,10 @@
     "listIssues",
     "updateAlertChannel",
     "deleteAlertChannel",
-    "testAlertChannel"
+    "testAlertChannel",
+    "listAdminOrganisations",
+    "getAdminOrganisationUsage",
+    "listAdminUsers"
   ],
   "widgets": [
     "answer-time",

@@ -461,4 +461,5 @@ type User struct {
 	PasswordVersion int32
 	DisplayName     pgtype.Text
 	ProfileRevision int64
+	InstanceAdmin   bool
 }

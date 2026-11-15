@@ -2139,6 +2139,123 @@ paths:
           $ref: "#/components/responses/InternalError"
         "503":
           $ref: "#/components/responses/SourceUnavailable"
+  /api/v1/admin/organisations:
+    get:
+      operationId: listAdminOrganisations
+      summary: List the instance's organisations
+      security:
+        - consoleSession: []
+      tags:
+        - Console reads
+      x-access:
+        principal: instance_admin
+        minimumRole: InstanceAdmin
+        browserSessionTransport: session_cookie
+        scope: instance_admin
+      description: For a signed-in instance admin (decision 0041), a flag on the account set from the command line. The newest 500 organisations, newest first, each with its member, admin and project counts at this read; total counts every organisation. Any other credential is forbidden.
+      parameters: []
+      responses:
+        "200":
+          description: Authorised read result at this read.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminOrganisations"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/SourceUnavailable"
+  /api/v1/admin/users:
+    get:
+      operationId: listAdminUsers
+      summary: List the instance's accounts
+      security:
+        - consoleSession: []
+      tags:
+        - Console reads
+      x-access:
+        principal: instance_admin
+        minimumRole: InstanceAdmin
+        browserSessionTransport: session_cookie
+        scope: instance_admin
+      description: For a signed-in instance admin (decision 0041). The newest 500 accounts, newest first, each with its organisation roles; total counts every account. Never a password, a session or a token.
+      parameters: []
+      responses:
+        "200":
+          description: Authorised read result at this read.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminUsers"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/SourceUnavailable"
+  /api/v1/admin/organisations/{orgId}/usage:
+    get:
+      operationId: getAdminOrganisationUsage
+      summary: Read an organisation's profiled call time in a period, as an instance admin
+      security:
+        - consoleSession: []
+      tags:
+        - Console reads
+      x-access:
+        principal: instance_admin
+        minimumRole: InstanceAdmin
+        browserSessionTransport: session_cookie
+        scope: instance_admin
+      description: For a signed-in instance admin (decision 0041). The same read as getOrganisationUsage, by the rules of decision 0029. A missing or bad from or to, to not after from, or a span over 62 days is invalid_request; an unknown organisation is not_found.
+      parameters:
+        - $ref: "#/components/parameters/InstanceOrganisationId"
+        - name: from
+          in: query
+          required: true
+          description: Inclusive start of the period, an RFC 3339 instant.
+          schema:
+            type: string
+            format: date-time
+        - name: to
+          in: query
+          required: true
+          description: Exclusive end of the period, an RFC 3339 instant, after from and at most 62 days later.
+          schema:
+            type: string
+            format: date-time
+      responses:
+        "200":
+          description: Authorised read result at this read.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InstanceUsage"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/SourceUnavailable"
   /api/v1/workspaces:
     get:
       operationId: getWorkspaces
@@ -6828,6 +6945,125 @@ components:
           description: "<VOICEGATEWAY_PUBLIC_URL>/invite#<token>, only without SMTP and only in the answer that made it."
           x-null-reason: SMTP is set, so the link went by email to its address only, whether or not the send succeeded; or this is a repeat, and only the token's hash is kept.
           x-source: { kind: computed, file: internal/invite/invite.go, pointer: null, detail: "VOICEGATEWAY_PUBLIC_URL, /invite#, and the token." }
+    AdminOrganisations:
+      type: object
+      additionalProperties: false
+      required: [ items, total ]
+      properties:
+        items:
+          type: array
+          maxItems: 500
+          description: The newest organisations, newest first.
+          x-source: { kind: configuration, file: migrations/postgres/00001_projects.sql, pointer: null, detail: "organisations rows." }
+          items:
+            $ref: "#/components/schemas/AdminOrganisation"
+        total:
+          type: integer
+          minimum: 0
+          x-unit: count
+          x-configuration: true
+          description: Every organisation on the instance at this read, so 0 is a true zero.
+          x-source: { kind: configuration, file: migrations/postgres/00001_projects.sql, pointer: null, detail: "count of organisations rows." }
+    AdminOrganisation:
+      type: object
+      additionalProperties: false
+      required: [ id, name, createdAt, members, admins, projects ]
+      properties:
+        id:
+          type: string
+          pattern: "^[a-z0-9][a-z0-9-]{0,62}$"
+          description: The organisation's id.
+          x-source: { kind: configuration, file: migrations/postgres/00001_projects.sql, pointer: null, detail: "organisations.id." }
+        name:
+          type: string
+          description: The organisation's name.
+          x-source: { kind: configuration, file: migrations/postgres/00001_projects.sql, pointer: null, detail: "organisations.name." }
+        createdAt:
+          type: string
+          format: date-time
+          description: When the organisation was created, in UTC.
+          x-source: { kind: configuration, file: migrations/postgres/00001_projects.sql, pointer: null, detail: "organisations.created_at." }
+        members:
+          type: integer
+          minimum: 0
+          x-unit: count
+          x-configuration: true
+          description: Accounts with a role in the organisation at this read, so 0 is a true zero.
+          x-source: { kind: configuration, file: migrations/postgres/00004_accounts.sql, pointer: null, detail: "count of memberships rows." }
+        admins:
+          type: integer
+          minimum: 0
+          x-unit: count
+          x-configuration: true
+          description: Of members, those with the Admin role.
+          x-source: { kind: configuration, file: migrations/postgres/00004_accounts.sql, pointer: null, detail: "count of memberships rows with role admin." }
+        projects:
+          type: integer
+          minimum: 0
+          x-unit: count
+          x-configuration: true
+          description: The organisation's projects at this read, so 0 is a true zero.
+          x-source: { kind: configuration, file: migrations/postgres/00001_projects.sql, pointer: null, detail: "count of projects rows." }
+    AdminUsers:
+      type: object
+      additionalProperties: false
+      required: [ items, total ]
+      properties:
+        items:
+          type: array
+          maxItems: 500
+          description: The newest accounts, newest first.
+          x-source: { kind: configuration, file: migrations/postgres/00004_accounts.sql, pointer: null, detail: "users rows." }
+          items:
+            $ref: "#/components/schemas/AdminUser"
+        total:
+          type: integer
+          minimum: 0
+          x-unit: count
+          x-configuration: true
+          description: Every account on the instance at this read.
+          x-source: { kind: configuration, file: migrations/postgres/00004_accounts.sql, pointer: null, detail: "count of users rows." }
+    AdminUser:
+      type: object
+      additionalProperties: false
+      required: [ id, email, createdAt, instanceAdmin, organisations ]
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: The account's id.
+          x-source: { kind: configuration, file: migrations/postgres/00004_accounts.sql, pointer: null, detail: "users.id." }
+        email:
+          type: string
+          description: The account's email address, case-folded.
+          x-source: { kind: configuration, file: migrations/postgres/00004_accounts.sql, pointer: null, detail: "users.email." }
+        createdAt:
+          type: string
+          format: date-time
+          description: When the account was created, in UTC.
+          x-source: { kind: configuration, file: migrations/postgres/00004_accounts.sql, pointer: null, detail: "users.created_at." }
+        instanceAdmin:
+          type: boolean
+          description: Whether the account is an instance admin (decision 0041).
+          x-source: { kind: configuration, file: migrations/postgres/00026_instance_admin.sql, pointer: null, detail: "users.instance_admin." }
+        organisations:
+          type: array
+          description: The organisations the account belongs to, by id, each with its role there. Empty is an account with no organisation.
+          x-source: { kind: configuration, file: migrations/postgres/00004_accounts.sql, pointer: null, detail: "memberships rows." }
+          items:
+            type: object
+            additionalProperties: false
+            required: [ id, role ]
+            properties:
+              id:
+                type: string
+                description: The organisation's id.
+                x-source: { kind: configuration, file: migrations/postgres/00004_accounts.sql, pointer: null, detail: "memberships.organisation_id." }
+              role:
+                type: string
+                enum: [ Admin, Member, Viewer ]
+                description: The account's role in that organisation.
+                x-source: { kind: configuration, file: migrations/postgres/00004_accounts.sql, pointer: null, detail: "memberships.role." }
     InstanceUsage:
       type: object
       additionalProperties: false

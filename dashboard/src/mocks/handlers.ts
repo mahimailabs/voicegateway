@@ -1,7 +1,7 @@
 import { issueMetadataOf, saveIssueMetadata } from "./issue-metadata"
 import { metadataOf, saveMetadata } from "./dispositions"
 import { http, HttpResponse, type PathParams } from "msw"
-import type { AlertEvents, AlertIncident, AlertIncidents, AlertRuleSetup, AlertSetup, SavedAlertChannel, Call, CallPage, CallStats, CreatedInvitation, CreatedPasswordReset, CreatedProjectKey, Invitations, LiveKitCredentialsUpdate, OrganisationEntitlement, ProjectCreate, ProjectCreated, Member, Members, ProjectConnection, ProjectKeys, IssueList, ProjectSettings, ProviderProbes, Resources, Workers, CapacityRun, CapacityRunStart, CloudAgents, Egress, Error as ApiErrorBody, Ingress, MediaServer, ProjectSnapshot, Sip, Workspaces } from "@/lib/api-types"
+import type { AlertEvents, AlertIncident, AlertIncidents, AlertRuleSetup, AlertSetup, SavedAlertChannel, Call, CallPage, CallStats, CreatedInvitation, CreatedPasswordReset, CreatedProjectKey, Invitations, LiveKitCredentialsUpdate, OrganisationEntitlement, ProjectCreate, ProjectCreated, Member, Members, ProjectConnection, ProjectKeys, IssueList, ProjectSettings, ProviderProbes, Resources, Workers, CapacityRun, CapacityRunStart, CloudAgents, Egress, Error as ApiErrorBody, Ingress, MediaServer, ProjectSnapshot, Sip, Workspaces, AdminOrganisations, AdminUsers, InstanceUsage } from "@/lib/api-types"
 import { callStats } from "./call-stats"
 import { capturedCalls } from "./fixtures"
 import { alertEvents, alertIncidents, issueList, resolveAlertIncident } from "./insights"
@@ -343,6 +343,27 @@ export const handlers = [
     return testAlertChannel(String(params.kind)) ? new HttpResponse(null, { status: 204 }) : fail(404, "not_found", "this channel is not set up")
   }),
   http.get<PathParams, never, Workspaces>("*/api/v1/workspaces", () => HttpResponse.json(workspaces())),
+
+  // The instance admin reads (decision 0041), from the mock's own organisations and members.
+  http.get<PathParams, never, AdminOrganisations>("*/api/v1/admin/organisations", () => {
+    const items = workspaces().items.map((o, i) => ({ id: o.id, name: o.name, createdAt: new Date(Date.UTC(2026, 9, 1 + i)).toISOString(), members: i === 0 ? members().items.length : 1, admins: 1, projects: o.projects.length }))
+    return HttpResponse.json({ items, total: items.length })
+  }),
+  http.get<PathParams, never, AdminUsers>("*/api/v1/admin/users", () => {
+    const org = workspaces().items[0]?.id
+    const items = members().items.map((m, i) => ({ id: `00000000-0000-4000-8000-${String(i + 1).padStart(12, "0")}`, email: m.email, createdAt: new Date(Date.UTC(2026, 9, 1 + i)).toISOString(), instanceAdmin: i === 0, organisations: org ? [{ id: org, role: m.role }] : [] }))
+    return HttpResponse.json({ items, total: items.length })
+  }),
+  http.get<PathParams, never, InstanceUsage | ApiErrorBody>("*/api/v1/admin/organisations/:orgId/usage", ({ params, request }) => {
+    if (!knownOrg(params.orgId)) return fail(404, "not_found", "no such organisation")
+    const q = new URL(request.url).searchParams
+    const from = Date.parse(q.get("from") ?? "")
+    const to = Date.parse(q.get("to") ?? "")
+    if (Number.isNaN(from) || Number.isNaN(to) || to <= from || to - from > 62 * 86_400_000) return fail(400, "invalid_request", "from and to must be RFC 3339 instants, to after from, at most 62 days apart")
+    const calls = capturedCalls().filter((c) => c.startedAt !== null && c.endedAt !== null)
+    const callSeconds = Math.floor(calls.reduce((s, c) => s + (Date.parse(c.endedAt!) - Date.parse(c.startedAt!)) / 1000, 0))
+    return HttpResponse.json({ organisationId: String(params.orgId), from: new Date(from).toISOString(), to: new Date(to).toISOString(), callSeconds, calls: calls.length, inferredCalls: 0, inferredCallSeconds: 0, unendedCalls: 0, unmeasuredCalls: 0 })
+  }),
 
   // Project API keys, in memory (settings.ts).
   http.get<PathParams, never, ProjectKeys | ApiErrorBody>(`${project}/keys`, ({ params }) => (known(params) ? HttpResponse.json(projectKeys(String(params.projectId))) : fail(404, "not_found", "No such project."))),

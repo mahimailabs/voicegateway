@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react"
-import { CaretRight, Flask, Info, MagnifyingGlass, X, LockSimpleOpen, PhoneIncoming, PhoneOutgoing, ShieldWarning, Timer } from "@phosphor-icons/react"
-import type { Icon } from "@phosphor-icons/react"
+import { Stat, StatStrip } from "@/components/stat-strip"
+import { CaretRight, Flask, Info, MagnifyingGlass, X, PhoneIncoming, PhoneOutgoing } from "@phosphor-icons/react"
 import { CategoryBar } from "@/components/tremor/CategoryBar"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
 import { Command, CommandEmpty, CommandInput, CommandItem, CommandList } from "@/components/ui/command"
@@ -93,18 +93,6 @@ function NumberList({ items, max = SHOW, prefix = "", small }: { items: Num[]; m
 const tone = { high: "bg-destructive", medium: "bg-amber-500", low: "bg-muted-foreground/40" }
 
 // A stat with a small picture of what the number means, not just the number.
-function StatCard({ icon: I, value, label, children, alert }: { icon: Icon; value: React.ReactNode; label: string; children?: React.ReactNode; alert?: boolean }) {
-  return (
-    <div className="rounded-2xl border bg-background p-4">
-      <div className="flex items-center justify-between">
-        <p className="text-[13px] text-muted-foreground">{label}</p>
-        <I size={18} className={alert ? "text-destructive" : "text-muted-foreground"} />
-      </div>
-      <p className={cn("mt-2 text-[28px] leading-none font-semibold tracking-[-0.02em] tnum", alert && "text-destructive")}>{value}</p>
-      {children && <div className="mt-3">{children}</div>}
-    </div>
-  )
-}
 
 function Chip({ children, bad }: { children: React.ReactNode; bad?: boolean }) {
   return <span className={cn("rounded-md px-1.5 py-0.5 text-[11px] whitespace-nowrap", bad ? "bg-destructive/10 text-destructive" : "bg-muted text-muted-foreground")}>{children}</span>
@@ -216,13 +204,13 @@ function SipView({ sip, ms, test, callsNote }: { sip: SipData; ms: MediaServerDa
             <TooltipContent className="max-w-96 text-xs leading-relaxed">{`${sip.source} Read ${new Date(sip.readAt).toLocaleString()}.`}</TooltipContent>
           </Tooltip>
         </div>
-        <div className="grid grid-cols-2 gap-6 sm:grid-cols-4">
-          <StatCard icon={PhoneIncoming} value={numbers.length} label="Phone numbers">
+        <StatStrip>
+          <Stat value={numbers.length} label="Phone numbers">
             <div className="flex flex-wrap items-center gap-1">
               <NumberList small max={2} items={numbers.map((n) => ({ key: n, label: shown(rows.find((x) => x.number === n)!) }))} />
             </div>
-          </StatCard>
-          <StatCard icon={LockSimpleOpen} value={`${legs.filter((l) => l.secure).length} of ${legs.length}`} label="Phone legs encrypted" alert={legs.some((l) => !l.secure)}>
+          </Stat>
+          <Stat value={`${legs.filter((l) => l.secure).length} of ${legs.length}`} label="Phone legs encrypted" alert={legs.some((l) => !l.secure)}>
             <div className="flex gap-1">
               {legs.map((l) => (
                 <Tooltip key={l.name}>
@@ -234,19 +222,19 @@ function SipView({ sip, ms, test, callsNote }: { sip: SipData; ms: MediaServerDa
               ))}
             </div>
             <p className="mt-1.5 text-[11px] text-muted-foreground">{`${legs.filter((l) => !l.secure).length} plain, ${legs.filter((l) => l.secure).length} encrypted`}</p>
-          </StatCard>
-          <StatCard icon={Timer} value={answer === null ? "Unknown" : `${answer.toFixed(1)} s`} label="Ring to answered">
+          </Stat>
+          <Stat value={answer === null ? "Unknown" : `${answer.toFixed(1)} s`} label="Ring to answered">
             <p className="text-[11px] text-muted-foreground">
               {answer === null
                 ? (callsNote ?? "No phone call watched yet")
                 : `median of ${answers.length} watched ${answers.length === 1 ? "call" : "calls"}${calls.every((r) => r.participants.some((p) => p.sip?.trunkId && ms?.sipTrunks[p.sip.trunkId])) ? ", our test trunk only" : ""}`}
             </p>
-          </StatCard>
-          <StatCard icon={ShieldWarning} value={list.length} label="Checks to fix" alert={list.some((c) => c.severity === "high")}>
+          </Stat>
+          <Stat value={list.length} label="Checks to fix" alert={list.some((c) => c.severity === "high")}>
             <CategoryBar values={[sev("high"), sev("medium"), sev("low")]} colors={["alert", "amber", "quiet"]} showLabels={false} />
             <p className="mt-1.5 text-[11px] text-muted-foreground">{`${sev("high")} high · ${sev("medium")} medium · ${sev("low")} low`}</p>
-          </StatCard>
-        </div>
+          </Stat>
+        </StatStrip>
       </header>
 
       <Tabs value={tab} onValueChange={setTab} className="gap-5">

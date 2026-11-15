@@ -2,7 +2,7 @@
 
 import type { Client, ClientMeta, Options as Options2, RequestResult, ServerSentEventsResult, TDataShape } from './client';
 import { client } from './client.gen';
-import type { CreateEmbedTokenData, CreateEmbedTokenErrors, CreateEmbedTokenResponses, CreateInvitationData, CreateInvitationErrors, CreateInvitationResponses, CreateOrganisationInvitationData, CreateOrganisationInvitationErrors, CreateOrganisationInvitationResponses, CreatePasswordResetData, CreatePasswordResetErrors, CreatePasswordResetResponses, CreateProjectData, CreateProjectErrors, CreateProjectKeyData, CreateProjectKeyErrors, CreateProjectKeyResponses, CreateProjectResponses, DeleteAlertChannelData, DeleteAlertChannelErrors, DeleteAlertChannelResponses, GetAlertSetupData, GetAlertSetupErrors, GetAlertSetupResponses, GetCallData, GetCallErrors, GetCallMetadataData, GetCallMetadataErrors, GetCallMetadataResponses, GetCallResponses, GetCallStatsData, GetCallStatsErrors, GetCallStatsResponses, GetCallTagsData, GetCallTagsErrors, GetCallTagsResponses, GetCapacityData, GetCapacityErrors, GetCapacityResponses, GetCloudAgentsData, GetCloudAgentsErrors, GetCloudAgentsResponses, GetEgressData, GetEgressErrors, GetEgressResponses, GetIngressData, GetIngressErrors, GetIngressResponses, GetInvitationsData, GetInvitationsErrors, GetInvitationsResponses, GetIssueMetadataData, GetIssueMetadataErrors, GetIssueMetadataResponses, GetLiveEventsData, GetLiveEventsErrors, GetLiveEventsResponse, GetLiveEventsResponses, GetMediaServerData, GetMediaServerErrors, GetMediaServerResponses, GetMembersData, GetMembersErrors, GetMembersResponses, GetMyOrganisationEntitlementData, GetMyOrganisationEntitlementErrors, GetMyOrganisationEntitlementResponses, GetOrganisationData, GetOrganisationEntitlementData, GetOrganisationEntitlementErrors, GetOrganisationEntitlementResponses, GetOrganisationErrors, GetOrganisationResponses, GetOrganisationUsageData, GetOrganisationUsageErrors, GetOrganisationUsageResponses, GetProjectConnectionData, GetProjectConnectionErrors, GetProjectConnectionResponses, GetProjectSettingsData, GetProjectSettingsErrors, GetProjectSettingsResponses, GetProjectSnapshotData, GetProjectSnapshotErrors, GetProjectSnapshotResponses, GetProviderProbesData, GetProviderProbesErrors, GetProviderProbesResponses, GetRecordingMediaData, GetRecordingMediaErrors, GetRecordingMediaResponses, GetResourcesData, GetResourcesErrors, GetResourcesResponses, GetSipData, GetSipErrors, GetSipResponses, GetWorkersData, GetWorkersErrors, GetWorkersResponses, GetWorkspacesData, GetWorkspacesErrors, GetWorkspacesResponses, ListAlertEventsData, ListAlertEventsErrors, ListAlertEventsResponses, ListAlertIncidentsData, ListAlertIncidentsErrors, ListAlertIncidentsResponses, ListCallsData, ListCallsErrors, ListCallsResponses, ListIssuesData, ListIssuesErrors, ListIssuesResponses, ListProjectKeysData, ListProjectKeysErrors, ListProjectKeysResponses, PutOrganisationData, PutOrganisationEntitlementData, PutOrganisationEntitlementErrors, PutOrganisationEntitlementResponses, PutOrganisationErrors, PutOrganisationResponses, RemoveMemberData, RemoveMemberErrors, RemoveMemberResponses, ResolveAlertIncidentData, ResolveAlertIncidentErrors, ResolveAlertIncidentResponses, RevokeInvitationData, RevokeInvitationErrors, RevokeInvitationResponses, RevokeProjectKeyData, RevokeProjectKeyErrors, RevokeProjectKeyResponses, StartCapacityRunData, StartCapacityRunErrors, StartCapacityRunResponses, StopCapacityRunData, StopCapacityRunErrors, StopCapacityRunResponses, TestAlertChannelData, TestAlertChannelErrors, TestAlertChannelResponses, UpdateAlertChannelData, UpdateAlertChannelErrors, UpdateAlertChannelResponses, UpdateAlertRuleData, UpdateAlertRuleErrors, UpdateAlertRuleResponses, UpdateAllowedOriginsData, UpdateAllowedOriginsErrors, UpdateAllowedOriginsResponses, UpdateCallMetadataData, UpdateCallMetadataErrors, UpdateCallMetadataResponses, UpdateIssueMetadataData, UpdateIssueMetadataErrors, UpdateIssueMetadataResponses, UpdateMemberData, UpdateMemberErrors, UpdateMemberResponses, UpdateProjectLiveKitCredentialsData, UpdateProjectLiveKitCredentialsErrors, UpdateProjectLiveKitCredentialsResponses, UpdateProjectSettingsData, UpdateProjectSettingsErrors, UpdateProjectSettingsResponses } from './types.gen';
+import type { CreateEmbedTokenData, CreateEmbedTokenErrors, CreateEmbedTokenResponses, CreateInvitationData, CreateInvitationErrors, CreateInvitationResponses, CreateOrganisationInvitationData, CreateOrganisationInvitationErrors, CreateOrganisationInvitationResponses, CreatePasswordResetData, CreatePasswordResetErrors, CreatePasswordResetResponses, CreateProjectData, CreateProjectErrors, CreateProjectKeyData, CreateProjectKeyErrors, CreateProjectKeyResponses, CreateProjectResponses, DeleteAlertChannelData, DeleteAlertChannelErrors, DeleteAlertChannelResponses, GetAdminOrganisationUsageData, GetAdminOrganisationUsageErrors, GetAdminOrganisationUsageResponses, GetAlertSetupData, GetAlertSetupErrors, GetAlertSetupResponses, GetCallData, GetCallErrors, GetCallMetadataData, GetCallMetadataErrors, GetCallMetadataResponses, GetCallResponses, GetCallStatsData, GetCallStatsErrors, GetCallStatsResponses, GetCallTagsData, GetCallTagsErrors, GetCallTagsResponses, GetCapacityData, GetCapacityErrors, GetCapacityResponses, GetCloudAgentsData, GetCloudAgentsErrors, GetCloudAgentsResponses, GetEgressData, GetEgressErrors, GetEgressResponses, GetIngressData, GetIngressErrors, GetIngressResponses, GetInvitationsData, GetInvitationsErrors, GetInvitationsResponses, GetIssueMetadataData, GetIssueMetadataErrors, GetIssueMetadataResponses, GetLiveEventsData, GetLiveEventsErrors, GetLiveEventsResponse, GetLiveEventsResponses, GetMediaServerData, GetMediaServerErrors, GetMediaServerResponses, GetMembersData, GetMembersErrors, GetMembersResponses, GetMyOrganisationEntitlementData, GetMyOrganisationEntitlementErrors, GetMyOrganisationEntitlementResponses, GetOrganisationData, GetOrganisationEntitlementData, GetOrganisationEntitlementErrors, GetOrganisationEntitlementResponses, GetOrganisationErrors, GetOrganisationResponses, GetOrganisationUsageData, GetOrganisationUsageErrors, GetOrganisationUsageResponses, GetProjectConnectionData, GetProjectConnectionErrors, GetProjectConnectionResponses, GetProjectSettingsData, GetProjectSettingsErrors, GetProjectSettingsResponses, GetProjectSnapshotData, GetProjectSnapshotErrors, GetProjectSnapshotResponses, GetProviderProbesData, GetProviderProbesErrors, GetProviderProbesResponses, GetRecordingMediaData, GetRecordingMediaErrors, GetRecordingMediaResponses, GetResourcesData, GetResourcesErrors, GetResourcesResponses, GetSipData, GetSipErrors, GetSipResponses, GetWorkersData, GetWorkersErrors, GetWorkersResponses, GetWorkspacesData, GetWorkspacesErrors, GetWorkspacesResponses, ListAdminOrganisationsData, ListAdminOrganisationsErrors, ListAdminOrganisationsResponses, ListAdminUsersData, ListAdminUsersErrors, ListAdminUsersResponses, ListAlertEventsData, ListAlertEventsErrors, ListAlertEventsResponses, ListAlertIncidentsData, ListAlertIncidentsErrors, ListAlertIncidentsResponses, ListCallsData, ListCallsErrors, ListCallsResponses, ListIssuesData, ListIssuesErrors, ListIssuesResponses, ListProjectKeysData, ListProjectKeysErrors, ListProjectKeysResponses, PutOrganisationData, PutOrganisationEntitlementData, PutOrganisationEntitlementErrors, PutOrganisationEntitlementResponses, PutOrganisationErrors, PutOrganisationResponses, RemoveMemberData, RemoveMemberErrors, RemoveMemberResponses, ResolveAlertIncidentData, ResolveAlertIncidentErrors, ResolveAlertIncidentResponses, RevokeInvitationData, RevokeInvitationErrors, RevokeInvitationResponses, RevokeProjectKeyData, RevokeProjectKeyErrors, RevokeProjectKeyResponses, StartCapacityRunData, StartCapacityRunErrors, StartCapacityRunResponses, StopCapacityRunData, StopCapacityRunErrors, StopCapacityRunResponses, TestAlertChannelData, TestAlertChannelErrors, TestAlertChannelResponses, UpdateAlertChannelData, UpdateAlertChannelErrors, UpdateAlertChannelResponses, UpdateAlertRuleData, UpdateAlertRuleErrors, UpdateAlertRuleResponses, UpdateAllowedOriginsData, UpdateAllowedOriginsErrors, UpdateAllowedOriginsResponses, UpdateCallMetadataData, UpdateCallMetadataErrors, UpdateCallMetadataResponses, UpdateIssueMetadataData, UpdateIssueMetadataErrors, UpdateIssueMetadataResponses, UpdateMemberData, UpdateMemberErrors, UpdateMemberResponses, UpdateProjectLiveKitCredentialsData, UpdateProjectLiveKitCredentialsErrors, UpdateProjectLiveKitCredentialsResponses, UpdateProjectSettingsData, UpdateProjectSettingsErrors, UpdateProjectSettingsResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -900,6 +900,51 @@ export const revokeProjectKey = <ThrowOnError extends boolean = false>(options: 
             type: 'apiKey'
         }],
     url: '/api/v1/org/{orgId}/project/{projectId}/keys/{keyId}',
+    ...options
+});
+
+/**
+ * List the instance's organisations
+ *
+ * For a signed-in instance admin (decision 0041), a flag on the account set from the command line. The newest 500 organisations, newest first, each with its member, admin and project counts at this read; total counts every organisation. Any other credential is forbidden.
+ */
+export const listAdminOrganisations = <ThrowOnError extends boolean = false>(options?: Options<ListAdminOrganisationsData, ThrowOnError>): RequestResult<ListAdminOrganisationsResponses, ListAdminOrganisationsErrors, ThrowOnError> => (options?.client ?? client).get<ListAdminOrganisationsResponses, ListAdminOrganisationsErrors, ThrowOnError>({
+    security: [{
+            in: 'cookie',
+            name: 'vg_session',
+            type: 'apiKey'
+        }],
+    url: '/api/v1/admin/organisations',
+    ...options
+});
+
+/**
+ * List the instance's accounts
+ *
+ * For a signed-in instance admin (decision 0041). The newest 500 accounts, newest first, each with its organisation roles; total counts every account. Never a password, a session or a token.
+ */
+export const listAdminUsers = <ThrowOnError extends boolean = false>(options?: Options<ListAdminUsersData, ThrowOnError>): RequestResult<ListAdminUsersResponses, ListAdminUsersErrors, ThrowOnError> => (options?.client ?? client).get<ListAdminUsersResponses, ListAdminUsersErrors, ThrowOnError>({
+    security: [{
+            in: 'cookie',
+            name: 'vg_session',
+            type: 'apiKey'
+        }],
+    url: '/api/v1/admin/users',
+    ...options
+});
+
+/**
+ * Read an organisation's profiled call time in a period, as an instance admin
+ *
+ * For a signed-in instance admin (decision 0041). The same read as getOrganisationUsage, by the rules of decision 0029. A missing or bad from or to, to not after from, or a span over 62 days is invalid_request; an unknown organisation is not_found.
+ */
+export const getAdminOrganisationUsage = <ThrowOnError extends boolean = false>(options: Options<GetAdminOrganisationUsageData, ThrowOnError>): RequestResult<GetAdminOrganisationUsageResponses, GetAdminOrganisationUsageErrors, ThrowOnError> => (options.client ?? client).get<GetAdminOrganisationUsageResponses, GetAdminOrganisationUsageErrors, ThrowOnError>({
+    security: [{
+            in: 'cookie',
+            name: 'vg_session',
+            type: 'apiKey'
+        }],
+    url: '/api/v1/admin/organisations/{orgId}/usage',
     ...options
 });
 

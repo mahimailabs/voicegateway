@@ -23,6 +23,9 @@ const (
 	scopeOrganisation = "organisation"
 	scopePrincipal    = "principal"
 	scopeInstance     = "instance"
+	// scopeAdmin is the instance admin routes (decision 0041): a signed-in account with the
+	// instance admin flag, at the role InstanceAdmin, and no other credential.
+	scopeAdmin = "instance_admin"
 )
 
 // routeAccess is every /api/v1 route's access, by method and chi pattern. Routes registers a route
@@ -76,6 +79,10 @@ var routeAccess = map[string]access{
 	"GET /api/v1/instance/organisations/{orgId}":                      {"Instance", scopeInstance},
 	"POST /api/v1/instance/organisations/{orgId}/invitations":         {"Instance", scopeInstance},
 	"GET /api/v1/instance/organisations/{orgId}/usage":                {"Instance", scopeInstance},
+
+	"GET /api/v1/admin/organisations":               {"InstanceAdmin", scopeAdmin},
+	"GET /api/v1/admin/organisations/{orgId}/usage": {"InstanceAdmin", scopeAdmin},
+	"GET /api/v1/admin/users":                       {"InstanceAdmin", scopeAdmin},
 
 	"GET /api/v1/org/{orgId}/project/{projectId}/alert-events":                          {"Viewer", scopeProject},
 	"GET /api/v1/org/{orgId}/project/{projectId}/alert-setup":                           {"Viewer", scopeProject},
@@ -189,6 +196,15 @@ func allow(acc access, widgets []string, content bool, next http.Handler) http.H
 			}
 			if content && !e.Content {
 				writeError(w, r, http.StatusForbidden, codeForbidden, "this embed token does not share transcripts or audio")
+				return
+			}
+			next.ServeHTTP(w, r)
+			return
+		}
+		if acc.scope == scopeAdmin {
+			// Only a signed-in account: a project key names no user and so holds no flag.
+			if p.Key != nil || p.UserID == "" || !p.InstanceAdmin {
+				writeError(w, r, http.StatusForbidden, codeForbidden, "this needs the instance admin role")
 				return
 			}
 			next.ServeHTTP(w, r)

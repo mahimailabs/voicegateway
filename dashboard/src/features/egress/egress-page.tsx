@@ -1,5 +1,5 @@
-import { CaretRight, CircleHalf, Clock, CloudArrowUp, Hash, Info, Prohibit, ShieldWarning, Stack, Waveform } from "@phosphor-icons/react"
-import type { Icon } from "@phosphor-icons/react"
+import { CaretRight, CircleHalf, Clock, CloudArrowUp, Hash, Info, Stack, Waveform } from "@phosphor-icons/react"
+import { Stat, StatStrip } from "@/components/stat-strip"
 import { AudioPlayerButton, AudioPlayerProgress, AudioPlayerProvider, AudioPlayerTime } from "@/components/elevenlabs/audio-player"
 import { CategoryBar } from "@/components/tremor/CategoryBar"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
@@ -179,18 +179,6 @@ function checks(list: Egress[], rejected: EgressData["rejected"]): Check[] {
 }
 const tone = { high: "bg-destructive", medium: "bg-amber-500", low: "bg-muted-foreground/40" }
 
-function StatCard({ icon: I, value, label, children, alert }: { icon: Icon; value: React.ReactNode; label: string; children?: React.ReactNode; alert?: boolean }) {
-  return (
-    <div className="rounded-2xl border bg-background p-4">
-      <div className="flex items-center justify-between">
-        <p className="text-[13px] text-muted-foreground">{label}</p>
-        <I size={18} className={alert ? "text-destructive" : "text-muted-foreground"} />
-      </div>
-      <p className={cn("mt-2 text-[28px] leading-none font-semibold tracking-[-0.02em] tnum", alert && "text-destructive")}>{value}</p>
-      {children && <div className="mt-3">{children}</div>}
-    </div>
-  )
-}
 
 function Detail({ e }: { e: Egress }) {
   const t0 = sec(e.history[0]?.at ?? null)
@@ -277,23 +265,23 @@ export function EgressPage() {
             <TooltipContent className="max-w-96 text-xs leading-relaxed">{d.source}</TooltipContent>
           </Tooltip>
         </div>
-        <div className="grid grid-cols-2 gap-6 sm:grid-cols-4">
-          <StatCard icon={CloudArrowUp} value={list.length} label="Egress jobs">
+        <StatStrip>
+          <Stat value={list.length} label="Egress jobs">
             <CategoryBar values={[by("EGRESS_COMPLETE"), by("EGRESS_FAILED"), by("EGRESS_ABORTED")]} colors={["accent", "alert", "amber"]} showLabels={false} />
             <p className="mt-1.5 text-[11px] text-muted-foreground">{`${by("EGRESS_COMPLETE")} complete · ${by("EGRESS_FAILED")} failed · ${by("EGRESS_ABORTED")} aborted`}</p>
-          </StatCard>
-          <StatCard icon={Waveform} value={`${atLeast}${secs(keptS + lostS)}`} label="Audio recorded" alert={lostS > 0}>
+          </Stat>
+          <Stat value={`${atLeast}${secs(keptS + lostS)}`} label="Audio recorded" alert={lostS > 0}>
             <CategoryBar values={[keptS, lostS]} colors={["accent", "alert"]} showLabels={false} />
             <p className="mt-1.5 text-[11px] text-muted-foreground">{`${atLeast}${secs(keptS)} stored · ${secs(lostS)} lost on upload`}</p>
-          </StatCard>
-          <StatCard icon={Prohibit} value={d.rejected.length} label="Rejected at start">
+          </Stat>
+          <Stat value={d.rejected.length} label="Rejected at start">
             <p className="text-[11px] text-muted-foreground">{d.rejected.length ? "Not in ListEgress; seen because we sent it" : "None seen"}</p>
-          </StatCard>
-          <StatCard icon={ShieldWarning} value={list2.length} label="Checks to fix" alert={list2.some((c) => c.severity === "high")}>
+          </Stat>
+          <Stat value={list2.length} label="Checks to fix" alert={list2.some((c) => c.severity === "high")}>
             <CategoryBar values={[sev("high"), sev("medium"), sev("low")]} colors={["alert", "amber", "quiet"]} showLabels={false} />
             <p className="mt-1.5 text-[11px] text-muted-foreground">{`${sev("high")} high · ${sev("medium")} medium · ${sev("low")} low`}</p>
-          </StatCard>
-        </div>
+          </Stat>
+        </StatStrip>
       </header>
 
       <Tabs value={tab} onValueChange={setTab} className="gap-5">

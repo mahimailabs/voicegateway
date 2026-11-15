@@ -791,3 +791,16 @@ describe("getMyOrganisationEntitlement", () => {
     expect(valid("Error", await res.json())).toBe("")
   })
 })
+
+describe("the instance admin reads", () => {
+  test("answer in the contract's shapes", async () => {
+    const root = "http://console.test/api/v1/admin"
+    const orgs = await (await fetch(`${root}/organisations`)).json()
+    expect(valid("AdminOrganisations", orgs)).toBe("")
+    expect(orgs.total).toBe(orgs.items.length)
+    expect(valid("AdminUsers", await (await fetch(`${root}/users`)).json())).toBe("")
+    const usage = await fetch(`${root}/organisations/default/usage?from=2026-10-01T00:00:00Z&to=2026-10-31T00:00:00Z`)
+    expect(valid("InstanceUsage", await usage.json())).toBe("")
+    expect((await fetch(`${root}/organisations/default/usage?from=2026-10-31T00:00:00Z&to=2026-10-01T00:00:00Z`)).status).toBe(400)
+  })
+})

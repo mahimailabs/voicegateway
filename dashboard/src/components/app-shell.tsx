@@ -5,10 +5,11 @@ import { Button } from "@/components/ui/button"
 import { useMemo, useState } from "react"
 import { Link, Navigate, Outlet, useNavigate, useRouterState } from "@tanstack/react-router"
 import { useHosted } from "@/lib/hosted"
-import { roleIn, useSession } from "@/lib/session"
+import { adminPageTo, isInstanceAdmin, roleIn, useSession } from "@/lib/session"
 import { choseLater } from "@/features/setup/setup-later"
 import {
   Bell,
+  Browser,
   MagnifyingGlass,
   TreeStructure,
   WarningCircle,
@@ -101,7 +102,14 @@ export function AppShell() {
   }
   const [palette, setPalette] = useState(false)
   const [shortcuts, setShortcuts] = useState(false)
-  const pages = useMemo(() => [...groups.flatMap((g) => g.items), { to: "/project", label: "Project", icon: TreeStructure, key: "j" }], [])
+  // An instance admin's own pages (decision 0041), the ones the operator added in configuration, sit
+  // at the top of the menu. The instance's lists, Organisations and Users, are in Settings.
+  const session = useSession()
+  const menu = useMemo(() => {
+    const extra: Item[] = isInstanceAdmin(session) ? (session?.adminPages ?? []).map((p, i) => ({ to: adminPageTo(i), label: p.label, icon: Browser })) : []
+    return extra.length ? [{ label: null, items: extra }, ...groups] : groups
+  }, [session])
+  const pages = useMemo(() => [...menu.flatMap((g) => g.items), { to: "/project", label: "Project", icon: TreeStructure, key: "j" }], [menu])
   useCommandHotkeys({ pages, onPalette: () => setPalette((o) => !o), onSettings: () => openSettings(), onShortcuts: () => setShortcuts(true) })
   // Pages judge calls against the project's thresholds, so they wait for the settings read, and a
   // threshold change renders the page again. Settings that could not be read leave the contract's
@@ -122,7 +130,7 @@ export function AppShell() {
           asChild
           isActive={on}
           tooltip={it.label}
-          className="relative h-8 rounded-lg text-[13.5px] font-medium text-muted-foreground hover:bg-foreground/[0.04] hover:text-foreground data-[active=true]:bg-transparent data-[active=true]:text-foreground"
+          className="relative h-8 rounded-lg text-callout font-medium text-muted-foreground hover:bg-foreground/[0.04] hover:text-foreground data-[active=true]:bg-transparent data-[active=true]:text-foreground"
         >
           <Link to={it.to}>
             <it.icon className={on ? "text-foreground" : ""} />
@@ -140,7 +148,8 @@ export function AppShell() {
 
   return (
     <LiveUpdatesProvider><SidebarProvider>
-      <Sidebar collapsible="icon">
+      {/* Inset: the page sits in a white panel on the grouped grey, as in app.mahimai.ca. */}
+      <Sidebar collapsible="icon" variant="inset">
         <SidebarHeader className="px-3 pt-3.5 pb-2">
           <div className="flex h-8 min-w-0 items-center gap-2.5">
             <BrandWordmark />
@@ -149,9 +158,9 @@ export function AppShell() {
         </SidebarHeader>
         <SidebarContent>
           {/* On "No such project" the page links lead nowhere useful, so only its own link to a project shows. */}
-          {!unknown && groups.map((g, i) => (
+          {!unknown && menu.map((g, i) => (
             <SidebarGroup key={i}>
-              {g.label && <SidebarGroupLabel className="text-[10.5px] font-semibold tracking-[0.08em] text-muted-foreground uppercase">{g.label}</SidebarGroupLabel>}
+              {g.label && <SidebarGroupLabel className="text-caption font-medium text-muted-foreground">{g.label}</SidebarGroupLabel>}
               <SidebarMenu className="gap-0.5">{g.items.map(nav)}</SidebarMenu>
             </SidebarGroup>
           ))}
@@ -187,7 +196,7 @@ export function AppShell() {
         </SidebarFooter>
       </Sidebar>
       <SidebarInset className="min-w-0">
-        <header className="sticky top-0 z-10 flex h-12 shrink-0 items-center gap-2 border-b bg-background/85 px-4 backdrop-blur md:px-6">
+        <header className="sticky top-0 z-10 flex h-12 shrink-0 items-center gap-2 bg-background/85 px-4 backdrop-blur md:rounded-t-xl md:px-6">
           <SidebarTrigger className="-ml-1 text-muted-foreground lg:hidden" />
           <OrgSwitcher onSettings={() => openSettings("organisation")} />
           {currentOrg() && <span className="text-muted-foreground/50">/</span>}

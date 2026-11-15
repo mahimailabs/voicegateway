@@ -43,6 +43,126 @@ func (q *Queries) AddMembershipIfAbsent(ctx context.Context, arg AddMembershipIf
 	return err
 }
 
+const adminMemberships = `-- name: AdminMemberships :many
+SELECT m.user_id, m.organisation_id, m.role
+FROM memberships m
+WHERE m.user_id = ANY($1::uuid[])
+ORDER BY m.user_id, m.organisation_id
+`
+
+// The organisation roles of the accounts AdminUsers returned.
+func (q *Queries) AdminMemberships(ctx context.Context, userIds []pgtype.UUID) ([]Membership, error) {
+	rows, err := q.db.Query(ctx, adminMemberships, userIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Membership
+	for rows.Next() {
+		var i Membership
+		if err := rows.Scan(&i.UserID, &i.OrganisationID, &i.Role); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const adminOrganisations = `-- name: AdminOrganisations :many
+SELECT o.id, o.name, o.created_at,
+    (SELECT count(*) FROM memberships m WHERE m.organisation_id = o.id) AS members,
+    (SELECT count(*) FROM memberships m WHERE m.organisation_id = o.id AND m.role = 'admin') AS admins,
+    (SELECT count(*) FROM projects p WHERE p.organisation_id = o.id) AS projects,
+    count(*) OVER () AS total
+FROM organisations o
+ORDER BY o.created_at DESC, o.id
+LIMIT $1
+`
+
+type AdminOrganisationsRow struct {
+	ID        string
+	Name      string
+	CreatedAt pgtype.Timestamptz
+	Members   int64
+	Admins    int64
+	Projects  int64
+	Total     int64
+}
+
+// Every organisation with its counts at this read, newest first (docs/specs/instance-admin.md).
+func (q *Queries) AdminOrganisations(ctx context.Context, maxRows int32) ([]AdminOrganisationsRow, error) {
+	rows, err := q.db.Query(ctx, adminOrganisations, maxRows)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []AdminOrganisationsRow
+	for rows.Next() {
+		var i AdminOrganisationsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.CreatedAt,
+			&i.Members,
+			&i.Admins,
+			&i.Projects,
+			&i.Total,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const adminUsers = `-- name: AdminUsers :many
+SELECT u.id, u.email, u.created_at, u.instance_admin, count(*) OVER () AS total
+FROM users u
+ORDER BY u.created_at DESC, u.id
+LIMIT $1
+`
+
+type AdminUsersRow struct {
+	ID            pgtype.UUID
+	Email         string
+	CreatedAt     pgtype.Timestamptz
+	InstanceAdmin bool
+	Total         int64
+}
+
+// The newest accounts, newest first: never a password hash.
+func (q *Queries) AdminUsers(ctx context.Context, maxRows int32) ([]AdminUsersRow, error) {
+	rows, err := q.db.Query(ctx, adminUsers, maxRows)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []AdminUsersRow
+	for rows.Next() {
+		var i AdminUsersRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Email,
+			&i.CreatedAt,
+			&i.InstanceAdmin,
+			&i.Total,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const advanceIssueEvidence = `-- name: AdvanceIssueEvidence :exec
 UPDATE issues SET evidence_revision = evidence_revision + 1
 WHERE organisation_id = $1 AND project_id = $2 AND id = $3
@@ -4077,7 +4197,7 @@ func (q *Queries) PendingMediaBackfills(ctx context.Context) ([]IssueMediaBackfi
 }
 
 const principalRows = `-- name: PrincipalRows :many
-SELECT u.id, u.email, u.password_version, m.organisation_id, m.role
+SELECT u.id, u.email, u.password_version, u.instance_admin, m.organisation_id, m.role
 FROM users u LEFT JOIN memberships m ON m.user_id = u.id
 WHERE u.id = $1
 ORDER BY m.organisation_id
@@ -4087,6 +4207,7 @@ type PrincipalRowsRow struct {
 	ID              pgtype.UUID
 	Email           string
 	PasswordVersion int32
+	InstanceAdmin   bool
 	OrganisationID  pgtype.Text
 	Role            pgtype.Text
 }
@@ -4106,6 +4227,7 @@ func (q *Queries) PrincipalRows(ctx context.Context, id pgtype.UUID) ([]Principa
 			&i.ID,
 			&i.Email,
 			&i.PasswordVersion,
+			&i.InstanceAdmin,
 			&i.OrganisationID,
 			&i.Role,
 		); err != nil {
@@ -5093,6 +5215,24 @@ func (q *Queries) SetCapacityRunContext(ctx context.Context, arg SetCapacityRunC
 		arg.Runner,
 	)
 	return err
+}
+
+const setInstanceAdmin = `-- name: SetInstanceAdmin :execrows
+UPDATE users SET instance_admin = $1 WHERE email = $2
+`
+
+type SetInstanceAdminParams struct {
+	InstanceAdmin bool
+	Email         string
+}
+
+// The instance admin flag (decision 0041), set from the command line only.
+func (q *Queries) SetInstanceAdmin(ctx context.Context, arg SetInstanceAdminParams) (int64, error) {
+	result, err := q.db.Exec(ctx, setInstanceAdmin, arg.InstanceAdmin, arg.Email)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const setMemberRole = `-- name: SetMemberRole :execrows

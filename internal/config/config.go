@@ -48,6 +48,9 @@ type Config struct {
 	// projects are entered by people it should not trust with its network, such as Cloud; a
 	// self-hosted install's workers usually sit on its own private network.
 	WorkerEndpointsPublicOnly bool
+	// AdminPages are VOICEGATEWAY_ADMIN_PAGES (decision 0041): an operator's own pages for the
+	// console's Admin group, each a label and a same-origin absolute path.
+	AdminPages []AdminPage
 	// InstanceTokenSHA256 is the SHA-256 of VOICEGATEWAY_INSTANCE_TOKEN, which turns the instance
 	// API on (phase 06e); nil when unset. The token itself is not kept. Setting it requires
 	// WorkerEndpointsPublicOnly.
@@ -120,6 +123,40 @@ type S3 struct {
 	AccessKey string
 	SecretKey string
 	UseSSL    bool
+}
+
+// AdminPage is one entry of VOICEGATEWAY_ADMIN_PAGES.
+type AdminPage struct {
+	Label, Path string
+}
+
+// maxAdminPages bounds VOICEGATEWAY_ADMIN_PAGES, a menu group.
+const maxAdminPages = 8
+
+// adminPages parses VOICEGATEWAY_ADMIN_PAGES, a comma-separated list of Label=/path. A path is an
+// absolute path on this origin: no scheme, no host, no "//", no "..", no backslash, no query or
+// fragment, so a frame never loads another site.
+func adminPages(v string) ([]AdminPage, error) {
+	var out []AdminPage
+	for _, part := range strings.Split(v, ",") {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		label, path, ok := strings.Cut(part, "=")
+		label, path = strings.TrimSpace(label), strings.TrimSpace(path)
+		bad := !ok || label == "" || len(label) > 40 || len(path) > 200 ||
+			!strings.HasPrefix(path, "/") || strings.Contains(path, "//") || strings.Contains(path, "..") ||
+			strings.ContainsAny(path, "\\?#@: \t") || strings.HasPrefix(path, "/api/") || strings.HasPrefix(path, "/auth/")
+		if bad {
+			return nil, errors.New("VOICEGATEWAY_ADMIN_PAGES must be a comma-separated list of Label=/path, each path on this site")
+		}
+		out = append(out, AdminPage{Label: label, Path: path})
+	}
+	if len(out) > maxAdminPages {
+		return nil, fmt.Errorf("VOICEGATEWAY_ADMIN_PAGES takes at most %d pages", maxAdminPages)
+	}
+	return out, nil
 }
 
 // Load reads the configuration through getenv, normally os.Getenv. It names every missing or
@@ -238,6 +275,11 @@ func Load(getenv func(string) string) (Config, error) {
 		errs = append(errs, errors.New("VOICEGATEWAY_POSTHOG_HOST must be an https URL, such as https://us.i.posthog.com"))
 	}
 
+	if pages, err := adminPages(optional("VOICEGATEWAY_ADMIN_PAGES", "")); err != nil {
+		errs = append(errs, err)
+	} else {
+		c.AdminPages = pages
+	}
 	c.CloudQuotas, err = strconv.ParseBool(optional("VOICEGATEWAY_CLOUD_QUOTAS", "false"))
 	if err != nil {
 		errs = append(errs, errors.New("VOICEGATEWAY_CLOUD_QUOTAS must be true or false"))

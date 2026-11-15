@@ -12,7 +12,18 @@ export type AccountProfile = {
   identities?: { provider: "google" | "github" | "auth0"; linkedAt: string }[]
 }
 
-export type Session = { id?: string; email: string; profile?: AccountProfile; organisations: { id: string; role: string }[] }
+/** One of the operator's own pages at the top of an instance admin's menu (decision 0041): a label and a path on this site. */
+export type AdminPage = { label: string; path: string }
+
+export type Session = {
+  id?: string
+  email: string
+  profile?: AccountProfile
+  organisations: { id: string; role: string }[]
+  // The instance admin flag and, for an instance admin only, the operator's own admin pages.
+  instanceAdmin?: boolean
+  adminPages?: AdminPage[]
+}
 
 export type SessionRead = { signedIn: true; session: Session } | { signedIn: false; needsAdmin: boolean }
 
@@ -67,6 +78,12 @@ export function roleIn(orgId: string, session: Session | null = current): Role |
   const role = session?.organisations.find((o) => o.id === orgId)?.role
   return role ? (roleNames[role] ?? null) : null
 }
+
+/** Whether the signed-in account is an instance admin. With the mock there is no session and the console acts as one, as it acts as an Admin. */
+export const isInstanceAdmin = (session: Session | null = current) => mockApi || session?.instanceAdmin === true
+
+/** The console address of an operator page: its place in the list, which is the order of the setting. */
+export const adminPageTo = (index: number) => `/admin/page/${index + 1}`
 
 /** Reads who is signed in. No answer at all is an error the caller shows as such. */
 export async function fetchSession(): Promise<SessionRead> {

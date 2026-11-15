@@ -37,7 +37,6 @@ const day = (s: number | null) => (s === null ? "Time unknown" : new Date(s * 10
 const time = (s: number | null) => (s === null ? "unknown" : fmtHourMinute(s * 1000))
 const within = (t: number | null, d: number) => t !== null && t >= d && t < d + 86400
 const sevTone = { high: "bg-destructive", medium: "bg-amber-500" }
-const sevText = { high: "text-destructive", medium: "text-amber-700 dark:text-amber-400" }
 const chartConfig = { high: { label: "High", color: "var(--destructive)" }, medium: { label: "Medium", color: "oklch(0.78 0.15 75)" } } satisfies ChartConfig
 
 type Fired = Event & { rule: Rule }
@@ -45,19 +44,19 @@ type Fired = Event & { rule: Rule }
 function Stat({ icon: I, label, value, children, alert }: { icon: Icon; label: string; value: React.ReactNode; children?: React.ReactNode; alert?: boolean }) {
   return (
     <div className="flex items-start gap-3">
-      <span className={cn("flex size-9 shrink-0 items-center justify-center rounded-lg border bg-background", alert && "border-destructive/30 text-destructive")}>
+      <span className="flex size-9 shrink-0 items-center justify-center rounded-lg border bg-background text-muted-foreground">
         <I size={17} />
       </span>
       <span className="min-w-0">
-        <span className={cn("block text-[20px] leading-none font-semibold tracking-[-0.02em] tnum", alert && "text-destructive")}>{value}</span>
-        <span className="mt-1 block text-[12px] text-muted-foreground">{label}</span>
+        <span className="block text-[20px] leading-none font-semibold tracking-[-0.02em] tnum">{value}</span>
+        <span className="mt-1 block text-[12px] text-muted-foreground">{label}{alert && <span className="ml-1.5 inline-block size-1.5 rounded-full bg-destructive align-middle" aria-label="needs a look" role="img" />}</span>
         {children}
       </span>
     </div>
   )
 }
 
-// One card per rule: severity rail, on switch, how often it would have fired with a per-day strip, and
+// One card per rule: severity dot, on switch, how often it would have fired with a per-day strip, and
 // where it sends.
 function RuleCard({ r, days, setup, firing, channels, canEdit }: { r: Rule; days: number[]; setup: Setup; firing: AlertIncident[]; channels: AlertChannel[]; canEdit: boolean }) {
   const setRule = useSetRule()
@@ -68,11 +67,11 @@ function RuleCard({ r, days, setup, firing, channels, canEdit }: { r: Rule; days
   const perDay = days.map((d) => r.events.filter((e) => within(e.at, d)).length)
   const peak = Math.max(1, ...perDay)
   return (
-    <div className={cn("relative overflow-hidden rounded-2xl border bg-background p-4 pl-5 transition-opacity", !s.on && "opacity-60")}>
-      <span className={cn("absolute inset-y-0 left-0 w-1", sevTone[r.severity])} />
+    <div className={cn("relative overflow-hidden rounded-2xl border bg-background p-4 transition-opacity", !s.on && "opacity-60")}>
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
+            <span className={cn("size-1.5 shrink-0 rounded-full", sevTone[r.severity])} aria-hidden />
             <span className="text-[14px] font-semibold">{r.title}</span>
             {(r.state || firing.length > 0) && (
               <span className="flex items-center gap-1 rounded-full bg-amber-500/10 px-1.5 py-0.5 text-[11px] font-medium text-amber-700 dark:text-amber-400">
@@ -88,7 +87,7 @@ function RuleCard({ r, days, setup, firing, channels, canEdit }: { r: Rule; days
 
       <div className="mt-4 flex items-end justify-between gap-4">
         <div>
-          <p className={cn("text-[26px] leading-none font-semibold tracking-[-0.02em] tnum", r.events.length || r.state ? sevText[r.severity] : "")}>{r.state ? r.state : r.events.length}</p>
+          <p className="text-[26px] leading-none font-semibold tracking-[-0.02em] tnum">{r.state ? r.state : r.events.length}</p>
           <p className="mt-1 text-[11px] text-muted-foreground">{r.state ? `ongoing · ${r.source}` : `would have fired · ${r.source}`}</p>
         </div>
         {!r.state && days.length > 0 && (

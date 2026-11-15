@@ -349,7 +349,7 @@ func recordingsCommand() *cobra.Command {
 // process listings.
 func userCommand() *cobra.Command {
 	var email, org, role string
-	var admin bool
+	var admin, instanceAdmin, off bool
 	add := &cobra.Command{
 		Use:   "add",
 		Short: "Add a user to an organisation (a new account's password from VOICEGATEWAY_USER_PASSWORD or a prompt)",
@@ -372,9 +372,17 @@ func userCommand() *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("add user: %w", err)
 			}
+			if instanceAdmin {
+				if err := app.SetInstanceAdmin(cmd.Context(), c, email, true); err != nil {
+					return fmt.Errorf("instance admin: %w", err)
+				}
+			}
 			what := "added"
 			if !created {
 				what = "added the existing account"
+			}
+			if instanceAdmin {
+				role += " and made it an instance admin"
 			}
 			_, err = fmt.Fprintf(cmd.OutOrStdout(), "%s %s to organisation %s as %s\n", what, strings.ToLower(strings.TrimSpace(email)), org, role)
 			return err
@@ -385,6 +393,30 @@ func userCommand() *cobra.Command {
 	f.StringVar(&org, "org", "default", "organisation id")
 	f.StringVar(&role, "role", "", "admin, member or viewer")
 	f.BoolVar(&admin, "admin", false, "shorthand for --role admin")
+	f.BoolVar(&instanceAdmin, "instance-admin", false, "also make the account an instance admin, who sees the console's Admin pages")
+
+	setAdmin := &cobra.Command{
+		Use:   "set-instance-admin",
+		Short: "Make an account an instance admin, or with --off take the role away",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			c, err := config.Load(os.Getenv)
+			if err != nil {
+				return fmt.Errorf("configuration:\n%w", err)
+			}
+			if err := app.SetInstanceAdmin(cmd.Context(), c, email, !off); err != nil {
+				return fmt.Errorf("instance admin: %w", err)
+			}
+			what := "is now an instance admin"
+			if off {
+				what = "is no longer an instance admin"
+			}
+			_, err = fmt.Fprintf(cmd.OutOrStdout(), "%s %s\n", strings.ToLower(strings.TrimSpace(email)), what)
+			return err
+		},
+	}
+	setAdmin.Flags().StringVar(&email, "email", "", "the account's email address")
+	setAdmin.Flags().BoolVar(&off, "off", false, "take the role away")
 
 	reset := &cobra.Command{
 		Use:   "reset-password",
@@ -405,7 +437,7 @@ func userCommand() *cobra.Command {
 	reset.Flags().StringVar(&email, "email", "", "the user's email address")
 
 	cmd := &cobra.Command{Use: "user", Short: "Manage users"}
-	cmd.AddCommand(add, reset)
+	cmd.AddCommand(add, reset, setAdmin)
 	return cmd
 }
 

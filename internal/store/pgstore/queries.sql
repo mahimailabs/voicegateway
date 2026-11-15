@@ -413,7 +413,7 @@ WHERE organisation_id = $1 AND project_id = $2 AND id = $3;
 -- name: PrincipalRows :many
 -- A signed-in user with every organisation role, in one round trip: one row per membership, or
 -- one row with a null organisation when there is none; no row when the user does not exist.
-SELECT u.id, u.email, u.password_version, m.organisation_id, m.role
+SELECT u.id, u.email, u.password_version, u.instance_admin, m.organisation_id, m.role
 FROM users u LEFT JOIN memberships m ON m.user_id = u.id
 WHERE u.id = @id
 ORDER BY m.organisation_id;
@@ -1449,3 +1449,32 @@ ORDER BY requested_at DESC LIMIT 1;
 SELECT step, started_at, ended_at, outcome, calls, joined, pending, failed, late, join_seconds,
     answer_seconds, no_answer, tester_cpu_percent
 FROM capacity_steps WHERE run_id = @run_id ORDER BY step;
+
+-- name: SetInstanceAdmin :execrows
+-- The instance admin flag (decision 0041), set from the command line only.
+UPDATE users SET instance_admin = @instance_admin WHERE email = @email;
+
+-- name: AdminOrganisations :many
+-- Every organisation with its counts at this read, newest first (docs/specs/instance-admin.md).
+SELECT o.id, o.name, o.created_at,
+    (SELECT count(*) FROM memberships m WHERE m.organisation_id = o.id) AS members,
+    (SELECT count(*) FROM memberships m WHERE m.organisation_id = o.id AND m.role = 'admin') AS admins,
+    (SELECT count(*) FROM projects p WHERE p.organisation_id = o.id) AS projects,
+    count(*) OVER () AS total
+FROM organisations o
+ORDER BY o.created_at DESC, o.id
+LIMIT @max_rows;
+
+-- name: AdminUsers :many
+-- The newest accounts, newest first: never a password hash.
+SELECT u.id, u.email, u.created_at, u.instance_admin, count(*) OVER () AS total
+FROM users u
+ORDER BY u.created_at DESC, u.id
+LIMIT @max_rows;
+
+-- name: AdminMemberships :many
+-- The organisation roles of the accounts AdminUsers returned.
+SELECT m.user_id, m.organisation_id, m.role
+FROM memberships m
+WHERE m.user_id = ANY(@user_ids::uuid[])
+ORDER BY m.user_id, m.organisation_id;
