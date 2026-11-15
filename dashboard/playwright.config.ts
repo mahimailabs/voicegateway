@@ -2,6 +2,8 @@ import { defineConfig, devices } from "@playwright/test"
 
 export default defineConfig({
   testDir: "./e2e",
+  // The screen catalog writes files; it runs on its own (make dashboard-screens).
+  testIgnore: "screens.spec.ts",
   outputDir: "./node_modules/.cache/playwright/results",
   fullyParallel: true,
   forbidOnly: !!process.env.CI,

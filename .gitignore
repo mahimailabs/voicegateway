@@ -473,3 +473,6 @@ dashboard/public/captures/
 /brag-output/
 /docs/assets/flow-source/
 /docs/assets/voicegateway-flow.reladraw
+
+# Dark screen-catalog pictures (SCREENS_DARK=1) stay local; light ones are committed.
+docs/screens/*.dark.jpg
