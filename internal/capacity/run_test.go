@@ -326,6 +326,23 @@ func TestRamp(t *testing.T) {
 			steps: map[int]string{1: store.StepPassed, 2: store.StepPassed, 4: store.StepPassed, 8: store.StepFailed, 6: store.StepFailed, 5: store.StepPassed},
 		},
 		{
+			name: "a stop during the refine cooldown places no more calls", max: 16,
+			s:     setup{agent: &fakeAgent{jobs: 5, join: 500 * time.Millisecond, answer: steady}, refine: true, runs: &fakeRuns{stopAt: synctestEpoch.Add(205 * time.Second)}},
+			limit: store.LimitStopped, capacity: 4,
+			steps: map[int]string{1: store.StepPassed, 2: store.StepPassed, 4: store.StepPassed, 8: store.StepFailed},
+		},
+		{
+			name: "a real call during the refine cooldown places no more calls", max: 16,
+			s: setup{agent: &fakeAgent{jobs: 5, join: 500 * time.Millisecond, answer: steady, busy: func(now time.Time) []string {
+				if now.Sub(synctestEpoch) > 205*time.Second {
+					return []string{"customer-call"}
+				}
+				return nil
+			}}, refine: true},
+			limit: store.LimitRealCall, capacity: 4,
+			steps: map[int]string{1: store.StepPassed, 2: store.StepPassed, 4: store.StepPassed, 8: store.StepFailed},
+		},
+		{
 			name: "refine does not run past the tester's limit", max: 16,
 			s:     setup{agent: &fakeAgent{jobs: 4, join: 500 * time.Millisecond, answer: steady}, cpu: 95, refine: true},
 			limit: store.LimitTester, capacity: nil,
