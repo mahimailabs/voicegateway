@@ -93,6 +93,7 @@ jobs:
           # Console source maps go to Sentry only when the repository has these set
           # (deploy/Dockerfile); a fork without them builds the same image with no upload.
           build-args: |
+            VOICEGATEWAY_VERSION=${{ steps.meta.outputs.version }}
             SENTRY_ORG=${{ vars.SENTRY_ORG }}
             SENTRY_PROJECT=${{ vars.SENTRY_PROJECT }}
             SENTRY_UPLOAD=${{ secrets.SENTRY_AUTH_TOKEN != '' }}

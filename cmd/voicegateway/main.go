@@ -71,6 +71,7 @@ func root() *cobra.Command {
 		role("web", "Take data in and serve the API", app.Web),
 		role("worker", "Turn data into calls and store it", app.Worker),
 		role("migrate", "Apply pending database migrations", app.Migrate),
+		capacityCommand(),
 		projectCommand(),
 		userCommand(),
 		keyCommand(),

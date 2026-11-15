@@ -100,14 +100,17 @@ type fakeAgent struct {
 	cloud *bool
 	// connect is how long a caller takes to join its room.
 	connect time.Duration
+	// dropAbove, when set, makes the agent join and then leave every call past that many at once.
+	dropAbove int
 
-	mu      sync.Mutex
-	rooms   map[string]bool
-	created int
-	active  int
-	callers map[string]chan<- Event
-	done    map[string]chan struct{}
-	wg      sync.WaitGroup
+	mu       sync.Mutex
+	rooms    map[string]bool
+	assigned map[string]bool
+	created  int
+	active   int
+	callers  map[string]chan<- Event
+	done     map[string]chan struct{}
+	wg       sync.WaitGroup
 }
 
 func (a *fakeAgent) CreateRoom(_ context.Context, name string) error {
@@ -122,6 +125,10 @@ func (a *fakeAgent) DeleteRoom(_ context.Context, name string) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	delete(a.rooms, name)
+	if a.assigned[name] {
+		delete(a.assigned, name)
+		a.active--
+	}
 	return nil
 }
 
@@ -132,6 +139,8 @@ func (a *fakeAgent) Dispatch(_ context.Context, room, _ string) error {
 		return nil // refused: the job stays pending
 	}
 	a.active++
+	a.assigned[room] = true
+	drop := a.dropAbove > 0 && a.active > a.dropAbove
 	events, done := a.callers[room], a.done[room]
 	a.wg.Add(1)
 	go func() {
@@ -150,10 +159,16 @@ func (a *fakeAgent) Dispatch(_ context.Context, room, _ string) error {
 			ev.At = time.Now()
 			if ev.Kind == Answered {
 				ev.Seconds = a.answer(n)
+				if drop {
+					ev = Event{Room: room, Kind: Left, At: ev.At}
+				}
 			}
 			select {
 			case events <- ev:
 			case <-done:
+				return
+			}
+			if ev.Kind == Left {
 				return
 			}
 			wait, ev = 4*time.Second, Event{Room: room, Kind: Answered}
@@ -195,16 +210,17 @@ func (a *fakeAgent) open() int {
 func steady(int) float64 { return 1.2 }
 
 type setup struct {
-	agent *fakeAgent
-	runs  *fakeRuns
-	cpu   float64
+	agent  *fakeAgent
+	runs   *fakeRuns
+	cpu    float64
+	refine bool
 }
 
 // runTest runs one capacity test to its end in a synctest bubble and returns what it stored.
 func runTest(t *testing.T, maxStep int, s setup) (*fakeRuns, *fakeAgent) {
 	t.Helper()
 	a := s.agent
-	a.rooms, a.callers, a.done = map[string]bool{}, map[string]chan<- Event{}, map[string]chan struct{}{}
+	a.rooms, a.assigned, a.callers, a.done = map[string]bool{}, map[string]bool{}, map[string]chan<- Event{}, map[string]chan struct{}{}
 	runs := s.runs
 	if runs == nil {
 		runs = &fakeRuns{}
@@ -218,6 +234,7 @@ func runTest(t *testing.T, maxStep int, s setup) (*fakeRuns, *fakeAgent) {
 			Log: slog.New(slog.NewTextHandler(io.Discard, nil)), Now: time.Now,
 			Poll: 2 * time.Second, Beat: time.Second, Lost: 30 * time.Second, Unclaimed: 5 * time.Minute,
 			StepFor: time.Minute, BusyEvery: 10 * time.Second, Timeout: 10 * time.Second,
+			Refine: s.refine, Cooldown: 20 * time.Second,
 		}
 		if err := r.Tick(t.Context()); err != nil {
 			t.Fatal(err)
@@ -283,6 +300,36 @@ func TestRamp(t *testing.T) {
 			s:     setup{agent: &fakeAgent{jobs: 5, join: 500 * time.Millisecond, answer: steady, cloud: &yes}},
 			limit: store.LimitPlan, capacity: 4,
 			steps: map[int]string{1: store.StepPassed, 2: store.StepPassed, 4: store.StepPassed, 8: store.StepFailed},
+		},
+		{
+			name: "a dropped call is a job failure once the others had their 10 s", max: 16,
+			s:     setup{agent: &fakeAgent{jobs: 16, join: 500 * time.Millisecond, answer: steady, dropAbove: 6}},
+			limit: store.LimitJobFailed, capacity: 4,
+			steps: map[int]string{1: store.StepPassed, 2: store.StepPassed, 4: store.StepPassed, 8: store.StepFailed},
+		},
+		{
+			name: "a drop while calls wait for the agent reads as refused, not as one failure", max: 16,
+			s:     setup{agent: &fakeAgent{jobs: 6, join: 500 * time.Millisecond, answer: steady, dropAbove: 5}},
+			limit: store.LimitPending, capacity: 4,
+			steps: map[int]string{1: store.StepPassed, 2: store.StepPassed, 4: store.StepPassed, 8: store.StepFailed},
+		},
+		{
+			name: "refine tests the midpoints between the last pass and the first fail", max: 32,
+			s:     setup{agent: &fakeAgent{jobs: 24, join: 500 * time.Millisecond, answer: steady}, refine: true},
+			limit: store.LimitPending, capacity: 24,
+			steps: map[int]string{1: store.StepPassed, 2: store.StepPassed, 4: store.StepPassed, 8: store.StepPassed, 16: store.StepPassed, 32: store.StepFailed, 24: store.StepPassed, 28: store.StepFailed},
+		},
+		{
+			name: "refine narrows a small gap to one call", max: 16,
+			s:     setup{agent: &fakeAgent{jobs: 5, join: 500 * time.Millisecond, answer: steady}, refine: true},
+			limit: store.LimitPending, capacity: 5,
+			steps: map[int]string{1: store.StepPassed, 2: store.StepPassed, 4: store.StepPassed, 8: store.StepFailed, 6: store.StepFailed, 5: store.StepPassed},
+		},
+		{
+			name: "refine does not run past the tester's limit", max: 16,
+			s:     setup{agent: &fakeAgent{jobs: 4, join: 500 * time.Millisecond, answer: steady}, cpu: 95, refine: true},
+			limit: store.LimitTester, capacity: nil,
+			steps: map[int]string{1: store.StepInconclusive},
 		},
 		{
 			name: "a real call mid-run stops it", max: 16,

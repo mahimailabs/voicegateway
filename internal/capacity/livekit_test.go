@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -291,6 +292,52 @@ func TestRunStopsWhenAJobStaysPending(t *testing.T) {
 	}
 	if s := runs.steps[8]; s.Outcome != store.StepFailed || s.Joined != 4 || s.Pending != 4 {
 		t.Errorf("step 8 = %s, joined %d, pending %d; want failed with 4 joined and 4 pending", s.Outcome, s.Joined, s.Pending)
+	}
+	rooms, err := lksdk.NewRoomServiceClient(url, devKey, devSecret).ListRooms(t.Context(), &livekit.ListRoomsRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, room := range rooms.GetRooms() {
+		if IsTestRoom(room.GetName()) {
+			t.Errorf("test room %s left open", room.GetName())
+		}
+	}
+}
+
+// TestLocalRunOnLiveKit is `voicegateway capacity` against livekit-server --dev and a test agent
+// that takes 4 jobs: the in-memory run, the refine pass (6, then 5) and the report, which says the
+// agent refused new calls. No test room is left.
+func TestLocalRunOnLiveKit(t *testing.T) {
+	url := liveKitServer(t)
+	testAgentWorker(t, url, 4)
+	local := NewLocal("9a3e7c10-4b2d-4e8f-9c1a-6d5b4e3f2a10", testAgent, 8, time.Now())
+	local.LiveKitURL, local.APIKey, local.APISecret, local.JoinMs = url, devKey, devSecret, 2000
+	r := &Runner{
+		Runs: local, Projects: local, Dial: NewDial(http.DefaultClient),
+		CPU: func() (float64, error) { return 10, nil }, ID: "local",
+		Log: slog.New(slog.NewTextHandler(io.Discard, nil)), Now: time.Now,
+		Poll: time.Second, Beat: time.Second, Lost: 30 * time.Second, Unclaimed: time.Minute,
+		StepFor: 15 * time.Second, BusyEvery: 5 * time.Second, Timeout: 10 * time.Second,
+		Refine: true, Cooldown: 3 * time.Second,
+	}
+	if err := r.Tick(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	rep := NewReport(local.Run(), url, "test")
+	if rep.Capacity == nil || *rep.Capacity != 4 || rep.LimitedBy == nil || *rep.LimitedBy != store.LimitPending {
+		t.Fatalf("capacity %v limited by %v, want 4 and pending", rep.Capacity, rep.LimitedBy)
+	}
+	if !strings.Contains(rep.Verdict, "refused new calls (worker full)") {
+		t.Errorf("verdict = %q", rep.Verdict)
+	}
+	var tried []int
+	for _, s := range rep.Steps {
+		if s.Refine {
+			tried = append(tried, s.Calls)
+		}
+	}
+	if !slices.Equal(tried, []int{6, 5}) {
+		t.Errorf("refine steps = %v, want [6 5]", tried)
 	}
 	rooms, err := lksdk.NewRoomServiceClient(url, devKey, devSecret).ListRooms(t.Context(), &livekit.ListRoomsRequest{})
 	if err != nil {

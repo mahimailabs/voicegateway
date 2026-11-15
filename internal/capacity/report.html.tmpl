@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Capacity test: {{.Agent}}</title>
+<style>
+:root{--bg:#f7f8fa;--surface:#fff;--fg:#111827;--muted:#525b6b;--line:#dfe3ea;--accent:#0b5fd9;--good:#0a7a52;--bad:#b42318;--warn:#a14a07;
+--sans:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;--mono:ui-monospace,SFMono-Regular,Menlo,monospace}
+@media (prefers-color-scheme:dark){:root{--bg:#0e1116;--surface:#161b22;--fg:#e8ebf0;--muted:#a3adbb;--line:#2a313c;--accent:#6aa6ff;--good:#3fc79a;--bad:#ff8a80;--warn:#f0a94b;color-scheme:dark}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.6 var(--sans)}
+main{max-width:880px;margin:0 auto;padding:40px 16px 64px;display:flex;flex-direction:column;gap:36px}
+h1{font-size:clamp(26px,5vw,38px);line-height:1.15;margin:0;font-weight:650}
+h2{font-size:21px;margin:0 0 12px;font-weight:650}
+p{margin:0 0 10px;max-width:68ch}
+.eyebrow{font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:600;margin:0 0 8px}
+.meta{color:var(--muted);font-size:14px;margin-top:8px}
+.verdict{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:24px;display:grid;grid-template-columns:auto 1fr;gap:24px;align-items:center}
+.big{font-size:88px;line-height:.9;font-weight:700;color:var(--accent);font-variant-numeric:tabular-nums}
+.big small{display:block;font-size:14px;color:var(--muted);font-weight:500;margin-top:10px}
+.chart{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:16px}
+svg{width:100%;height:auto;display:block}
+.axis{stroke:var(--line)}
+.tick{fill:var(--muted);font:12px var(--sans)}
+.bar{fill:var(--accent);opacity:.85}.bar.refused{fill:var(--bad);opacity:.55}
+.line{fill:none;stroke-width:2.5}.median{stroke:var(--fg)}.p95{stroke:var(--warn);stroke-dasharray:6 4}
+.legend{display:flex;flex-wrap:wrap;gap:16px;font-size:13px;color:var(--muted);margin-top:8px}
+.legend i{display:inline-block;width:12px;height:12px;border-radius:3px;margin-right:6px;vertical-align:-1px}
+.scroll{overflow-x:auto;background:var(--surface);border:1px solid var(--line);border-radius:12px}
+table{border-collapse:collapse;width:100%;font-size:14px;font-variant-numeric:tabular-nums}
+th,td{text-align:right;padding:9px 10px;border-bottom:1px solid var(--line);white-space:nowrap}
+tr:last-child td{border-bottom:0}
+th:first-child,td:first-child,th:nth-child(2),td:nth-child(2){text-align:left}
+th{font-size:12px;letter-spacing:.04em;text-transform:uppercase;color:var(--muted);font-weight:600}
+.passed{color:var(--good);font-weight:600}.failed{color:var(--bad);font-weight:600}.inconclusive{color:var(--warn);font-weight:600}
+ul{margin:0;padding-left:20px;max-width:68ch}li{margin-bottom:6px}
+code{font-family:var(--mono);font-size:13px}h1 code{font-size:.8em;font-weight:600}
+.note{font-size:14px;color:var(--muted)}
+footer{border-top:1px solid var(--line);padding-top:16px;font-size:14px;color:var(--muted)}
+a{color:var(--accent)}
+@media (max-width:640px){.verdict{grid-template-columns:1fr;gap:12px}.big{font-size:64px}}
+</style>
+</head>
+<body>
+<main>
+<header>
+<p class="eyebrow">{{.Title}}</p>
+<h1>Agent <code>{{.Agent}}</code></h1>
+<p class="meta">{{.When}} · LiveKit {{.LiveKitHost}} · run {{.RunID}}</p>
+</header>
+
+<section class="verdict" aria-label="Result">
+{{if .Capacity}}<div class="big">{{.Capacity}}<small>calls at once</small></div>{{else}}<div class="big">none<small>no step passed</small></div>{{end}}
+<div><p><strong>{{.Verdict}}</strong></p>{{range .Limit}}<p>{{.}}</p>{{end}}</div>
+</section>
+
+<section>
+<h2>As calls were added</h2>
+<p>Each step held that many calls at once for 60 seconds. Every caller said the same line after each answer, and the test timed each answer.</p>
+<div class="chart">
+{{chart .}}
+<div class="legend"><span><i style="background:var(--accent)"></i>Got the agent</span><span><i style="background:var(--bad);opacity:.55"></i>Refused</span><span><i style="background:var(--fg);height:3px;vertical-align:3px"></i>Median answer</span><span><i style="background:var(--warn);height:3px;vertical-align:3px"></i>p95 answer</span></div>
+</div>
+</section>
+
+<section>
+<h2>Step by step</h2>
+<div class="scroll"><table>
+<thead><tr><th scope="col">Calls at once</th><th scope="col">Result</th><th scope="col">Got the agent</th><th scope="col">Refused</th><th scope="col">Dropped</th><th scope="col">Answers</th><th scope="col">Median</th><th scope="col">p95</th><th scope="col">Over 1 s</th><th scope="col">Slowest</th><th scope="col">Slowest join</th><th scope="col">Tester CPU</th></tr></thead>
+<tbody>{{range .Ordered}}<tr><td>{{.Calls}}{{mark .Refine}}</td><td class="{{.Outcome}}">{{.Outcome}}</td><td>{{.Joined}}</td><td>{{.Pending}}</td><td>{{.Dropped}}</td><td>{{.Answers.Count}}</td><td>{{secs .Answers.Median}}</td><td>{{secs .Answers.P95}}</td><td>{{pct .Answers.SlowShare}}</td><td>{{secs .Answers.Slowest}}</td><td>{{secs .SlowestJoin}}</td><td>{{pct100 .TesterCPU}}</td></tr>{{end}}</tbody>
+</table></div>
+<p class="note" style="margin-top:12px">Answer time runs from the end of the caller's line to the agent's first sound. Join time runs from the dispatch to the agent joining{{if .JoinThreshold}}; a join over {{secs .JoinThreshold}} counts as late{{end}}. Steps marked * re-tested a number between the last step that passed and the first that failed, starting from no calls. Tester CPU is the machine placing the calls, not the agent's.</p>
+</section>
+
+<section>
+<h2>What this test does not measure</h2>
+<ul>{{range .NotMeasured}}<li>{{.}}</li>{{end}}</ul>
+</section>
+
+<footer><a href="{{.Link}}">{{.MeasuredWith}}</a> {{.Version}}. The test calls went through the agent's own speech, model and voice providers.</footer>
+</main>
+</body>
+</html>
