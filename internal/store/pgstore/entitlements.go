@@ -184,26 +184,52 @@ func (s *Store) RetentionPlans(ctx context.Context) ([]store.RetentionPlan, erro
 
 // TrimCalls deletes an organisation's closed calls that ended before cutoff, with their summaries,
 // participants and recording links; an issue keeps its occurrences with no call. Billed usage in
-// profiled_call_usage has no call foreign key, so it stays. Open calls are never trimmed.
-func (s *Store) TrimCalls(ctx context.Context, org string, cutoff time.Time) (int64, error) {
-	var n int64
+// profiled_call_usage has no call foreign key, so it stays. Open calls are never trimmed. The
+// eligible calls are locked once and every delete uses that set, so a call updated meanwhile is
+// either trimmed whole or kept whole. It returns the number trimmed and the telemetry cutoff: the
+// cutoff, or the earliest start of a kept call that began before it, so no listed call loses data.
+func (s *Store) TrimCalls(ctx context.Context, org string, cutoff time.Time) (int64, time.Time, error) {
+	var (
+		n         int64
+		telemetry = cutoff
+	)
 	err := pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
-		const old = `SELECT id FROM calls WHERE organisation_id=$1 AND end_state<>'open'
-            AND coalesce(ended_at,last_activity_at,first_seen_at)<$2`
-		for _, q := range []string{
-			"DELETE FROM call_summaries WHERE call_id IN (" + old + ")",
-			"DELETE FROM call_participants WHERE call_id IN (" + old + ")",
-		} {
-			if _, err := tx.Exec(ctx, q, org, cutoff); err != nil {
+		rows, err := tx.Query(ctx, `SELECT id::text FROM calls WHERE organisation_id=$1 AND end_state<>'open'
+            AND coalesce(ended_at,last_activity_at,first_seen_at)<$2 ORDER BY id FOR UPDATE`, org, cutoff)
+		if err != nil {
+			return err
+		}
+		ids, err := pgx.CollectRows(rows, pgx.RowTo[string])
+		if err != nil {
+			return err
+		}
+		if len(ids) > 0 {
+			for _, q := range []string{
+				"DELETE FROM call_summaries WHERE call_id = ANY($1::uuid[])",
+				"DELETE FROM call_participants WHERE call_id = ANY($1::uuid[])",
+			} {
+				if _, err := tx.Exec(ctx, q, ids); err != nil {
+					return err
+				}
+			}
+			tag, err := tx.Exec(ctx, "DELETE FROM calls WHERE id = ANY($1::uuid[])", ids)
+			if err != nil {
 				return err
 			}
+			n = tag.RowsAffected()
 		}
-		tag, err := tx.Exec(ctx, "DELETE FROM calls WHERE id IN ("+old+")", org, cutoff)
-		n = tag.RowsAffected()
-		return err
+		var kept *time.Time
+		if err := tx.QueryRow(ctx, `SELECT min(coalesce(first_seen_at, created_at)) FROM calls
+            WHERE organisation_id=$1 AND coalesce(first_seen_at, created_at)<$2`, org, cutoff).Scan(&kept); err != nil {
+			return err
+		}
+		if kept != nil && kept.Before(telemetry) {
+			telemetry = *kept
+		}
+		return nil
 	})
 	if err != nil {
-		return 0, fmt.Errorf("trim calls of %s: %w", org, err)
+		return 0, time.Time{}, fmt.Errorf("trim calls of %s: %w", org, err)
 	}
-	return n, nil
+	return n, telemetry, nil
 }

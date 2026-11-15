@@ -106,9 +106,13 @@ func TestTrimCallsKeepsUsage(t *testing.T) {
 	if err != nil || len(plans) != 1 || plans[0].OrganisationID != "default" || plans[0].Days != 7 {
 		t.Fatalf("plans %+v %v", plans, err)
 	}
-	n, err := s.TrimCalls(ctx, "default", now.Add(-7*24*time.Hour))
+	n, telemetry, err := s.TrimCalls(ctx, "default", now.Add(-7*24*time.Hour))
 	if err != nil || n != 1 {
 		t.Fatalf("trimmed %d %v", n, err)
+	}
+	// The open call started ten days ago is kept, so its telemetry is too.
+	if want := now.Add(-10 * 24 * time.Hour); !telemetry.Equal(want.Truncate(time.Microsecond)) {
+		t.Fatalf("telemetry cutoff %v, want %v", telemetry, want)
 	}
 	for id, want := range map[string]bool{old: false, openOld: true, recent: true} {
 		var exists bool

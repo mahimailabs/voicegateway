@@ -22,19 +22,21 @@ func (f *retentionFake) RetentionPlans(context.Context) ([]store.RetentionPlan, 
 	return f.plans, nil
 }
 
-func (f *retentionFake) TrimCalls(_ context.Context, org string, cutoff time.Time) (int64, error) {
+func (f *retentionFake) TrimCalls(_ context.Context, org string, cutoff time.Time) (int64, time.Time, error) {
 	f.steps = append(f.steps, "calls "+org)
 	f.cutoffs[org] = cutoff
 	if org == f.failCall {
-		return 0, errors.New("database unavailable")
+		return 0, time.Time{}, errors.New("database unavailable")
 	}
-	return 1, nil
+	// A kept call that started an hour before the cutoff holds the telemetry back to its start.
+	f.cutoffs[org] = cutoff.Add(-time.Hour)
+	return 1, f.cutoffs[org], nil
 }
 
 func (f *retentionFake) TrimTelemetry(_ context.Context, org string, cutoff time.Time) error {
 	f.steps = append(f.steps, "telemetry "+org)
 	if !cutoff.Equal(f.cutoffs[org]) {
-		return errors.New("telemetry cutoff differs from the call index's")
+		return errors.New("telemetry cutoff differs from the one the call index returned")
 	}
 	return nil
 }
@@ -57,7 +59,7 @@ func TestRetentionTrimsEachPlan(t *testing.T) {
 			t.Fatalf("steps %v, want %v", f.steps, want)
 		}
 	}
-	if got := f.cutoffs["a"]; !got.Equal(now.Add(-7 * 24 * time.Hour)) {
-		t.Fatalf("cutoff for 7 days %v", got)
+	if got := f.cutoffs["a"]; !got.Equal(now.Add(-7*24*time.Hour - time.Hour)) {
+		t.Fatalf("telemetry cutoff for 7 days %v", got)
 	}
 }

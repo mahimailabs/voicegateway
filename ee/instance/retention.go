@@ -12,7 +12,9 @@ import (
 // Plans lists the organisations whose plan limits how long call data is kept.
 type Plans interface {
 	RetentionPlans(ctx context.Context) ([]store.RetentionPlan, error)
-	TrimCalls(ctx context.Context, organisationID string, cutoff time.Time) (int64, error)
+	// TrimCalls returns the number trimmed and the cutoff for the telemetry, which is never later
+	// than the earliest start of a call it keeps.
+	TrimCalls(ctx context.Context, organisationID string, cutoff time.Time) (int64, time.Time, error)
 }
 
 // Telemetry deletes an organisation's stored call data older than a cutoff.
@@ -21,7 +23,8 @@ type Telemetry interface {
 }
 
 // Retention trims each organisation's call data to its plan's retentionDays (decision 0042): the
-// call index first, so the console never lists a call whose data is gone, then the telemetry.
+// call index first, so the console never lists a call whose data is gone, then the telemetry up to
+// the start of the oldest call still listed.
 // Billed usage stays. An organisation without the limit keeps the install's own retention.
 type Retention struct {
 	Plans     Plans
@@ -39,12 +42,12 @@ func (r *Retention) Run(ctx context.Context, now time.Time) error {
 	var errs []error
 	for _, p := range plans {
 		cutoff := now.Add(-time.Duration(p.Days) * 24 * time.Hour)
-		n, err := r.Plans.TrimCalls(ctx, p.OrganisationID, cutoff)
+		n, telemetryCutoff, err := r.Plans.TrimCalls(ctx, p.OrganisationID, cutoff)
 		if err != nil {
 			errs = append(errs, err)
 			continue
 		}
-		if err := r.Telemetry.TrimTelemetry(ctx, p.OrganisationID, cutoff); err != nil {
+		if err := r.Telemetry.TrimTelemetry(ctx, p.OrganisationID, telemetryCutoff); err != nil {
 			errs = append(errs, err)
 			continue
 		}
