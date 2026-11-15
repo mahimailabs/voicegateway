@@ -18,7 +18,7 @@ import { accessDenied, capacityQuery, cloudAgentsQuery, mediaServerQuery } from 
 import type { CloudAgents } from "@/lib/api-types"
 import { type MediaServerData, type Room, RoomDrawer, fromContract, regionCity } from "../media-server/room-drawer"
 import { AgentDrawer, type AgentReads } from "./agent-drawer"
-import { CapacityButton, CapacityDialog, useCapacityAgent } from "./capacity"
+import { CapacityButton, CapacityDialog, TestByName, useCapacityAgent } from "./capacity"
 import { type Agent, type Check, agentsFrom, checks, cores, gib, joinDelays, median } from "./agents-model"
 import { useUrlPick, useUrlState } from "@/lib/url-state"
 
@@ -229,6 +229,9 @@ function AgentsView({ cloud, ms, status }: { cloud: CloudAgents; ms: MediaServer
             </TooltipTrigger>
             <TooltipContent className="max-w-96 text-xs leading-relaxed">{`${source} Read ${new Date(readAt).toLocaleString()}.`}</TooltipContent>
           </Tooltip>
+          <div className="ml-auto">
+            <TestByName onPick={setTesting} />
+          </div>
         </div>
         {status}
         <StatStrip>

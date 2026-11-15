@@ -14,6 +14,8 @@ import (
 
 // Config is every setting the web and worker roles read at start.
 type Config struct {
+	// Version is the release this binary was built from. main sets it; no variable does.
+	Version string
 	// CloudQuotas requires operator-issued entitlements before accepting telemetry.
 	CloudQuotas bool
 	// WebAddr is where the web role listens.

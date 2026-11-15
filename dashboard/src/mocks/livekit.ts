@@ -5,6 +5,7 @@ import sipRaw from "@/mocks/sip.json"
 import mediaRaw from "@/mocks/media-server.json"
 import agentsRaw from "@/mocks/agents.json"
 import capacityRaw from "@/mocks/capacity.json"
+import { answerTail } from "@/lib/answer-tail"
 import snapshotRaw from "@/mocks/project-snapshot.json"
 import workersRaw from "@/mocks/workers.json"
 import probesRaw from "@/mocks/network-probe.json"
@@ -114,7 +115,7 @@ export function capacitySteps(): CapacityRun["steps"] {
   return (capacityRaw.steps as CapturedStep[]).map((s) => ({
     step: s.step, startedAt: at, endedAt: at, outcome: s.pending === 0 ? "passed" : "inconclusive",
     calls: s.step, joined: s.joined, pending: s.pending, failed: null, late: null, noAnswer: null,
-    joinSeconds: s.join_s, answerSeconds: s.answer_s, testerCpuPercent: null,
+    joinSeconds: s.join_s, answerSeconds: s.answer_s, testerCpuPercent: null, answers: answerTail(s.answer_s),
   }))
 }
 export function capacity(): CapacityRun {

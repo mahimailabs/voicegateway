@@ -6,6 +6,8 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/mahimailabs/voicegateway/internal/store"
 )
 
 // TestCapacityRuns: an Admin starts one capacity test per project and stops it; a Viewer reads it
@@ -13,9 +15,12 @@ import (
 func TestCapacityRuns(t *testing.T) {
 	f := newFixture(t)
 	admin := f.api(nil)
-	admin.Capacity = f.pg
+	report := func(run store.CapacityRun, livekitURL string) ([]byte, error) {
+		return []byte("<!doctype html><p>" + run.ID + " " + livekitURL + "</p>"), nil
+	}
+	admin.Capacity, admin.CapacityReport = f.pg, report
 	viewer := f.api(nil)
-	viewer.Capacity = f.pg
+	viewer.Capacity, viewer.CapacityReport = f.pg, report
 	viewer.Gate = gateAs(map[string]string{"default": "viewer"})
 	base := "/api/v1/org/default/project/" + f.project
 
@@ -66,6 +71,9 @@ func TestCapacityRuns(t *testing.T) {
 	if err := json.Unmarshal(b, &run); err != nil || code != http.StatusAccepted || run.State != "requested" || run.Capacity != nil {
 		t.Fatalf("start = %d %s, want 202 with a requested run and no capacity", code, b)
 	}
+	if code, _ := send(t, admin, http.MethodGet, base+"/capacity-runs/"+run.ID+"/report", ""); code != http.StatusNotFound {
+		t.Errorf("report of a run still going = %d, want 404", code)
+	}
 	if code, b := send(t, admin, http.MethodPost, base+"/capacity-runs", start); code != http.StatusConflict || errCode(b) != codeRunActive {
 		t.Errorf("second start = %d %s, want 409 run_active", code, errCode(b))
 	}
@@ -86,6 +94,22 @@ func TestCapacityRuns(t *testing.T) {
 	}
 	if code, _ := send(t, admin, http.MethodPost, base+"/capacity-runs/not-a-uuid/stop", ""); code != http.StatusNotFound {
 		t.Errorf("stop an unknown run = %d, want 404", code)
+	}
+
+	// A Viewer downloads an ended run as the report page; another project's run is not found.
+	rec := httptest.NewRecorder()
+	viewer.Routes().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, base+"/capacity-runs/"+run.ID+"/report", nil))
+	if rec.Code != http.StatusOK || !strings.HasPrefix(rec.Header().Get("Content-Type"), "text/html") ||
+		!strings.Contains(rec.Header().Get("Content-Disposition"), `filename="capacity-report.html"`) || !strings.Contains(rec.Body.String(), run.ID) {
+		t.Errorf("report = %d %q %q, want 200 the HTML page as capacity-report.html", rec.Code, rec.Header().Get("Content-Type"), rec.Header().Get("Content-Disposition"))
+	}
+	f.validateResponse(t, httptest.NewRequest(http.MethodGet, base+"/capacity-runs/"+run.ID+"/report", nil), rec.Code, rec.Result().Header, rec.Body.Bytes())
+	other := "/api/v1/org/default/project/another-project"
+	if code, _ := send(t, admin, http.MethodGet, other+"/capacity-runs/"+run.ID+"/report", ""); code != http.StatusNotFound {
+		t.Errorf("report from another project = %d, want 404", code)
+	}
+	if code, _ := send(t, admin, http.MethodGet, base+"/capacity-runs/not-a-uuid/report", ""); code != http.StatusNotFound {
+		t.Errorf("report of an unknown run = %d, want 404", code)
 	}
 
 	// An instance that reaches only public addresses refuses new tests but still answers reads.

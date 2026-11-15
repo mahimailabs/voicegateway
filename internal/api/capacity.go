@@ -55,6 +55,22 @@ type capacityStep struct {
 	JoinSeconds      []float64  `json:"joinSeconds"`
 	AnswerSeconds    []float64  `json:"answerSeconds"`
 	TesterCPUPercent *float64   `json:"testerCpuPercent"`
+	// Answers is the step's answer tail, the same summary the report files carry.
+	Answers capacityTail `json:"answers"`
+}
+
+// capacityTail is the contract's CapacityAnswerTail: store.TailOf without the count, which
+// answerSeconds already gives.
+type capacityTail struct {
+	Median    *float64 `json:"medianSeconds"`
+	P95       *float64 `json:"p95Seconds"`
+	SlowShare *float64 `json:"overOneSecondShare"`
+	Slowest   *float64 `json:"slowestSeconds"`
+}
+
+func tailOf(answers []float64) capacityTail {
+	t := store.TailOf(answers)
+	return capacityTail{Median: t.Median, P95: t.P95, SlowShare: t.SlowShare, Slowest: t.Slowest}
 }
 
 func toCapacityRun(r store.CapacityRun) capacityRun {
@@ -69,6 +85,7 @@ func toCapacityRun(r store.CapacityRun) capacityRun {
 			Step: s.Step, StartedAt: s.StartedAt, EndedAt: s.EndedAt, Outcome: s.Outcome,
 			Calls: &s.Calls, Joined: &s.Joined, Pending: &s.Pending, Failed: &s.Failed, Late: &s.Late, NoAnswer: &s.NoAnswer,
 			JoinSeconds: nonNilSeconds(s.JoinSeconds), AnswerSeconds: nonNilSeconds(s.AnswerSeconds), TesterCPUPercent: s.TesterCPUPercent,
+			Answers: tailOf(s.AnswerSeconds),
 		})
 	}
 	return out
@@ -180,4 +197,37 @@ func (a *API) stopCapacityRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, toCapacityRun(run))
+}
+
+// getCapacityReport serves operationId getCapacityReport: an ended run as the same HTML file
+// `voicegateway capacity` writes, as a download. A run from another project is not_found.
+func (a *API) getCapacityReport(w http.ResponseWriter, r *http.Request) {
+	if a.Capacity == nil || a.CapacityReport == nil {
+		writeError(w, r, http.StatusServiceUnavailable, codeSourceUnavailable, "capacity reports are not available on this server")
+		return
+	}
+	org, proj := chi.URLParam(r, "orgId"), chi.URLParam(r, "projectId")
+	p, err := a.Projects.Project(r.Context(), org, proj)
+	if err != nil {
+		a.failWith(w, r, err, "project not found", "the capacity report could not be made")
+		return
+	}
+	run, err := a.Capacity.CapacityRun(r.Context(), chi.URLParam(r, "runId"))
+	if err == nil && (run.OrganisationID != org || run.ProjectID != proj || run.State != store.CapacityEnded) {
+		err = store.ErrNotFound
+	}
+	if err != nil {
+		a.failWith(w, r, err, "no ended capacity test with this id in this project", "the capacity report could not be made")
+		return
+	}
+	page, err := a.CapacityReport(run, p.LiveKitURL)
+	if err != nil {
+		a.failWith(w, r, err, "", "the capacity report could not be made")
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Content-Disposition", `attachment; filename="capacity-report.html"`)
+	w.Header().Set("Cache-Control", "no-store")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(page)
 }

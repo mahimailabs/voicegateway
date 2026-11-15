@@ -79,6 +79,7 @@ type CapacityRuns interface {
 	CreateCapacityRun(ctx context.Context, n store.NewCapacityRun) (store.CapacityRun, error)
 	StopCapacityRun(ctx context.Context, organisationID, projectID, id string, now time.Time) (store.CapacityRun, error)
 	LatestCapacityRun(ctx context.Context, organisationID, projectID, agent string) (store.CapacityRun, error)
+	CapacityRun(ctx context.Context, id string) (store.CapacityRun, error)
 }
 
 type Keys interface {

@@ -61,7 +61,7 @@ func RunCapacity(ctx context.Context, in CapacityInput, stop <-chan struct{}, ou
 		if s.Outcome == store.StepRunning {
 			return
 		}
-		tail := capacity.TailOf(s.AnswerSeconds)
+		tail := store.TailOf(s.AnswerSeconds)
 		calls := "calls"
 		if s.Step == 1 {
 			calls = "call "
@@ -127,4 +127,12 @@ func short(v *float64) string {
 		return "unknown"
 	}
 	return fmt.Sprintf("%.2f s", *v)
+}
+
+// capacityReport renders a stored run as the report file the command writes, for the console's
+// download. The console run has no agent server or target, so the report leaves those out.
+func capacityReport(version string) func(store.CapacityRun, string) ([]byte, error) {
+	return func(run store.CapacityRun, livekitURL string) ([]byte, error) {
+		return capacity.NewReport(run, livekitURL, version).HTML()
+	}
 }

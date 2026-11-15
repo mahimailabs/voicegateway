@@ -2,6 +2,8 @@ package store
 
 import (
 	"errors"
+	"math"
+	"slices"
 	"time"
 )
 
@@ -96,4 +98,43 @@ type CapacityEnd struct {
 	Capacity  *int
 	LimitedBy string
 	Error     string
+}
+
+// SlowAnswer is the answer time above which an answer counts as slow: one second from the end of
+// the caller's line to the agent's first sound.
+const SlowAnswer = 1.0
+
+// AnswerTail is a step's answer times: the typical one and the slow end. Each is null with no
+// answers, never zero. The report files, the API and the console all read it from TailOf.
+type AnswerTail struct {
+	Count     int      `json:"count"`
+	Median    *float64 `json:"medianSeconds"`
+	P95       *float64 `json:"p95Seconds"`
+	SlowShare *float64 `json:"overOneSecondShare"`
+	Slowest   *float64 `json:"slowestSeconds"`
+}
+
+// TailOf summarises answer times. P95 is the nearest-rank 95th percentile.
+func TailOf(answers []float64) AnswerTail {
+	t := AnswerTail{Count: len(answers)}
+	if len(answers) == 0 {
+		return t
+	}
+	s := slices.Clone(answers)
+	slices.Sort(s)
+	med := s[len(s)/2]
+	if len(s)%2 == 0 {
+		med = (s[len(s)/2-1] + s[len(s)/2]) / 2
+	}
+	p95 := s[int(math.Ceil(0.95*float64(len(s))))-1]
+	slow := 0
+	for _, a := range s {
+		if a > SlowAnswer {
+			slow++
+		}
+	}
+	share := float64(slow) / float64(len(s))
+	last := s[len(s)-1]
+	t.Median, t.P95, t.SlowShare, t.Slowest = &med, &p95, &share, &last
+	return t
 }
