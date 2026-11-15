@@ -25,6 +25,8 @@ type test struct {
 	cloud    *bool
 	baseline float64
 	capacity *int
+	// made counts the calls the run has created, so a refine step's rooms get new names.
+	made int
 }
 
 // call is one synthetic call: its room, when its job was dispatched and when the agent joined.
@@ -87,11 +89,80 @@ func (t *test) do(ctx context.Context) store.CapacityEnd {
 
 	for _, n := range Ladder(t.run.MaxStep) {
 		if end, done := t.step(ctx, n); done {
+			if t.Refine {
+				end = t.refine(ctx, n, end)
+			}
 			end.Capacity = t.capacity
 			return end
 		}
 	}
 	return store.CapacityEnd{Capacity: t.capacity, LimitedBy: store.LimitMaxReached}
+}
+
+// refine narrows the gap between the last step every call passed and the first that failed: it
+// hangs up every call, lets the agent finish its jobs, then tests the midpoint with that many calls
+// at once, until the gap is at most an eighth of the first failed step. The run's limit is the one that
+// stopped the smallest failed step. Only the agent's own limits are refined.
+func (t *test) refine(ctx context.Context, failed int, end store.CapacityEnd) store.CapacityEnd {
+	if t.capacity == nil || !agentLimit(end.LimitedBy) {
+		return end
+	}
+	enough := max(1, failed/8)
+	for failed-*t.capacity > enough {
+		t.cleanup(ctx)
+		t.calls, t.order = map[string]*call{}, nil
+		select {
+		case <-ctx.Done():
+			return store.CapacityEnd{LimitedBy: store.LimitRunnerLost}
+		case <-time.After(t.Cooldown):
+		}
+		if stop, ok := t.mayContinue(ctx); !ok {
+			return stop
+		}
+		n := *t.capacity + (failed-*t.capacity)/2
+		next, done := t.step(ctx, n)
+		switch {
+		case !done:
+		case agentLimit(next.LimitedBy):
+			failed, end = n, next
+		default:
+			// The run stopped for a reason that is not the agent's: report that, with what passed.
+			return next
+		}
+	}
+	return end
+}
+
+// mayContinue checks, before a refine step places calls, that nobody pressed Stop and no real call
+// reached the agent during the cooldown. A failed check is unknown, not a no: the step's own beats
+// check again, as they do on every step.
+func (t *test) mayContinue(ctx context.Context) (store.CapacityEnd, bool) {
+	hctx, cancel := t.ctx(ctx)
+	stop, err := t.Runs.HeartbeatCapacityRun(hctx, t.run.ID, t.ID, t.Now())
+	cancel()
+	switch {
+	case errors.Is(err, store.ErrNotFound):
+		return store.CapacityEnd{LimitedBy: store.LimitRunnerLost}, false
+	case err != nil:
+		t.Log.Warn("capacity: heartbeat failed", "run", t.run.ID, "err", err)
+	case stop:
+		return store.CapacityEnd{LimitedBy: store.LimitStopped}, false
+	}
+	bctx, bcancel := t.ctx(ctx)
+	busy, err := t.lk.AgentRooms(bctx, t.run.Agent)
+	bcancel()
+	switch {
+	case err != nil:
+		t.Log.Warn("capacity: real-call check failed", "run", t.run.ID, "err", err)
+	case len(busy) > 0:
+		return store.CapacityEnd{LimitedBy: store.LimitRealCall}, false
+	}
+	return store.CapacityEnd{}, true
+}
+
+// agentLimit reports whether a run ended on one of the agent's own limits.
+func agentLimit(l string) bool {
+	return l == store.LimitPending || l == store.LimitJobFailed || l == store.LimitAnswer
 }
 
 // Ladder is the steps of a run up to max: 1, 2, 4 and so on.
@@ -149,8 +220,9 @@ type stepState struct {
 // the run's.
 func (t *test) add(ctx context.Context, n int) (store.CapacityEnd, bool) {
 	fresh := make([]*call, 0, n-len(t.order))
-	for i := len(t.order); i < n; i++ {
-		c := &call{room: roomName(t.run.ID, i+1), step: n}
+	for range n - len(t.order) {
+		t.made++
+		c := &call{room: roomName(t.run.ID, t.made), step: n}
 		t.calls[c.room] = c
 		t.order = append(t.order, c)
 		fresh = append(fresh, c)
@@ -265,9 +337,10 @@ func (t *test) on(s *stepState, ev Event) (store.CapacityEnd, bool) {
 		s.NoAnswer++
 		return store.CapacityEnd{LimitedBy: store.LimitAnswer}, true
 	case Left:
+		// The step goes on until every call it dispatched has had PendingAfter to get the agent, so
+		// the result says how many calls the agent never took as well as the one it dropped.
 		c.gone = true
 		s.Failed++
-		return store.CapacityEnd{LimitedBy: store.LimitJobFailed}, true
 	case Lost:
 		c.gone = true
 		return store.CapacityEnd{LimitedBy: store.LimitFailed, Error: "caller_lost"}, true
@@ -306,10 +379,17 @@ func (t *test) beat(ctx context.Context, s *stepState, now time.Time, lastBusy *
 	if pct, err := t.CPU(); err == nil {
 		s.cpu = append(s.cpu, pct)
 	}
+	var last time.Time
 	for _, c := range t.order {
-		if c.joined == nil && !c.dispatched.IsZero() && now.Sub(c.dispatched) >= PendingAfter {
+		if c.joined == nil && !c.gone && !c.dispatched.IsZero() && now.Sub(c.dispatched) >= PendingAfter {
 			return store.CapacityEnd{LimitedBy: store.LimitPending}, true
 		}
+		if c.dispatched.After(last) {
+			last = c.dispatched
+		}
+	}
+	if s.Failed > 0 && now.Sub(last) >= PendingAfter {
+		return store.CapacityEnd{LimitedBy: store.LimitJobFailed}, true
 	}
 	if now.Sub(*lastBusy) >= t.BusyEvery {
 		*lastBusy = now
@@ -331,6 +411,8 @@ func (t *test) beat(ctx context.Context, s *stepState, now time.Time, lastBusy *
 func (t *test) close(ctx context.Context, s *stepState) (store.CapacityEnd, bool) {
 	med, ok := median(s.AnswerSeconds)
 	switch {
+	case s.Failed > 0:
+		return t.end(ctx, s, store.CapacityEnd{LimitedBy: store.LimitJobFailed})
 	case !ok:
 		return t.end(ctx, s, store.CapacityEnd{LimitedBy: store.LimitAnswer})
 	case s.Step == 1:
@@ -355,7 +437,7 @@ func (t *test) close(ctx context.Context, s *stepState) (store.CapacityEnd, bool
 func (t *test) end(ctx context.Context, s *stepState, end store.CapacityEnd) (store.CapacityEnd, bool) {
 	now := t.Now()
 	s.EndedAt = &now
-	agentRule := end.LimitedBy == store.LimitPending || end.LimitedBy == store.LimitJobFailed || end.LimitedBy == store.LimitAnswer
+	agentRule := agentLimit(end.LimitedBy)
 	switch {
 	case (agentRule || end.LimitedBy == store.LimitTester) && testerBusy(s.cpu):
 		end = store.CapacityEnd{LimitedBy: store.LimitTester}

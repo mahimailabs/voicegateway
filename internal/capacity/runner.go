@@ -56,6 +56,11 @@ type Runner struct {
 	StepFor, BusyEvery time.Duration
 	// Timeout bounds each LiveKit and storage call.
 	Timeout time.Duration
+	// Refine, after a step fails on the agent's own limit, tests the midpoints between the last
+	// step that passed and the first that failed (docs/specs/capacity-command.md). Cooldown is how
+	// long it waits after hanging up every call before the next refine step.
+	Refine   bool
+	Cooldown time.Duration
 }
 
 // Run looks for a requested run every Poll and runs it, until ctx is cancelled.
