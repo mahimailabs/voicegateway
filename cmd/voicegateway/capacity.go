@@ -82,7 +82,7 @@ the test stops if a real call reaches it. Ctrl-C stops the test and deletes ever
 				return err
 			}
 			_, _ = fmt.Fprintf(out, "\n%s\n", rep.Verdict)
-			for _, l := range rep.Limit {
+			for _, l := range append(rep.Limit, rep.Next...) {
 				_, _ = fmt.Fprintf(out, "  %s\n", l)
 			}
 			_, _ = fmt.Fprintf(out, "\n%s\nReport: %s\n", rep.Table(), strings.Join(prefix(in.OutDir, app.CapacityFiles), ", "))
@@ -95,6 +95,9 @@ the test stops if a real call reaches it. Ctrl-C stops the test and deletes ever
 	f.IntVar(&in.MaxStep, "max", 16, "most calls at once: 8, 16, 32 or 64")
 	f.StringVar(&in.OutDir, "out", ".", "folder for the report files")
 	f.Float64Var(&in.JoinMs, "join-threshold-ms", 2000, "a join slower than this counts as late")
+	f.StringVar(&in.AgentServer, "agent-server", "", `the agent's server size for the report, such as "4 vCPU, 8 GB"`)
+	f.IntVar(&in.AgentServers, "agent-servers", 0, "how many servers run the agent, to work out calls per server")
+	f.IntVar(&in.TargetCalls, "target-calls", 0, "calls at once you need; the report works out the servers it takes")
 	f.BoolVar(&yes, "yes", false, "place the test calls without asking")
 	f.BoolVar(&noRefine, "no-refine", false, "stop at the first failed step instead of testing the numbers in between")
 	return cmd
@@ -119,6 +122,9 @@ func checkCapacityInput(in app.CapacityInput) error {
 	}
 	if !slices.Contains([]int{8, 16, 32, 64}, in.MaxStep) {
 		return fmt.Errorf("capacity: --max must be 8, 16, 32 or 64, not %d", in.MaxStep)
+	}
+	if in.AgentServers < 0 || in.TargetCalls < 0 {
+		return errors.New("capacity: --agent-servers and --target-calls cannot be negative")
 	}
 	if in.JoinMs < 100 || in.JoinMs > 60000 {
 		return fmt.Errorf("capacity: --join-threshold-ms must be between 100 and 60000")

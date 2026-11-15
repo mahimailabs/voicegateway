@@ -30,6 +30,10 @@ type CapacityInput struct {
 	Refine                        bool
 	OutDir                        string
 	Version                       string
+	// AgentServer, AgentServers and TargetCalls are what the person says about the agent's
+	// servers and the calls they need; the report shows them and works out the servers needed.
+	AgentServer               string
+	AgentServers, TargetCalls int
 }
 
 // CapacityFiles are the report files a run writes, by name.
@@ -83,7 +87,7 @@ func RunCapacity(ctx context.Context, in CapacityInput, stop <-chan struct{}, ou
 	if err := r.Tick(ctx); err != nil {
 		return capacity.Report{}, fmt.Errorf("capacity test: %w", err)
 	}
-	rep := capacity.NewReport(local.Run(), in.LiveKitURL, in.Version)
+	rep := capacity.NewReport(local.Run(), in.LiveKitURL, in.Version).Setup(in.AgentServer, in.AgentServers, in.TargetCalls)
 	if err := WriteCapacityReport(rep, in.OutDir); err != nil {
 		return rep, err
 	}

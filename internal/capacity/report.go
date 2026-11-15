@@ -35,7 +35,10 @@ type Report struct {
 	Version       string       `json:"version"`
 	RunID         string       `json:"runId"`
 	Agent         string       `json:"agent"`
-	LiveKitHost   string       `json:"livekitHost"`
+	LiveKitHost   *string      `json:"livekitHost"`
+	AgentServer   *string      `json:"agentServer"`
+	AgentServers  *int         `json:"agentServers"`
+	TargetCalls   *int         `json:"targetCalls"`
 	MaxStep       int          `json:"maxStep"`
 	StartedAt     *time.Time   `json:"startedAt"`
 	EndedAt       *time.Time   `json:"endedAt"`
@@ -46,6 +49,7 @@ type Report struct {
 	Error         *string      `json:"error"`
 	Verdict       string       `json:"verdict"`
 	Limit         []string     `json:"limit"`
+	Next          []string     `json:"next"`
 	Steps         []ReportStep `json:"steps"`
 	NotMeasured   []string     `json:"notMeasured"`
 }
@@ -110,12 +114,7 @@ func NewReport(run store.CapacityRun, livekitURL, version string) Report {
 		RunID: run.ID, Agent: run.Agent, LiveKitHost: hostOf(livekitURL), MaxStep: run.MaxStep,
 		StartedAt: run.StartedAt, EndedAt: run.EndedAt, CloudAgent: run.CloudAgent,
 		Capacity: run.Capacity, LimitedBy: run.LimitedBy, Error: run.Error,
-		NotMeasured: []string{
-			"CPU and memory on the agent's own servers.",
-			"Time spent in each stage of a turn: speech to text, the model and the voice.",
-			"Phone calls: the test callers join over WebRTC, not through a SIP trunk.",
-			"How good the answers were: every caller says the same short English line.",
-		},
+		NotMeasured: []string{"the agent servers' CPU and memory", "time per stage (speech to text, model, voice)", "phone (SIP) calls", "answer quality"},
 	}
 	if run.JoinThresholdMs != nil {
 		s := float64(*run.JoinThresholdMs) / 1000
@@ -147,7 +146,8 @@ func (r Report) Ordered() []ReportStep {
 }
 
 // explain says in plain words what the run found and what limited it, from the stop reason and the
-// counts of the step that stopped it.
+// counts of the step that stopped it. When a step saw both, it leads with what most calls saw: a
+// worker that leaves 8 calls waiting and drops 1 reads as full, not as dropping calls.
 func explain(r Report) (string, []string) {
 	limit := ""
 	if r.LimitedBy != nil {
@@ -163,62 +163,129 @@ func explain(r Report) (string, []string) {
 	}
 	verdict := "No step passed, so the test has no capacity number."
 	if r.Capacity != nil {
-		verdict = fmt.Sprintf("The agent carried %d %s at once with every call answered.", *r.Capacity, plural(*r.Capacity, "call", "calls"))
+		verdict = fmt.Sprintf("%d %s at once, every call answered.", *r.Capacity, plural(*r.Capacity, "call", "calls"))
 	}
 	if limit == store.LimitMaxReached {
-		return verdict + fmt.Sprintf(" That was the most this test placed (%d), so the real limit is higher.", r.MaxStep), []string{"Nothing yet: every step passed up to the maximum the test was asked to place."}
+		return verdict + fmt.Sprintf(" That was the most this test placed, so the limit is at least %d; it was not tested above that.", r.MaxStep), nil
 	}
-	at := "Then "
-	if stopped != nil {
-		at = fmt.Sprintf("At %d %s, ", stopped.Calls, plural(stopped.Calls, "call", "calls"))
-	} else {
+	if stopped == nil {
 		stopped = &ReportStep{}
 	}
-	switch limit {
-	case store.LimitPending, store.LimitPlan:
-		if r.Capacity == nil && stopped.Joined == 0 {
+	if limit == store.LimitPending || limit == store.LimitPlan || limit == store.LimitJobFailed {
+		if r.Capacity == nil && stopped.Joined == 0 && stopped.Dropped == 0 && limit != store.LimitJobFailed {
 			return "No worker took the first call, so the test has no capacity number.", []string{
-				fmt.Sprintf("The agent did not join within %d s. Check that the agent name matches the agent_name its worker registers, and that a worker is running and connected to this LiveKit server.", int(PendingAfter.Seconds())),
+				"Check that the agent name matches the agent_name its worker registers, and that a worker is connected to this LiveKit server.",
 			}
 		}
-		got := ""
-		if stopped.Joined > 0 {
-			got = fmt.Sprintf(", while %d did", stopped.Joined)
+		why := []string{seen(*stopped)}
+		if gap := between(r, *stopped); gap != "" {
+			why = append(why, gap)
 		}
-		why := []string{fmt.Sprintf("%sthe agent refused new calls: %d of %d never got the agent within %d s%s.", at, stopped.Pending, stopped.Calls, int(PendingAfter.Seconds()), got)}
-		if stopped.Dropped > 0 {
-			why = append(why, fmt.Sprintf("It also left %d %s it had joined.", stopped.Dropped, plural(stopped.Dropped, "call", "calls")))
+		switch {
+		case limit == store.LimitPlan:
+			why = append(why, fmt.Sprintf("LiveKit Cloud's Build plan caps agent sessions at %d; a paid plan lifts it.", PlanSessions))
+			return verdict + " " + past(r) + "LiveKit's plan limit stopped new calls.", why
+		case stopped.Pending > 0 && stopped.Pending >= stopped.Dropped:
+			why = append(why, "More agent workers or bigger servers raise it.")
+			return verdict + " " + past(r) + "it refused new calls (worker full).", why
+		case stopped.Dropped > 0:
+			why = append(why, "The agent's own logs say why it left (a crash, an error or a provider timeout).")
+			return verdict + " " + past(r) + "it dropped calls it had answered.", why
 		}
-		if limit == store.LimitPlan {
-			why = append(why, fmt.Sprintf("It stopped at %d calls, LiveKit Cloud's Build plan limit on agent sessions at once. A paid LiveKit plan lifts it.", PlanSessions))
-		} else {
-			why = append(why, "This is the agent's workers saying they are full. LiveKit Agents stops taking jobs when a worker's load passes its load threshold (0.7 by default), so more workers, bigger servers or a higher threshold raise it.")
-		}
-		return verdict + " " + past(r) + "it refused new calls (worker full).", why
-	case store.LimitJobFailed:
-		if stopped != nil && stopped.Dropped > 0 {
-			return verdict + " " + past(r) + "it dropped calls it had answered.", []string{fmt.Sprintf("%sthe agent left %d %s it had joined, while the caller was still there. Its own logs say why (a crash, an error or a timeout in a provider).", at, stopped.Dropped, plural(stopped.Dropped, "call", "calls"))}
-		}
-		return verdict + " " + past(r) + "LiveKit refused to send the agent.", []string{at + "LiveKit refused a dispatch to the agent. Check that the agent name is right and that a worker is registered."}
+		return verdict + " " + past(r) + "LiveKit refused to send the agent.", []string{"Check that the agent name is right and that a worker is registered."}
+	}
+	switch limit {
 	case store.LimitAnswer:
-		why := at + fmt.Sprintf("answers slowed past the test's rule: a median more than %d%% above the one-call step, or a line with no answer in %d s.", int(math.Round((SlowerBy-1)*100)), int(AnswerWithin.Seconds()))
-		return verdict + " " + past(r) + "answers slowed down.", []string{why}
+		why := []string{fmt.Sprintf("At %d calls, answers slowed: a median over %d%% above one call's, or a line with no answer in %d s.", stopped.Calls, int(math.Round((SlowerBy-1)*100)), int(AnswerWithin.Seconds()))}
+		if gap := between(r, *stopped); gap != "" {
+			why = append(why, gap)
+		}
+		return verdict + " " + past(r) + "answers slowed down.", why
 	case store.LimitTester:
-		return verdict + " Then the machine placing the calls ran out of CPU, so the agent's limit was not reached.", []string{"The tester, not the agent: its CPU averaged over 90% across the step. Run the test from a bigger machine."}
+		return verdict + " Then the machine placing the calls ran out of CPU, so the agent's limit was not reached.", []string{"Run the test from a bigger machine."}
 	case store.LimitAgentBusy:
-		return "The test did not start: the agent already had a call.", []string{"The test runs only against an idle agent, so it never shares a worker with a real caller. Run it when the agent is idle, or on a staging agent."}
+		return "The test did not start: the agent already had a call.", []string{"Run it when the agent is idle, or on a staging agent."}
 	case store.LimitRealCall:
-		return verdict + " Then a real call reached the agent, so the test stopped.", []string{"A room the test did not create got the agent. The test stops so it never slows a real caller."}
+		return verdict + " Then a real call reached the agent, so the test stopped.", nil
 	case store.LimitStopped:
-		return verdict + " Then the test was stopped by hand.", []string{"Stopped before the agent reached a limit."}
+		return verdict + " Then the test was stopped by hand, before the agent reached a limit.", nil
 	case store.LimitRunnerLost, store.LimitNoWorker:
-		return verdict + " Then the test was interrupted.", []string{"The test did not finish, so this is not the agent's limit."}
+		return verdict + " Then the test was interrupted, so this is not the agent's limit.", nil
 	}
-	reason := "The test failed before it reached the agent's limit."
 	if r.Error != nil {
-		reason += " Error: " + *r.Error + "."
+		return verdict, []string{"The test failed before it reached the agent's limit: " + *r.Error + "."}
 	}
-	return verdict, []string{reason}
+	return verdict, []string{"The test failed before it reached the agent's limit."}
+}
+
+// seen is what the calls of the step that stopped the run saw, naming only what happened.
+func seen(s ReportStep) string {
+	parts := []string{}
+	if s.Pending > 0 {
+		parts = append(parts, fmt.Sprintf("%d never got the agent", s.Pending))
+	}
+	if s.Dropped > 0 {
+		parts = append(parts, fmt.Sprintf("%d %s dropped", s.Dropped, plural(s.Dropped, "was", "were")))
+	}
+	if s.Joined > 0 && len(parts) > 0 {
+		parts = append(parts, fmt.Sprintf("%d got it", s.Joined))
+	}
+	if len(parts) == 0 {
+		return fmt.Sprintf("At %d calls, LiveKit refused to send the agent.", s.Calls)
+	}
+	return fmt.Sprintf("At %d calls, %s.", s.Calls, strings.Join(parts, ", "))
+}
+
+// between says how exact the number is: the limit pinned to one call, or the range left untested.
+func between(r Report, stopped ReportStep) string {
+	if r.Capacity == nil || stopped.Calls == 0 {
+		return ""
+	}
+	if stopped.Calls == *r.Capacity+1 {
+		return fmt.Sprintf("Exact: %d passed, %d failed.", *r.Capacity, stopped.Calls)
+	}
+	if slices.ContainsFunc(r.Steps, func(s ReportStep) bool { return s.Refine }) {
+		return fmt.Sprintf("The re-test narrowed it to between %d and %d.", *r.Capacity, stopped.Calls-1)
+	}
+	return fmt.Sprintf("The real limit is between %d and %d; this run did not test the numbers in between.", *r.Capacity, stopped.Calls-1)
+}
+
+// Setup adds what the person told the command about the agent's servers and the calls they need,
+// and works out the servers that need takes. Nothing here is measured, so it is only what was given.
+func (r Report) Setup(server string, servers, target int) Report {
+	if server != "" {
+		r.AgentServer = &server
+	}
+	if servers > 0 {
+		r.AgentServers = &servers
+	}
+	if target > 0 {
+		r.TargetCalls = &target
+	}
+	r.Next = nil
+	if r.Capacity == nil || *r.Capacity == 0 {
+		return r
+	}
+	// Servers needed come from the whole measured ratio, rounded up once, so three servers
+	// that carried 16 together never come out as needing four for 16.
+	n := 1
+	unit := "times this setup"
+	if r.AgentServers != nil {
+		n = *r.AgentServers
+		unit = "servers like these"
+		if n > 1 && *r.Capacity >= n {
+			avg := fmt.Sprintf("%.1f", float64(*r.Capacity)/float64(n))
+			if *r.Capacity%n == 0 {
+				avg = fmt.Sprint(*r.Capacity / n)
+			}
+			r.Next = append(r.Next, fmt.Sprintf("Estimated average: about %s calls per server (the test measured them together).", avg))
+		}
+	}
+	if r.TargetCalls != nil {
+		need := (*r.TargetCalls*n + *r.Capacity - 1) / *r.Capacity
+		r.Next = append(r.Next, fmt.Sprintf("For %d calls at once: %d %s, at the measured limit with no headroom.", *r.TargetCalls, need, unit))
+	}
+	return r
 }
 
 // JSON is the report as indented JSON.
@@ -233,34 +300,44 @@ func (r Report) JSON() ([]byte, error) {
 // Markdown is the report as Markdown, for a pull request, an issue or an email.
 func (r Report) Markdown() []byte {
 	var b strings.Builder
-	fmt.Fprintf(&b, "# %s: %s\n\n", r.Title, r.Agent)
-	if r.Capacity != nil {
-		fmt.Fprintf(&b, "**%d calls at once.** %s\n\n", *r.Capacity, r.Verdict)
-	} else {
-		fmt.Fprintf(&b, "**No capacity number.** %s\n\n", r.Verdict)
+	fmt.Fprintf(&b, "# Capacity: %s\n\n", r.Agent)
+	fmt.Fprintf(&b, "**%s**\n\n", r.Verdict)
+	if r.AgentServer != nil {
+		fmt.Fprintf(&b, "Agent server: %s\n\n", *r.AgentServer)
 	}
-	b.WriteString("## What limited it\n\n")
-	for _, l := range r.Limit {
+	for _, l := range append(slices.Clone(r.Limit), r.Next...) {
 		fmt.Fprintf(&b, "- %s\n", l)
 	}
-	b.WriteString("\n## Step by step\n\n")
-	b.WriteString("| Calls at once | Result | Got the agent | Refused | Dropped | Answers | Median | p95 | Over 1 s | Slowest | Slowest join | Tester CPU |\n")
-	b.WriteString("|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|\n")
+	b.WriteString("\n| Calls at once | Result | Got the agent | Median answer | p95 answer |\n|---:|---|---:|---:|---:|\n")
 	for _, s := range r.Ordered() {
-		fmt.Fprintf(&b, "| %d%s | %s | %d | %d | %d | %d | %s | %s | %s | %s | %s | %s |\n",
-			s.Calls, refineMark(s.Refine), s.Outcome, s.Joined, s.Pending, s.Dropped, s.Answers.Count,
-			secs(s.Answers.Median), secs(s.Answers.P95), pct(s.Answers.SlowShare), secs(s.Answers.Slowest), secs(s.SlowestJoin), pct100(s.TesterCPU))
+		fmt.Fprintf(&b, "| %d%s | %s | %d of %d | %s | %s |\n", s.Calls, refineMark(s.Refine), s.Outcome, s.Joined, s.Calls, secs(s.Answers.Median), secs(s.Answers.P95))
 	}
-	b.WriteString("\nAnswer time runs from the end of the caller's line to the agent's first sound. Each step lasts 60 s and keeps the calls of the step before. ")
-	if slices.ContainsFunc(r.Steps, func(s ReportStep) bool { return s.Refine }) {
-		b.WriteString("Steps marked * re-tested a number between the last pass and the first fail, from no calls up.")
+	b.WriteString("\n<details><summary>All measurements</summary>\n\n")
+	b.WriteString("| Calls | Refused | Dropped | Answers | Over 1 s | Slowest | Slowest join | Tester CPU |\n|---:|---:|---:|---:|---:|---:|---:|---:|\n")
+	for _, s := range r.Ordered() {
+		fmt.Fprintf(&b, "| %d%s | %d | %d | %d | %s | %s | %s | %s |\n", s.Calls, refineMark(s.Refine), s.Pending, s.Dropped, s.Answers.Count,
+			pct(s.Answers.SlowShare), secs(s.Answers.Slowest), secs(s.SlowestJoin), pct100(s.TesterCPU))
 	}
-	b.WriteString("\n\n## What this test does not measure\n\n")
-	for _, n := range r.NotMeasured {
-		fmt.Fprintf(&b, "- %s\n", n)
-	}
-	fmt.Fprintf(&b, "\nRun %s · agent `%s` on %s · %s\n\n%s %s: %s\n", r.RunID, r.Agent, r.LiveKitHost, r.When(), r.MeasuredWith, r.Version, r.Link)
+	fmt.Fprintf(&b, "\n%s\n\n</details>\n\n", r.Method())
+	fmt.Fprintf(&b, "%s · [%s](%s) %s · run %s\n", r.When(), r.MeasuredWith, r.Link, r.Version, r.RunID)
 	return []byte(b.String())
+}
+
+// ServerCount is how many agent servers the person said ran the agent, in words, or empty.
+func (r Report) ServerCount() string {
+	if r.AgentServers == nil {
+		return ""
+	}
+	return fmt.Sprintf("%d agent %s", *r.AgentServers, plural(*r.AgentServers, "server", "servers"))
+}
+
+// Method is the one paragraph a reader needs to trust the number, and what the number leaves out.
+func (r Report) Method() string {
+	m := "Each step holds that many calls for 60 s. Callers say one line after each answer; answer time runs from the end of the line to the agent's first sound."
+	if slices.ContainsFunc(r.Steps, func(s ReportStep) bool { return s.Refine }) {
+		m += " Steps marked * re-test a number between the last pass and the first fail."
+	}
+	return m + " Not measured: " + strings.Join(r.NotMeasured, ", ") + "."
 }
 
 // Table is the steps as a plain text table for a terminal.
@@ -363,12 +440,12 @@ func past(r Report) string {
 	return "Past that, "
 }
 
-func hostOf(raw string) string {
+func hostOf(raw string) *string {
 	u, err := url.Parse(raw)
 	if err != nil || u.Host == "" {
-		return "unknown host"
+		return nil
 	}
-	return u.Host
+	return &u.Host
 }
 
 func nonNil(xs []float64) []float64 {

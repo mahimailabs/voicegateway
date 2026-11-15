@@ -36,30 +36,93 @@ func TestTailOf(t *testing.T) {
 }
 
 // TestReportSaysTheAgentRefused is the AWS run of 2026-11-15 (capacity 16; at 32 the worker took
-// 23 calls, left 8 waiting and dropped 1): the report says the agent refused new calls.
+// 23 calls, left 8 waiting and dropped 1). Whichever limit the run recorded, the report leads with
+// what most calls saw: the agent refused new calls.
 func TestReportSaysTheAgentRefused(t *testing.T) {
-	sixteen, limit := 16, store.LimitPending
-	start := time.Date(2026, 11, 15, 14, 49, 37, 0, time.UTC)
-	run := store.CapacityRun{
-		ID: "319eabb4-2216-4d33-86cb-86de7cdecd60", Agent: "demo-runner", MaxStep: 32, StartedAt: &start,
-		Capacity: &sixteen, LimitedBy: &limit,
-		Steps: []store.CapacityStep{
-			{Step: 16, Outcome: store.StepPassed, Calls: 16, Joined: 16, AnswerSeconds: []float64{0.6, 0.6, 1.2}},
-			{Step: 32, Outcome: store.StepFailed, Calls: 32, Joined: 23, Pending: 8, Failed: 1},
-		},
+	for _, limit := range []string{store.LimitPending, store.LimitJobFailed} {
+		t.Run(limit, func(t *testing.T) {
+			sixteen := 16
+			start := time.Date(2026, 11, 15, 14, 49, 37, 0, time.UTC)
+			run := store.CapacityRun{
+				ID: "319eabb4-2216-4d33-86cb-86de7cdecd60", Agent: "demo-runner", MaxStep: 32, StartedAt: &start,
+				Capacity: &sixteen, LimitedBy: &limit,
+				Steps: []store.CapacityStep{
+					{Step: 16, Outcome: store.StepPassed, Calls: 16, Joined: 16, AnswerSeconds: []float64{0.6, 0.6, 1.2}},
+					{Step: 32, Outcome: store.StepFailed, Calls: 32, Joined: 23, Pending: 8, Failed: 1},
+				},
+			}
+			r := NewReport(run, "wss://lk.example.com/path?token=abc", "1.0.0-preview.12")
+			if !strings.Contains(r.Verdict, "16 calls at once") || !strings.Contains(r.Verdict, "refused new calls (worker full)") {
+				t.Errorf("verdict = %q", r.Verdict)
+			}
+			if !strings.Contains(r.Limit[0], "8 never got the agent, 1 was dropped, 23 got it") || !strings.Contains(r.Limit[1], "between 16 and 31") {
+				t.Errorf("limit = %q", r.Limit)
+			}
+			if r.LiveKitHost == nil || *r.LiveKitHost != "lk.example.com" {
+				t.Errorf("host = %v, want only the host", r.LiveKitHost)
+			}
+			if s := r.Steps[1]; s.Answers.Median != nil || s.SlowestJoin != nil {
+				t.Errorf("a step with no answers or joins must read unknown: %+v", s)
+			}
+		})
 	}
-	r := NewReport(run, "wss://lk.example.com/path?token=abc", "1.0.0-preview.12")
-	if !strings.Contains(r.Verdict, "16 calls at once") || !strings.Contains(r.Verdict, "refused new calls (worker full)") {
-		t.Errorf("verdict = %q", r.Verdict)
+}
+
+// TestReportHidesWhatItDoesNotKnow: no LiveKit host and no server size given means neither appears,
+// and no servers-needed line is made up.
+func TestReportHidesWhatItDoesNotKnow(t *testing.T) {
+	c, limit := 16, store.LimitPending
+	r := NewReport(store.CapacityRun{
+		ID: "r", Agent: "a", MaxStep: 32, Capacity: &c, LimitedBy: &limit,
+		Steps: []store.CapacityStep{{Step: 16, Outcome: store.StepPassed, Joined: 16}, {Step: 32, Outcome: store.StepFailed, Joined: 20, Pending: 12}},
+	}, "", "dev")
+	html, err := r.HTML()
+	if err != nil {
+		t.Fatal(err)
 	}
-	if !strings.Contains(r.Limit[0], "8 of 32 never got the agent") || !strings.Contains(r.Limit[1], "left 1 call") {
-		t.Errorf("limit = %q", r.Limit)
+	for _, unknown := range []string{"unknown host", "LiveKit ", " on <", "What it takes"} {
+		if strings.Contains(string(html), unknown) {
+			t.Errorf("the report shows %q for something it does not know", unknown)
+		}
 	}
-	if r.LiveKitHost != "lk.example.com" {
-		t.Errorf("host = %q, want only the host", r.LiveKitHost)
+	if r.LiveKitHost != nil || r.Next != nil {
+		t.Errorf("host %v next %v, want both unknown", r.LiveKitHost, r.Next)
 	}
-	if s := r.Steps[1]; s.Answers.Median != nil || s.SlowestJoin != nil {
-		t.Errorf("a step with no answers or joins must read unknown: %+v", s)
+}
+
+func TestReportSetupWorksOutServers(t *testing.T) {
+	c := 16
+	base := NewReport(store.CapacityRun{ID: "r", Agent: "a", MaxStep: 32, Capacity: &c}, "", "dev")
+	tests := []struct {
+		name            string
+		servers, target int
+		want            []string
+	}{
+		{name: "one server", servers: 1, target: 100, want: []string{"For 100 calls at once: 7 servers like these"}},
+		{name: "two servers", servers: 2, target: 100, want: []string{"Estimated average: about 8 calls per server", "For 100 calls at once: 13 servers like these"}},
+		{name: "three servers keep the fraction", servers: 3, target: 16, want: []string{"Estimated average: about 5.3 calls per server", "For 16 calls at once: 3 servers like these"}},
+		{name: "servers unknown", target: 40, want: []string{"For 40 calls at once: 3 times this setup"}},
+		{name: "nothing given", want: nil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := base.Setup("4 vCPU", tt.servers, tt.target)
+			if len(r.Next) != len(tt.want) {
+				t.Fatalf("next = %q, want %q", r.Next, tt.want)
+			}
+			for i, w := range tt.want {
+				if !strings.HasPrefix(r.Next[i], w) {
+					t.Errorf("next[%d] = %q, want %q", i, r.Next[i], w)
+				}
+			}
+			html, err := r.HTML()
+			if err != nil || !strings.Contains(string(html), "calls at once on 4 vCPU") {
+				t.Errorf("html with a server size: %v", err)
+			}
+			if r.AgentServer == nil || *r.AgentServer != "4 vCPU" {
+				t.Errorf("server = %v", r.AgentServer)
+			}
+		})
 	}
 }
 
@@ -154,4 +217,13 @@ func slicesEqual(a, b []int) bool {
 		}
 	}
 	return true
+}
+
+// A run that passed every step never claims more than it tested.
+func TestReportMaxReachedSaysAtLeast(t *testing.T) {
+	c, limit := 16, store.LimitMaxReached
+	r := NewReport(store.CapacityRun{ID: "r", Agent: "a", MaxStep: 16, Capacity: &c, LimitedBy: &limit}, "", "dev")
+	if !strings.Contains(r.Verdict, "at least 16") || strings.Contains(r.Verdict, "higher") {
+		t.Errorf("verdict = %q, want an untested upper bound said as at least 16", r.Verdict)
+	}
 }
