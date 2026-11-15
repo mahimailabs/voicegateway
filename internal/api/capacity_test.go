@@ -104,7 +104,7 @@ func TestCapacityRuns(t *testing.T) {
 		t.Errorf("report = %d %q %q, want 200 the HTML page as capacity-report.html", rec.Code, rec.Header().Get("Content-Type"), rec.Header().Get("Content-Disposition"))
 	}
 	f.validateResponse(t, httptest.NewRequest(http.MethodGet, base+"/capacity-runs/"+run.ID+"/report", nil), rec.Code, rec.Result().Header, rec.Body.Bytes())
-	other := "/api/v1/org/default/project/another-project"
+	other := "/api/v1/org/default/project/" + f.addProject(t.Name()+"-other")
 	if code, _ := send(t, admin, http.MethodGet, other+"/capacity-runs/"+run.ID+"/report", ""); code != http.StatusNotFound {
 		t.Errorf("report from another project = %d, want 404", code)
 	}

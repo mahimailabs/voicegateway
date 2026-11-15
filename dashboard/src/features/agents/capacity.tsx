@@ -180,7 +180,9 @@ export function useCapacityAgent(list: Agent[]): [Agent | null, (a: Agent | null
   const [picked, pick] = useUrlPick<Agent>("capacityAgent", list, (a) => a.key)
   const [key] = useUrlState<string | null>("capacityAgent", null)
   const [kept, keep] = useState<Agent | null>(null)
-  const named = useMemo(() => (key ? namedAgent(key) : null), [key])
+  // A hand-typed ?capacityAgent=123 arrives as a number from the router's JSON parsing; only a string
+  // names an agent (the console writes the key quoted, so its names always come back as strings).
+  const named = useMemo(() => (typeof key === "string" && key ? namedAgent(key) : null), [key])
   if (picked && picked !== kept) keep(picked)
   return [picked ?? (kept && kept.key === key ? kept : named), pick]
 }
