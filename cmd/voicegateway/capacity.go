@@ -80,7 +80,7 @@ the test stops if a real call reaches it. Ctrl-C stops the test and deletes ever
 				select {
 				case <-sig:
 					// Giving up skips the hang-ups, so say what may be left running and billed.
-					cancel()
+					// No cancel first: it could let the run return and exit before this prints.
 					_, _ = fmt.Fprintln(cmd.ErrOrStderr(), "capacity: gave up without hanging up; delete any vg-capacity- rooms still open in LiveKit")
 					os.Exit(130)
 				case <-ctx.Done():
