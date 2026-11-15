@@ -66,7 +66,7 @@ a{color:var(--accent)}
 
 <section>
 <h2>Step by step</h2>
-<div class="scroll"><table>
+<div class="scroll" tabindex="0" role="region" aria-label="Step by step results"><table>
 <thead><tr><th scope="col">Calls at once</th><th scope="col">Result</th><th scope="col">Got the agent</th><th scope="col">Refused</th><th scope="col">Dropped</th><th scope="col">Answers</th><th scope="col">Median</th><th scope="col">p95</th><th scope="col">Over 1 s</th><th scope="col">Slowest</th><th scope="col">Slowest join</th><th scope="col">Tester CPU</th></tr></thead>
 <tbody>{{range .Ordered}}<tr><td>{{.Calls}}{{mark .Refine}}</td><td class="{{.Outcome}}">{{.Outcome}}</td><td>{{.Joined}}</td><td>{{.Pending}}</td><td>{{.Dropped}}</td><td>{{.Answers.Count}}</td><td>{{secs .Answers.Median}}</td><td>{{secs .Answers.P95}}</td><td>{{pct .Answers.SlowShare}}</td><td>{{secs .Answers.Slowest}}</td><td>{{secs .SlowestJoin}}</td><td>{{pct100 .TesterCPU}}</td></tr>{{end}}</tbody>
 </table></div>
