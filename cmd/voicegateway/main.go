@@ -55,6 +55,7 @@ func root() *cobra.Command {
 				if err != nil {
 					return fmt.Errorf("configuration:\n%w", err)
 				}
+				c.Version = version
 				log, monitor, err := obs.StartSentry(c.Sentry, name, obs.Logger(os.Stdout, c.LogLevel, name))
 				if err != nil {
 					return fmt.Errorf("configuration:\n%w", err)

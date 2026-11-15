@@ -258,6 +258,15 @@ export const handlers = [
     Object.assign(run, { state: "ended", stopRequested: true, endedAt: new Date().toISOString(), limitedBy: "stopped", capacity: passed.length ? passed[passed.length - 1].step : null })
     return HttpResponse.json(structuredClone(run))
   }),
+  // The report download: a stand-in page for an ended run, since the real one is rendered by the server.
+  http.get<PathParams, never, string | ApiErrorBody>(`${project}/capacity-runs/:runId/report`, ({ params }) => {
+    const run = capacityRuns.get(settingsScope(params))
+    const ended = run && run.id === params.runId && run.state === "ended" ? run : params.runId === capacity().id ? capacity() : null
+    if (!known(params) || !ended) return fail(404, "not_found", "no ended capacity test with this id in this project")
+    return new HttpResponse(`<!doctype html><title>Voice agent capacity test</title><p>Mock report for run ${ended.id}.</p>`, {
+      headers: { "Content-Type": "text/html; charset=utf-8", "Content-Disposition": 'attachment; filename="capacity-report.html"', "Cache-Control": "no-store" },
+    })
+  }),
   http.get<PathParams, never, ProjectSnapshot | ApiErrorBody>(`${project}/snapshot`, ({ params }) => (known(params) ? HttpResponse.json(projectSnapshot()) : fail(404, "not_found", "No such project."))),
   http.get<PathParams, never, Resources | ApiErrorBody>(`${project}/resources`, ({ params }) => (known(params) ? HttpResponse.json({source: "No container resource exporter configured.", resources: []}) : fail(404, "not_found", "No such project."))),
   http.get<PathParams, never, Workers | ApiErrorBody>(`${project}/workers`, ({ params }) => (known(params) ? HttpResponse.json(workers()) : fail(404, "not_found", "No such project."))),

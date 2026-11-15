@@ -10,7 +10,7 @@ import { handlers, resetMockLiveKit } from "../src/mocks/handlers.ts"
 import { capacity } from "../src/mocks/livekit.ts"
 import { setCurrentSession, setMockApi } from "../src/lib/session.ts"
 import { TooltipProvider } from "../src/components/ui/tooltip.tsx"
-import { CapacityResult, CapacitySetupDialog, useCapacityAgent } from "../src/features/agents/capacity.tsx"
+import { CapacityResult, CapacitySetupDialog, TestByName, useCapacityAgent } from "../src/features/agents/capacity.tsx"
 import type { Agent } from "../src/features/agents/agents-model.ts"
 import type { MediaServerData } from "../src/features/media-server/room-drawer.tsx"
 
@@ -65,7 +65,7 @@ function Page() {
   const [a, set] = useCapacityAgent(useContext(Listed))
   return <CapacitySetupDialog agent={a} ms={idle} onOpenChange={(o) => !o && set(null)} />
 }
-function showPage(a: Agent) {
+function showPage(a: Agent, listed: Agent[] = [a]) {
   const queries = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   const root = createRootRoute({ component: () => <Outlet /> })
   const page = createRoute({ getParentRoute: () => root, path: "/", component: Page })
@@ -79,7 +79,7 @@ function showPage(a: Agent) {
       </TooltipProvider>
     </QueryClientProvider>
   )
-  const { rerender } = render(tree([a]))
+  const { rerender } = render(tree(listed))
   return { drop: () => rerender(tree([])) }
 }
 
@@ -122,6 +122,14 @@ describe("capacity dialog", () => {
     expect(screen.getAllByText("stopped by a person").length).toBeGreaterThan(0)
   }, 15000)
 
+  test("an agent named by hand, never listed, can be tested", async () => {
+    const user = userEvent.setup()
+    showPage(agent("receptionist"), [])
+    expect((await screen.findByRole("dialog")).textContent).toContain("receptionist")
+    await user.click(screen.getByRole("checkbox"))
+    expect((screen.getByRole("button", { name: /Start test/ }) as HTMLButtonElement).disabled).toBe(false)
+  })
+
   test("an agent without a name cannot start a test", async () => {
     show(agent(null))
     const start = await screen.findByRole("button", { name: /Start test/ })
@@ -153,7 +161,38 @@ describe("capacity result", () => {
         <CapacityResult run={capacity()} />
       </TooltipProvider>,
     )
-    expect(screen.getByText("8")).toBeDefined()
+    expect(screen.getByText("Capacity").parentElement!.textContent).toContain("8")
     expect(screen.getByText("limited by the tester")).toBeDefined()
+    // Each step's answer tail, as the report file has it, and the same file to download.
+    expect(screen.getByRole("columnheader", { name: "p95" })).toBeDefined()
+    expect(screen.getAllByRole("row")).toHaveLength(capacity().steps.length + 1)
+    const link = screen.getByRole("link", { name: /Download report/ })
+    expect(link.getAttribute("href")).toBe(`/api/v1/org/default/project/default-project/capacity-runs/${capacity().id}/report`)
+  })
+
+  test("a step with no answer shows its tail as unknown, never zero", () => {
+    const run = capacity()
+    run.steps = [{ ...run.steps[0], answerSeconds: [], answers: { medianSeconds: null, p95Seconds: null, overOneSecondShare: null, slowestSeconds: null } }]
+    render(
+      <TooltipProvider>
+        <CapacityResult run={run} />
+      </TooltipProvider>,
+    )
+    const cells = screen.getAllByRole("row")[1].querySelectorAll("td")
+    expect([...cells].slice(2).map((c) => c.textContent)).toEqual(["Unknown", "Unknown", "Unknown", "Unknown"])
+  })
+})
+
+describe("test by name", () => {
+  test("an agent with no call yet is picked by the name it registers with", async () => {
+    const picked = vi.fn()
+    render(<TestByName onPick={picked} />)
+    const user = userEvent.setup()
+    await user.click(screen.getByRole("button", { name: /Test capacity/ }))
+    const go = screen.getByRole("button", { name: "Continue" })
+    expect((go as HTMLButtonElement).disabled).toBe(true)
+    await user.type(screen.getByRole("textbox", { name: "Agent name" }), "  receptionist ")
+    await user.click(go)
+    expect(picked).toHaveBeenCalledWith({ key: "receptionist", name: "receptionist", cloud: null, jobs: [], regions: [], workers: [] })
   })
 })

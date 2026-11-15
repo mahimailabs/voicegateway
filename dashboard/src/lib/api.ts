@@ -228,6 +228,10 @@ export const capacityQuery = (agent: string | null, selected = currentScope()) =
 })
 // Starting and stopping a test is Admin only; the server answers run_active while one is open.
 export const startCapacity = (agent: string, maxStep: CapacityRun["maxStep"]) => data(startCapacityRunCall({ ...thrown, path: scope(), body: { agent, maxStep, consent: true } }))
+// The report page of an ended run (getCapacityReport): a plain link, so the browser downloads it with
+// the session cookie and names it capacity-report.html.
+export const capacityReportUrl = (runId: string, selected = currentScope()) =>
+  `/api/v1/org/${encodeURIComponent(selected.org)}/project/${encodeURIComponent(selected.project)}/capacity-runs/${encodeURIComponent(runId)}/report`
 export const stopCapacity = (runId: string) => data(stopCapacityRunCall({ ...thrown, path: { ...scope(), runId } }))
 export function workersQuery() {
   // Capture the scope with the key; retries must never read a newly selected project.

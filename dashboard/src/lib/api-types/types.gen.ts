@@ -701,6 +701,17 @@ export type CapacityStep = {
      */
     answerSeconds: Array<number | null>;
     testerCpuPercent: number | null;
+    answers: CapacityAnswerTail;
+};
+
+/**
+ * A step's answer times: the typical one and the slow end. With no answers every value is null, never zero.
+ */
+export type CapacityAnswerTail = {
+    medianSeconds: number | null;
+    p95Seconds: number | null;
+    overOneSecondShare: number | null;
+    slowestSeconds: number | null;
 };
 
 export type ProviderProbes = {
@@ -3573,6 +3584,64 @@ export type StartCapacityRunResponses = {
 };
 
 export type StartCapacityRunResponse = StartCapacityRunResponses[keyof StartCapacityRunResponses];
+
+export type GetCapacityReportData = {
+    body?: never;
+    path: {
+        /**
+         * Authorised orgId; the server must verify organisation/project ownership before any read.
+         */
+        orgId: string;
+        /**
+         * Authorised projectId; the server must verify organisation/project ownership before any read.
+         */
+        projectId: string;
+        /**
+         * The run's id from getCapacity.
+         */
+        runId: string;
+    };
+    query?: never;
+    url: '/api/v1/org/{orgId}/project/{projectId}/capacity-runs/{runId}/report';
+};
+
+export type GetCapacityReportErrors = {
+    /**
+     * invalid_request; never return an empty success result for this failure.
+     */
+    400: Error;
+    /**
+     * unauthenticated; never return an empty success result for this failure.
+     */
+    401: Error;
+    /**
+     * forbidden; never return an empty success result for this failure.
+     */
+    403: Error;
+    /**
+     * not_found; never return an empty success result for this failure.
+     */
+    404: Error;
+    /**
+     * internal_error; never return an empty success result for this failure.
+     */
+    500: Error;
+    /**
+     * source_unavailable; never return an empty success result for this failure.
+     */
+    503: Error;
+};
+
+export type GetCapacityReportError = GetCapacityReportErrors[keyof GetCapacityReportErrors];
+
+export type GetCapacityReportResponses = {
+    /**
+     * The report page, as a download named capacity-report.html.
+     */
+    200: string;
+};
+
+export type GetCapacityReportResponse = GetCapacityReportResponses[keyof GetCapacityReportResponses];
 
 export type StopCapacityRunData = {
     body?: never;

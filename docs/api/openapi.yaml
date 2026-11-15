@@ -900,6 +900,60 @@ paths:
           $ref: "#/components/responses/InternalError"
         "503":
           $ref: "#/components/responses/SourceUnavailable"
+  /api/v1/org/{orgId}/project/{projectId}/capacity-runs/{runId}/report:
+    get:
+      operationId: getCapacityReport
+      security:
+        - consoleSession: []
+        - projectKey: []
+      summary: Download an ended capacity test as its report page
+      tags:
+        - Console reads
+      x-access:
+        principal: organisation_member
+        minimumRole: Viewer
+        projectIsolation: required
+        browserSessionTransport: session_cookie
+        scope: project
+      description: "Requires authenticated organisation membership and permission to read the named project. The same self-contained HTML page `voicegateway capacity` writes (docs/specs/capacity-command.md): no script, font or image from the network. The LiveKit URL appears as its host only; no key or secret is in the page. A run that has not ended, or one from another project, is not_found."
+      parameters:
+        - $ref: "#/components/parameters/OrganisationId"
+        - $ref: "#/components/parameters/ProjectId"
+        - name: runId
+          in: path
+          required: true
+          description: The run's id from getCapacity.
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: The report page, as a download named capacity-report.html.
+          headers:
+            Content-Disposition:
+              description: attachment; filename="capacity-report.html"
+              schema:
+                type: string
+            Cache-Control:
+              description: no-store
+              schema:
+                type: string
+          content:
+            text/html:
+              schema:
+                type: string
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/SourceUnavailable"
   /api/v1/org/{orgId}/project/{projectId}/capacity-runs/{runId}/stop:
     post:
       operationId: stopCapacityRun
@@ -4889,7 +4943,42 @@ components:
           x-unit: percent
           x-null-reason: "The tester's CPU could not be read, or the step had no sample yet."
           x-source: { kind: computed, file: internal/capacity/cpu.go, pointer: null, detail: "The tester's mean CPU over the step, all cores, from gopsutil." }
-      required: [ step, startedAt, endedAt, outcome, calls, joined, pending, failed, late, noAnswer, joinSeconds, answerSeconds, testerCpuPercent ]
+        answers:
+          $ref: "#/components/schemas/CapacityAnswerTail"
+          x-source: { kind: computed, file: internal/store/capacity.go, pointer: null, detail: "TailOf over answerSeconds: the same summary the report files carry." }
+      required: [ step, startedAt, endedAt, outcome, calls, joined, pending, failed, late, noAnswer, joinSeconds, answerSeconds, testerCpuPercent, answers ]
+    CapacityAnswerTail:
+      type: object
+      additionalProperties: false
+      description: "A step's answer times: the typical one and the slow end. With no answers every value is null, never zero."
+      x-source: { kind: computed, file: internal/store/capacity.go, pointer: null, detail: "TailOf over a step's answer times." }
+      properties:
+        medianSeconds:
+          type: [ number, "null" ]
+          minimum: 0
+          x-unit: seconds
+          x-null-reason: "No answer was heard during the step."
+          x-source: { kind: computed, file: internal/store/capacity.go, pointer: null, detail: "Median answer time." }
+        p95Seconds:
+          type: [ number, "null" ]
+          minimum: 0
+          x-unit: seconds
+          x-null-reason: "No answer was heard during the step."
+          x-source: { kind: computed, file: internal/store/capacity.go, pointer: null, detail: "Nearest-rank 95th percentile answer time." }
+        overOneSecondShare:
+          type: [ number, "null" ]
+          minimum: 0
+          maximum: 1
+          x-unit: ratio
+          x-null-reason: "No answer was heard during the step."
+          x-source: { kind: computed, file: internal/store/capacity.go, pointer: null, detail: "Share of answers slower than 1 s." }
+        slowestSeconds:
+          type: [ number, "null" ]
+          minimum: 0
+          x-unit: seconds
+          x-null-reason: "No answer was heard during the step."
+          x-source: { kind: computed, file: internal/store/capacity.go, pointer: null, detail: "Slowest answer time." }
+      required: [ medianSeconds, p95Seconds, overOneSecondShare, slowestSeconds ]
     ProviderProbes:
       type: object
       additionalProperties: false

@@ -1,12 +1,15 @@
 import { CapacityPreview } from "./capacity-preview"
-import { useState } from "react"
+import { useMemo, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Bar, CartesianGrid, ComposedChart, Line, LineChart, ReferenceLine, XAxis, YAxis } from "recharts"
 import { type ChartConfig, ChartContainer, ChartLegend, ChartLegendContent, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart"
-import { CheckCircle, Gauge, Info, WarningCircle, X } from "@phosphor-icons/react"
+import { CheckCircle, DownloadSimple, Gauge, Info, WarningCircle, X } from "@phosphor-icons/react"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { Input } from "@/components/ui/input"
+import { Popover, PopoverContent, PopoverDescription, PopoverHeader, PopoverTitle, PopoverTrigger } from "@/components/ui/popover"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { JOIN_MS } from "@/lib/thresholds"
@@ -15,7 +18,8 @@ import type { CapacityRun } from "@/lib/api-types"
 import { type MediaServerData, openAtWatchEnd } from "../media-server/room-drawer"
 import type { Agent } from "./agents-model"
 import { fmtDateTime } from "@/lib/format"
-import { ApiError, capacityQuery, startCapacity, stopCapacity } from "@/lib/api"
+import { ApiError, capacityQuery, capacityReportUrl, startCapacity, stopCapacity } from "@/lib/api"
+import { answerTail } from "@/lib/answer-tail"
 import { roleIn, useSession } from "@/lib/session"
 import { currentScope, useUrlPick, useUrlState } from "@/lib/url-state"
 
@@ -32,10 +36,6 @@ const known = (xs: (number | null)[]) => xs.filter((x): x is number => x !== nul
 
 const STEP_SECONDS = 60
 const ladder = (max: number) => Array.from({ length: Math.log2(max) + 1 }, (_, i) => 2 ** i)
-const median = (xs: (number | null)[]) => {
-  const k = known(xs)
-  return k.length ? [...k].sort((a, b) => a - b)[Math.floor(k.length / 2)] : null
-}
 
 // Idle as far as the captured data can tell: no watched room still had this agent in it when its watch
 // ended. The server checks again, live, just before it starts.
@@ -80,6 +80,47 @@ function Hint({ tone, icon: I, label, tip }: { tone: keyof typeof hintTone; icon
   )
 }
 
+// Test an agent by its name, for one the list cannot show yet: a self-hosted agent is listed only once
+// it has taken a call. The name is LiveKit's agent_name, as the agent registers it.
+export function TestByName({ onPick }: { onPick: (a: Agent) => void }) {
+  const [name, setName] = useState("")
+  const [open, setOpen] = useState(false)
+  const value = name.trim()
+  const ok = value.length > 0 && new TextEncoder().encode(value).length <= 256 && ![...value].some((c) => c.codePointAt(0)! < 0x20 || (c.codePointAt(0)! >= 0x7f && c.codePointAt(0)! <= 0x9f))
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button variant="outline" size="sm">
+          <Gauge /> Test capacity
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent align="end" className="w-80" aria-labelledby="test-by-name-title">
+        <form
+          className="space-y-3"
+          onSubmit={(e) => {
+            e.preventDefault()
+            if (!ok) return
+            setOpen(false)
+            setName("")
+            onPick(namedAgent(value))
+          }}
+        >
+          <PopoverHeader>
+            <PopoverTitle id="test-by-name-title">Test an agent by name</PopoverTitle>
+            <PopoverDescription>For an agent with no call yet. Use the agent_name it registers with LiveKit.</PopoverDescription>
+          </PopoverHeader>
+          <Input aria-label="Agent name" placeholder="my-agent" value={name} onChange={(e) => setName(e.target.value)} autoFocus />
+          <div className="flex justify-end">
+            <Button type="submit" size="sm" disabled={!ok}>
+              Continue
+            </Button>
+          </div>
+        </form>
+      </PopoverContent>
+    </Popover>
+  )
+}
+
 // Dev-only design preview for launch screenshots (?demo in the URL): Start runs a sample ramp in the
 // browser. Never in a production build, and never written to any agent's data.
 const DEMO = import.meta.env.DEV && typeof location !== "undefined" && new URLSearchParams(location.search).has("demo")
@@ -95,6 +136,7 @@ function demoRun(name: string, max: number): Run {
       joinSeconds: Array.from({ length: joined }, (_, i) => (i < joined - slow ? 0.42 + (i % 5) * 0.09 : 2.4 + (i % 3) * 0.3)),
       answerSeconds: Array.from({ length: joined }, (_, i) => 0.92 + Math.log2(n) * 0.05 + (i % 4) * 0.04),
       testerCpuPercent: 40,
+      answers: answerTail(Array.from({ length: joined }, (_, i) => 0.92 + Math.log2(n) * 0.05 + (i % 4) * 0.04)),
     }
   })
   const passed = steps.filter((x) => x.outcome === "passed")
@@ -132,14 +174,21 @@ function startBlock(a: Agent, admin: boolean, idle: boolean) {
 
 // The agent under test (?capacityAgent=<key>). It stays while that key is set, even after the agent
 // leaves the list: a self-hosted agent is listed only while it is in a room, so it drops out once the
-// test's rooms close, and the dialog must still show the result.
+// test's rooms close, and the dialog must still show the result. A key that was never listed is an
+// agent named by hand: a self-hosted agent that registered but has had no call yet.
 export function useCapacityAgent(list: Agent[]): [Agent | null, (a: Agent | null) => void] {
   const [picked, pick] = useUrlPick<Agent>("capacityAgent", list, (a) => a.key)
   const [key] = useUrlState<string | null>("capacityAgent", null)
   const [kept, keep] = useState<Agent | null>(null)
+  // A hand-typed ?capacityAgent=123 arrives as a number from the router's JSON parsing; only a string
+  // names an agent (the console writes the key quoted, so its names always come back as strings).
+  const named = useMemo(() => (typeof key === "string" && key ? namedAgent(key) : null), [key])
   if (picked && picked !== kept) keep(picked)
-  return [picked ?? (kept && kept.key === key ? kept : null), pick]
+  return [picked ?? (kept && kept.key === key ? kept : named), pick]
 }
+
+// An agent known only by the name a person typed: nothing watched it, so it has no jobs or regions.
+const namedAgent = (name: string): Agent => ({ key: name, name, cloud: null, jobs: [], regions: [], workers: [] })
 
 export function CapacitySetupDialog({ agent: a, ms, onOpenChange }: { agent: Agent | null; ms: MediaServerData; onOpenChange: (o: boolean) => void }) {
   const [max, setMax] = useState("32")
@@ -321,13 +370,14 @@ export function CapacitySetupDialog({ agent: a, ms, onOpenChange }: { agent: Age
 }
 
 // One column per step: calls that got the agent in time, late (slower than the join threshold, a new
-// process had to start), or refused or failed, with the median answer time as a line on its own
-// axis. Steps not run yet keep their slot.
+// process had to start), or refused or failed, with the median and p95 answer times as lines on their
+// own axis. Steps not run yet keep their slot.
 const chartConfig = {
   inTime: { label: "Joined in time", color: "var(--chart-1)" },
   late: { label: "Joined late", color: "oklch(0.77 0.16 70)" },
   refused: { label: "Refused or failed", color: "var(--destructive)" },
-  answer: { label: "Answer time (s)", color: "var(--foreground)" },
+  answer: { label: "Median answer (s)", color: "var(--foreground)" },
+  p95: { label: "p95 answer (s)", color: "var(--muted-foreground)" },
 } satisfies ChartConfig
 
 // A step's late joins: the runner's count, or, for a run that did not report one, the reported join
@@ -344,7 +394,7 @@ function CapacityChart({ steps, all, ceiling, threshold }: { steps: Step[]; all:
     // The in-time bar needs the joined count and an exact late count; otherwise it is left out.
     const inTime = s.joined === null || lateIsFloor(s) ? null : s.joined - late
     const refused = s.pending === null ? null : s.pending + (s.failed ?? 0)
-    return { step: String(n), inTime, late, refused, answer: median(s.answerSeconds) }
+    return { step: String(n), inTime, late, refused, answer: s.answers.medianSeconds, p95: s.answers.p95Seconds }
   })
   const top = Math.max(1, ...all)
   return (
@@ -359,6 +409,7 @@ function CapacityChart({ steps, all, ceiling, threshold }: { steps: Step[]; all:
         <Bar yAxisId="calls" dataKey="late" stackId="a" fill="var(--color-late)" isAnimationActive={false} />
         <Bar yAxisId="calls" dataKey="refused" stackId="a" fill="var(--color-refused)" radius={[4, 4, 0, 0]} isAnimationActive={false} />
         <Line yAxisId="answer" dataKey="answer" type="monotone" stroke="var(--color-answer)" strokeWidth={1.5} dot={{ r: 2.5, fill: "var(--background)", strokeWidth: 1.5 }} isAnimationActive={false} connectNulls />
+        <Line yAxisId="answer" dataKey="p95" type="monotone" stroke="var(--color-p95)" strokeWidth={1.5} strokeDasharray="4 3" dot={false} isAnimationActive={false} connectNulls />
         {ceiling ? <ReferenceLine yAxisId="calls" y={ceiling} stroke="var(--foreground)" strokeDasharray="4 4" label={{ value: `Capacity ${ceiling}`, position: "insideTopLeft", fontSize: 11, fill: "var(--foreground)" }} /> : null}
         <ChartLegend content={<ChartLegendContent />} />
       </ComposedChart>
@@ -382,11 +433,46 @@ function Tile({ label, foot, warn, children }: { label: string; foot: string; wa
   )
 }
 
+const secs = (v: number | null) => (v === null ? "Unknown" : `${v.toFixed(2)} s`)
+const share = (v: number | null) => (v === null ? "Unknown" : `${Math.round(v * 100)}%`)
+
+// Each step's answer tail: the typical answer and the slow end, as the report file has it.
+function StepTable({ steps }: { steps: Step[] }) {
+  if (!steps.length) return null
+  const rows = [...steps].sort((a, b) => a.step - b.step)
+  return (
+    <Table className="text-[12px] tnum">
+      <TableHeader>
+        <TableRow>
+          <TableHead>Calls</TableHead>
+          <TableHead>Result</TableHead>
+          <TableHead className="text-right">Median</TableHead>
+          <TableHead className="text-right">p95</TableHead>
+          <TableHead className="text-right">Over 1 s</TableHead>
+          <TableHead className="text-right">Slowest</TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {rows.map((s) => (
+          <TableRow key={s.step}>
+            <TableCell>{s.step}</TableCell>
+            <TableCell className={cn(s.outcome === "failed" && "text-destructive")}>{s.outcome}</TableCell>
+            <TableCell className="text-right">{secs(s.answers.medianSeconds)}</TableCell>
+            <TableCell className="text-right">{secs(s.answers.p95Seconds)}</TableCell>
+            <TableCell className="text-right">{share(s.answers.overOneSecondShare)}</TableCell>
+            <TableCell className="text-right">{secs(s.answers.slowestSeconds)}</TableCell>
+          </TableRow>
+        ))}
+      </TableBody>
+    </Table>
+  )
+}
+
 // The result of a run: the numbers first, then each step.
 export function CapacityResult({ run: r, bare }: { run: Run; bare?: boolean }) {
   const value = r.capacity
   const ms = r.joinThresholdMs ?? JOIN_MS
-  const answers = r.steps.map((x) => median(x.answerSeconds)).filter((v): v is number => v !== null)
+  const answers = r.steps.map((x) => x.answers.medianSeconds).filter((v): v is number => v !== null)
   // Calls stay up from one step to the next, so the most that joined is the last step's count.
   const last = r.steps.length ? r.steps[r.steps.length - 1] : null
   const joined = last ? last.joined : null
@@ -418,9 +504,19 @@ export function CapacityResult({ run: r, bare }: { run: Run; bare?: boolean }) {
         </Tile>
       </div>
       <CapacityChart steps={r.steps} all={ladder(r.maxStep)} ceiling={value} threshold={r.joinThresholdMs} />
-      <p className="text-[11px] leading-relaxed text-muted-foreground">
-        {`${r.endedAt ? `Ran ${fmtDateTime(Date.parse(r.endedAt))}` : "Running"}${r.cloudAgent ? ", per LiveKit Cloud replica" : ""}.${r.error ? ` Error: ${r.error}.` : ""}`}
-      </p>
+      <StepTable steps={r.steps} />
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-[11px] leading-relaxed text-muted-foreground">
+          {`${r.endedAt ? `Ran ${fmtDateTime(Date.parse(r.endedAt))}` : "Running"}${r.cloudAgent ? ", per LiveKit Cloud replica" : ""}.${r.error ? ` Error: ${r.error}.` : ""}`}
+        </p>
+        {r.state === "ended" && r.id !== "demo" && (
+          <Button variant="outline" size="sm" asChild>
+            <a href={capacityReportUrl(r.id)} download="capacity-report.html">
+              <DownloadSimple /> Download report
+            </a>
+          </Button>
+        )}
+      </div>
     </div>
   )
 }

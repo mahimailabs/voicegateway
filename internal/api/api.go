@@ -54,6 +54,9 @@ type API struct {
 	// whose worker reaches only public addresses, since a test's callers dial LiveKit's signalling
 	// and ICE servers outside that guard.
 	CapacityOff bool
+	// CapacityReport renders a run as the HTML file `voicegateway capacity` writes, given the
+	// project's LiveKit URL; without it getCapacityReport answers 503.
+	CapacityReport func(run store.CapacityRun, livekitURL string) ([]byte, error)
 	// Recordings and Media serve a call's stored recording (phase 07a).
 	Recordings Recordings
 	Media      Media
@@ -152,6 +155,7 @@ func (a *API) Routes() http.Handler {
 	handle(r, http.MethodGet, project+"/capacity", a.getCapacity)
 	handle(r, http.MethodPost, project+"/capacity-runs", a.startCapacityRun)
 	handle(r, http.MethodPost, project+"/capacity-runs/{runId}/stop", a.stopCapacityRun)
+	handle(r, http.MethodGet, project+"/capacity-runs/{runId}/report", a.getCapacityReport)
 	handle(r, http.MethodGet, project+"/keys", a.listProjectKeys)
 	handle(r, http.MethodPost, project+"/keys", a.createProjectKey)
 	handle(r, http.MethodDelete, project+"/keys/{keyId}", a.revokeProjectKey)

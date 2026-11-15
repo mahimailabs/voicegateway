@@ -16,10 +16,6 @@ import (
 	"github.com/mahimailabs/voicegateway/internal/store"
 )
 
-// SlowAnswer is the answer time above which an answer counts as slow in a report: one second
-// from the end of the caller's line to the agent's first sound.
-const SlowAnswer = 1.0
-
 // MeasuredWith is the line every report carries, with its link (Mahimai, 2026-11-15).
 const (
 	MeasuredWith    = "Measured with VoiceGateway"
@@ -56,53 +52,22 @@ type Report struct {
 
 // ReportStep is one step: how many calls were up at once and what they saw.
 type ReportStep struct {
-	Calls       int        `json:"calls"`
-	Refine      bool       `json:"refine"`
-	Outcome     string     `json:"outcome"`
-	StartedAt   time.Time  `json:"startedAt"`
-	EndedAt     *time.Time `json:"endedAt"`
-	Joined      int        `json:"joined"`
-	Pending     int        `json:"pending"`
-	Dropped     int        `json:"dropped"`
-	Late        int        `json:"late"`
-	NoAnswer    int        `json:"noAnswer"`
-	SlowestJoin *float64   `json:"slowestJoinSeconds"`
-	Answers     Tail       `json:"answers"`
-	TesterCPU   *float64   `json:"testerCpuPercent"`
+	Calls       int              `json:"calls"`
+	Refine      bool             `json:"refine"`
+	Outcome     string           `json:"outcome"`
+	StartedAt   time.Time        `json:"startedAt"`
+	EndedAt     *time.Time       `json:"endedAt"`
+	Joined      int              `json:"joined"`
+	Pending     int              `json:"pending"`
+	Dropped     int              `json:"dropped"`
+	Late        int              `json:"late"`
+	NoAnswer    int              `json:"noAnswer"`
+	SlowestJoin *float64         `json:"slowestJoinSeconds"`
+	Answers     store.AnswerTail `json:"answers"`
+	TesterCPU   *float64         `json:"testerCpuPercent"`
 	// JoinSeconds are the joins of the calls this step added; AnswerSeconds every answer heard.
 	JoinSeconds   []float64 `json:"joinSeconds"`
 	AnswerSeconds []float64 `json:"answerSeconds"`
-}
-
-// Tail is a step's answer times: the typical one and the slow end. Each is null with no answers.
-type Tail struct {
-	Count     int      `json:"count"`
-	Median    *float64 `json:"medianSeconds"`
-	P95       *float64 `json:"p95Seconds"`
-	SlowShare *float64 `json:"overOneSecondShare"`
-	Slowest   *float64 `json:"slowestSeconds"`
-}
-
-// TailOf summarises answer times. P95 is the nearest-rank 95th percentile.
-func TailOf(answers []float64) Tail {
-	t := Tail{Count: len(answers)}
-	if len(answers) == 0 {
-		return t
-	}
-	s := slices.Clone(answers)
-	slices.Sort(s)
-	med, _ := median(s)
-	p95 := s[int(math.Ceil(0.95*float64(len(s))))-1]
-	slow := 0
-	for _, a := range s {
-		if a > SlowAnswer {
-			slow++
-		}
-	}
-	share := float64(slow) / float64(len(s))
-	last := s[len(s)-1]
-	t.Median, t.P95, t.SlowShare, t.Slowest = &med, &p95, &share, &last
-	return t
 }
 
 // NewReport builds the report of a run. version names the VoiceGateway that measured it; the
@@ -125,7 +90,7 @@ func NewReport(run store.CapacityRun, livekitURL, version string) Report {
 		rs := ReportStep{
 			Calls: s.Step, Refine: !slices.Contains(ladder, s.Step), Outcome: s.Outcome,
 			StartedAt: s.StartedAt, EndedAt: s.EndedAt, Joined: s.Joined, Pending: s.Pending,
-			Dropped: s.Failed, Late: s.Late, NoAnswer: s.NoAnswer, Answers: TailOf(s.AnswerSeconds),
+			Dropped: s.Failed, Late: s.Late, NoAnswer: s.NoAnswer, Answers: store.TailOf(s.AnswerSeconds),
 			TesterCPU: s.TesterCPUPercent, JoinSeconds: nonNil(s.JoinSeconds), AnswerSeconds: nonNil(s.AnswerSeconds),
 		}
 		if len(s.JoinSeconds) > 0 {
