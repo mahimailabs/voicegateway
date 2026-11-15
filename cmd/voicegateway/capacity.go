@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
 	"slices"
@@ -70,24 +71,13 @@ the test stops if a real call reaches it. Ctrl-C stops the test and deletes ever
 			signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
 			defer signal.Stop(sig)
 			stop := make(chan struct{})
-			go func() {
-				select {
-				case <-sig:
-				case <-ctx.Done():
-					return
-				}
-				close(stop)
-				select {
-				case <-sig:
-					// Giving up skips the hang-ups, so say what may be left running and billed.
-					// No cancel first: it could let the run return and exit before this prints.
-					_, _ = fmt.Fprintln(cmd.ErrOrStderr(), "capacity: gave up without hanging up; delete any vg-capacity- rooms still open in LiveKit")
-					os.Exit(130)
-				case <-ctx.Done():
-				}
-			}()
+			watching := watchSignals(ctx, sig, stop, cmd.ErrOrStderr(), os.Exit)
 
 			rep, err := app.RunCapacity(ctx, in, stop, out)
+			// Wait for the signal watcher before returning, so a give-up already under way
+			// always prints its warning and exits with 130.
+			cancel()
+			<-watching
 			if err != nil {
 				return err
 			}
@@ -168,4 +158,28 @@ func prefix(dir string, names []string) []string {
 		}
 	}
 	return out
+}
+
+// watchSignals turns the first signal into a clean stop (closing stop) and the second into
+// giving up: it prints what may be left running and calls exit(130). The returned channel
+// closes once the watcher is done, which is never when it gave up and exit ends the process.
+func watchSignals(ctx context.Context, sig <-chan os.Signal, stop chan<- struct{}, stderr io.Writer, exit func(int)) <-chan struct{} {
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		select {
+		case <-sig:
+		case <-ctx.Done():
+			return
+		}
+		close(stop)
+		select {
+		case <-sig:
+			// Giving up skips the hang-ups, so say what may be left running and billed.
+			_, _ = fmt.Fprintln(stderr, "capacity: gave up without hanging up; delete any vg-capacity- rooms still open in LiveKit")
+			exit(130)
+		case <-ctx.Done():
+		}
+	}()
+	return done
 }
