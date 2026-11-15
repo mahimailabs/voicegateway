@@ -7719,7 +7719,7 @@ components:
           description: Credits in the billing period. One profiled call minute is one credit (decision 0042). At zero credits left, new calls are not profiled; calls themselves are never blocked.
           x-source:
             kind: configuration
-            file: migrations/postgres/00026_plan_credits_limits.sql
+            file: migrations/postgres/00027_plan_credits_limits.sql
             pointer: null
             detail: Operator-issued entitlement limitCredits.
         retentionDays:
@@ -7731,7 +7731,7 @@ components:
           description: Days the organisation's call data is kept; older calls and their telemetry are trimmed, billed usage stays. Null is unlimited, the install's own retention.
           x-source:
             kind: configuration
-            file: migrations/postgres/00026_plan_credits_limits.sql
+            file: migrations/postgres/00027_plan_credits_limits.sql
             pointer: null
             detail: Operator-issued entitlement retentionDays.
         maxProjects:
@@ -7743,7 +7743,7 @@ components:
           description: Projects the organisation may have; creating one more is 409 plan_limit. Null is unlimited.
           x-source:
             kind: configuration
-            file: migrations/postgres/00026_plan_credits_limits.sql
+            file: migrations/postgres/00027_plan_credits_limits.sql
             pointer: null
             detail: Operator-issued entitlement maxProjects.
         maxMembers:
@@ -7755,7 +7755,7 @@ components:
           description: Members the organisation may have, open invitations counted; inviting one more is 409 plan_limit. Null is unlimited.
           x-source:
             kind: configuration
-            file: migrations/postgres/00026_plan_credits_limits.sql
+            file: migrations/postgres/00027_plan_credits_limits.sql
             pointer: null
             detail: Operator-issued entitlement maxMembers.
         active:
@@ -7818,7 +7818,7 @@ components:
           description: Credits in the billing period. One profiled call minute is one credit (decision 0042). At zero credits left, new calls are not profiled; calls themselves are never blocked.
           x-source:
             kind: configuration
-            file: migrations/postgres/00026_plan_credits_limits.sql
+            file: migrations/postgres/00027_plan_credits_limits.sql
             pointer: null
             detail: Operator-issued entitlement limitCredits.
         retentionDays:
@@ -7830,7 +7830,7 @@ components:
           description: Days the organisation's call data is kept; older calls and their telemetry are trimmed, billed usage stays. Null is unlimited, the install's own retention.
           x-source:
             kind: configuration
-            file: migrations/postgres/00026_plan_credits_limits.sql
+            file: migrations/postgres/00027_plan_credits_limits.sql
             pointer: null
             detail: Operator-issued entitlement retentionDays.
         maxProjects:
@@ -7842,7 +7842,7 @@ components:
           description: Projects the organisation may have; creating one more is 409 plan_limit. Null is unlimited.
           x-source:
             kind: configuration
-            file: migrations/postgres/00026_plan_credits_limits.sql
+            file: migrations/postgres/00027_plan_credits_limits.sql
             pointer: null
             detail: Operator-issued entitlement maxProjects.
         maxMembers:
@@ -7854,7 +7854,7 @@ components:
           description: Members the organisation may have, open invitations counted; inviting one more is 409 plan_limit. Null is unlimited.
           x-source:
             kind: configuration
-            file: migrations/postgres/00026_plan_credits_limits.sql
+            file: migrations/postgres/00027_plan_credits_limits.sql
             pointer: null
             detail: Operator-issued entitlement maxMembers.
         active:

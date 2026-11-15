@@ -19,7 +19,7 @@ The instance entitlement (phase 06e) gives an organisation a period and a number
 
 ## Consequences
 
-- One Postgres migration (00026) renames `limit_minutes` to `limit_credits` and adds the three nullable columns.
+- One Postgres migration (00027) renames `limit_minutes` to `limit_credits` and adds the three nullable columns.
 - Lowering a limit below what an organisation already has refuses new projects and invitations only; nothing existing is removed.
 - Recording audio objects of trimmed calls stay in the bucket until the bucket's own 90-day retention; their links go with the call, so nothing offers them.
 - Prices stay out of the instance (0024): what a credit costs is the control plane's.

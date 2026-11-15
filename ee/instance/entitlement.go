@@ -69,7 +69,7 @@ func warning(u store.EntitlementUsage) int {
 	return 0
 }
 
-// maxRetentionDays and maxLimit bound the optional plan limits, as the columns do (Postgres 00026).
+// maxRetentionDays and maxLimit bound the optional plan limits, as the columns do (Postgres 00027).
 const (
 	maxRetentionDays = 3650
 	maxLimit         = 1000000
