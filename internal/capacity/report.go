@@ -166,7 +166,7 @@ func explain(r Report) (string, []string) {
 		verdict = fmt.Sprintf("%d %s at once, every call answered.", *r.Capacity, plural(*r.Capacity, "call", "calls"))
 	}
 	if limit == store.LimitMaxReached {
-		return verdict + fmt.Sprintf(" That was the most this test placed (%d); the real limit is higher.", r.MaxStep), nil
+		return verdict + fmt.Sprintf(" That was the most this test placed, so the limit is at least %d; it was not tested above that.", r.MaxStep), nil
 	}
 	if stopped == nil {
 		stopped = &ReportStep{}
@@ -266,20 +266,24 @@ func (r Report) Setup(server string, servers, target int) Report {
 	if r.Capacity == nil || *r.Capacity == 0 {
 		return r
 	}
-	per := *r.Capacity
+	// Servers needed come from the whole measured ratio, rounded up once, so three servers
+	// that carried 16 together never come out as needing four for 16.
+	n := 1
+	unit := "times this setup"
 	if r.AgentServers != nil {
-		per = *r.Capacity / *r.AgentServers
-		if per > 0 && *r.AgentServers > 1 {
-			r.Next = append(r.Next, fmt.Sprintf("Each server carried about %d calls at once.", per))
+		n = *r.AgentServers
+		unit = "servers like these"
+		if n > 1 && *r.Capacity >= n {
+			avg := fmt.Sprintf("%.1f", float64(*r.Capacity)/float64(n))
+			if *r.Capacity%n == 0 {
+				avg = fmt.Sprint(*r.Capacity / n)
+			}
+			r.Next = append(r.Next, fmt.Sprintf("Estimated average: about %s calls per server (the test measured them together).", avg))
 		}
 	}
-	if r.TargetCalls != nil && per > 0 {
-		unit := "times this setup"
-		if r.AgentServers != nil {
-			unit = "servers like these"
-		}
-		n := (*r.TargetCalls + per - 1) / per
-		r.Next = append(r.Next, fmt.Sprintf("For %d calls at once: %d %s, at the measured limit with no headroom.", *r.TargetCalls, n, unit))
+	if r.TargetCalls != nil {
+		need := (*r.TargetCalls*n + *r.Capacity - 1) / *r.Capacity
+		r.Next = append(r.Next, fmt.Sprintf("For %d calls at once: %d %s, at the measured limit with no headroom.", *r.TargetCalls, need, unit))
 	}
 	return r
 }

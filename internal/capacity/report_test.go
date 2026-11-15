@@ -99,7 +99,8 @@ func TestReportSetupWorksOutServers(t *testing.T) {
 		want            []string
 	}{
 		{name: "one server", servers: 1, target: 100, want: []string{"For 100 calls at once: 7 servers like these"}},
-		{name: "two servers", servers: 2, target: 100, want: []string{"Each server carried about 8 calls at once.", "For 100 calls at once: 13 servers like these"}},
+		{name: "two servers", servers: 2, target: 100, want: []string{"Estimated average: about 8 calls per server", "For 100 calls at once: 13 servers like these"}},
+		{name: "three servers keep the fraction", servers: 3, target: 16, want: []string{"Estimated average: about 5.3 calls per server", "For 16 calls at once: 3 servers like these"}},
 		{name: "servers unknown", target: 40, want: []string{"For 40 calls at once: 3 times this setup"}},
 		{name: "nothing given", want: nil},
 	}
@@ -216,4 +217,13 @@ func slicesEqual(a, b []int) bool {
 		}
 	}
 	return true
+}
+
+// A run that passed every step never claims more than it tested.
+func TestReportMaxReachedSaysAtLeast(t *testing.T) {
+	c, limit := 16, store.LimitMaxReached
+	r := NewReport(store.CapacityRun{ID: "r", Agent: "a", MaxStep: 16, Capacity: &c, LimitedBy: &limit}, "", "dev")
+	if !strings.Contains(r.Verdict, "at least 16") || strings.Contains(r.Verdict, "higher") {
+		t.Errorf("verdict = %q, want an untested upper bound said as at least 16", r.Verdict)
+	}
 }
