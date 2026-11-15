@@ -7,7 +7,8 @@ Agreed by Mahimai on 2026-11-15, after the capacity proof of concept (run 319eab
 A stranger with a LiveKit voice agent gets a capacity number and a report they understand in under 5 minutes, with one command and no VoiceGateway install.
 
 ```bash
-docker run --rm -v "$PWD:/out" ghcr.io/mahimailabs/voicegateway:<version> \
+docker run --rm -it -v "$PWD:/out" -w /out -e LIVEKIT_API_KEY -e LIVEKIT_API_SECRET \
+  ghcr.io/mahimailabs/voicegateway:<version> \
   capacity --livekit-url wss://... --agent my-agent --max 32
 # reads LIVEKIT_API_KEY and LIVEKIT_API_SECRET from the environment
 ```

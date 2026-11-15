@@ -116,6 +116,9 @@ func (t *test) refine(ctx context.Context, failed int, end store.CapacityEnd) st
 			return store.CapacityEnd{LimitedBy: store.LimitRunnerLost}
 		case <-time.After(t.Cooldown):
 		}
+		if stop, ok := t.mayContinue(ctx); !ok {
+			return stop
+		}
 		n := *t.capacity + (failed-*t.capacity)/2
 		next, done := t.step(ctx, n)
 		switch {
@@ -128,6 +131,33 @@ func (t *test) refine(ctx context.Context, failed int, end store.CapacityEnd) st
 		}
 	}
 	return end
+}
+
+// mayContinue checks, before a refine step places calls, that nobody pressed Stop and no real call
+// reached the agent during the cooldown. A failed check is unknown, not a no: the step's own beats
+// check again, as they do on every step.
+func (t *test) mayContinue(ctx context.Context) (store.CapacityEnd, bool) {
+	hctx, cancel := t.ctx(ctx)
+	stop, err := t.Runs.HeartbeatCapacityRun(hctx, t.run.ID, t.ID, t.Now())
+	cancel()
+	switch {
+	case errors.Is(err, store.ErrNotFound):
+		return store.CapacityEnd{LimitedBy: store.LimitRunnerLost}, false
+	case err != nil:
+		t.Log.Warn("capacity: heartbeat failed", "run", t.run.ID, "err", err)
+	case stop:
+		return store.CapacityEnd{LimitedBy: store.LimitStopped}, false
+	}
+	bctx, bcancel := t.ctx(ctx)
+	busy, err := t.lk.AgentRooms(bctx, t.run.Agent)
+	bcancel()
+	switch {
+	case err != nil:
+		t.Log.Warn("capacity: real-call check failed", "run", t.run.ID, "err", err)
+	case len(busy) > 0:
+		return store.CapacityEnd{LimitedBy: store.LimitRealCall}, false
+	}
+	return store.CapacityEnd{}, true
 }
 
 // agentLimit reports whether a run ended on one of the agent's own limits.
