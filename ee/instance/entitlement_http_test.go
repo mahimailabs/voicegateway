@@ -39,7 +39,7 @@ func TestEntitlementAccessAndValidation(t *testing.T) {
 	h := (&Handlers{Entitlements: st, Log: slog.New(slog.NewTextHandler(io.Discard, nil))}).API()
 	instancePath := "/api/v1/instance/organisations/acme/entitlement"
 	memberPath := "/api/v1/org/acme/entitlement"
-	body := []byte(`{"from":"2026-10-01T00:00:00Z","to":"2026-11-01T00:00:00Z","limitMinutes":2000,"active":true,"revision":1}`)
+	body := []byte(`{"from":"2026-10-01T00:00:00Z","to":"2026-11-01T00:00:00Z","limitCredits":2000,"active":true,"revision":1}`)
 	for _, tt := range []struct {
 		name, method, path string
 		p                  store.Principal
@@ -78,7 +78,14 @@ func TestEntitlementAccessAndValidation(t *testing.T) {
 			next.ServeHTTP(w, r.WithContext(store.WithPrincipal(r.Context(), store.Principal{Instance: true})))
 		})
 	}}).Routes()
-	for _, bad := range []string{`{}`, string(body) + `{}`, `{"from":"2026-10-01T00:00:00Z","to":"2026-11-01T00:00:00Z","limitMinutes":2000,"revision":2}`} {
+	for _, bad := range []string{
+		`{}`, string(body) + `{}`, `{"from":"2026-10-01T00:00:00Z","to":"2026-11-01T00:00:00Z","limitCredits":2000,"revision":2}`,
+		// limitMinutes is gone, with no alias (decision 0042).
+		`{"from":"2026-10-01T00:00:00Z","to":"2026-11-01T00:00:00Z","limitMinutes":2000,"active":true,"revision":2}`,
+		`{"from":"2026-10-01T00:00:00Z","to":"2026-11-01T00:00:00Z","limitCredits":2000,"retentionDays":0,"active":true,"revision":2}`,
+		`{"from":"2026-10-01T00:00:00Z","to":"2026-11-01T00:00:00Z","limitCredits":2000,"maxProjects":-1,"active":true,"revision":2}`,
+		`{"from":"2026-10-01T00:00:00Z","to":"2026-11-01T00:00:00Z","limitCredits":2000,"maxMembers":1000001,"active":true,"revision":2}`,
+	} {
 		w := httptest.NewRecorder()
 		router.ServeHTTP(w, httptest.NewRequest("PUT", instancePath, bytes.NewBufferString(bad)))
 		if w.Code != 400 {
@@ -107,5 +114,37 @@ func TestEntitlementAccessAndValidation(t *testing.T) {
 	router.ServeHTTP(w, httptest.NewRequest("GET", instancePath, nil))
 	if w.Code != 200 {
 		t.Fatal(w.Code)
+	}
+}
+
+// A plan's optional limits are stored as sent and read back; an absent limit is null, unlimited,
+// never zero.
+func TestEntitlementPlanLimits(t *testing.T) {
+	st := &entitlementMemory{}
+	router := (&api.API{Instance: (&Handlers{Entitlements: st, Log: slog.New(slog.NewTextHandler(io.Discard, nil))}).API(), Gate: func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			next.ServeHTTP(w, r.WithContext(store.WithPrincipal(r.Context(), store.Principal{Instance: true})))
+		})
+	}}).Routes()
+	path := "/api/v1/instance/organisations/acme/entitlement"
+	for _, tt := range []struct {
+		name, body, want string
+	}{
+		{
+			"unlimited", `{"from":"2026-10-01T00:00:00Z","to":"2026-11-01T00:00:00Z","limitCredits":2000,"active":true,"revision":1}`,
+			`"retentionDays":null,"maxProjects":null,"maxMembers":null`,
+		},
+		{
+			"limited", `{"from":"2026-10-01T00:00:00Z","to":"2026-11-01T00:00:00Z","limitCredits":500,"retentionDays":30,"maxProjects":1,"maxMembers":3,"active":true,"revision":2}`,
+			`"retentionDays":30,"maxProjects":1,"maxMembers":3`,
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			w := httptest.NewRecorder()
+			router.ServeHTTP(w, httptest.NewRequest("PUT", path, bytes.NewBufferString(tt.body)))
+			if w.Code != 200 || !bytes.Contains(w.Body.Bytes(), []byte(tt.want)) {
+				t.Fatalf("status %d: %s, want %s", w.Code, w.Body.String(), tt.want)
+			}
+		})
 	}
 }

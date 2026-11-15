@@ -100,8 +100,9 @@ export function firstLook(call: Call): FirstLook {
   return { answerMs: t?.responseMs ?? null, answerDerived: t?.responseDerived ?? false, turn: t ? t.i + 1 : null, stages, slowest, turns, interruptions: turns === null ? null : interruptionCount(model) }
 }
 
-// "{used} of {limit} min", as the usage allowance counts it; null when there is no entitlement read.
-export const planText = (e: OrganisationEntitlement | undefined) => (e ? `${Math.floor(e.callSeconds / 60).toLocaleString()} of ${e.limitMinutes.toLocaleString()} min` : null)
+// "{used} of {limit} credits", as the usage allowance counts them (one profiled call minute is one
+// credit); null when there is no entitlement read.
+export const planText = (e: OrganisationEntitlement | undefined) => (e ? `${Math.floor(e.callSeconds / 60).toLocaleString()} of ${e.limitCredits.toLocaleString()} credits` : null)
 
 export const secs = (ms: number) => (ms >= 1000 ? `${(ms / 1000).toFixed(2)} s` : `${Math.round(ms)} ms`)
 

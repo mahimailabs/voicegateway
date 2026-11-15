@@ -15,6 +15,8 @@ const (
 	codeNotFound          = "not_found"
 	codeSourceUnavailable = "source_unavailable"
 	codeInternal          = "internal_error"
+	// codePlanLimit refuses a project or invitation past the organisation's plan (decision 0042).
+	codePlanLimit = "plan_limit"
 )
 
 // The contract's Error codes the instance API answers with (phase 06e).
@@ -23,6 +25,7 @@ const (
 	CodeInvalidRequest   = codeInvalidRequest
 	CodeNotFound         = codeNotFound
 	CodeAlreadyMember    = codeAlreadyMember
+	CodePlanLimit        = codePlanLimit
 	CodeInternal         = codeInternal
 )
 

@@ -23,7 +23,7 @@ func TestEntitlementLedgerAndRevisions(t *testing.T) {
 		t.Fatal(err)
 	}
 	from := time.Date(2026, 10, 19, 0, 0, 0, 0, time.UTC)
-	e := store.Entitlement{From: from, To: from.Add(30 * 24 * time.Hour), LimitMinutes: 2000, Active: true, Revision: 1}
+	e := store.Entitlement{From: from, To: from.Add(30 * 24 * time.Hour), LimitCredits: 2000, Active: true, Revision: 1}
 	if err := s.PutEntitlement(ctx, "default", e); err != nil {
 		t.Fatal(err)
 	}
@@ -55,7 +55,7 @@ func TestEntitlementLedgerAndRevisions(t *testing.T) {
 	if err != nil || u.CallSeconds != 120000 {
 		t.Fatalf("retention reset usage %+v %v", u, err)
 	}
-	e.LimitMinutes = 3000
+	e.LimitCredits = 3000
 	if err := s.PutEntitlement(ctx, "default", e); !errors.Is(err, store.ErrEntitlementRevision) {
 		t.Fatalf("conflicting replay: %v", err)
 	}
@@ -134,7 +134,7 @@ func TestEntitlementUnknownDuration(t *testing.T) {
 		t.Fatal(err)
 	}
 	from := time.Date(2026, 10, 19, 0, 0, 0, 0, time.UTC)
-	e := store.Entitlement{From: from, To: from.Add(30 * 24 * time.Hour), LimitMinutes: 2000, Active: true, Revision: 1}
+	e := store.Entitlement{From: from, To: from.Add(30 * 24 * time.Hour), LimitCredits: 2000, Active: true, Revision: 1}
 	insert := func() {
 		t.Helper()
 		_, err := pool.Exec(ctx, `INSERT INTO calls(organisation_id,project_id,started_at,ended_at,end_state) VALUES

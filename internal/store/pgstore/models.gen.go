@@ -337,9 +337,12 @@ type OrganisationEntitlement struct {
 	OrganisationID string
 	FromAt         pgtype.Timestamptz
 	ToAt           pgtype.Timestamptz
-	LimitMinutes   int64
+	LimitCredits   int64
 	Active         bool
 	Revision       int64
+	RetentionDays  pgtype.Int4
+	MaxProjects    pgtype.Int4
+	MaxMembers     pgtype.Int4
 }
 
 type ProfiledCallUsage struct {

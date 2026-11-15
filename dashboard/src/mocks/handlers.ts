@@ -318,7 +318,7 @@ export const handlers = [
     const now = new Date()
     const from = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).toISOString()
     const to = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1)).toISOString()
-    return HttpResponse.json<OrganisationEntitlement>({ from, to, limitMinutes: 2000, active: true, revision: 1, callSeconds: 0, unmeasuredCalls: 0, openCalls: 0, warningPercent: 0, ingestAllowed: true })
+    return HttpResponse.json<OrganisationEntitlement>({ from, to, limitCredits: 2000, retentionDays: null, maxProjects: null, maxMembers: null, active: true, revision: 1, callSeconds: 0, unmeasuredCalls: 0, openCalls: 0, warningPercent: 0, ingestAllowed: true })
   }),
   http.get<PathParams, never, AlertSetup | ApiErrorBody>(`${project}/alert-setup`, ({ params }) => (known(params) ? HttpResponse.json(alertSetup()) : fail(404, "not_found", "No such project."))),
   // Alert rules and channels, in memory (settings.ts), with web's checks.
