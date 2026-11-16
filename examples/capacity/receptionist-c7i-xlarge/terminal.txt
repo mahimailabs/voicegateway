@@ -1,0 +1,14 @@
+
+16 calls at once, every call answered. Past that, it refused new calls (worker full).
+  At 32 calls, 8 never got the agent, 1 was dropped, 23 got it.
+  The real limit is between 16 and 31; this run did not test the numbers in between.
+  More agent workers or bigger servers raise it.
+  For 100 calls at once: 7 servers like these, at the measured limit with no headroom.
+
+  calls  result  got agent  refused  dropped  median     p95  over 1 s  slowest
+      1  passed          1        0        0  0.58 s  0.94 s        0%   0.94 s
+      2  passed          2        0        0  0.61 s  1.87 s       11%   1.87 s
+      4  passed          4        0        0  0.58 s  1.31 s       17%   1.45 s
+      8  passed          8        0        0  0.62 s  1.20 s       22%   1.25 s
+     16  passed         16        0        0  0.61 s  1.30 s       23%   2.74 s
+     32  failed         23        8        1  0.72 s  1.77 s       29%   1.77 s

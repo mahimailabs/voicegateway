@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Capacity: demo-runner</title>
+<style>
+:root{--bg:#f7f8fa;--surface:#fff;--fg:#111827;--muted:#525b6b;--line:#dfe3ea;--accent:#0b5fd9;--good:#0a7a52;--bad:#b42318;--warn:#a14a07;
+--sans:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;--mono:ui-monospace,SFMono-Regular,Menlo,monospace}
+@media (prefers-color-scheme:dark){:root{--bg:#0e1116;--surface:#161b22;--fg:#e8ebf0;--muted:#a3adbb;--line:#2a313c;--accent:#6aa6ff;--good:#3fc79a;--bad:#ff8a80;--warn:#f0a94b;color-scheme:dark}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.55 var(--sans)}
+main{max-width:880px;margin:0 auto;padding:40px 16px 56px;display:flex;flex-direction:column;gap:28px}
+h1{font-size:clamp(24px,4.5vw,34px);line-height:1.15;margin:0;font-weight:650;font-family:var(--mono)}
+h2{font-size:19px;margin:0 0 10px;font-weight:650}
+p{margin:0 0 8px;max-width:68ch}
+.eyebrow{font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:600;margin:0 0 6px}
+.meta{color:var(--muted);font-size:14px;margin-top:6px}
+.verdict{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:24px;display:grid;grid-template-columns:auto 1fr;gap:28px;align-items:center}
+.big{font-size:88px;line-height:.9;font-weight:700;color:var(--accent);font-variant-numeric:tabular-nums}
+.big small{display:block;font-size:14px;color:var(--muted);font-weight:500;margin-top:10px;max-width:20ch;line-height:1.35}
+.verdict ul,.next ul{margin:8px 0 0;padding-left:18px;color:var(--fg)}
+.next{border-left:3px solid var(--accent);padding:4px 0 4px 16px}
+.chart{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:16px}
+svg{width:100%;height:auto;display:block}
+.axis{stroke:var(--line)}
+.tick{fill:var(--muted);font:12px var(--sans)}
+.bar{fill:var(--accent);opacity:.85}.bar.refused{fill:var(--bad);opacity:.55}
+.line{fill:none;stroke-width:2.5}.median{stroke:var(--fg)}.p95{stroke:var(--warn);stroke-dasharray:6 4}
+.legend{display:flex;flex-wrap:wrap;gap:16px;font-size:13px;color:var(--muted);margin-top:8px}
+.legend i{display:inline-block;width:12px;height:12px;border-radius:3px;margin-right:6px;vertical-align:-1px}
+.scroll{overflow-x:auto;background:var(--surface);border:1px solid var(--line);border-radius:12px}
+table{border-collapse:collapse;width:100%;font-size:14px;font-variant-numeric:tabular-nums}
+th,td{text-align:right;padding:9px 12px;border-bottom:1px solid var(--line);white-space:nowrap}
+tr:last-child td{border-bottom:0}
+th:first-child,td:first-child,th:nth-child(2),td:nth-child(2){text-align:left}
+th{font-size:12px;letter-spacing:.04em;text-transform:uppercase;color:var(--muted);font-weight:600}
+.passed{color:var(--good);font-weight:600}.failed{color:var(--bad);font-weight:600}.inconclusive{color:var(--warn);font-weight:600}
+li{margin-bottom:4px}
+details{font-size:14px;color:var(--muted)}
+summary{cursor:pointer;font-weight:600;color:var(--fg)}
+details .scroll{margin:12px 0}
+footer{border-top:1px solid var(--line);padding-top:14px;font-size:13px;color:var(--muted)}
+a{color:var(--accent)}
+@media (max-width:640px){.verdict{grid-template-columns:1fr;gap:12px}.big{font-size:64px}th,td{padding:8px}table{font-size:13px}}
+</style>
+</head>
+<body>
+<main>
+<header>
+<p class="eyebrow">Voice agent capacity test</p>
+<h1>demo-runner</h1>
+<p class="meta">15 Nov 2026, 14:49 to 14:54 UTC · 1 agent server</p>
+</header>
+
+<section class="verdict" aria-label="Result">
+<div class="big">16<small>calls at once on c7i.xlarge (4 vCPU, 8 GB)</small></div>
+<div><p><strong>16 calls at once, every call answered. Past that, it refused new calls (worker full).</strong></p><ul><li>At 32 calls, 8 never got the agent, 1 was dropped, 23 got it.</li><li>The real limit is between 16 and 31; this run did not test the numbers in between.</li><li>More agent workers or bigger servers raise it.</li></ul></div>
+</section>
+
+<section class="next" aria-label="What it takes">
+<h2>What it takes</h2>
+<ul><li>For 100 calls at once: 7 servers like these, at the measured limit with no headroom.</li></ul>
+</section>
+
+<section>
+<h2>Calls and answer time</h2>
+<div class="chart">
+<svg viewBox="0 0 640 260" role="img" aria-label="Calls that got the agent, and median and p95 answer time, per step"><line x1="44" y1="220.0" x2="596" y2="220.0" class="axis"/><text x="38" y="20" class="tick" text-anchor="end">32</text><text x="602" y="20" class="tick" text-anchor="start">2 s</text><rect x="62.4" y="213.6" width="55.2" height="6.4" class="bar"><title>1 calls: 1 got the agent</title></rect><text x="90.0" y="238" class="tick" text-anchor="middle">1</text><rect x="154.4" y="207.2" width="55.2" height="12.8" class="bar"><title>2 calls: 2 got the agent</title></rect><text x="182.0" y="238" class="tick" text-anchor="middle">2</text><rect x="246.4" y="194.5" width="55.2" height="25.5" class="bar"><title>4 calls: 4 got the agent</title></rect><text x="274.0" y="238" class="tick" text-anchor="middle">4</text><rect x="338.4" y="169.0" width="55.2" height="51.0" class="bar"><title>8 calls: 8 got the agent</title></rect><text x="366.0" y="238" class="tick" text-anchor="middle">8</text><rect x="430.4" y="118.0" width="55.2" height="102.0" class="bar"><title>16 calls: 16 got the agent</title></rect><text x="458.0" y="238" class="tick" text-anchor="middle">16</text><rect x="522.4" y="73.4" width="55.2" height="146.6" class="bar"><title>32 calls: 23 got the agent</title></rect><rect x="522.4" y="22.4" width="55.2" height="51.0" class="bar refused"><title>8 refused</title></rect><text x="550.0" y="238" class="tick" text-anchor="middle">32</text><polyline points="90.0,124.1 182.0,29.4 274.0,86.4 366.0,97.6 458.0,87.8 550.0,39.7" class="line p95"/><polyline points="90.0,160.7 182.0,157.7 274.0,160.4 366.0,156.8 458.0,157.7 550.0,146.8" class="line median"/><text x="320" y="256" class="tick" text-anchor="middle">calls at once</text></svg>
+<div class="legend"><span><i style="background:var(--accent)"></i>Got the agent</span><span><i style="background:var(--bad);opacity:.55"></i>Refused</span><span><i style="background:var(--fg);height:3px;vertical-align:3px"></i>Median answer</span><span><i style="background:var(--warn);height:3px;vertical-align:3px"></i>p95 answer</span></div>
+</div>
+</section>
+
+<section>
+<h2>Step by step</h2>
+<div class="scroll" tabindex="0" role="region" aria-label="Step by step results"><table>
+<thead><tr><th scope="col">Calls at once</th><th scope="col">Result</th><th scope="col">Got the agent</th><th scope="col">Median answer</th><th scope="col">p95 answer</th></tr></thead>
+<tbody><tr><td>1</td><td class="passed">passed</td><td>1 of 1</td><td>0.58 s</td><td>0.94 s</td></tr><tr><td>2</td><td class="passed">passed</td><td>2 of 2</td><td>0.61 s</td><td>1.87 s</td></tr><tr><td>4</td><td class="passed">passed</td><td>4 of 4</td><td>0.58 s</td><td>1.31 s</td></tr><tr><td>8</td><td class="passed">passed</td><td>8 of 8</td><td>0.62 s</td><td>1.20 s</td></tr><tr><td>16</td><td class="passed">passed</td><td>16 of 16</td><td>0.61 s</td><td>1.30 s</td></tr><tr><td>32</td><td class="failed">failed</td><td>23 of 32</td><td>0.72 s</td><td>1.77 s</td></tr></tbody>
+</table></div>
+</section>
+
+<details>
+<summary>All measurements and method</summary>
+<div class="scroll" tabindex="0" role="region" aria-label="All measurements"><table>
+<thead><tr><th scope="col">Calls</th><th scope="col">Refused</th><th scope="col">Dropped</th><th scope="col">Answers</th><th scope="col">Over 1 s</th><th scope="col">Slowest</th><th scope="col">Slowest join</th><th scope="col">Tester CPU</th></tr></thead>
+<tbody><tr><td>1</td><td>0</td><td>0</td><td>8</td><td>0%</td><td>0.94 s</td><td>0.30 s</td><td>2%</td></tr><tr><td>2</td><td>0</td><td>0</td><td>18</td><td>11%</td><td>1.87 s</td><td>0.29 s</td><td>2%</td></tr><tr><td>4</td><td>0</td><td>0</td><td>36</td><td>17%</td><td>1.45 s</td><td>0.33 s</td><td>2%</td></tr><tr><td>8</td><td>0</td><td>0</td><td>72</td><td>22%</td><td>1.25 s</td><td>0.56 s</td><td>3%</td></tr><tr><td>16</td><td>0</td><td>0</td><td>138</td><td>23%</td><td>2.74 s</td><td>1.79 s</td><td>3%</td></tr><tr><td>32</td><td>8</td><td>1</td><td>7</td><td>29%</td><td>1.77 s</td><td>1.97 s</td><td>4%</td></tr></tbody>
+</table></div>
+<p>Each step holds that many calls for 60 s. Callers say one line after each answer; answer time runs from the end of the line to the agent&#39;s first sound. Not measured: the agent servers&#39; CPU and memory, time per stage (speech to text, model, voice), phone (SIP) calls, answer quality.</p>
+</details>
+
+<footer><a href="https://voicegateway.dev">Measured with VoiceGateway</a> 1.0.0-preview.11 · run 319eabb4-2216-4d33-86cb-86de7cdecd60</footer>
+</main>
+</body>
+</html>
