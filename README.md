@@ -5,8 +5,8 @@
   </picture>
 </p>
 
-<h3 align="center">One call. The whole story.</h3>
-<p align="center">The open-source profiler for LiveKit voice agents, from the phone line to the model.</p>
+<h3 align="center">Find how many calls your voice agent carries before it starts to fail.</h3>
+<p align="center">The open-source capacity test and call profiler for LiveKit voice agents.</p>
 
 <div align="center">
   <h3><a href="#quickstart">Self-host</a> · <a href="https://docs.voicegateway.dev">Docs</a> · <a href="https://voicegateway.dev">Website</a> · <a href="https://github.com/mahimailabs/voicegateway/issues/320">V1 roadmap</a></h3>
@@ -19,6 +19,35 @@
   </p>
 </div>
 
+## Capacity test
+
+<img src="docs/assets/readme/capacity-report.jpg" alt="A real capacity report for the agent demo-runner on one c7i.xlarge server: 16 calls at once with every call answered, refused past that; 7 servers like it for 100 calls at once; a chart of calls carried with median and p95 answer time per step." width="100%" />
+
+One command places real test calls at your LiveKit agent, 1, 2, 4 and up to `--max` at once, 60 s per step, until it refuses, drops or slows down. You get the number it carries, why it stopped, and a report you can send to your team:
+
+```bash
+export LIVEKIT_API_KEY=... LIVEKIT_API_SECRET=...
+go run ./cmd/voicegateway capacity --livekit-url wss://your-project.livekit.cloud --agent my-agent --max 32
+```
+
+Run it from a clone with Go 1.26; no database or console is needed. The Docker image carries the command from the release after 1.0.0-preview.11. It writes `capacity-report.html`, `capacity-report.md` and `capacity-report.json` to the folder.
+
+**A real run.** [examples/capacity/receptionist-c7i-xlarge](examples/capacity/receptionist-c7i-xlarge/) is the report above, from a receptionist agent on one AWS c7i.xlarge server (4 vCPU, 8 GB) on 15 Nov 2026: the HTML, Markdown and JSON files and the terminal summary.
+
+### What it costs you
+
+Every test call is a real call. It runs your agent's own speech to text, model and voice providers, and they bill you for it. A run to `--max 32` places up to 32 calls, kept up as each step adds more, for about 63 call-minutes in all, plus the steps it re-tests between the last pass and the first fail. VoiceGateway adds no charge. The command explains this and asks before it places a call, unless you pass `--yes`.
+
+### Limits
+
+- LiveKit agents over WebRTC only. Phone (SIP) callers are not tested.
+- The agent must be idle: the test stops if a real call reaches it. Run it against a staging deployment.
+- Not measured: the agent servers' CPU and memory, time per stage (speech to text, model, voice) and answer quality.
+- Capacity tests are off on VoiceGateway Cloud. Run the command, or a self-hosted install.
+- The machine running the test must keep up. Its CPU is in the report, and a busy tester ends the run as inconclusive.
+
+## Profile every call
+
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/assets/readme/hero-dark.webp" />
   <img src="docs/assets/readme/hero-light.webp" alt="Opening a captured LiveKit call in the VoiceGateway console: the call list, the call's transcript and recording, then the diagnosis of each turn with speech-to-text, turn detection, model and voice timings." width="100%" />
@@ -27,7 +56,7 @@
 VoiceGateway profiles **LiveKit voice calls from the phone line to the model**. Every call gets one view: the transcript and recording, each turn's timings, the agent's spans, and the media server, SIP, egress and agent workers around it. You see where a call slowed down or went wrong, and which layer did it.
 
 > [!NOTE]
-> **V1 preview.** [Self-host](docs/self-hosting.md) the Go backend and console against your own LiveKit project today. Alert delivery and capacity tests are still being built ([roadmap](https://github.com/mahimailabs/voicegateway/issues/320)). VoiceGateway Cloud, the same product hosted, opens at [voicegateway.dev](https://voicegateway.dev).
+> **V1 preview.** [Self-host](docs/self-hosting.md) the Go backend and console against your own LiveKit project today. Alert delivery is still being built ([roadmap](https://github.com/mahimailabs/voicegateway/issues/320)). VoiceGateway Cloud, the same product hosted, opens at [voicegateway.dev](https://voicegateway.dev).
 
 ## Features
 
@@ -111,7 +140,7 @@ V1 is 32 of 39 tasks done; the [roadmap issue](https://github.com/mahimailabs/vo
 
 - **Self-hosted:** runs on your infrastructure today as a preview. Follow [Self-hosting](docs/self-hosting.md).
 - **VoiceGateway Cloud:** the same product hosted, with self-serve sign-up and checkout. Follow [voicegateway.dev](https://voicegateway.dev).
-- **Next:** alert evaluation and delivery, more alert channels, the capacity test runner and a 1,000-call load test.
+- **Next:** alert evaluation and delivery, more alert channels and a 1,000-call load test.
 
 [Current progress](docs/progress.md) · [Product scope](PRODUCT.md) · [Decisions](docs/decisions/)
 
