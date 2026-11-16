@@ -36,7 +36,7 @@ Run it from a clone with Go 1.26; no database or console is needed. The Docker i
 
 ### What it costs you
 
-Every test call is a real call. It runs your agent's own speech to text, model and voice providers, and they bill you for it. A run to `--max 32` holds 63 calls for a minute each, plus the steps it re-tests between the last pass and the first fail. VoiceGateway adds no charge. The command explains this and asks before it places a call, unless you pass `--yes`.
+Every test call is a real call. It runs your agent's own speech to text, model and voice providers, and they bill you for it. A run to `--max 32` places up to 32 calls, kept up as each step adds more, for about 63 call-minutes in all, plus the steps it re-tests between the last pass and the first fail. VoiceGateway adds no charge. The command explains this and asks before it places a call, unless you pass `--yes`.
 
 ### Limits
 

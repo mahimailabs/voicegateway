@@ -4,7 +4,7 @@ A real capacity test, run on 15 Nov 2026 from 14:49 to 14:54 UTC (run `319eabb4-
 
 - **Agent:** a receptionist voice agent built on LiveKit Agents, dispatched as `demo-runner`, unchanged for the test. It ran on one AWS c7i.xlarge server (4 vCPU, 8 GB) in ca-central-1, with a self-hosted LiveKit server 1.9.11.
 - **Tester:** a separate c7i.2xlarge server (8 vCPU) ran the callers, at 2 to 4% CPU.
-- **Test:** steps of 1, 2, 4, 8, 16 and 32 calls at once, 60 s each.
+- **Test:** steps of 1, 2, 4, 8, 16 and 32 calls at once, 60 s each. The 32-call step ended after 3.9 s, when the agent refused new calls, so its answer times cover a much shorter window than the other steps.
 - **Result:** 16 calls at once, every call answered, median answer 0.61 s. At 32 the agent refused 8 new calls (worker full) and dropped 1.
 
 This run came before the re-test step existed, so its limit is a range (16 to 31). The command now tests the numbers in between and reports one number.
